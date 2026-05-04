@@ -101,7 +101,10 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
       if (data.success) {
         onClose();
       } else {
-        setError(typeof data.error === "string" ? data.error : "保存失败");
+        const msg = typeof data.error === "string"
+          ? data.error
+          : data.error?.formErrors?.[0] ?? "保存失败";
+        setError(msg);
       }
     } catch {
       setError("网络错误，请重试");
