@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,95 @@ generator client {
 
 datasource db {
   provider = "sqlite"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  email         String?  @unique
+  passwordHash  String   @map("password_hash")
+  displayName   String   @map("display_name") @default("")
+  avatarUrl     String?  @map("avatar_url")
+  role          String   @default("admin")
+  isFirstLogin  Boolean  @default(true) @map("is_first_login")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  providers  ModelProvider[]
+  tasks      AsyncTask[]
+  tokenUsage TokenUsage[]
+
+  @@map("users")
+}
+
+model ModelProvider {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  name         String
+  providerType String   @map("provider_type")
+  apiBaseUrl   String   @map("api_base_url")
+  apiKey       String?  @map("api_key")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  models   ModelConfig[]
+
+  @@map("model_providers")
+}
+
+model ModelConfig {
+  id                String   @id @default(uuid())
+  providerId        String   @map("provider_id")
+  modelId           String   @map("model_id")
+  modelName         String   @map("model_name")
+  capabilities      String   @default("[]")
+  contextWindow     Int      @map("context_window") @default(4096)
+  maxOutputTokens   Int?     @map("max_output_tokens")
+  supportsStreaming  Boolean  @default(true) @map("supports_streaming")
+  inputPrice        Float?   @map("input_price")
+  outputPrice       Float?   @map("output_price")
+  localOrCloud      String   @default("local") @map("local_or_cloud")
+  isDefaultFor      String?  @map("is_default_for")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  provider ModelProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  usage    TokenUsage[]
+
+  @@map("model_configs")
+}
+
+model AsyncTask {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  type         String
+  status       String   @default("pending")
+  progress     Int      @default(0)
+  inputData    String?  @map("input_data")
+  resultData   String?  @map("result_data")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("async_tasks")
+}
+
+model TokenUsage {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  modelConfigId String?  @map("model_config_id")
+  module        String
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  costEstimate  Float?   @map("cost_estimate")
+  referenceId   String?  @map("reference_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+
+  @@map("token_usage")
 }
