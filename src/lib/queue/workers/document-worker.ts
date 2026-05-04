@@ -4,10 +4,29 @@ import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
+import { spawn } from "child_process";
 import fs from "fs";
+import path from "path";
 
 const storage = new LocalStorageAdapter();
 const SPLIT_THRESHOLD = parseFloat(process.env.SPLIT_THRESHOLD || "0.5");
+const RAG_INDEX_SCRIPT = path.resolve("workers/python/rag_index.py");
+
+function indexWithLightRAG(docId: string, userId: string, chunksDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("python3", [
+      RAG_INDEX_SCRIPT,
+      "--doc-id", docId,
+      "--user-id", userId,
+      "--chunks-dir", chunksDir,
+    ], { stdio: "ignore", timeout: 120_000 });
+
+    proc.on("close", (code: number | null) => {
+      code === 0 ? resolve() : reject(new Error(`LightRAG index failed with code ${code}`));
+    });
+    proc.on("error", (err: Error) => reject(err));
+  });
+}
 
 export async function processDocument(taskId: string): Promise<void> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
@@ -30,7 +49,8 @@ export async function processDocument(taskId: string): Promise<void> {
   if (!doc) throw new Error(`Document ${docId} not found`);
 
   try {
-    const outputDir = storage.getDocumentDir(docId, "system");
+    const userId = doc.userId;
+    const outputDir = storage.getDocumentDir(docId, userId);
     await convertToMarkdown(doc.originalPath, outputDir);
     const markdownPath = `${outputDir}/full.md`;
 
@@ -83,7 +103,7 @@ export async function processDocument(taskId: string): Promise<void> {
             headingPath: chunk.headingPath,
           },
         });
-        await storage.saveChunk(docId, chunk.index, chunk.content, "system");
+        await storage.saveChunk(docId, chunk.index, chunk.content, userId);
       }
     } else {
       const title = markdown.match(/^#\s+(.+)$/m)?.[1] || doc.originalName;
@@ -132,6 +152,19 @@ export async function processDocument(taskId: string): Promise<void> {
         });
       }
     }
+
+    await db.document.update({
+      where: { id: docId },
+      data: { status: "indexing" },
+    });
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { progress: 90 },
+    });
+
+    // LightRAG indexing
+    const ragChunksDir = storage.getDocumentDir(docId, userId);
+    await indexWithLightRAG(docId, userId, ragChunksDir);
 
     await db.document.update({
       where: { id: docId },
