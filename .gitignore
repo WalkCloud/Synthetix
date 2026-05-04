@@ -47,5 +47,6 @@ prisma/*.db-journal
 
 # project-specific
 .superpowers/
+.worktrees/
 
 /src/generated/prisma
