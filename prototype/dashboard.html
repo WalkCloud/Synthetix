@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synthetix - Dashboard</title>
+  <link rel="stylesheet" href="shared-styles.css">
+  <style>
+    .welcome-hero{background:linear-gradient(135deg,#EEF0FD 0%,#F5F6FE 30%,#F7F6F3 60%,#FFFFFF 100%);border:1px solid #E4E4E7;border-radius:var(--radius-xl);padding:32px 36px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}
+    .welcome-hero h3{font-family:'Urbanist',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;font-size:24px;font-weight:700;margin-bottom:4px;color:var(--color-text)}
+    .welcome-hero p{font-size:14px;color:var(--color-text-secondary);margin-bottom:16px}
+    .welcome-hero .btn{text-decoration:none}
+    .hero-stats{display:flex;gap:24px}
+    .hero-stat{text-align:center;background:rgba(255,255,255,0.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(67,97,238,0.08);border-radius:var(--radius-lg);padding:16px 24px;min-width:90px}
+    .hero-stat-value{font-family:'Urbanist',sans-serif;font-size:24px;font-weight:700;color:var(--color-primary);letter-spacing:-0.02em}
+    .hero-stat-label{font-size:11px;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+    .qa-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+    .qa-card{display:flex;align-items:center;gap:14px;padding:18px 20px;background:var(--color-bg-white);border:1px solid var(--color-border-light);border-radius:var(--radius-lg);cursor:pointer;transition:all .2s;text-decoration:none}
+    .qa-card:hover{border-color:rgba(67,97,238,.25);box-shadow:var(--shadow-md);transform:translateY(-2px)}
+    .qa-icon{width:44px;height:44px;border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .qa-icon svg{width:22px;height:22px}
+    .qa-card h4{font-size:14px;font-weight:600;color:var(--color-text);margin-bottom:2px}
+    .qa-card span{font-size:12px;color:var(--color-text-muted)}
+    .grid-2col{display:grid;grid-template-columns:1fr 340px;gap:20px;margin-bottom:24px}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .section-title h3{font-family:'Urbanist',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;font-size:16px;font-weight:600;color:var(--color-text);letter-spacing:-0.02em}
+    .section-title a{font-size:13px;color:var(--color-primary);text-decoration:none;font-weight:500}
+    .doc-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--color-border-light);transition:background .15s}
+    .doc-row:last-child{border-bottom:none}
+    .doc-row:hover{background:var(--color-bg-gray)}
+    .doc-row-icon{width:36px;height:36px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .doc-row-icon svg{width:18px;height:18px}
+    .doc-row-info{flex:1;min-width:0}
+    .doc-row-name{font-size:14px;font-weight:600;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .doc-row-meta{font-size:12px;color:var(--color-text-muted);display:flex;gap:8px;margin-top:2px}
+    .task-item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--color-border-light)}
+    .task-item:last-child{border-bottom:none}
+    .task-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .task-dot-active{background:var(--color-primary);animation:pulse 2s infinite}
+    .task-dot-done{background:var(--color-success)}
+    .task-dot-fail{background:var(--color-error)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .task-info{flex:1}
+    .task-name{font-size:13px;font-weight:500;color:var(--color-text)}
+    .task-desc{font-size:12px;color:var(--color-text-muted);margin-top:1px}
+    .task-time{font-size:11px;color:var(--color-text-muted);flex-shrink:0}
+    .progress-bar{width:100%;height:4px;background:var(--color-bg-gray);border-radius:2px;margin-top:6px;overflow:hidden}
+    .progress-fill{height:100%;border-radius:2px;background:var(--color-primary);transition:width .3s}
+    .header-search{position:relative}
+    .header-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--color-text-muted);pointer-events:none}
+    .header-search input{padding:8px 14px 8px 36px;border:1px solid var(--color-border);border-radius:var(--radius-full);font-size:13px;font-family:'Figtree',sans-serif;color:var(--color-text);background:var(--color-bg-gray);width:240px;transition:all .2s}
+    .header-search input:focus{outline:none;border-color:var(--color-primary);background:var(--color-bg-white);box-shadow:0 0 0 3px rgba(67,97,238,.12);width:300px}
+    .notification-btn{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--color-border);background:var(--color-bg-white);cursor:pointer;transition:all .2s}
+    .notification-btn:hover{background:var(--color-bg-gray);border-color:rgba(67,97,238,.25)}
+    .notification-btn svg{width:18px;height:18px;color:var(--color-text-secondary)}
+    .notification-dot{position:absolute;top:8px;right:8px;width:8px;height:8px;background:var(--color-cta);border-radius:50%;border:2px solid var(--color-bg-white)}
+    @media(max-width:1200px){.qa-row{grid-template-columns:repeat(2,1fr)}.grid-2col{grid-template-columns:1fr}}
+    .welcome-hero{animation:fadeInUp 0.5s ease both}
+    .stats-grid .stat-card:nth-child(1){animation:fadeInUp 0.5s ease both 0.1s}
+    .stats-grid .stat-card:nth-child(2){animation:fadeInUp 0.5s ease both 0.15s}
+    .stats-grid .stat-card:nth-child(3){animation:fadeInUp 0.5s ease both 0.2s}
+    .stats-grid .stat-card:nth-child(4){animation:fadeInUp 0.5s ease both 0.25s}
+    .qa-card:nth-child(1){animation:fadeInUp 0.4s ease both 0.2s}
+    .qa-card:nth-child(2){animation:fadeInUp 0.4s ease both 0.25s}
+    .qa-card:nth-child(3){animation:fadeInUp 0.4s ease both 0.3s}
+    .qa-card:nth-child(4){animation:fadeInUp 0.4s ease both 0.35s}
+    .card{animation:fadeInUp 0.5s ease both 0.3s}
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <line x1="10" y1="9" x2="8" y2="9"/>
+      </svg>
+      <h1>Synthetix</h1>
+    </div>
+
+    <nav class="sidebar-nav">
+      <!-- Workspace -->
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Workspace</div>
+        <a href="dashboard.html" class="sidebar-nav-item active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          Dashboard
+        </a>
+        <a href="f1-init.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          Document Init
+        </a>
+        <a href="f2-library.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+          </svg>
+          Document Library
+        </a>
+        <a href="f3-brainstorm.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          Mind Organization
+        </a>
+      </div>
+
+      <!-- Authoring -->
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Authoring</div>
+        <a href="f4-writing.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+            <path d="m15 5 4 4"/>
+          </svg>
+          Document Writing
+        </a>
+        <a href="f5-topology.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          Document Topology
+        </a>
+      </div>
+
+      <!-- Settings -->
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Settings</div>
+        <a href="f6-models.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Model Management
+        </a>
+        <a href="f7-users.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          User Management
+        </a>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">KL</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">Developer</div>
+          <div class="sidebar-user-role">Admin</div>
+        </div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--color-text-muted);flex-shrink:0;">
+          <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+        </svg>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <header class="main-header">
+      <h2 class="main-header-title">Dashboard</h2>
+      <div class="main-header-actions">
+        <div class="header-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search documents...">
+        </div>
+        <div class="notification-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <div class="notification-dot"></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-body">
+      <!-- Welcome Hero -->
+      <div class="welcome-hero">
+        <div>
+          <h3>Good morning, Kevin 👋</h3>
+          <p>You have 2 drafts in progress and 1 document converting. Here's your workspace overview.</p>
+          <a href="f1-init.html" class="btn btn-primary" style="cursor:pointer">Upload New Document</a>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat"><div class="hero-stat-value">156</div><div class="hero-stat-label">Documents</div></div>
+          <div class="hero-stat"><div class="hero-stat-value">12</div><div class="hero-stat-label">Drafts</div></div>
+          <div class="hero-stat"><div class="hero-stat-value">89</div><div class="hero-stat-label">References</div></div>
+          <div class="hero-stat"><div class="hero-stat-value">245K</div><div class="hero-stat-label">Tokens</div></div>
+        </div>
+      </div>
+
+      <!-- Quick Actions Row -->
+      <div class="qa-row">
+        <a href="f1-init.html" class="qa-card">
+          <div class="qa-icon" style="background:var(--color-primary-100);color:var(--color-primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+          <div><h4>Upload Docs</h4><span>Import & convert files</span></div>
+        </a>
+        <a href="f3-brainstorm.html" class="qa-card">
+          <div class="qa-icon" style="background:#EFF6FF;color:#2563EB"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></div>
+          <div><h4>Brainstorm</h4><span>Organize ideas with AI</span></div>
+        </a>
+        <a href="f4-writing.html" class="qa-card">
+          <div class="qa-icon" style="background:#DCFCE7;color:#16A34A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+          <div><h4>New Draft</h4><span>Start writing a document</span></div>
+        </a>
+        <a href="f2-library.html" class="qa-card">
+          <div class="qa-icon" style="background:#FFF7ED;color:#EA580C"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          <div><h4>Browse Library</h4><span>Search your knowledge</span></div>
+        </a>
+      </div>
+
+      <!-- Two-Column: Recent Docs + Active Tasks -->
+      <div class="grid-2col">
+        <!-- Recent Documents -->
+        <div>
+          <div class="section-title"><h3>Recent Documents</h3><a href="f2-library.html">View all →</a></div>
+          <div class="card" style="overflow:hidden">
+            <div class="doc-row">
+              <div class="doc-row-icon" style="background:#FEE2E2;color:#DC2626"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div class="doc-row-info"><div class="doc-row-name">Quarterly Business Review</div><div class="doc-row-meta"><span>Report</span><span>·</span><span>2 hours ago</span></div></div>
+              <span class="tag tag-green">Completed</span>
+            </div>
+            <div class="doc-row">
+              <div class="doc-row-icon" style="background:#EFF6FF;color:#2563EB"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div class="doc-row-info"><div class="doc-row-name">API Design Specification</div><div class="doc-row-meta"><span>Technical</span><span>·</span><span>5 hours ago</span></div></div>
+              <span class="tag tag-blue">Writing</span>
+            </div>
+            <div class="doc-row">
+              <div class="doc-row-icon" style="background:#DCFCE7;color:#16A34A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div class="doc-row-info"><div class="doc-row-name">User Research Findings</div><div class="doc-row-meta"><span>Research</span><span>·</span><span>Yesterday</span></div></div>
+              <span class="tag tag-green">Completed</span>
+            </div>
+            <div class="doc-row">
+              <div class="doc-row-icon" style="background:var(--color-bg-gray);color:var(--color-text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div class="doc-row-info"><div class="doc-row-name">Marketing Strategy 2026</div><div class="doc-row-meta"><span>Strategy</span><span>·</span><span>2 days ago</span></div></div>
+              <span class="tag tag-gray">Draft</span>
+            </div>
+            <div class="doc-row">
+              <div class="doc-row-icon" style="background:#EFF6FF;color:#2563EB"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div class="doc-row-info"><div class="doc-row-name">System Architecture Overview</div><div class="doc-row-meta"><span>Technical</span><span>·</span><span>3 days ago</span></div></div>
+              <span class="tag tag-blue">Writing</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Tasks -->
+        <div>
+          <div class="section-title"><h3>Active Tasks</h3><span style="font-size:12px;color:var(--color-text-muted)">3 tasks</span></div>
+          <div class="card" style="overflow:hidden">
+            <div class="task-item">
+              <div class="task-dot task-dot-active"></div>
+              <div class="task-info">
+                <div class="task-name">Converting security-audit.pdf</div>
+                <div class="task-desc">MarkItDown → Markdown</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div>
+              </div>
+              <div class="task-time">2m ago</div>
+            </div>
+            <div class="task-item">
+              <div class="task-dot task-dot-active"></div>
+              <div class="task-info">
+                <div class="task-name">Generating Chapter 3</div>
+                <div class="task-desc">API Design Specification</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:30%"></div></div>
+              </div>
+              <div class="task-time">5m ago</div>
+            </div>
+            <div class="task-item">
+              <div class="task-dot task-dot-done"></div>
+              <div class="task-info">
+                <div class="task-name">Indexed research-findings.pdf</div>
+                <div class="task-desc">LightRAG vectorization complete</div>
+              </div>
+              <div class="task-time">12m ago</div>
+            </div>
+            <div class="task-item">
+              <div class="task-dot task-dot-fail"></div>
+              <div class="task-info">
+                <div class="task-name">Chapter 5 generation failed</div>
+                <div class="task-desc">Token limit exceeded · <a href="#" style="color:var(--color-primary);text-decoration:none;font-weight:500">Retry</a></div>
+              </div>
+              <div class="task-time">18m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
+

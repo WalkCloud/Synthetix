@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mind Organization - Synthetix</title>
+  <link rel="stylesheet" href="shared-styles.css">
+  <style>
+    .bs-layout{display:grid;grid-template-columns:220px 1fr 320px;gap:0;height:calc(100vh - var(--header-height) - 64px)}
+    .history-panel{background:#FFFFFF;border-right:1px solid #E4E4E7;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-lg) 0 0 var(--radius-lg)}
+    .history-header{padding:16px;border-bottom:1px solid #E4E4E7;display:flex;align-items:center;justify-content:space-between}
+    .history-header h4{font-size:13px;font-weight:600;color:#18181B}
+    .history-list{flex:1;overflow-y:auto;padding:8px}
+    .history-item{padding:10px 12px;border-radius:var(--radius-md);cursor:pointer;margin-bottom:2px;transition:background .15s}
+    .history-item:hover{background:#F5F6FE}
+    .history-item.active{background:#F5F6FE;border-left:3px solid #4361EE}
+    .history-item-title{font-size:13px;font-weight:600;color:#18181B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .history-item-meta{font-size:11px;color:#A1A1AA;margin-top:2px}
+    .conv-panel{display:flex;flex-direction:column;overflow:hidden;border-left:none;border-right:none}
+    .conv-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #E4E4E7;background:#FFFFFF}
+    .conv-header-left{display:flex;align-items:center;gap:10px}
+    .conv-header-left svg{width:20px;height:20px;color:#4361EE}
+    .conv-header h3{font-size:15px;font-weight:600;color:#18181B}
+    .conv-status{display:flex;align-items:center;gap:6px;font-size:12px;color:#16A34A;font-weight:500}
+    .conv-status-dot{width:7px;height:7px;border-radius:50%;background:#16A34A;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;background:#F5F5F3}
+    .msg{display:flex;max-width:85%}
+    .msg-sys{align-self:center;max-width:90%}
+    .msg-user{align-self:flex-end}
+    .msg-ai{align-self:flex-start}
+    .msg-avatar{width:30px;height:30px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:10px;background:#EEF0FD;color:#4361EE}
+    .msg-avatar svg{width:16px;height:16px}
+    .msg-body{border-radius:var(--radius-lg);padding:12px 16px;font-size:14px;line-height:1.65}
+    .msg-sys .msg-body{background:#FFFFFF;border:1px solid #E4E4E7;color:#A1A1AA;font-size:12px;text-align:center;border-radius:var(--radius-full);padding:6px 18px}
+    .msg-user .msg-body{background:#EEF0FD;color:#18181B;border:1px solid #DDE2FC;border-bottom-right-radius:4px}
+    .msg-ai .msg-body{background:#FFFFFF;border:1px solid #E4E4E7;color:#18181B;border-bottom-left-radius:4px}
+    .msg-time{font-size:11px;color:#A1A1AA;margin-top:4px}
+    .msg-user .msg-time{text-align:right}
+    .input-area{padding:14px 20px;border-top:1px solid #E4E4E7;background:#FFFFFF}
+    .input-row{display:flex;align-items:flex-end;gap:8px}
+    .input-row textarea{flex:1;padding:10px 14px;border:1px solid #E4E4E7;border-radius:var(--radius-lg);font-size:14px;font-family:inherit;resize:none;min-height:42px;max-height:100px;background:#FFFFFF;color:#18181B;transition:all .2s}
+    .input-row textarea:focus{outline:none;border-color:#4361EE;box-shadow:0 0 0 3px rgba(67,97,238,0.12);background:#FFFFFF}
+    .input-row textarea::placeholder{color:#A1A1AA}
+    .right-panel{background:#FFFFFF;border-left:1px solid #E4E4E7;display:flex;flex-direction:column;overflow-y:auto;border-radius:0 var(--radius-lg) var(--radius-lg) 0}
+    .rp-section{padding:16px;border-bottom:1px solid #E4E4E7}
+    .rp-section:last-child{border-bottom:none;flex:1}
+    .rp-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#A1A1AA;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+    .rp-title svg{width:14px;height:14px}
+    .outline-tree{list-style:none;padding:0}
+    .ol-sec{margin-bottom:2px}
+    .ol-sec-head{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:var(--radius-md);cursor:pointer;transition:background .15s;font-size:12px}
+    .ol-sec-head:hover{background:#F5F6FE}
+    .ol-num{font-weight:700;color:#4361EE;min-width:20px}
+    .ol-name{font-weight:600;color:#18181B;flex:1}
+    .ol-wc{font-size:11px;color:#A1A1AA}
+    .ol-chk{width:14px;height:14px;color:#16A34A}
+    .outline-footer{padding:12px 16px;border-top:1px solid #E4E4E7;display:flex;gap:6px}
+    .outline-footer .btn{flex:1;justify-content:center;font-size:12px}
+    @media(max-width:1200px){.bs-layout{grid-template-columns:1fr;height:auto}.history-panel,.right-panel{display:none}}
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <a href="dashboard.html" class="sidebar-brand" style="text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+      <h1>Synthetix</h1>
+    </a>
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Workspace</div>
+        <a href="dashboard.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard</a>
+        <a href="f1-init.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>Document Init</a>
+        <a href="f2-library.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>Document Library</a>
+        <a href="f3-brainstorm.html" class="sidebar-nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Mind Organization</a>
+      </div>
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Authoring</div>
+        <a href="f4-writing.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>Document Writing</a>
+        <a href="f5-topology.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Document Topology</a>
+      </div>
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Settings</div>
+        <a href="f6-models.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Model Management</a>
+        <a href="f7-users.html" class="sidebar-nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>User Management</a>
+      </div>
+    </nav>
+    <div class="sidebar-footer"><div class="sidebar-user"><div class="sidebar-user-avatar">KL</div><div class="sidebar-user-info"><div class="sidebar-user-name">Developer</div><div class="sidebar-user-role">Admin</div></div></div></div>
+  </aside>
+
+  <div class="main-content">
+    <header class="main-header">
+      <h2 class="main-header-title">Mind Organization</h2>
+      <div class="main-header-actions">
+        <button class="btn btn-secondary btn-sm" style="cursor:pointer">Export</button>
+      </div>
+    </header>
+
+    <div class="main-body">
+      <div class="bs-layout">
+        <!-- Session History -->
+        <div class="history-panel">
+          <div class="history-header"><h4>Sessions</h4><button class="btn btn-ghost btn-sm" style="cursor:pointer;padding:4px" title="New Session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button></div>
+          <div class="history-list">
+            <div class="history-item active"><div class="history-item-title">Microservices Architecture</div><div class="history-item-meta">4 messages · Today</div></div>
+            <div class="history-item"><div class="history-item-title">Q3 Marketing Plan</div><div class="history-item-meta">8 messages · Yesterday</div></div>
+            <div class="history-item"><div class="history-item-title">Database Migration Guide</div><div class="history-item-meta">6 messages · May 1</div></div>
+            <div class="history-item"><div class="history-item-title">API Security Overview</div><div class="history-item-meta">12 messages · Apr 28</div></div>
+          </div>
+        </div>
+
+        <!-- Conversation -->
+        <div class="conv-panel">
+          <div class="conv-header">
+            <div class="conv-header-left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>Microservices Architecture</h3></div>
+            <div class="conv-status"><span class="conv-status-dot"></span>Deepening Phase</div>
+          </div>
+          <div class="messages">
+            <div class="msg msg-sys"><div class="msg-body">New brainstorming session started · Socratic Skill active</div></div>
+            <div class="msg msg-user"><div><div class="msg-body">I want to write a technical architecture document for our new microservices system. It needs to cover service design, data flow, deployment strategy, and monitoring.</div><div class="msg-time">2:34 PM</div></div></div>
+            <div class="msg msg-ai"><div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div><div><div class="msg-body">That's a solid foundation! Let me ask a few clarifying questions:<br><br>1) What's the scale — how many microservices are you planning?<br>2) Are you targeting cloud-native (Kubernetes) or hybrid?<br>3) Who is the primary audience — developers, architects, or management?</div><div class="msg-time">2:34 PM</div></div></div>
+            <div class="msg msg-user"><div><div class="msg-body">About 15-20 services, full Kubernetes on AWS, primarily for the architecture review board.</div><div class="msg-time">2:36 PM</div></div></div>
+            <div class="msg msg-ai"><div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div><div><div class="msg-body">Great context. I've generated a preliminary outline on the right panel. A few deeper questions:<br><br>• How do your services handle <strong>cross-cutting concerns</strong> like auth and rate limiting — centralized gateway or per-service?<br>• For <strong>data consistency</strong>, are you using saga patterns or eventual consistency?<br>• What's your <strong>CI/CD maturity</strong> — GitOps, manual pipelines, or something else?</div><div class="msg-time">2:37 PM</div></div></div>
+          </div>
+          <div class="input-area">
+            <div class="input-row">
+              <textarea rows="1" placeholder="Share your thoughts..."></textarea>
+              <button class="btn btn-ghost btn-sm" style="cursor:pointer" title="Attach Reference"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span class="tag tag-purple" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#EEF0FD;color:#4361EE">2</span></button>
+              <button class="btn btn-primary btn-sm" style="cursor:pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+          <!-- Outline Preview -->
+          <div class="rp-section" style="display:flex;flex-direction:column">
+            <div class="rp-title" style="justify-content:space-between"><span style="display:flex;align-items:center;gap:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Outline</span><span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">~7,000 words</span></div>
+            <div style="font-size:14px;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid rgba(67,97,238,0.15)">Technical Architecture Document</div>
+            <ul class="outline-tree">
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">1.</span><span class="ol-name">Executive Summary</span><span class="ol-wc">~500w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></li>
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">2.</span><span class="ol-name">System Overview</span><span class="ol-wc">~800w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></li>
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">3.</span><span class="ol-name">Service Architecture</span><span class="ol-wc">~2,000w</span></div></li>
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">4.</span><span class="ol-name">Data Flow & Communication</span><span class="ol-wc">~1,500w</span></div></li>
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">5.</span><span class="ol-name">Deployment Strategy</span><span class="ol-wc">~1,200w</span></div></li>
+              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">6.</span><span class="ol-name">Observability & Monitoring</span><span class="ol-wc">~1,000w</span></div></li>
+            </ul>
+            <div class="outline-footer">
+              <button class="btn btn-secondary btn-sm" style="cursor:pointer">Edit</button>
+              <button class="btn btn-ghost btn-sm" style="cursor:pointer">Regenerate</button>
+              <a href="f4-writing.html" class="btn btn-cta btn-sm" style="cursor:pointer">Confirm & Write</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
