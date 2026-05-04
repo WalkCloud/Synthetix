@@ -22,6 +22,7 @@ model User {
   providers  ModelProvider[]
   tasks      AsyncTask[]
   tokenUsage TokenUsage[]
+  documents  Document[]
 
   @@map("users")
 }
@@ -96,4 +97,72 @@ model TokenUsage {
   modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
 
   @@map("token_usage")
+}
+
+model Document {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  originalName   String   @map("original_name")
+  originalFormat String   @map("original_format")
+  originalSize   Int      @map("original_size")
+  originalHash   String?  @map("original_hash")
+  originalPath   String   @map("original_path")
+  markdownPath   String?  @map("markdown_path")
+  markdownSize   Int?     @map("markdown_size")
+  status         String   @default("uploading")
+  parentId       String?  @map("parent_id")
+  tokenEstimate  Int?     @map("token_estimate")
+  wordCount      Int?     @map("word_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  children Document[]   @relation("DocumentSplit")
+  parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id])
+  chunks   DocumentChunk[]
+  tags     DocumentTag[]
+
+  @@index([userId, status])
+  @@index([originalHash])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  index       Int
+  title       String?
+  content     String
+  tokenCount  Int?     @map("token_count")
+  startPage   Int?     @map("start_page")
+  endPage     Int?     @map("end_page")
+  headingPath String?  @map("heading_path")
+  embedding   Bytes?   @map("embedding")
+  embedModel  String?  @map("embed_model")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_chunks")
+}
+
+model Tag {
+  id   String @id @default(uuid())
+  name String @unique
+
+  documents DocumentTag[]
+
+  @@map("tags")
+}
+
+model DocumentTag {
+  documentId String @map("document_id")
+  tagId      String @map("tag_id")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@map("document_tags")
 }
