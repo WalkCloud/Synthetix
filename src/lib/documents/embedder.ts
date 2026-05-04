@@ -12,10 +12,13 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-export function float32ToBuffer(arr: Float32Array): Buffer {
-  return Buffer.from(arr.buffer);
+export function float32ToBuffer(arr: Float32Array): Uint8Array<ArrayBuffer> {
+  const buf = new ArrayBuffer(arr.byteLength);
+  const view = new Uint8Array(buf);
+  new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength).forEach((v, i) => { view[i] = v; });
+  return view;
 }
 
-export function bufferToFloat32(buf: Buffer): Float32Array {
+export function bufferToFloat32(buf: Uint8Array): Float32Array {
   return new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
 }

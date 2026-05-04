@@ -29,15 +29,12 @@ export async function semanticSearch(
   });
 
   const results: SearchResult[] = [];
-  const queryVec = new Float32Array(
-    queryEmbedding.buffer,
-    queryEmbedding.byteOffset,
-    queryEmbedding.byteLength / 4
-  );
+  const queryVec = new Float32Array(queryEmbedding);
 
   for (const chunk of chunks) {
     if (!chunk.embedding) continue;
-    const chunkVec = bufferToFloat32(chunk.embedding as Buffer);
+    const chunkBytes = chunk.embedding as unknown as Uint8Array;
+    const chunkVec = bufferToFloat32(chunkBytes);
     const score = cosineSimilarity(queryVec, chunkVec);
 
     results.push({

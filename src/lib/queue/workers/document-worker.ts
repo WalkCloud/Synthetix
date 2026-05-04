@@ -126,13 +126,7 @@ export async function processDocument(taskId: string): Promise<void> {
         await db.documentChunk.update({
           where: { id: allChunks[i].id },
           data: {
-            embedding: float32ToBuffer(
-              new Float32Array(
-                embeddings[i].buffer,
-                embeddings[i].byteOffset,
-                embeddings[i].byteLength / 4
-              )
-            ),
+            embedding: float32ToBuffer(new Float32Array(embeddings[i])),
             embedModel: embedModel.modelId,
           },
         });
