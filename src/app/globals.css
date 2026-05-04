@@ -162,3 +162,51 @@
     @apply font-sans;
   }
 }
+
+/* Prototype-matched animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease both;
+}
+
+.animate-fade-in-up-1 { animation: fadeInUp 0.5s ease both 0.05s; }
+.animate-fade-in-up-2 { animation: fadeInUp 0.5s ease both 0.1s; }
+.animate-fade-in-up-3 { animation: fadeInUp 0.5s ease both 0.15s; }
+.animate-fade-in-up-4 { animation: fadeInUp 0.5s ease both 0.2s; }
+.animate-fade-in-up-5 { animation: fadeInUp 0.5s ease both 0.25s; }
+.animate-fade-in-up-6 { animation: fadeInUp 0.5s ease both 0.3s; }
+
+.animate-float {
+  animation: float 8s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float 10s ease-in-out infinite 2s;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-task-pulse {
+  animation: pulse-dot 2s infinite;
+}

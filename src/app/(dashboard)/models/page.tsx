@@ -4,7 +4,7 @@ import { ModelsTabs } from "@/components/models/models-tabs";
 export default function ModelsPage() {
   return (
     <div>
-      <Header title="模型管理" />
+      <Header title="Model Management" />
       <div className="p-8">
         <ModelsTabs />
       </div>
