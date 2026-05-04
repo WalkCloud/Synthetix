@@ -8,6 +8,7 @@ export type DocumentStatus =
   | "converting"
   | "splitting"
   | "embedding"
+  | "indexing"
   | "ready"
   | "failed";
 
