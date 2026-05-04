@@ -14,7 +14,7 @@ export function LoginForm() {
     fetch("/api/v1/system/status")
       .then((r) => r.json())
       .then((data) => {
-        if (!data.initialized) router.push("/setup");
+        if (!data.data?.initialized) router.push("/setup");
       });
   }, [router]);
 
