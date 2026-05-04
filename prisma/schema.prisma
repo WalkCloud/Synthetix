@@ -23,6 +23,7 @@ model User {
   tasks      AsyncTask[]
   tokenUsage TokenUsage[]
   documents  Document[]
+  sessions   BrainstormSession[]
 
   @@map("users")
 }
@@ -165,4 +166,31 @@ model DocumentTag {
 
   @@id([documentId, tagId])
   @@map("document_tags")
+}
+
+model BrainstormSession {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  status    String   @default("active")
+  outline   String?  // JSON outline
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@map("brainstorm_sessions")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  role      String   // "user" | "ai" | "system"
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session BrainstormSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
 }
