@@ -1,0 +1,192 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TaskQueue } from "@/lib/queue/queue";
+import type { WorkerFn } from "@/lib/queue/types";
+import { db } from "@/lib/db";
+
+const TEST_USER_ID = "test-queue-user";
+
+describe("TaskQueue", () => {
+  let queue: TaskQueue;
+
+  beforeEach(async () => {
+    queue = new TaskQueue({ timeoutMs: 2000 });
+
+    // Ensure test user exists (foreign key constraint)
+    await db.user.upsert({
+      where: { id: TEST_USER_ID },
+      create: {
+        id: TEST_USER_ID,
+        username: "test-queue-user",
+        passwordHash: "test-hash",
+      },
+      update: {},
+    });
+
+    // Clean up test tasks created in previous tests
+    await db.asyncTask.deleteMany({
+      where: { userId: TEST_USER_ID },
+    });
+  });
+
+  it("should submit a task and return an ID", async () => {
+    queue.registerWorker("document_upload", async () => ({ ok: true }));
+
+    const taskId = await queue.submit(
+      "document_upload",
+      { filename: "test.pdf" },
+      TEST_USER_ID,
+    );
+
+    expect(taskId).toBeDefined();
+    expect(typeof taskId).toBe("string");
+    expect(taskId.length).toBeGreaterThan(0);
+
+    const info = await queue.getStatus(taskId);
+    expect(info).not.toBeNull();
+    expect(info!.type).toBe("document_upload");
+    expect(info!.status).toBeDefined();
+  });
+
+  it("should execute a task and mark it completed", async () => {
+    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+      async () => ({ converted: true }),
+    );
+    queue.registerWorker("document_convert", workerFn);
+
+    const taskId = await queue.submit(
+      "document_convert",
+      { fileId: "abc123" },
+      TEST_USER_ID,
+    );
+
+    // Wait for the task to complete
+    await vi.waitFor(
+      async () => {
+        const info = await queue.getStatus(taskId);
+        expect(info?.status).toBe("completed");
+      },
+      { timeout: 3000 },
+    );
+
+    const info = await queue.getStatus(taskId);
+    expect(info!.progress).toBe(100);
+    expect(info!.result).toEqual({ converted: true });
+    expect(workerFn).toHaveBeenCalledOnce();
+  });
+
+  it("should track progress updates", async () => {
+    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+      async (_payload, onProgress) => {
+        onProgress(25);
+        onProgress(50);
+        onProgress(75);
+        return { done: true };
+      },
+    );
+    queue.registerWorker("rag_index", workerFn);
+
+    const taskId = await queue.submit("rag_index", {}, TEST_USER_ID);
+
+    await vi.waitFor(
+      async () => {
+        const info = await queue.getStatus(taskId);
+        expect(info?.status).toBe("completed");
+      },
+      { timeout: 3000 },
+    );
+
+    const info = await queue.getStatus(taskId);
+    expect(info!.progress).toBe(100);
+    expect(info!.result).toEqual({ done: true });
+  });
+
+  it("should handle worker errors and mark task failed", async () => {
+    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+      async () => {
+        throw new Error("Conversion failed: corrupted file");
+      },
+    );
+    queue.registerWorker("chapter_generate", workerFn);
+
+    const taskId = await queue.submit(
+      "chapter_generate",
+      { chapterId: "ch1" },
+      TEST_USER_ID,
+    );
+
+    await vi.waitFor(
+      async () => {
+        const info = await queue.getStatus(taskId);
+        expect(info?.status).toBe("failed");
+      },
+      { timeout: 3000 },
+    );
+
+    const info = await queue.getStatus(taskId);
+    expect(info!.error).toBe("Conversion failed: corrupted file");
+  });
+
+  it("should cancel a pending task", async () => {
+    // Use a single queue with concurrency=1 and a blocking worker
+    let resolveWorker: (value: unknown) => void;
+    const workerPromise = new Promise((resolve) => {
+      resolveWorker = resolve;
+    });
+
+    const cancelQueue = new TaskQueue({ concurrency: 1, timeoutMs: 5000 });
+    cancelQueue.registerWorker("chapter_summarize", async () => workerPromise);
+
+    // First task fills the concurrency slot (it blocks)
+    await cancelQueue.submit("chapter_summarize", {}, TEST_USER_ID);
+
+    // Second task stays pending because concurrency is 1
+    const taskId = await cancelQueue.submit(
+      "chapter_summarize",
+      {},
+      TEST_USER_ID,
+    );
+
+    // Verify it is pending
+    let info = await cancelQueue.getStatus(taskId);
+    expect(info!.status).toBe("pending");
+
+    // Cancel it
+    const cancelled = await cancelQueue.cancel(taskId);
+    expect(cancelled).toBe(true);
+
+    info = await cancelQueue.getStatus(taskId);
+    expect(info!.status).toBe("cancelled");
+
+    // Clean up blocking worker
+    resolveWorker!({ done: true });
+  });
+
+  it("should return null for nonexistent task status", async () => {
+    const info = await queue.getStatus("nonexistent-id");
+    expect(info).toBeNull();
+  });
+
+  it("should return false when cancelling nonexistent task", async () => {
+    const result = await queue.cancel("nonexistent-id");
+    expect(result).toBe(false);
+  });
+
+  it("should mark task as failed when no worker is registered", async () => {
+    const taskId = await queue.submit(
+      "outline_generate",
+      {},
+      TEST_USER_ID,
+    );
+
+    await vi.waitFor(
+      async () => {
+        const info = await queue.getStatus(taskId);
+        expect(info?.status).toBe("failed");
+      },
+      { timeout: 3000 },
+    );
+
+    const info = await queue.getStatus(taskId);
+    expect(info!.error).toContain("No worker registered");
+  });
+});
