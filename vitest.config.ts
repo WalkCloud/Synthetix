@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
+    env: {
+      DATABASE_URL: "file:./dev.db",
+      JWT_SECRET: "test-jwt-secret-for-vitest",
+      ENCRYPTION_KEY: "test-encryption-key-for-vitest-32c",
+    },
   },
   resolve: {
     alias: {
