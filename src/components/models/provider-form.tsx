@@ -87,7 +87,14 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
     setError("");
     setSaving(true);
 
-    const payload = { name, providerType, apiBaseUrl, apiKey: apiKey || undefined, models };
+    const cleanModels = models.map((m) => {
+      const cleaned: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(m)) {
+        if (v !== null) cleaned[k] = v;
+      }
+      return cleaned;
+    });
+    const payload = { name, providerType, apiBaseUrl, apiKey: apiKey || undefined, models: cleanModels };
 
     try {
       const url = isEdit ? `/api/v1/models/providers/${provider.id}` : "/api/v1/models/providers";
