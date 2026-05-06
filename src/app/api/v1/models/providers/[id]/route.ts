@@ -42,7 +42,7 @@ export async function PUT(
 
   const { id } = await params;
   const body = await request.json();
-  const { name, apiBaseUrl, apiKey, isActive } = body;
+  const { name, providerType, apiBaseUrl, apiKey, models } = body;
 
   const existing = await db.modelProvider.findFirst({
     where: { id, userId: user.id },
@@ -54,14 +54,33 @@ export async function PUT(
     );
   }
 
+  const updateData: Record<string, unknown> = {};
+  if (name !== undefined) updateData.name = name;
+  if (providerType !== undefined) updateData.providerType = providerType;
+  if (apiBaseUrl !== undefined) updateData.apiBaseUrl = apiBaseUrl;
+  if (apiKey) updateData.apiKey = encrypt(apiKey);
+
+  if (Array.isArray(models) && models.length > 0) {
+    await db.modelConfig.deleteMany({ where: { providerId: id } });
+    updateData.models = {
+      create: models.map((m: Record<string, unknown>) => ({
+        modelId: m.modelId as string,
+        modelName: m.modelName as string,
+        capabilities: JSON.stringify(m.capabilities ?? []),
+        contextWindow: (m.contextWindow as number) || 0,
+        maxOutputTokens: (m.maxOutputTokens as number | null) ?? null,
+        supportsStreaming: (m.supportsStreaming as boolean) ?? true,
+        inputPrice: (m.inputPrice as number | null) ?? null,
+        outputPrice: (m.outputPrice as number | null) ?? null,
+        localOrCloud: (m.localOrCloud as string) || "local",
+        isDefaultFor: (m.isDefaultFor as string | null) ?? null,
+      })),
+    };
+  }
+
   const provider = await db.modelProvider.update({
     where: { id },
-    data: {
-      ...(name !== undefined && { name }),
-      ...(apiBaseUrl !== undefined && { apiBaseUrl }),
-      ...(apiKey !== undefined && { apiKey: encrypt(apiKey) }),
-      ...(isActive !== undefined && { isActive }),
-    },
+    data: updateData,
     include: { models: true },
   });
 

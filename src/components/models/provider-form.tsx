@@ -6,13 +6,13 @@ import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./
 interface FormModelConfig {
   modelId: string;
   modelName: string;
+  modelType: "llm" | "embedding";
   capabilities: string[];
   contextWindow: number;
   maxOutputTokens: number | null;
   supportsStreaming: boolean;
   inputPrice: number | null;
   outputPrice: number | null;
-  localOrCloud: string;
   isDefaultFor: string | null;
 }
 
@@ -24,13 +24,13 @@ interface ProviderFormProps {
 const defaultModel: FormModelConfig = {
   modelId: "",
   modelName: "",
+  modelType: "llm",
   capabilities: [],
-  contextWindow: 4096,
+  contextWindow: 0,
   maxOutputTokens: null,
   supportsStreaming: true,
   inputPrice: null,
   outputPrice: null,
-  localOrCloud: "local",
   isDefaultFor: null,
 };
 
@@ -43,16 +43,18 @@ function parseCapabilities(raw: string): string[] {
 }
 
 function toFormModel(m: ApiModelConfig): FormModelConfig {
+  const caps = parseCapabilities(m.capabilities);
+  const modelType = caps.includes("embedding") || caps.includes("embed") ? "embedding" : "llm";
   return {
     modelId: m.modelId,
     modelName: m.modelName,
-    capabilities: parseCapabilities(m.capabilities),
+    modelType,
+    capabilities: caps,
     contextWindow: m.contextWindow,
     maxOutputTokens: m.maxOutputTokens,
     supportsStreaming: m.supportsStreaming,
     inputPrice: m.inputPrice,
     outputPrice: m.outputPrice,
-    localOrCloud: m.localOrCloud,
     isDefaultFor: m.isDefaultFor,
   };
 }
@@ -62,7 +64,8 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
   const [name, setName] = useState(provider?.name || "");
   const [providerType, setProviderType] = useState(provider?.providerType || "ollama");
   const [apiBaseUrl, setApiBaseUrl] = useState(provider?.apiBaseUrl || "");
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(provider?.apiKey || "");
+  const isLocal = providerType === "ollama" || providerType === "custom";
   const [models, setModels] = useState<FormModelConfig[]>(
     provider?.models?.length ? provider.models.map(toFormModel) : [{ ...defaultModel }]
   );
@@ -88,8 +91,14 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
     setSaving(true);
 
     const cleanModels = models.map((m) => {
-      const cleaned: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(m)) {
+      const caps = m.modelType === "embedding" ? ["embedding"] : ["chat"];
+      const cleaned: Record<string, unknown> = {
+        ...m,
+        capabilities: caps,
+        modelType: undefined,
+      };
+      delete cleaned.modelType;
+      for (const [k, v] of Object.entries(cleaned)) {
         if (v !== null) cleaned[k] = v;
       }
       return cleaned;
@@ -129,12 +138,12 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
       <div className="space-y-4 mb-6">
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">提供商名称</label>
-          <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <input className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My Ollama" required />
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">类型</label>
-          <select className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             value={providerType} onChange={(e) => setProviderType(e.target.value)}>
             <option value="ollama">Ollama</option>
             <option value="openai_compatible">OpenAI Compatible</option>
@@ -144,13 +153,17 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API 地址</label>
-          <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <input className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} placeholder="http://localhost:11434" required />
         </div>
         <div>
-          <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Key (可选)</label>
-          <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={isEdit ? "留空则不修改" : "可选"} />
+          <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">
+            API Key {!isLocal && !isEdit && <span className="text-destructive">*</span>}
+          </label>
+          <input type="password" className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            placeholder={isEdit ? "留空则不修改" : isLocal ? "本地服务可不填" : "输入 API Key"}
+            required={!isLocal && !isEdit} />
         </div>
       </div>
 
@@ -162,30 +175,30 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
         </div>
         <div className="space-y-4">
           {models.map((m, i) => (
-            <div key={i} className="border rounded-xl p-4 bg-gray-50/50">
+            <div key={i} className="border border-[#E4E4E7] rounded-xl p-4 bg-[#FAFAFA]">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">模型 ID</label>
-                  <input className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  <input className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                     value={m.modelId} onChange={(e) => updateModel(i, "modelId", e.target.value)} placeholder="e.g. qwen2.5:7b" required />
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">模型名称</label>
-                  <input className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  <input className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                     value={m.modelName} onChange={(e) => updateModel(i, "modelName", e.target.value)} placeholder="e.g. Qwen 2.5 7B" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">上下文窗口</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    value={m.contextWindow} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value) || 4096)} />
+                  <label className="block text-xs text-muted-foreground mb-1">模型类型</label>
+                  <select className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    value={m.modelType} onChange={(e) => updateModel(i, "modelType", e.target.value)}>
+                    <option value="llm">LLM 大语言模型</option>
+                    <option value="embedding">Embedding 嵌入模型</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">类型</label>
-                  <select className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    value={m.localOrCloud} onChange={(e) => updateModel(i, "localOrCloud", e.target.value)}>
-                    <option value="local">本地</option>
-                    <option value="cloud">云端</option>
-                  </select>
+                  <label className="block text-xs text-muted-foreground mb-1">上下文窗口 <span className="font-normal">(选填，Test 时自动检测)</span></label>
+                  <input type="text" inputMode="numeric" className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
                 </div>
               </div>
               {models.length > 1 && (
@@ -197,7 +210,7 @@ export function ProviderForm({ provider, onClose }: ProviderFormProps) {
       </div>
 
       <div className="flex gap-3 justify-end">
-        <button type="button" onClick={onClose} className="px-5 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50">取消</button>
+        <button type="button" onClick={onClose} className="px-5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm font-medium hover:bg-[#F4F4F5]">取消</button>
         <button type="submit" disabled={saving}
           className="px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary-light transition-all disabled:opacity-50">
           {saving ? "保存中..." : isEdit ? "更新" : "创建"}

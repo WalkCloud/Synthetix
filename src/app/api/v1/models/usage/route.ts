@@ -23,28 +23,126 @@ export async function GET(request: Request) {
     ...(module && { module }),
   };
 
-  const [usage, summary] = await Promise.all([
-    db.tokenUsage.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-    db.tokenUsage.aggregate({
-      where,
-      _sum: { inputTokens: true, outputTokens: true, costEstimate: true },
-      _count: true,
-    }),
-  ]);
+  const [usage, byModelRaw, byModuleRaw, summaryRaw, distinctModels] =
+    await Promise.all([
+      db.tokenUsage.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: {
+          modelConfig: {
+            select: {
+              modelName: true,
+              provider: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      db.tokenUsage.groupBy({
+        by: ["modelConfigId"],
+        where,
+        _sum: { inputTokens: true, outputTokens: true },
+        _count: true,
+      }),
+      db.tokenUsage.groupBy({
+        by: ["module"],
+        where,
+        _sum: { inputTokens: true, outputTokens: true },
+        _count: true,
+      }),
+      db.tokenUsage.aggregate({
+        where,
+        _sum: { inputTokens: true, outputTokens: true },
+        _count: true,
+      }),
+      db.tokenUsage.groupBy({
+        by: ["modelConfigId"],
+        where,
+      }),
+    ]);
+
+  const entries = usage.map((u) => ({
+    id: u.id,
+    module: u.module,
+    inputTokens: u.inputTokens,
+    outputTokens: u.outputTokens,
+    createdAt: u.createdAt.toISOString(),
+    modelName: u.modelConfig?.modelName ?? null,
+    providerName: u.modelConfig?.provider?.name ?? null,
+  }));
+
+  const modelConfigIds = byModelRaw
+    .map((r) => r.modelConfigId)
+    .filter((id): id is string => id !== null);
+
+  const modelConfigs = modelConfigIds.length > 0
+    ? await db.modelConfig.findMany({
+        where: { id: { in: modelConfigIds } },
+        select: {
+          id: true,
+          modelName: true,
+          provider: { select: { name: true } },
+        },
+      })
+    : [];
+
+  const modelLookup = new Map(
+    modelConfigs.map((mc) => [
+      mc.id,
+      { modelName: mc.modelName, providerName: mc.provider.name },
+    ]),
+  );
+
+  const byModel = byModelRaw
+    .filter((r) => r.modelConfigId !== null)
+    .map((r) => {
+      const info = modelLookup.get(r.modelConfigId!) ?? {
+        modelName: "Unknown",
+        providerName: "",
+      };
+      return {
+        modelConfigId: r.modelConfigId!,
+        modelName: info.modelName,
+        providerName: info.providerName,
+        totalInputTokens: r._sum.inputTokens ?? 0,
+        totalOutputTokens: r._sum.outputTokens ?? 0,
+        totalCalls: r._count,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.totalInputTokens +
+        b.totalOutputTokens -
+        (a.totalInputTokens + a.totalOutputTokens),
+    );
+
+  const byModule = byModuleRaw
+    .map((r) => ({
+      module: r.module,
+      totalInputTokens: r._sum.inputTokens ?? 0,
+      totalOutputTokens: r._sum.outputTokens ?? 0,
+      totalCalls: r._count,
+    }))
+    .sort(
+      (a, b) =>
+        b.totalInputTokens +
+        b.totalOutputTokens -
+        (a.totalInputTokens + a.totalOutputTokens),
+    );
+
+  const modelsUsed = distinctModels.filter((d) => d.modelConfigId !== null).length;
 
   return NextResponse.json({
     success: true,
     data: {
-      usage,
+      entries,
+      byModel,
+      byModule,
       summary: {
-        totalInputTokens: summary._sum.inputTokens ?? 0,
-        totalOutputTokens: summary._sum.outputTokens ?? 0,
-        totalCost: summary._sum.costEstimate ?? 0,
-        totalCalls: summary._count,
+        totalInputTokens: summaryRaw._sum.inputTokens ?? 0,
+        totalOutputTokens: summaryRaw._sum.outputTokens ?? 0,
+        totalCalls: summaryRaw._count,
+        modelsUsed,
       },
     },
   });

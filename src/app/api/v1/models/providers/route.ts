@@ -25,7 +25,7 @@ const modelConfigSchema = z.object({
   modelId: z.string().min(1),
   modelName: z.string().min(1),
   capabilities: z.array(z.string()).default([]),
-  contextWindow: z.number().int().min(1).default(4096),
+  contextWindow: z.number().int().min(0).default(0),
   maxOutputTokens: z.number().int().optional(),
   supportsStreaming: z.boolean().default(true),
   inputPrice: z.number().optional(),

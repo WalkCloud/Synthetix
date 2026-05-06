@@ -210,3 +210,31 @@
 .animate-task-pulse {
   animation: pulse-dot 2s infinite;
 }
+
+/* Topology animations */
+@keyframes topo-pulse {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+  50% { box-shadow: 0 4px 20px rgba(67,97,238,0.15); }
+}
+
+@keyframes topo-dash {
+  to { stroke-dashoffset: -200; }
+}
+
+.animate-topo-pulse {
+  animation: topo-pulse 3s ease-in-out infinite;
+}
+
+.animate-topo-dash {
+  animation: topo-dash 20s linear infinite;
+}
+
+@keyframes loading-bar {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(150%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 1.2s ease-in-out infinite;
+}

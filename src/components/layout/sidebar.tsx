@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -119,6 +120,25 @@ const navGroups: readonly NavGroup[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [displayName, setDisplayName] = useState("");
+  const [initials, setInitials] = useState("");
+
+  useEffect(() => {
+    fetch("/api/v1/users/profile")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          const name = data.data.displayName || data.data.username || "";
+          setDisplayName(name);
+          setInitials(
+            name
+              ? name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+              : "U"
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white border-r flex flex-col z-50">
@@ -189,10 +209,10 @@ export function Sidebar() {
       <div className="p-4 border-t">
         <div className="flex items-center gap-3 px-2 py-2.5 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-semibold text-sm shrink-0">
-            KL
+            {initials || "U"}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold truncate">Kevin Lee</div>
+            <div className="text-sm font-semibold truncate">{displayName || "User"}</div>
             <div className="text-xs text-muted-foreground">Admin</div>
           </div>
           <svg

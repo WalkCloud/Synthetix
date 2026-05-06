@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { spawn } from "child_process";
@@ -140,17 +141,26 @@ export async function processDocument(taskId: string): Promise<void> {
 
       const provider = createLLMProvider(embedModel.provider);
       const texts = allChunks.map((c) => c.content);
-      const embeddings = await provider.embed(texts);
+      const embedResult = await provider.embed(texts);
 
       for (let i = 0; i < allChunks.length; i++) {
         await db.documentChunk.update({
           where: { id: allChunks[i].id },
           data: {
-            embedding: float32ToBuffer(new Float32Array(embeddings[i])),
+            embedding: float32ToBuffer(new Float32Array(embedResult.embeddings[i])),
             embedModel: embedModel.modelId,
           },
         });
       }
+
+      await recordTokenUsage({
+        userId,
+        modelConfigId: embedModel.id,
+        module: "embedding",
+        inputTokens: embedResult.inputTokens,
+        outputTokens: 0,
+        referenceId: docId,
+      }).catch(() => {});
     }
 
     await db.document.update({

@@ -13,7 +13,7 @@ interface UserProfile {
 type Tab = "profile" | "auth" | "storage" | "database";
 type AuthMode = "local" | "appwrite";
 type StorageMode = "local" | "s3";
-type DbMode = "sqlite" | "postgresql";
+
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
@@ -21,6 +21,67 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "storage", label: "Storage Settings" },
   { id: "database", label: "Database Settings" },
 ];
+
+interface MigrationEntry {
+  migration_name: string;
+  finished_at: string | null;
+  rolled_back_at: string | null;
+}
+
+function MigrationHistory() {
+  const [migrations, setMigrations] = useState<MigrationEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/v1/system/migrations")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) setMigrations(data.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div className="text-sm text-muted-foreground py-4">Loading migrations...</div>;
+  }
+
+  if (migrations.length === 0) {
+    return <div className="text-sm text-muted-foreground py-4">No migrations found. Run migrations to initialize the database schema.</div>;
+  }
+
+  return (
+    <div className="border rounded-[16px] overflow-hidden">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b bg-[#EEEEE9]">
+            <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Migration</th>
+            <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Status</th>
+            <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Applied</th>
+          </tr>
+        </thead>
+        <tbody>
+          {migrations.map((m) => {
+            const applied = m.finished_at && !m.rolled_back_at;
+            return (
+              <tr key={m.migration_name} className="border-b last:border-0 hover:bg-primary-50">
+                <td className="px-4 py-3 text-[13px] font-mono">{m.migration_name}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${applied ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FFF7ED] text-[#EA580C]"}`}>
+                    {applied ? "Applied" : "Pending"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-[13px] text-muted-foreground">
+                  {m.finished_at ? new Date(m.finished_at).toLocaleString() : "-"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("profile");
@@ -35,7 +96,6 @@ export default function SettingsPage() {
 
   const [authMode, setAuthMode] = useState<AuthMode>("local");
   const [storageMode, setStorageMode] = useState<StorageMode>("local");
-  const [dbMode, setDbMode] = useState<DbMode>("sqlite");
 
   useEffect(() => {
     fetch("/api/v1/users/profile")
@@ -377,7 +437,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Document Root Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/docforge/documents" />
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/synthetix/documents" />
                       <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
@@ -388,7 +448,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Cache Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/docforge/.cache" />
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/synthetix/.cache" />
                       <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
@@ -443,7 +503,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bucket Name</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="docforge-documents" />
+                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="synthetix-documents" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -475,90 +535,31 @@ export default function SettingsPage() {
 
         {/* Database Settings Tab */}
         {tab === "database" && (
-          <div className="space-y-6">
-            {/* DB Connection */}
+          <div className="space-y-5">
+            {/* Current Connection */}
             <div className="bg-white border rounded-[16px]">
               <div className="flex items-center justify-between px-6 py-5 border-b">
                 <div className="flex items-center gap-2.5">
                   <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                  <h3 className="text-base font-semibold">Database Connection</h3>
+                  <h3 className="text-base font-semibold">Current Database</h3>
                 </div>
               </div>
-              <div className="p-6 space-y-5">
-                <div className="grid grid-cols-2 gap-4 mb-5">
-                  <button onClick={() => setDbMode("sqlite")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${dbMode === "sqlite" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${dbMode === "sqlite" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${dbMode === "sqlite" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-xl bg-primary-100 text-primary flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">SQLite Local</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground">Default for local service mode.</div>
-                  </button>
-                  <button onClick={() => setDbMode("postgresql")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${dbMode === "postgresql" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${dbMode === "postgresql" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${dbMode === "postgresql" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">PostgreSQL</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground">Use for Docker, shared server, or cloud deployment.</div>
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Host</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="localhost" />
+              <div className="p-6">
+                <div className="p-4 bg-primary-50 border border-primary/10 rounded-[16px] flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
                   </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Port</label>
-                    <input type="number" className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="5432" />
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">SQLite (Local File)</div>
+                    <div className="text-[13px] text-muted-foreground font-mono mt-0.5">file:./dev.db</div>
+                    <div className="text-[12px] text-muted-foreground mt-1">
+                      Synthetix uses SQLite for local/single-user deployment. To switch to PostgreSQL, update the <code className="bg-base-gray px-1 py-0.5 rounded text-[11px]">DATABASE_URL</code> environment variable and restart the server.
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Database Name</label>
-                  <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="docforge" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="docforge_user" />
-                  </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
-                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="Enter database password" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Connection URL (read-only)</label>
-                  <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm bg-[#EEEEE9] text-muted-foreground font-mono text-[13px]" defaultValue="postgresql://docforge_user:***@localhost:5432/docforge" readOnly />
-                </div>
-                {/* Connection Status */}
-                <div className="p-4 bg-[#EEEEE9] rounded-[16px] flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] text-[#16A34A] rounded-full text-xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
-                    <div>
-                      <div className="text-sm font-semibold">Connected</div>
-                      <div className="text-[13px] text-muted-foreground">PostgreSQL 16.2 on localhost:5432</div>
-                    </div>
+                    Active
                   </div>
-                  <button type="button" className="flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                    Test Connection
-                  </button>
-                </div>
-                <div className="flex gap-3 mt-5">
-                  <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                    Save Database Settings
-                  </button>
-                  <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
                 </div>
               </div>
             </div>
@@ -583,141 +584,7 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <div className="text-sm font-semibold mb-3">Migration History</div>
-                <div className="border rounded-[16px] overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b bg-[#EEEEE9]">
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Migration</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Status</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Applied</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Duration</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        { name: "20260415_001_init_schema", status: "Applied", date: "Apr 15, 2026 10:23", dur: "1.2s" },
-                        { name: "20260420_002_add_document_tags", status: "Applied", date: "Apr 20, 2026 14:05", dur: "0.8s" },
-                        { name: "20260428_003_token_usage_tracking", status: "Applied", date: "Apr 28, 2026 09:17", dur: "0.5s" },
-                        { name: "20260502_004_outline_versioning", status: "Pending", date: "-", dur: "-" },
-                      ].map((m) => (
-                        <tr key={m.name} className="border-b last:border-0 hover:bg-primary-50">
-                          <td className="px-4 py-3 text-[13px] font-mono">{m.name}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${m.status === "Applied" ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FFF7ED] text-[#EA580C]"}`}>{m.status}</span>
-                          </td>
-                          <td className="px-4 py-3 text-[13px] text-muted-foreground">{m.date}</td>
-                          <td className="px-4 py-3 text-[13px] text-muted-foreground">{m.dur}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Database Statistics */}
-            <div className="bg-white border rounded-[16px]">
-              <div className="flex items-center justify-between px-6 py-5 border-b">
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>
-                  <h3 className="text-base font-semibold">Database Statistics</h3>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-4 gap-5 mb-6">
-                  {[
-                    { label: "Total Records", value: "45,892", iconClass: "bg-primary-100 text-primary" },
-                    { label: "Documents", value: "156", iconClass: "bg-[#DCFCE7] text-[#16A34A]" },
-                    { label: "Database Size", value: "1.2 GB", iconClass: "bg-[#FFF7ED] text-[#EA580C]" },
-                    { label: "Uptime", value: "47d 12h", iconClass: "bg-[#EFF6FF] text-[#2563EB]" },
-                  ].map((s) => (
-                    <div key={s.label} className="flex items-start gap-4">
-                      <div className={`w-12 h-12 rounded-[16px] flex items-center justify-center shrink-0 ${s.iconClass}`}>
-                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                      </div>
-                      <div>
-                        <div className="text-[13px] text-muted-foreground mb-0.5">{s.label}</div>
-                        <div className="text-[28px] font-bold font-display leading-tight">{s.value}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="text-sm font-semibold mb-3">Table Sizes</div>
-                {[
-                  { name: "documents", info: "420 MB - 45,892 rows", pct: 35, color: "bg-primary" },
-                  { name: "document_chunks", info: "380 MB - 128,456 rows", pct: 32, color: "bg-[#4361EE]" },
-                  { name: "drafts & sections", info: "210 MB - 12,340 rows", pct: 18, color: "bg-[#16A34A]" },
-                  { name: "token_usage", info: "120 MB - 89,234 rows", pct: 10, color: "bg-[#FF6B3D]" },
-                  { name: "others", info: "70 MB - 1,250 rows", pct: 5, color: "bg-primary-light" },
-                ].map((t) => (
-                  <div key={t.name} className="mb-3">
-                    <div className="flex justify-between text-[13px] mb-1">
-                      <span className="font-medium">{t.name}</span>
-                      <span className="text-muted-foreground">{t.info}</span>
-                    </div>
-                    <div className="h-2 bg-[#F0F0F0] rounded-full overflow-hidden">
-                      <div className={`h-full ${t.color} rounded-full`} style={{ width: `${t.pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Backup & Restore */}
-            <div className="bg-white border rounded-[16px]">
-              <div className="flex items-center justify-between px-6 py-5 border-b">
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  <h3 className="text-base font-semibold">Backup & Restore</h3>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="flex gap-3 mb-5">
-                  <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    Create Backup
-                  </button>
-                  <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                    Restore from File
-                  </button>
-                </div>
-                <div className="text-sm font-semibold mb-3">Recent Backups</div>
-                <div className="border rounded-[16px] overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b bg-[#EEEEE9]">
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Backup</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Size</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Created</th>
-                        <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        { name: "auto_backup_20260502.sql.gz", size: "245 MB", date: "May 2, 2026 03:00" },
-                        { name: "auto_backup_20260501.sql.gz", size: "243 MB", date: "May 1, 2026 03:00" },
-                        { name: "manual_backup_20260428.sql.gz", size: "238 MB", date: "Apr 28, 2026 15:42" },
-                      ].map((b) => (
-                        <tr key={b.name} className="border-b last:border-0 hover:bg-primary-50">
-                          <td className="px-4 py-3 text-[13px] font-medium">{b.name}</td>
-                          <td className="px-4 py-3 text-[13px] text-muted-foreground">{b.size}</td>
-                          <td className="px-4 py-3 text-[13px] text-muted-foreground">{b.date}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-1.5">
-                              <button type="button" className="px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Download</button>
-                              <button type="button" className="px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Restore</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="mt-4 p-3 bg-[#EEEEE9] rounded-xl text-[13px] text-muted-foreground flex items-center gap-2">
-                  <svg className="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-                  Auto-backup runs daily at 03:00. You can change this in the scheduled tasks configuration.
-                </div>
+                <MigrationHistory />
               </div>
             </div>
           </div>

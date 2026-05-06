@@ -2,20 +2,35 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ApiResponse } from "@/types/api";
 
-const OUTLINE_PROMPT = `Based on the conversation above, generate a structured outline for the document.
-Output as JSON:
+const OUTLINE_PROMPT = `根据上面的对话内容，生成一份完整的文档大纲。
 
+要求：
+1. 提取对话中用户确认的文档结构、章节划分和关键要点
+2. 每个章节必须包含具体的 keyPoints（3-5个），不能为空
+3. 根据内容复杂度合理估算每个章节的字数（estimatedWords）
+4. 章节数量 4-10 个，根据内容需要灵活调整
+5. 如果某个章节有子章节，使用 children 数组表示
+
+输出格式为 JSON：
 {
-  "title": "Document Title",
+  "title": "文档标题",
   "sections": [
-    {"num": "1", "title": "Section Name", "keyPoints": ["point1", "point2"], "estimatedWords": 500},
-    ...
+    {
+      "num": "1",
+      "title": "章节名称",
+      "keyPoints": ["要点1", "要点2", "要点3"],
+      "estimatedWords": 800,
+      "children": [
+        {"num": "1.1", "title": "子章节", "keyPoints": [...], "estimatedWords": 400}
+      ]
+    }
   ]
 }
 
-Include 4-8 sections covering all discussed topics. Be comprehensive but focused.`;
+请确保大纲完整覆盖对话中讨论的所有主题，章节顺序逻辑清晰。`;
 
 export async function POST(
   request: Request,
@@ -50,12 +65,16 @@ export async function POST(
   try {
     const provider = createLLMProvider(chatModel.provider);
     const chunks: string[] = [];
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     for await (const chunk of provider.chatStream({
       model: chatModel.modelId,
       messages,
     })) {
       chunks.push(chunk.content || "");
+      if (chunk.inputTokens) inputTokens = chunk.inputTokens;
+      if (chunk.outputTokens) outputTokens = chunk.outputTokens;
     }
 
     const raw = chunks.join("");
@@ -70,6 +89,15 @@ export async function POST(
       where: { id },
       data: { outline: JSON.stringify(outline) },
     });
+
+    await recordTokenUsage({
+      userId: user.id,
+      modelConfigId: chatModel.id,
+      module: "outline",
+      inputTokens,
+      outputTokens,
+      referenceId: id,
+    }).catch(() => {});
 
     await db.message.create({
       data: { sessionId: id, role: "system", content: "Outline generated and ready for review." },
