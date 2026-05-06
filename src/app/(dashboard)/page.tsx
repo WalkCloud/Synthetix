@@ -1,217 +1,126 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-interface HeroStat {
-  value: string;
-  label: string;
+interface DraftSummary {
+  id: string;
+  title: string;
+  status: string;
+  updatedAt: string;
+  progress?: { completed: number; total: number };
 }
 
-interface QuickAction {
-  href: string;
-  label: string;
-  desc: string;
-  iconBg: string;
-  iconColor: string;
-  iconPath: string;
-  polyline?: string;
-  lines?: { x1: string; y1: string; x2: string; y2: string }[];
+interface DocumentSummary {
+  id: string;
+  originalName: string;
+  status: string;
+  createdAt: string;
 }
 
-interface Document {
-  name: string;
-  category: string;
-  time: string;
-  iconBg: string;
-  iconColor: string;
-  tagBg: string;
-  tagColor: string;
-  tagLabel: string;
+interface TaskItem {
+  id: string;
+  type: string;
+  status: string;
+  progress: number;
+  createdAt: string;
+  error: string | null;
 }
 
-interface Task {
-  name: string;
-  desc: string;
-  time: string;
-  status: "active" | "done" | "fail";
-  progress?: number;
-  retryLink?: boolean;
+interface DashboardStats {
+  docCount: number;
+  draftCount: number;
+  totalTokens: number;
+  activeTasks: number;
 }
 
-const heroStats: HeroStat[] = [
-  { value: "156", label: "Documents" },
-  { value: "12", label: "Drafts" },
-  { value: "89", label: "References" },
-  { value: "245K", label: "Tokens" },
-];
+const statusLabels: Record<string, string> = {
+  drafting: "In Progress",
+  assembling: "Assembling",
+  completed: "Completed",
+};
 
-const quickActions: QuickAction[] = [
-  {
-    href: "/documents",
-    label: "Upload Docs",
-    desc: "Import & convert files",
-    iconBg: "bg-primary-100",
-    iconColor: "text-primary",
-    iconPath: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
-    polyline: "17 8 12 3 7 8",
-    lines: [{ x1: "12", y1: "3", x2: "12", y2: "15" }],
-  },
-  {
-    href: "/brainstorm",
-    label: "Brainstorm",
-    desc: "Organize ideas with AI",
-    iconBg: "bg-[#EFF6FF]",
-    iconColor: "text-[#2563EB]",
-    iconPath: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z",
-  },
-  {
-    href: "/writing",
-    label: "New Draft",
-    desc: "Start writing a document",
-    iconBg: "bg-[#DCFCE7]",
-    iconColor: "text-[#16A34A]",
-    iconPath: "",
-    lines: [
-      { x1: "12", y1: "5", x2: "12", y2: "19" },
-      { x1: "5", y1: "12", x2: "19", y2: "12" },
-    ],
-  },
-  {
-    href: "/documents",
-    label: "Browse Library",
-    desc: "Search your knowledge",
-    iconBg: "bg-[#FFF7ED]",
-    iconColor: "text-[#EA580C]",
-    iconPath: "",
-    lines: [],
-  },
-];
+const statusColors: Record<string, string> = {
+  drafting: "bg-[#FFF7ED] text-[#D97706]",
+  assembling: "bg-[#EFF6FF] text-[#2563EB]",
+  completed: "bg-[#DCFCE7] text-[#16A34A]",
+};
 
-const documents: Document[] = [
-  {
-    name: "Quarterly Business Review",
-    category: "Report",
-    time: "2 hours ago",
-    iconBg: "bg-[#FEE2E2]",
-    iconColor: "text-[#DC2626]",
-    tagBg: "bg-[#DCFCE7]",
-    tagColor: "text-[#16A34A]",
-    tagLabel: "Completed",
-  },
-  {
-    name: "API Design Specification",
-    category: "Technical",
-    time: "5 hours ago",
-    iconBg: "bg-[#EFF6FF]",
-    iconColor: "text-[#2563EB]",
-    tagBg: "bg-[#EFF6FF]",
-    tagColor: "text-[#2563EB]",
-    tagLabel: "Writing",
-  },
-  {
-    name: "User Research Findings",
-    category: "Research",
-    time: "Yesterday",
-    iconBg: "bg-[#DCFCE7]",
-    iconColor: "text-[#16A34A]",
-    tagBg: "bg-[#DCFCE7]",
-    tagColor: "text-[#16A34A]",
-    tagLabel: "Completed",
-  },
-  {
-    name: "Marketing Strategy 2026",
-    category: "Strategy",
-    time: "2 days ago",
-    iconBg: "bg-base-gray",
-    iconColor: "text-muted-foreground",
-    tagBg: "bg-[#EEEEE9]",
-    tagColor: "text-[#52525B]",
-    tagLabel: "Draft",
-  },
-  {
-    name: "System Architecture Overview",
-    category: "Technical",
-    time: "3 days ago",
-    iconBg: "bg-[#EFF6FF]",
-    iconColor: "text-[#2563EB]",
-    tagBg: "bg-[#EFF6FF]",
-    tagColor: "text-[#2563EB]",
-    tagLabel: "Writing",
-  },
-];
+const docStatusColors: Record<string, { bg: string; text: string; label: string }> = {
+  uploaded: { bg: "bg-[#FFF7ED]", text: "text-[#EA580C]", label: "Uploaded" },
+  converting: { bg: "bg-[#EFF6FF]", text: "text-[#2563EB]", label: "Converting" },
+  converted: { bg: "bg-[#DCFCE7]", text: "text-[#16A34A]", label: "Converted" },
+  indexed: { bg: "bg-[#DCFCE7]", text: "text-[#16A34A]", label: "Indexed" },
+  failed: { bg: "bg-[#FEE2E2]", text: "text-[#DC2626]", label: "Failed" },
+};
 
-const tasks: Task[] = [
-  {
-    name: "Converting security-audit.pdf",
-    desc: "MarkItDown → Markdown",
-    time: "2m ago",
-    status: "active",
-    progress: 65,
-  },
-  {
-    name: "Generating Chapter 3",
-    desc: "API Design Specification",
-    time: "5m ago",
-    status: "active",
-    progress: 30,
-  },
-  {
-    name: "Indexed research-findings.pdf",
-    desc: "LightRAG vectorization complete",
-    time: "12m ago",
-    status: "done",
-  },
-  {
-    name: "Chapter 5 generation failed",
-    desc: "Token limit exceeded · Retry",
-    time: "18m ago",
-    status: "fail",
-    retryLink: true,
-  },
-];
-
-function DocIcon({ colorClass }: { colorClass: string }) {
-  return (
-    <svg
-      className={`w-[18px] h-[18px] ${colorClass}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  );
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return `${days} days ago`;
 }
 
-function QuickActionIcon({ action }: { action: QuickAction }) {
-  return (
-    <svg
-      className="w-[22px] h-[22px]"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      {action.iconPath && <path d={action.iconPath} />}
-      {action.polyline && <polyline points={action.polyline} />}
-      {action.lines?.map((line, i) => (
-        <line key={i} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
-      ))}
-      {/* Browse Library specific: circle + line for search icon */}
-      {action.label === "Browse Library" && (
-        <>
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </>
-      )}
-    </svg>
-  );
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats>({
+    docCount: 0,
+    draftCount: 0,
+    totalTokens: 0,
+    activeTasks: 0,
+  });
+  const [recentDrafts, setRecentDrafts] = useState<DraftSummary[]>([]);
+  const [recentDocs, setRecentDocs] = useState<DocumentSummary[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [draftsRes, docsRes] = await Promise.all([
+          fetch("/api/v1/drafts?limit=5"),
+          fetch("/api/v1/documents?limit=5"),
+        ]);
+
+        const draftsData = await draftsRes.json();
+        const docsData = await docsRes.json();
+
+        const drafts: DraftSummary[] = draftsData.success ? draftsData.data : [];
+        const docs: DocumentSummary[] = docsData.success ? docsData.data : [];
+
+        setRecentDrafts(drafts.slice(0, 5));
+        setRecentDocs(docs.slice(0, 5));
+        setStats({
+          docCount: docsData.total ?? docs.length,
+          draftCount: draftsData.total ?? drafts.length,
+          totalTokens: 0,
+          activeTasks: 0,
+        });
+      } catch {
+        // swallow — empty state renders
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, []);
+
+  const draftsInProgress = recentDrafts.filter((d) => d.status === "drafting").length;
+
   return (
     <div>
       <Header title="Dashboard" />
@@ -227,11 +136,12 @@ export default function DashboardPage() {
         >
           <div>
             <h3 className="font-display text-[24px] font-bold text-foreground mb-1">
-              Good morning, Kevin 👋
+              Welcome back 👋
             </h3>
             <p className="text-[14px] text-muted-foreground mb-4">
-              You have 2 drafts in progress and 1 document converting.
-              Here&apos;s your workspace overview.
+              {draftsInProgress > 0
+                ? `You have ${draftsInProgress} draft${draftsInProgress > 1 ? "s" : ""} in progress. Here's your workspace overview.`
+                : "Here's your workspace overview."}
             </p>
             <Link
               href="/documents"
@@ -242,45 +152,67 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex gap-6">
-            {heroStats.map((stat) => (
-              <div
-                key={stat.label}
-                className="text-center bg-white/80 backdrop-blur-xl border border-primary/[0.08] rounded-[16px] p-4 px-6 min-w-[90px]"
-              >
-                <div className="font-display text-[24px] font-bold text-primary tracking-[-0.02em]">
-                  {stat.value}
-                </div>
-                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.5px] mt-0.5">
-                  {stat.label}
-                </div>
-              </div>
-            ))}
+            <StatCard value={String(stats.docCount)} label="Documents" />
+            <StatCard value={String(stats.draftCount)} label="Drafts" />
+            <StatCard value={formatTokenCount(stats.totalTokens)} label="Tokens" />
+            <StatCard value={String(stats.activeTasks)} label="Active Tasks" />
           </div>
         </div>
 
         {/* Quick Actions Row */}
         <div className="grid grid-cols-4 gap-[14px] mb-6">
-          {quickActions.map((action, i) => (
-            <Link
-              key={action.label}
-              href={action.href}
-              className={`flex items-center gap-[14px] p-[18px_20px] bg-base-white border border-[#F0F0F0] rounded-[16px] hover:border-primary/25 hover:shadow-md hover:-translate-y-[2px] transition-all duration-200 no-underline animate-fade-in-up-${i + 2}`}
-            >
-              <div
-                className={`w-11 h-11 rounded-[16px] flex items-center justify-center flex-shrink-0 ${action.iconBg} ${action.iconColor}`}
-              >
-                <QuickActionIcon action={action} />
-              </div>
-              <div>
-                <h4 className="text-[14px] font-semibold text-foreground mb-0.5">
-                  {action.label}
-                </h4>
-                <span className="text-[12px] text-muted-foreground">
-                  {action.desc}
-                </span>
-              </div>
-            </Link>
-          ))}
+          <QuickAction
+            href="/documents"
+            label="Upload Docs"
+            desc="Import & convert files"
+            iconBg="bg-primary-100"
+            iconColor="text-primary"
+            animationClass="animate-fade-in-up-2"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[22px] h-[22px]">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </QuickAction>
+          <QuickAction
+            href="/brainstorm"
+            label="Brainstorm"
+            desc="Organize ideas with AI"
+            iconBg="bg-[#EFF6FF]"
+            iconColor="text-[#2563EB]"
+            animationClass="animate-fade-in-up-3"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[22px] h-[22px]">
+              <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+            </svg>
+          </QuickAction>
+          <QuickAction
+            href="/writing"
+            label="New Draft"
+            desc="Start writing a document"
+            iconBg="bg-[#DCFCE7]"
+            iconColor="text-[#16A34A]"
+            animationClass="animate-fade-in-up-4"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[22px] h-[22px]">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </QuickAction>
+          <QuickAction
+            href="/library"
+            label="Browse Library"
+            desc="Search your knowledge"
+            iconBg="bg-[#FFF7ED]"
+            iconColor="text-[#EA580C]"
+            animationClass="animate-fade-in-up-5"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[22px] h-[22px]">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </QuickAction>
         </div>
 
         {/* Two-Column: Recent Docs + Active Tasks */}
@@ -292,113 +224,166 @@ export default function DashboardPage() {
                 Recent Documents
               </h3>
               <Link
-                href="/documents"
+                href="/library"
                 className="text-[13px] text-primary font-medium no-underline"
               >
                 View all →
               </Link>
             </div>
             <div className="bg-base-white border border-[#F0F0F0] rounded-[16px] overflow-hidden">
-              {documents.map((doc, i) => (
-                <div
-                  key={doc.name}
-                  className={`flex items-center gap-3 px-4 py-3 hover:bg-base-gray transition-colors duration-150 ${
-                    i < documents.length - 1
-                      ? "border-b border-[#F0F0F0]"
-                      : ""
-                  }`}
-                >
-                  <div
-                    className={`w-9 h-9 rounded-[12px] flex items-center justify-center flex-shrink-0 ${doc.iconBg} ${doc.iconColor}`}
-                  >
-                    <DocIcon colorClass="" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-semibold text-foreground truncate">
-                      {doc.name}
-                    </div>
-                    <div className="flex gap-2 text-[12px] text-muted-foreground mt-0.5">
-                      <span>{doc.category}</span>
-                      <span>·</span>
-                      <span>{doc.time}</span>
-                    </div>
-                  </div>
-                  <span
-                    className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${doc.tagBg} ${doc.tagColor}`}
-                  >
-                    {doc.tagLabel}
-                  </span>
+              {loading ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+              ) : recentDocs.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  No documents yet. Upload your first document to get started.
                 </div>
-              ))}
+              ) : (
+                recentDocs.map((doc, i) => {
+                  const sc = docStatusColors[doc.status] ?? docStatusColors.uploaded;
+                  return (
+                    <div
+                      key={doc.id}
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-base-gray transition-colors duration-150 cursor-pointer ${
+                        i < recentDocs.length - 1 ? "border-b border-[#F0F0F0]" : ""
+                      }`}
+                      onClick={() => router.push(`/library/${doc.id}`)}
+                    >
+                      <div className="w-9 h-9 rounded-[12px] flex items-center justify-center flex-shrink-0 bg-[#EFF6FF] text-[#2563EB]">
+                        <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14px] font-semibold text-foreground truncate">
+                          {doc.originalName}
+                        </div>
+                        <div className="text-[12px] text-muted-foreground mt-0.5">
+                          {formatTimeAgo(doc.createdAt)}
+                        </div>
+                      </div>
+                      <span className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${sc.bg} ${sc.text}`}>
+                        {sc.label}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          {/* Active Tasks */}
+          {/* Recent Drafts */}
           <div>
             <div className="flex items-center justify-between mb-[14px]">
               <h3 className="font-display text-[16px] font-semibold text-foreground tracking-[-0.02em]">
-                Active Tasks
+                Recent Drafts
               </h3>
-              <span className="text-[12px] text-muted-foreground">
-                3 tasks
-              </span>
+              <Link href="/writing" className="text-[13px] text-primary font-medium no-underline">
+                View all →
+              </Link>
             </div>
             <div className="bg-base-white border border-[#F0F0F0] rounded-[16px] overflow-hidden">
-              {tasks.map((task, i) => (
-                <div
-                  key={task.name}
-                  className={`flex items-center gap-3 p-[14px_16px] ${
-                    i < tasks.length - 1
-                      ? "border-b border-[#F0F0F0]"
-                      : ""
-                  }`}
-                >
-                  <div
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      task.status === "active"
-                        ? "bg-primary animate-task-pulse"
-                        : task.status === "done"
-                        ? "bg-[#16A34A]"
-                        : "bg-[#DC2626]"
-                    }`}
-                  />
-                  <div className="flex-1">
-                    <div className="text-[13px] font-medium text-foreground">
-                      {task.name}
-                    </div>
-                    <div className="text-[12px] text-muted-foreground mt-px">
-                      {task.retryLink ? (
-                        <>
-                          Token limit exceeded ·{" "}
-                          <Link
-                            href="#"
-                            className="text-primary font-medium no-underline"
-                          >
-                            Retry
-                          </Link>
-                        </>
-                      ) : (
-                        task.desc
-                      )}
-                    </div>
-                    {task.progress != null && (
-                      <div className="w-full h-1 bg-base-gray rounded mt-1.5 overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded transition-[width] duration-300"
-                          style={{ width: `${task.progress}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground flex-shrink-0">
-                    {task.time}
-                  </div>
+              {loading ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+              ) : recentDrafts.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  No drafts yet. Start by brainstorming an outline.
                 </div>
-              ))}
+              ) : (
+                recentDrafts.map((draft, i) => {
+                  const progress = draft.progress ?? { completed: 0, total: 0 };
+                  return (
+                    <div
+                      key={draft.id}
+                      className={`flex items-center gap-3 p-[14px_16px] cursor-pointer hover:bg-base-gray transition-colors duration-150 ${
+                        i < recentDrafts.length - 1 ? "border-b border-[#F0F0F0]" : ""
+                      }`}
+                      onClick={() => router.push(`/writing/${draft.id}`)}
+                    >
+                      <div
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          draft.status === "drafting"
+                            ? "bg-primary animate-task-pulse"
+                            : draft.status === "completed"
+                              ? "bg-[#16A34A]"
+                              : "bg-[#2563EB]"
+                        }`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium text-foreground truncate">
+                          {draft.title}
+                        </div>
+                        <div className="text-[12px] text-muted-foreground mt-px">
+                          {progress.completed}/{progress.total} sections · {formatTimeAgo(draft.updatedAt)}
+                        </div>
+                        {draft.status === "drafting" && progress.total > 0 && (
+                          <div className="w-full h-1 bg-base-gray rounded mt-1.5 overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded transition-[width] duration-300"
+                              style={{ width: `${(progress.completed / progress.total) * 100}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${statusColors[draft.status] ?? ""}`}
+                      >
+                        {statusLabels[draft.status] ?? draft.status}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function StatCard({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="text-center bg-white/80 backdrop-blur-xl border border-primary/[0.08] rounded-[16px] p-4 px-6 min-w-[90px]">
+      <div className="font-display text-[24px] font-bold text-primary tracking-[-0.02em]">
+        {value}
+      </div>
+      <div className="text-[11px] text-muted-foreground uppercase tracking-[0.5px] mt-0.5">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function QuickAction({
+  href,
+  label,
+  desc,
+  iconBg,
+  iconColor,
+  animationClass,
+  children,
+}: {
+  href: string;
+  label: string;
+  desc: string;
+  iconBg: string;
+  iconColor: string;
+  animationClass: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-[14px] p-[18px_20px] bg-base-white border border-[#F0F0F0] rounded-[16px] hover:border-primary/25 hover:shadow-md hover:-translate-y-[2px] transition-all duration-200 no-underline ${animationClass}`}
+    >
+      <div className={`w-11 h-11 rounded-[16px] flex items-center justify-center flex-shrink-0 ${iconBg} ${iconColor}`}>
+        {children}
+      </div>
+      <div>
+        <h4 className="text-[14px] font-semibold text-foreground mb-0.5">{label}</h4>
+        <span className="text-[12px] text-muted-foreground">{desc}</span>
+      </div>
+    </Link>
   );
 }

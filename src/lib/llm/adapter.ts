@@ -2,6 +2,7 @@ import type {
   ChatChunk,
   ChatParams,
   ChatResponse,
+  EmbedResponse,
   LLMProvider,
   ModelInfo,
 } from "./types";
@@ -30,8 +31,12 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     this.apiKey = config.apiKey;
   }
 
+  private get baseApiUrl(): string {
+    return this.baseUrl.replace(/\/v1\/(chat\/completions|embeddings?)$/, "").replace(/\/v1$/, "");
+  }
+
   async chat(params: ChatParams): Promise<ChatResponse> {
-    const url = `${this.baseUrl}/v1/chat/completions`;
+    const url = `${this.baseApiUrl}/v1/chat/completions`;
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages,
@@ -72,7 +77,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<ChatChunk> {
-    const url = `${this.baseUrl}/v1/chat/completions`;
+    const url = `${this.baseApiUrl}/v1/chat/completions`;
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages,
@@ -135,10 +140,16 @@ export class OpenAICompatibleAdapter implements LLMProvider {
                 delta: { content?: string };
                 finish_reason: string | null;
               }>;
+              usage?: { prompt_tokens?: number; completion_tokens?: number };
             };
             const content = parsed.choices[0]?.delta?.content ?? "";
             const isDone = parsed.choices[0]?.finish_reason != null;
-            yield { content, done: isDone };
+            const chunk: ChatChunk = { content, done: isDone };
+            if (parsed.usage) {
+              chunk.inputTokens = parsed.usage.prompt_tokens;
+              chunk.outputTokens = parsed.usage.completion_tokens;
+            }
+            yield chunk;
           } catch {
             // Skip malformed JSON lines
           }
@@ -151,8 +162,8 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     yield { content: "", done: true };
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
-    const url = `${this.baseUrl}/v1/embeddings`;
+  async embed(texts: string[]): Promise<EmbedResponse> {
+    const url = `${this.baseApiUrl}/v1/embeddings`;
     const response = await fetch(url, {
       method: "POST",
       headers: buildHeaders(this.apiKey),
@@ -168,26 +179,36 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
     const data = (await response.json()) as {
       data: Array<{ embedding: number[] }>;
+      usage?: { prompt_tokens?: number };
     };
 
-    return data.data.map((item) => item.embedding);
+    return {
+      embeddings: data.data.map((item) => item.embedding),
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+    };
   }
 
   async testConnection(): Promise<boolean> {
-    try {
-      const url = `${this.baseUrl}/v1/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: buildHeaders(this.apiKey),
-      });
-      return response.ok;
-    } catch {
-      return false;
+    const headers = buildHeaders(this.apiKey);
+    for (const path of ["/v1/models", "/models"]) {
+      try {
+        const response = await fetch(`${this.baseApiUrl}${path}`, { method: "GET", headers });
+        if (response.ok) return true;
+      } catch { /* continue */ }
     }
+    try {
+      const response = await fetch(`${this.baseApiUrl}/v1/embeddings`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ input: "test", model: "test" }),
+      });
+      if (response.ok || response.status === 400 || response.status === 404) return true;
+    } catch { /* ignore */ }
+    return false;
   }
 
   async getModels(): Promise<ModelInfo[]> {
-    const url = `${this.baseUrl}/v1/models`;
+    const url = `${this.baseApiUrl}/v1/models`;
     const response = await fetch(url, {
       method: "GET",
       headers: buildHeaders(this.apiKey),

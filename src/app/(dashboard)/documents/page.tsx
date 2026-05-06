@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 
 interface UploadItem {
@@ -11,6 +11,12 @@ interface UploadItem {
   progress: number;
   docId?: string;
   error?: string;
+}
+
+interface ModelOption {
+  id: string;
+  modelName: string;
+  providerName: string;
 }
 
 function formatSize(bytes: number): string {
@@ -38,13 +44,42 @@ function getFileIconClass(ext: string): string {
 
 export default function DocumentsPage() {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
-  const [llmModel, setLlmModel] = useState("Qwen2.5 7B");
-  const [embedModel, setEmbedModel] = useState("Ollama (nomic-embed-text)");
+  const [llmModels, setLlmModels] = useState<ModelOption[]>([]);
+  const [embedModels, setEmbedModels] = useState<ModelOption[]>([]);
+  const [llmModel, setLlmModel] = useState("");
+  const [embedModel, setEmbedModel] = useState("");
   const [contextUsage, setContextUsage] = useState(45);
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
   const [autoSplit, setAutoSplit] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/models/providers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.success) return;
+        const llm: ModelOption[] = [];
+        const embed: ModelOption[] = [];
+        for (const p of data.data) {
+          for (const m of p.models) {
+            let caps: string[] = [];
+            try { caps = JSON.parse(m.capabilities ?? "[]"); } catch { /* empty */ }
+            const entry = { id: m.id, modelName: m.modelName, providerName: p.name };
+            if (caps.some((c: string) => c === "embedding" || c === "embed")) {
+              embed.push(entry);
+            } else {
+              llm.push(entry);
+            }
+          }
+        }
+        setLlmModels(llm);
+        setEmbedModels(embed);
+        if (llm.length > 0) setLlmModel(llm[0].id);
+        if (embed.length > 0) setEmbedModel(embed[0].id);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const arr = Array.from(files);
@@ -165,13 +200,21 @@ export default function DocumentsPage() {
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">LLM Model</label>
                 <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-                  <option>Qwen2.5 7B</option><option>GPT-4o</option><option>Claude Sonnet</option><option>Llama 3.1 8B</option><option>Mistral 7B</option>
+                  {llmModels.length === 0 ? (
+                    <option value="">No models configured — add in Model Management</option>
+                  ) : (
+                    llmModels.map((m) => <option key={m.id} value={m.id}>{m.modelName} ({m.providerName})</option>)
+                  )}
                 </select>
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Embedding Model</label>
                 <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={embedModel} onChange={(e) => setEmbedModel(e.target.value)}>
-                  <option>Ollama (nomic-embed-text)</option><option>OpenAI (text-embedding-3-small)</option>
+                  {embedModels.length === 0 ? (
+                    <option value="">No embedding models configured</option>
+                  ) : (
+                    embedModels.map((m) => <option key={m.id} value={m.id}>{m.modelName} ({m.providerName})</option>)
+                  )}
                 </select>
               </div>
               <div className="col-span-2">

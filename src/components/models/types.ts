@@ -27,13 +27,37 @@ export interface UsageEntry {
   module: string;
   inputTokens: number;
   outputTokens: number;
-  costEstimate: number | null;
   createdAt: string;
+  modelName: string | null;
+  providerName: string | null;
+}
+
+export interface ModelUsageAggregate {
+  modelConfigId: string;
+  modelName: string;
+  providerName: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCalls: number;
+}
+
+export interface ModuleUsageAggregate {
+  module: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCalls: number;
 }
 
 export interface UsageSummary {
   totalInputTokens: number;
   totalOutputTokens: number;
-  totalCost: number;
   totalCalls: number;
+  modelsUsed: number;
+}
+
+export interface UsageData {
+  entries: UsageEntry[];
+  byModel: ModelUsageAggregate[];
+  byModule: ModuleUsageAggregate[];
+  summary: UsageSummary;
 }

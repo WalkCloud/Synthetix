@@ -14,6 +14,8 @@ export interface ChatParams {
 export interface ChatChunk {
   content: string;
   done: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface ChatResponse {
@@ -21,6 +23,11 @@ export interface ChatResponse {
   inputTokens: number;
   outputTokens: number;
   model: string;
+}
+
+export interface EmbedResponse {
+  embeddings: number[][];
+  inputTokens: number;
 }
 
 export interface ModelInfo {
@@ -32,7 +39,7 @@ export interface ModelInfo {
 export interface LLMProvider {
   chat(params: ChatParams): Promise<ChatResponse>;
   chatStream(params: ChatParams): AsyncGenerator<ChatChunk>;
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[]): Promise<EmbedResponse>;
   testConnection(): Promise<boolean>;
   getModels(): Promise<ModelInfo[]>;
 }

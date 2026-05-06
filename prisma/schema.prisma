@@ -24,6 +24,7 @@ model User {
   tokenUsage TokenUsage[]
   documents  Document[]
   sessions   BrainstormSession[]
+  drafts     Draft[]
 
   @@map("users")
 }
@@ -193,4 +194,88 @@ model Message {
   session BrainstormSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("messages")
+}
+
+model Draft {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  title       String
+  description String?
+  outline     String   // JSON outline structure
+  status      String   @default("drafting") // drafting | assembling | completed
+  sessionId   String?  @map("session_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sections Section[]
+
+  @@index([userId, status])
+  @@map("drafts")
+}
+
+model Section {
+  id              String   @id @default(uuid())
+  draftId         String   @map("draft_id")
+  parentId        String?  @map("parent_id")
+  index           Int
+  title           String
+  description     String?
+  keyPoints       String?  @map("key_points")
+  estimatedWords  Int?     @map("estimated_words")
+  status          String   @default("pending")
+  content         String?
+  summary         String?
+  wordCount       Int?     @map("word_count")
+  constraints     String?
+  contentA        String?  @map("content_a")
+  contentB        String?  @map("content_b")
+  modelA          String?  @map("model_a")
+  modelB          String?  @map("model_b")
+  selectedModel   String?  @map("selected_model")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  draft    Draft     @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  parent   Section?  @relation("SectionTree", fields: [parentId], references: [id])
+  children Section[] @relation("SectionTree")
+  versions SectionVersion[]
+  references SectionReference[]
+
+  @@index([draftId, index])
+  @@map("sections")
+}
+
+model SectionVersion {
+  id        String   @id @default(uuid())
+  sectionId String   @map("section_id")
+  version   Int
+  content   String
+  source    String   // "generated_a" | "generated_b" | "edited" | "merged"
+  modelId   String?  @map("model_id")
+  wordCount Int?     @map("word_count")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, version])
+  @@map("section_versions")
+}
+
+model SectionReference {
+  id              String   @id @default(uuid())
+  sectionId       String   @map("section_id")
+  documentId      String?  @map("document_id")
+  chunkId         String?  @map("chunk_id")
+  documentName    String   @map("document_name")
+  relevanceScore  Float    @map("relevance_score")
+  sourceAnchor    String?  @map("source_anchor")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+  @@index([documentId])
+  @@index([sectionId, documentId])
+  @@map("section_references")
 }
