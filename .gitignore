@@ -50,3 +50,8 @@ prisma/*.db-journal
 .worktrees/
 
 /src/generated/prisma
+
+# local dev artifacts
+dev.db
+qa-screenshots/
+scratch.js

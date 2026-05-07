@@ -6,57 +6,70 @@
   <title>Mind Organization - Synthetix</title>
   <link rel="stylesheet" href="shared-styles.css">
   <style>
-    .bs-layout{display:grid;grid-template-columns:220px 1fr 320px;gap:0;height:calc(100vh - var(--header-height) - 64px)}
-    .history-panel{background:#FFFFFF;border-right:1px solid #E4E4E7;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-lg) 0 0 var(--radius-lg)}
-    .history-header{padding:16px;border-bottom:1px solid #E4E4E7;display:flex;align-items:center;justify-content:space-between}
-    .history-header h4{font-size:13px;font-weight:600;color:#18181B}
-    .history-list{flex:1;overflow-y:auto;padding:8px}
-    .history-item{padding:10px 12px;border-radius:var(--radius-md);cursor:pointer;margin-bottom:2px;transition:background .15s}
-    .history-item:hover{background:#F5F6FE}
-    .history-item.active{background:#F5F6FE;border-left:3px solid #4361EE}
-    .history-item-title{font-size:13px;font-weight:600;color:#18181B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .history-item-meta{font-size:11px;color:#A1A1AA;margin-top:2px}
-    .conv-panel{display:flex;flex-direction:column;overflow:hidden;border-left:none;border-right:none}
-    .conv-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #E4E4E7;background:#FFFFFF}
-    .conv-header-left{display:flex;align-items:center;gap:10px}
-    .conv-header-left svg{width:20px;height:20px;color:#4361EE}
-    .conv-header h3{font-size:15px;font-weight:600;color:#18181B}
-    .conv-status{display:flex;align-items:center;gap:6px;font-size:12px;color:#16A34A;font-weight:500}
-    .conv-status-dot{width:7px;height:7px;border-radius:50%;background:#16A34A;animation:pulse 2s infinite}
+    .bs-layout{display:grid;grid-template-columns:minmax(240px, 20%) minmax(400px, 1fr) minmax(280px, 28%);gap:0;height:calc(100vh - var(--header-height) - 64px);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;background:var(--color-bg-white)}
+    .history-panel{background:var(--color-bg-white);border-right:1px solid var(--color-border);display:flex;flex-direction:column;overflow:hidden}
+    .history-header{padding:20px 24px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;justify-content:space-between;background:var(--color-bg-white)}
+    .history-header h4{font-size:16px;font-weight:700;color:var(--color-text);font-family:'Urbanist',sans-serif}
+    .history-list{flex:1;overflow-y:auto;padding:24px;background:#FAFAFA;display:flex;flex-direction:column;gap:12px}
+    .history-item{padding:16px;border-radius:var(--radius-md);cursor:pointer;transition:all var(--transition-fast);border:1px solid var(--color-border);background:var(--color-bg-white);box-shadow:var(--shadow-sm)}
+    .history-item:hover{border-color:var(--color-primary);box-shadow:var(--shadow-md);transform:translateY(-1px)}
+    .history-item.active{background:var(--color-primary-50);border-color:var(--color-primary);box-shadow:var(--shadow-md)}
+    .history-item-title{font-size:15px;font-weight:600;color:var(--color-text);margin-bottom:6px;font-family:'Urbanist',sans-serif;display:flex;justify-content:space-between;align-items:flex-start}
+    .history-item-desc{font-size:13px;color:var(--color-text-secondary);line-height:1.5;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .history-item-meta{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--color-text-muted)}
+    
+    .conv-panel{display:flex;flex-direction:column;overflow:hidden;background:var(--color-bg-white)}
+    .conv-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--color-border);background:var(--color-bg-white)}
+    .conv-header-left{display:flex;align-items:center;gap:12px}
+    .conv-header-left svg{width:20px;height:20px;color:var(--color-primary)}
+    .conv-header h3{font-size:16px;font-weight:700;color:var(--color-text);font-family:'Urbanist',sans-serif}
+    .conv-status{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-success);font-weight:600}
+    .conv-status-dot{width:8px;height:8px;border-radius:50%;background:var(--color-success);animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    .messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;background:#F5F5F3}
+    
+    .messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:24px;background:#FAFAFA}
     .msg{display:flex;max-width:85%}
     .msg-sys{align-self:center;max-width:90%}
-    .msg-user{align-self:flex-end}
+    .msg-user{align-self:flex-end;flex-direction:row-reverse}
     .msg-ai{align-self:flex-start}
-    .msg-avatar{width:30px;height:30px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:10px;background:#EEF0FD;color:#4361EE}
-    .msg-avatar svg{width:16px;height:16px}
-    .msg-body{border-radius:var(--radius-lg);padding:12px 16px;font-size:14px;line-height:1.65}
-    .msg-sys .msg-body{background:#FFFFFF;border:1px solid #E4E4E7;color:#A1A1AA;font-size:12px;text-align:center;border-radius:var(--radius-full);padding:6px 18px}
-    .msg-user .msg-body{background:#EEF0FD;color:#18181B;border:1px solid #DDE2FC;border-bottom-right-radius:4px}
-    .msg-ai .msg-body{background:#FFFFFF;border:1px solid #E4E4E7;color:#18181B;border-bottom-left-radius:4px}
-    .msg-time{font-size:11px;color:#A1A1AA;margin-top:4px}
+    
+    .msg-avatar{width:36px;height:36px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 12px;font-weight:600;font-size:14px}
+    .msg-ai .msg-avatar{background:var(--color-primary-100);color:var(--color-primary)}
+    .msg-user .msg-avatar{background:var(--color-bg-gray);color:var(--color-text-secondary)}
+    .msg-ai .msg-avatar svg{width:20px;height:20px}
+    
+    .msg-body{border-radius:var(--radius-lg);padding:14px 18px;font-size:14px;line-height:1.6}
+    .msg-sys .msg-body{background:var(--color-bg-gray);border:1px solid var(--color-border-light);color:var(--color-text-muted);font-size:12px;text-align:center;border-radius:var(--radius-full);padding:6px 16px}
+    .msg-user .msg-body{background:var(--color-primary);color:white;border-top-right-radius:4px;box-shadow:var(--shadow-sm)}
+    .msg-ai .msg-body{background:var(--color-bg-white);border:1px solid var(--color-border);color:var(--color-text);border-top-left-radius:4px;box-shadow:var(--shadow-sm)}
+    
+    .msg-time{font-size:11px;color:var(--color-text-muted);margin-top:6px}
     .msg-user .msg-time{text-align:right}
-    .input-area{padding:14px 20px;border-top:1px solid #E4E4E7;background:#FFFFFF}
-    .input-row{display:flex;align-items:flex-end;gap:8px}
-    .input-row textarea{flex:1;padding:10px 14px;border:1px solid #E4E4E7;border-radius:var(--radius-lg);font-size:14px;font-family:inherit;resize:none;min-height:42px;max-height:100px;background:#FFFFFF;color:#18181B;transition:all .2s}
-    .input-row textarea:focus{outline:none;border-color:#4361EE;box-shadow:0 0 0 3px rgba(67,97,238,0.12);background:#FFFFFF}
-    .input-row textarea::placeholder{color:#A1A1AA}
-    .right-panel{background:#FFFFFF;border-left:1px solid #E4E4E7;display:flex;flex-direction:column;overflow-y:auto;border-radius:0 var(--radius-lg) var(--radius-lg) 0}
-    .rp-section{padding:16px;border-bottom:1px solid #E4E4E7}
-    .rp-section:last-child{border-bottom:none;flex:1}
-    .rp-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#A1A1AA;margin-bottom:12px;display:flex;align-items:center;gap:6px}
-    .rp-title svg{width:14px;height:14px}
-    .outline-tree{list-style:none;padding:0}
-    .ol-sec{margin-bottom:2px}
-    .ol-sec-head{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:var(--radius-md);cursor:pointer;transition:background .15s;font-size:12px}
-    .ol-sec-head:hover{background:#F5F6FE}
-    .ol-num{font-weight:700;color:#4361EE;min-width:20px}
-    .ol-name{font-weight:600;color:#18181B;flex:1}
-    .ol-wc{font-size:11px;color:#A1A1AA}
-    .ol-chk{width:14px;height:14px;color:#16A34A}
-    .outline-footer{padding:12px 16px;border-top:1px solid #E4E4E7;display:flex;gap:6px}
-    .outline-footer .btn{flex:1;justify-content:center;font-size:12px}
+    
+    .input-area{padding:16px 24px;border-top:1px solid var(--color-border);background:var(--color-bg-white)}
+    .input-wrapper{display:flex;align-items:flex-end;gap:12px;background:var(--color-bg-gray);padding:8px 12px;border-radius:var(--radius-lg);border:1px solid var(--color-border-light);transition:all var(--transition-fast)}
+    .input-wrapper:focus-within{background:var(--color-bg-white);border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(67,97,238,0.12)}
+    .input-wrapper textarea{flex:1;padding:8px 4px;border:none;background:transparent;font-size:14px;font-family:inherit;resize:none;min-height:40px;max-height:120px;color:var(--color-text)}
+    .input-wrapper textarea:focus{outline:none}
+    .input-wrapper textarea::placeholder{color:var(--color-text-muted)}
+    
+    .right-panel{background:var(--color-bg-white);border-left:1px solid var(--color-border);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+    .rp-section{padding:24px;border-bottom:1px solid var(--color-border)}
+    .rp-section:last-child{border-bottom:none;flex:1;background:#FAFAFA}
+    .rp-title{font-size:16px;font-weight:700;color:var(--color-text);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;font-family:'Urbanist',sans-serif}
+    .rp-title span{display:flex;align-items:center;gap:8px}
+    .rp-title svg{width:18px;height:18px}
+    
+    .outline-tree{list-style:none;padding:0;display:flex;flex-direction:column;gap:12px}
+    .ol-sec{background:var(--color-bg-white);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px 16px;box-shadow:var(--shadow-sm);display:flex;align-items:center;gap:12px;transition:all var(--transition-fast);cursor:pointer}
+    .ol-sec:hover{border-color:var(--color-primary-light);box-shadow:var(--shadow-md);transform:translateY(-1px)}
+    .ol-num{font-weight:700;color:var(--color-primary);min-width:20px;font-size:14px}
+    .ol-name{font-weight:600;color:var(--color-text);flex:1;font-size:14px;white-space:normal;word-break:break-word;line-height:1.4}
+    .ol-wc{font-size:12px;color:var(--color-text-muted);font-weight:600;white-space:nowrap}
+    .ol-chk{width:16px;height:16px;color:var(--color-success);flex-shrink:0}
+    
+    .outline-footer{padding:16px 24px;border-top:1px solid var(--color-border);display:flex;gap:12px;background:var(--color-bg-white)}
+    .outline-footer .btn{flex:1;justify-content:center}
     @media(max-width:1200px){.bs-layout{grid-template-columns:1fr;height:auto}.history-panel,.right-panel{display:none}}
   </style>
 </head>
@@ -96,16 +109,50 @@
       </div>
     </header>
 
-    <div class="main-body">
+    <div class="main-body" style="padding: 24px 32px;">
       <div class="bs-layout">
         <!-- Session History -->
         <div class="history-panel">
-          <div class="history-header"><h4>Sessions</h4><button class="btn btn-ghost btn-sm" style="cursor:pointer;padding:4px" title="New Session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button></div>
+          <div class="history-header">
+            <h4>Sessions</h4>
+            <button class="btn btn-primary btn-sm" style="cursor:pointer;padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New
+            </button>
+          </div>
           <div class="history-list">
-            <div class="history-item active"><div class="history-item-title">Microservices Architecture</div><div class="history-item-meta">4 messages · Today</div></div>
-            <div class="history-item"><div class="history-item-title">Q3 Marketing Plan</div><div class="history-item-meta">8 messages · Yesterday</div></div>
-            <div class="history-item"><div class="history-item-title">Database Migration Guide</div><div class="history-item-meta">6 messages · May 1</div></div>
-            <div class="history-item"><div class="history-item-title">API Security Overview</div><div class="history-item-meta">12 messages · Apr 28</div></div>
+            <div class="history-item active">
+              <div class="history-item-title"><span>Microservices Architecture</span><span class="badge-dot badge-dot-green"></span></div>
+              <div class="history-item-desc">Designing a scalable microservices architecture targeting AWS EKS, focusing on data consistency.</div>
+              <div class="history-item-meta">
+                <div class="flex gap-1"><span class="tag tag-purple">2 Docs</span><span class="tag tag-gray">Drafting</span></div>
+                <span>Today</span>
+              </div>
+            </div>
+            <div class="history-item">
+              <div class="history-item-title"><span>Q3 Marketing Plan</span></div>
+              <div class="history-item-desc">Brainstorming campaigns for the Q3 product launch, focusing on developer outreach.</div>
+              <div class="history-item-meta">
+                <div class="flex gap-1"><span class="tag tag-gray">4 Docs</span></div>
+                <span>Yesterday</span>
+              </div>
+            </div>
+            <div class="history-item">
+              <div class="history-item-title"><span>Database Migration Guide</span></div>
+              <div class="history-item-desc">Step-by-step documentation for migrating from PostgreSQL to DynamoDB.</div>
+              <div class="history-item-meta">
+                <div class="flex gap-1"><span class="tag tag-gray">1 Doc</span></div>
+                <span>May 1</span>
+              </div>
+            </div>
+            <div class="history-item">
+              <div class="history-item-title"><span>API Security Overview</span></div>
+              <div class="history-item-desc">Outline security protocols, OAuth2 flows, and rate limiting rules.</div>
+              <div class="history-item-meta">
+                <div class="flex gap-1"><span class="tag tag-gray">0 Docs</span></div>
+                <span>Apr 28</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -117,16 +164,33 @@
           </div>
           <div class="messages">
             <div class="msg msg-sys"><div class="msg-body">New brainstorming session started · Socratic Skill active</div></div>
-            <div class="msg msg-user"><div><div class="msg-body">I want to write a technical architecture document for our new microservices system. It needs to cover service design, data flow, deployment strategy, and monitoring.</div><div class="msg-time">2:34 PM</div></div></div>
-            <div class="msg msg-ai"><div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div><div><div class="msg-body">That's a solid foundation! Let me ask a few clarifying questions:<br><br>1) What's the scale — how many microservices are you planning?<br>2) Are you targeting cloud-native (Kubernetes) or hybrid?<br>3) Who is the primary audience — developers, architects, or management?</div><div class="msg-time">2:34 PM</div></div></div>
-            <div class="msg msg-user"><div><div class="msg-body">About 15-20 services, full Kubernetes on AWS, primarily for the architecture review board.</div><div class="msg-time">2:36 PM</div></div></div>
-            <div class="msg msg-ai"><div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div><div><div class="msg-body">Great context. I've generated a preliminary outline on the right panel. A few deeper questions:<br><br>• How do your services handle <strong>cross-cutting concerns</strong> like auth and rate limiting — centralized gateway or per-service?<br>• For <strong>data consistency</strong>, are you using saga patterns or eventual consistency?<br>• What's your <strong>CI/CD maturity</strong> — GitOps, manual pipelines, or something else?</div><div class="msg-time">2:37 PM</div></div></div>
+            <div class="msg msg-user">
+              <div class="msg-avatar">KL</div>
+              <div><div class="msg-body">I want to write a technical architecture document for our new microservices system. It needs to cover service design, data flow, deployment strategy, and monitoring.</div><div class="msg-time">2:34 PM</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div>
+              <div><div class="msg-body">That's a solid foundation! Let me ask a few clarifying questions:<br><br>1) What's the scale — how many microservices are you planning?<br>2) Are you targeting cloud-native (Kubernetes) or hybrid?<br>3) Who is the primary audience — developers, architects, or management?</div><div class="msg-time">2:34 PM</div></div>
+            </div>
+            <div class="msg msg-user">
+              <div class="msg-avatar">KL</div>
+              <div><div class="msg-body">About 15-20 services, full Kubernetes on AWS, primarily for the architecture review board.</div><div class="msg-time">2:36 PM</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div>
+              <div><div class="msg-body">Great context. I've generated a preliminary outline on the right panel. A few deeper questions:<br><br>• How do your services handle <strong>cross-cutting concerns</strong> like auth and rate limiting — centralized gateway or per-service?<br>• For <strong>data consistency</strong>, are you using saga patterns or eventual consistency?<br>• What's your <strong>CI/CD maturity</strong> — GitOps, manual pipelines, or something else?</div><div class="msg-time">2:37 PM</div></div>
+            </div>
           </div>
           <div class="input-area">
-            <div class="input-row">
-              <textarea rows="1" placeholder="Share your thoughts..."></textarea>
-              <button class="btn btn-ghost btn-sm" style="cursor:pointer" title="Attach Reference"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span class="tag tag-purple" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#EEF0FD;color:#4361EE">2</span></button>
-              <button class="btn btn-primary btn-sm" style="cursor:pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
+            <div class="input-wrapper">
+              <button class="btn btn-ghost btn-icon btn-sm" title="Attach Document" style="color:var(--color-text-muted);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <span class="badge" style="position:absolute;top:-4px;right:-4px;background:var(--color-primary);color:white;font-size:10px;padding:2px 4px;border-radius:4px">2</span>
+              </button>
+              <textarea placeholder="Answer the AI or refine the outline..."></textarea>
+              <button class="btn btn-primary btn-icon btn-sm" style="border-radius:var(--radius-sm)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -134,24 +198,28 @@
         <!-- Right Panel -->
         <div class="right-panel">
           <!-- Outline Preview -->
-          <div class="rp-section" style="display:flex;flex-direction:column">
-            <div class="rp-title" style="justify-content:space-between"><span style="display:flex;align-items:center;gap:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Outline</span><span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">~7,000 words</span></div>
-            <div style="font-size:14px;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid rgba(67,97,238,0.15)">Technical Architecture Document</div>
-            <ul class="outline-tree">
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">1.</span><span class="ol-name">Executive Summary</span><span class="ol-wc">~500w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></li>
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">2.</span><span class="ol-name">System Overview</span><span class="ol-wc">~800w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></li>
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">3.</span><span class="ol-name">Service Architecture</span><span class="ol-wc">~2,000w</span></div></li>
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">4.</span><span class="ol-name">Data Flow & Communication</span><span class="ol-wc">~1,500w</span></div></li>
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">5.</span><span class="ol-name">Deployment Strategy</span><span class="ol-wc">~1,200w</span></div></li>
-              <li class="ol-sec"><div class="ol-sec-head"><span class="ol-num">6.</span><span class="ol-name">Observability & Monitoring</span><span class="ol-wc">~1,000w</span></div></li>
-            </ul>
-            <div class="outline-footer">
-              <button class="btn btn-secondary btn-sm" style="cursor:pointer">Edit</button>
-              <button class="btn btn-ghost btn-sm" style="cursor:pointer">Regenerate</button>
-              <a href="f4-writing.html" class="btn btn-cta btn-sm" style="cursor:pointer">Confirm & Write</a>
+          <div class="rp-section" style="display:flex;flex-direction:column;flex:1">
+            <div class="rp-title">
+              <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Outline</span>
+              <span style="font-size:12px;font-weight:600;color:var(--color-text-muted);font-family:system-ui,-apple-system,sans-serif">~7,000 words</span>
             </div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--color-primary-100);color:var(--color-text)">Technical Architecture Document</div>
+            <ul class="outline-tree">
+              <li class="ol-sec"><span class="ol-num">1.</span><span class="ol-name">Executive Summary</span><span class="ol-wc">~500w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></li>
+              <li class="ol-sec"><span class="ol-num">2.</span><span class="ol-name">System Overview</span><span class="ol-wc">~800w</span><svg class="ol-chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></li>
+              <li class="ol-sec"><span class="ol-num">3.</span><span class="ol-name">Service Architecture</span><span class="ol-wc">~2,000w</span></li>
+              <li class="ol-sec"><span class="ol-num">4.</span><span class="ol-name">Data Flow & Communication</span><span class="ol-wc">~1,500w</span></li>
+              <li class="ol-sec"><span class="ol-num">5.</span><span class="ol-name">Deployment Strategy</span><span class="ol-wc">~1,200w</span></li>
+              <li class="ol-sec"><span class="ol-num">6.</span><span class="ol-name">Observability & Monitoring</span><span class="ol-wc">~1,000w</span></li>
+            </ul>
+          </div>
+          <div class="outline-footer">
+            <button class="btn btn-secondary btn-sm" style="cursor:pointer">Edit</button>
+            <button class="btn btn-ghost btn-sm" style="cursor:pointer">Regenerate</button>
+            <a href="f4-writing.html" class="btn btn-cta btn-sm" style="cursor:pointer;flex:1.5">Confirm & Write</a>
           </div>
         </div>
+      </div>
       </div>
     </div>
   </div>

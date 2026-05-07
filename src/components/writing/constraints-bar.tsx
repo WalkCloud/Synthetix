@@ -1,6 +1,7 @@
 "use client";
 
 import type { GenerationMode, SectionMeta } from "@/types/writing";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ConstraintsBarProps {
   sections: SectionMeta[];
@@ -31,18 +32,21 @@ export function ConstraintsBar({
         <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#A1A1AA] mb-1">
           Reference Section
         </label>
-        <select
-          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-xl text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
-        >
-          <option value="">None</option>
-          {sections
-            .filter((s) => s.status === "locked" || s.status === "summarized")
-            .map((s) => (
-              <option key={s.id} value={s.id}>
-                Section {s.index + 1}. {s.title}
-              </option>
-            ))}
-        </select>
+        <Select>
+          <SelectTrigger className="w-full text-[13px]">
+            <SelectValue placeholder="None">{() => 'None'}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">None</SelectItem>
+            {sections
+              .filter((s) => s.status === "locked" || s.status === "summarized")
+              .map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  Section {s.index + 1}. {s.title}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="min-w-[100px]">
@@ -51,7 +55,7 @@ export function ConstraintsBar({
         </label>
         <input
           type="number"
-          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
+          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
           value={wordLimit}
           onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
         />
@@ -61,14 +65,15 @@ export function ConstraintsBar({
         <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#A1A1AA] mb-1">
           Generation Mode
         </label>
-        <select
-          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-xl text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
-          value={generationMode}
-          onChange={(e) => onGenerationModeChange(e.target.value as GenerationMode)}
-        >
-          <option value="single">Single model</option>
-          <option value="compare">Compare two models</option>
-        </select>
+        <Select value={generationMode} onValueChange={(v) => onGenerationModeChange(v as GenerationMode)}>
+          <SelectTrigger className="w-full text-[13px]">
+            <SelectValue>{(v: string | null) => v === 'compare' ? 'Compare two models' : 'Single model'}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="single">Single model</SelectItem>
+            <SelectItem value="compare">Compare two models</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex-1 min-w-[150px]">
@@ -77,7 +82,7 @@ export function ConstraintsBar({
         </label>
         <input
           type="text"
-          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
+          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE]"
           placeholder="e.g., Include sequence diagrams..."
           value={additionalRequirements}
           onChange={(e) => onAdditionalRequirementsChange(e.target.value)}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DocumentMeta, SearchResult } from "@/types/documents";
 
 type TabId = "documents" | "semantic" | "layers";
@@ -150,10 +151,16 @@ export default function LibraryPage() {
                   className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f ? "border-primary text-primary bg-primary-100" : "border-[#E4E4E7] bg-white text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}>{f}</button>
               ))}
               <span className="flex-1" />
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-1.5 border border-[#E4E4E7] rounded-lg text-[13px] bg-white text-foreground font-sans cursor-pointer">
-                <option>Sort: Newest first</option><option>Sort: Name A-Z</option><option>Sort: Size</option>
-              </select>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v!)}>
+                <SelectTrigger className="h-auto px-3 py-1.5 border-[#E4E4E7] text-[13px] bg-white text-foreground font-sans cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Sort: Newest first">Sort: Newest first</SelectItem>
+                  <SelectItem value="Sort: Name A-Z">Sort: Name A-Z</SelectItem>
+                  <SelectItem value="Sort: Size">Sort: Size</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Table */}

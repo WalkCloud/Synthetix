@@ -116,7 +116,7 @@ export function ReferencePanel({
           Section Notes
         </h4>
         <textarea
-          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE] resize-none"
+          className="w-full px-3 py-2 border border-[#E4E4E7] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#4361EE]/20 focus:border-[#4361EE] resize-none"
           placeholder="Add notes for this section..."
           style={{ minHeight: "100px" }}
           value={sectionNotes}

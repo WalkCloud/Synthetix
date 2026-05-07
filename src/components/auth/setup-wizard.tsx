@@ -18,11 +18,11 @@ export function SetupWizard() {
   async function handleSetup(e: React.FormEvent) {
     e.preventDefault();
     if (form.password !== form.confirmPassword) {
-      setError("两次输入的密码不一致");
+      setError("Passwords do not match");
       return;
     }
     if (form.password.length < 6) {
-      setError("密码至少 6 个字符");
+      setError("Password must be at least 6 characters");
       return;
     }
     setLoading(true);
@@ -36,10 +36,10 @@ export function SetupWizard() {
       if (data.success) {
         router.push("/");
       } else {
-        setError(typeof data.error === "string" ? data.error : "设置失败");
+        setError(typeof data.error === "string" ? data.error : "Setup failed");
       }
     } catch {
-      setError("网络错误，请重试");
+      setError("Network error, please try again");
     } finally {
       setLoading(false);
     }
@@ -56,8 +56,8 @@ export function SetupWizard() {
             </svg>
             <span className="text-2xl font-bold font-display">Synthetix</span>
           </div>
-          <h1 className="text-xl font-bold font-display">初次使用，创建管理员账号</h1>
-          <p className="text-sm text-muted-foreground mt-2">设置您的管理员账号以开始使用</p>
+          <h1 className="text-xl font-bold font-display">Create Admin Account</h1>
+          <p className="text-sm text-muted-foreground mt-2">Set up your admin account to get started</p>
         </div>
 
         <div className="flex gap-2 mb-8">
@@ -70,10 +70,10 @@ export function SetupWizard() {
           {step === 1 && (
             <>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">用户名</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
                 <input
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="至少 3 个字符"
+                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="At least 3 characters"
                   value={form.username}
                   onChange={(e) => updateField("username", e.target.value)}
                   required
@@ -81,29 +81,29 @@ export function SetupWizard() {
                 />
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">显示名称</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Display Name</label>
                 <input
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="您的名字"
+                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Your name"
                   value={form.displayName}
                   onChange={(e) => updateField("displayName", e.target.value)}
                   required
                 />
               </div>
               <button type="button" onClick={() => setStep(2)} disabled={!form.username || !form.displayName}
-                className="w-full py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all disabled:opacity-40">
-                下一步
+                className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all disabled:opacity-40">
+                Next
               </button>
             </>
           )}
           {step === 2 && (
             <>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">密码</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
                 <input
                   type="password"
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="至少 6 个字符"
+                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="At least 6 characters"
                   value={form.password}
                   onChange={(e) => updateField("password", e.target.value)}
                   required
@@ -111,11 +111,11 @@ export function SetupWizard() {
                 />
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">确认密码</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Confirm Password</label>
                 <input
                   type="password"
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="再次输入密码"
+                  className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Enter password again"
                   value={form.confirmPassword}
                   onChange={(e) => updateField("confirmPassword", e.target.value)}
                   required
@@ -124,12 +124,12 @@ export function SetupWizard() {
               {error && <p className="text-sm text-destructive">{error}</p>}
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep(1)}
-                  className="flex-1 py-3 border rounded-xl font-semibold hover:bg-gray-50 transition-colors">
-                  上一步
+                  className="flex-1 py-3 border rounded-lg font-semibold hover:bg-gray-50 transition-colors">
+                  Back
                 </button>
                 <button type="submit" disabled={loading || !form.password || !form.confirmPassword}
-                  className="flex-1 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all disabled:opacity-40">
-                  {loading ? "创建中..." : "创建账号"}
+                  className="flex-1 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all disabled:opacity-40">
+                  {loading ? "Creating..." : "Create Account"}
                 </button>
               </div>
             </>

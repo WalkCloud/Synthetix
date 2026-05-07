@@ -5,32 +5,35 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ApiResponse } from "@/types/api";
 
-const OUTLINE_PROMPT = `根据上面的对话内容，生成一份完整的文档大纲。
+const OUTLINE_PROMPT = `Based on the conversation above, generate a complete document outline.
 
-要求：
-1. 提取对话中用户确认的文档结构、章节划分和关键要点
-2. 每个章节必须包含具体的 keyPoints（3-5个），不能为空
-3. 根据内容复杂度合理估算每个章节的字数（estimatedWords）
-4. 章节数量 4-10 个，根据内容需要灵活调整
-5. 如果某个章节有子章节，使用 children 数组表示
+Requirements:
+1. Extract the confirmed document structure, chapter divisions, and key points from the conversation
+2. Each chapter must include specific keyPoints (2-4), cannot be empty
+3. Reasonably estimate word count (estimatedWords) for each chapter based on content complexity
+4. 3-8 chapters total, flexibly adjusted based on content needs
+5. **Multi-level headings**: For chapters with substantial content, must split into sub-chapters (children), forming a 2-3 level outline structure
+6. Sub-chapter num format should be "1.1", "1.2", etc.
+7. Generally, chapters expected to exceed 1000 words should be split into sub-chapters
 
-输出格式为 JSON：
+Output format is JSON (strictly follow, do not add any other text):
 {
-  "title": "文档标题",
+  "title": "Document Title",
   "sections": [
     {
       "num": "1",
-      "title": "章节名称",
-      "keyPoints": ["要点1", "要点2", "要点3"],
-      "estimatedWords": 800,
+      "title": "Chapter Name",
+      "keyPoints": ["Point 1", "Point 2"],
+      "estimatedWords": 1500,
       "children": [
-        {"num": "1.1", "title": "子章节", "keyPoints": [...], "estimatedWords": 400}
+        {"num": "1.1", "title": "Sub-chapter Name", "keyPoints": ["Sub-point 1"], "estimatedWords": 500},
+        {"num": "1.2", "title": "Sub-chapter Name", "keyPoints": ["Sub-point 1"], "estimatedWords": 600}
       ]
     }
   ]
 }
 
-请确保大纲完整覆盖对话中讨论的所有主题，章节顺序逻辑清晰。`;
+Ensure the outline comprehensively covers all topics discussed in the conversation, with logical chapter ordering.`;
 
 export async function POST(
   request: Request,

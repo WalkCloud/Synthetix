@@ -168,7 +168,7 @@ export function LoginForm() {
               key={feature.title}
               className={`flex items-start gap-4 animate-fade-in-up-${index + 4}`}
             >
-              <div className="w-11 h-11 rounded-xl bg-white/[0.12] backdrop-blur-sm border border-white/[0.15] flex items-center justify-center shrink-0">
+              <div className="w-11 h-11 rounded-lg bg-white/[0.12] backdrop-blur-sm border border-white/[0.15] flex items-center justify-center shrink-0">
                 {feature.icon}
               </div>
               <div>
@@ -219,7 +219,7 @@ export function LoginForm() {
                 <input
                   id="email"
                   type="text"
-                  className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-xl text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="admin"
                   autoComplete="username"
                   value={username}
@@ -253,7 +253,7 @@ export function LoginForm() {
                 <input
                   id="password"
                   type="password"
-                  className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-xl text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="Enter your password"
                   autoComplete="current-password"
                   value={password}
@@ -287,7 +287,7 @@ export function LoginForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 transition-all disabled:opacity-40 animate-fade-in-up"
+              className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 transition-all disabled:opacity-40 animate-fade-in-up"
               style={{ animationDelay: "0.35s" }}
             >
               {loading ? "Signing in..." : "Login"}
