@@ -38,6 +38,14 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  if (body.action === "rename" && typeof body.title === "string" && body.title.trim()) {
+    const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
+    if (!session) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+
+    const updated = await db.brainstormSession.update({ where: { id }, data: { title: body.title.trim() } });
+    return NextResponse.json({ success: true, data: updated });
+  }
+
   return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
 }
 

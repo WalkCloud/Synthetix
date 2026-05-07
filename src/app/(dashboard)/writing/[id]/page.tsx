@@ -31,6 +31,7 @@ export default function WritingPage({
   const [references, setReferences] = useState<Reference[]>([]);
   const [sectionNotes, setSectionNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isHumanizing, setIsHumanizing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const activeSection = draft?.sections.find((s) => s.id === activeSectionId) || null;
@@ -136,6 +137,25 @@ export default function WritingPage({
   const handleRegenerate = useCallback(() => {
     handleGenerate("single");
   }, [handleGenerate]);
+
+  const handleHumanize = useCallback(async () => {
+    if (!activeSectionId) return;
+    setIsHumanizing(true);
+    try {
+      const res = await fetch(
+        `/api/v1/drafts/${id}/sections/${activeSectionId}/humanize`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || "Humanize failed");
+      }
+      await loadDraft();
+    } catch (err) {
+      console.error("Humanize failed:", err);
+    }
+    setIsHumanizing(false);
+  }, [activeSectionId, id, loadDraft]);
 
   const handleExport = useCallback(async () => {
     const res = await fetch(`/api/v1/drafts/${id}/export`, {
@@ -244,7 +264,9 @@ export default function WritingPage({
           onMerge={handleMerge}
           onConfirm={handleConfirm}
           onRegenerate={handleRegenerate}
+          onHumanize={handleHumanize}
           isGenerating={isGenerating}
+          isHumanizing={isHumanizing}
         />
 
         <ReferencePanel

@@ -161,7 +161,7 @@ export default function SettingsPage() {
       <Header title="User Management" />
       <div className="p-8">
         {message && (
-          <div className={`mb-6 px-4 py-3 rounded-xl text-sm ${message.type === "success" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+          <div className={`mb-6 px-4 py-3 rounded-lg text-sm ${message.type === "success" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
             {message.text}
           </div>
         )}
@@ -209,11 +209,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
                     Change Avatar
                   </button>
-                  <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-xl transition-colors">
+                  <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                     Change Password
                   </button>
@@ -229,31 +229,31 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={profile?.username || ""} disabled />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={profile?.username || ""} disabled />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Display Name</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
                     </div>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Email</label>
                     <div className="relative">
-                      <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-xl text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={email} disabled />
+                      <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={email} disabled />
                       <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                     </div>
                     <span className="text-xs text-muted-foreground mt-1 block">Email cannot be changed. Contact your administrator if needed.</span>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bio</label>
-                    <textarea className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-y min-h-[80px]" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell us about yourself..." />
+                    <textarea className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-y min-h-[80px]" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell us about yourself..." />
                   </div>
                   <div className="flex gap-3 mt-2">
-                    <button type="submit" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">
+                    <button type="submit" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                       Save Changes
                     </button>
-                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
+                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
                   </div>
                 </form>
               </div>
@@ -279,7 +279,7 @@ export default function SettingsPage() {
                       <svg className={`w-3 h-3 text-white ${authMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
                     <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-primary-100 text-primary flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
                       </div>
                       <div className="text-[15px] font-semibold">Local Authentication</div>
@@ -291,7 +291,7 @@ export default function SettingsPage() {
                       <svg className={`w-3 h-3 text-white ${authMode === "appwrite" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
                     <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
                       </div>
                       <div className="text-[15px] font-semibold">Appwrite Cloud Auth</div>
@@ -315,11 +315,11 @@ export default function SettingsPage() {
                   <form onSubmit={handlePasswordChange} className="space-y-5">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Current Password</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" required />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" required />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">New Password</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" required />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" required />
                       {newPassword && (
                         <div className="mt-3">
                           <div className="flex gap-1 mb-1.5">
@@ -333,10 +333,10 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Confirm Password</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" required />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" required />
                     </div>
                     <div className="flex gap-3 mt-2">
-                      <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">Update Password</button>
+                      <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Update Password</button>
                     </div>
                   </form>
                 </div>
@@ -356,26 +356,26 @@ export default function SettingsPage() {
                   <div className="space-y-5">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Appwrite Endpoint</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="https://cloud.appwrite.io/v1" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="https://cloud.appwrite.io/v1" />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Project ID</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="Enter Project ID" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter Project ID" />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Key</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="Enter API Key" />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter API Key" />
                     </div>
                     <div className="flex gap-3">
-                      <button type="button" className="flex items-center gap-2 px-5 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                      <button type="button" className="flex items-center gap-2 px-5 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                         Test Connection
                       </button>
-                      <button type="button" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">Save Configuration</button>
+                      <button type="button" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Save Configuration</button>
                     </div>
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="bg-white/80 px-4 py-2 rounded-xl text-[13px] text-muted-foreground font-medium">Enable Appwrite Auth to configure</div>
+                    <div className="bg-white/80 px-4 py-2 rounded-lg text-[13px] text-muted-foreground font-medium">Enable Appwrite Auth to configure</div>
                   </div>
                 </div>
               </div>
@@ -401,7 +401,7 @@ export default function SettingsPage() {
                       <svg className={`w-3 h-3 text-white ${storageMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
                     <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-primary-100 text-primary flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
                       </div>
                       <div className="text-[15px] font-semibold">Local Storage</div>
@@ -413,7 +413,7 @@ export default function SettingsPage() {
                       <svg className={`w-3 h-3 text-white ${storageMode === "s3" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
                     <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
                       </div>
                       <div className="text-[15px] font-semibold">S3 Object Storage</div>
@@ -437,8 +437,8 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Document Root Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/synthetix/documents" />
-                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="/Users/kevin/synthetix/documents" />
+                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
                       </button>
@@ -448,8 +448,8 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Cache Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="/Users/kevin/synthetix/.cache" />
-                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="/Users/kevin/synthetix/.cache" />
+                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
                       </button>
@@ -471,7 +471,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="flex gap-3 mt-5">
-                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">
+                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                       Save Storage Settings
                     </button>
@@ -493,39 +493,39 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">S3 Endpoint</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="https://s3.amazonaws.com" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="https://s3.amazonaws.com" />
                       <span className="text-xs text-muted-foreground mt-1 block">Leave empty for AWS S3 default.</span>
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Region</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="us-east-1" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="us-east-1" />
                     </div>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bucket Name</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="synthetix-documents" />
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix-documents" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Access Key ID</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="AKIAIOSFODNN7EXAMPLE" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="AKIAIOSFODNN7EXAMPLE" />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Secret Access Key</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-xl text-sm" placeholder="Enter secret access key" />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter secret access key" />
                     </div>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Path Prefix (Optional)</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-xl text-sm" defaultValue="documents/" />
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="documents/" />
                     <span className="text-xs text-muted-foreground mt-1 block">Subdirectory path within the bucket.</span>
                   </div>
                   <div className="flex gap-3 mt-5">
-                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all text-sm">
+                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                       Save S3 Settings
                     </button>
-                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
+                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
                   </div>
                 </div>
               </div>
@@ -546,7 +546,7 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="p-4 bg-primary-50 border border-primary/10 rounded-[16px] flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary flex items-center justify-center shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
                     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
                   </div>
                   <div className="flex-1">
@@ -574,11 +574,11 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="flex gap-3 mb-5">
-                  <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                  <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                     Run Migrations
                   </button>
-                  <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                  <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                     Export Schema
                   </button>

@@ -117,18 +117,18 @@ function ModelCard({
           {isDeleting ? (
             <>
               <button onClick={onDeleteConfirm}
-                className="px-4 py-2 text-[13px] font-medium bg-[#DC2626] text-white rounded-xl hover:bg-red-700 transition-colors">
+                className="px-4 py-2 text-[13px] font-medium bg-[#DC2626] text-white rounded-lg hover:bg-red-700 transition-colors">
                 Confirm
               </button>
               <button onClick={onDeleteCancel}
-                className="px-4 py-2 text-[13px] font-medium border border-[#E4E4E7] rounded-xl hover:bg-[#F4F4F5] transition-colors">
+                className="px-4 py-2 text-[13px] font-medium border border-[#E4E4E7] rounded-lg hover:bg-[#F4F4F5] transition-colors">
                 Cancel
               </button>
             </>
           ) : (
             <>
               <button onClick={onTest} disabled={isTesting}
-                className="px-4 py-2 text-[13px] font-medium border border-[#E4E4E7] rounded-xl hover:bg-[#F4F4F5] transition-colors disabled:opacity-50 inline-flex items-center gap-1.5">
+                className="px-4 py-2 text-[13px] font-medium border border-[#E4E4E7] rounded-lg hover:bg-[#F4F4F5] transition-colors disabled:opacity-50 inline-flex items-center gap-1.5">
                 {isTesting ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -139,11 +139,11 @@ function ModelCard({
                 ) : "Test"}
               </button>
               <button onClick={onEdit}
-                className="px-4 py-2 text-[13px] font-medium text-muted-foreground rounded-xl hover:bg-[#F4F4F5] transition-colors">
+                className="px-4 py-2 text-[13px] font-medium text-muted-foreground rounded-lg hover:bg-[#F4F4F5] transition-colors">
                 Edit
               </button>
               <button onClick={onDelete}
-                className="px-4 py-2 text-[13px] font-medium text-[#DC2626] rounded-xl hover:bg-[#FEE2E2] transition-colors">
+                className="px-4 py-2 text-[13px] font-medium text-[#DC2626] rounded-lg hover:bg-[#FEE2E2] transition-colors">
                 Delete
               </button>
             </>
@@ -427,7 +427,7 @@ export function ModelsTabs() {
       {tab === "usage" && (
         <div>
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-base font-bold font-[var(--font-display,Urbanist),sans-serif]">Token Usage Overview</h3>
+            <h3 className="text-base font-bold font-[var(--font-display,Urbanist),sans-serif]" style={{color:"#18181B"}}>Token Usage Overview</h3>
             <div className="flex">
               {(["today", "week", "month"] as const).map((range, idx) => {
                 const labels: Record<"today" | "week" | "month", string> = { today: "Today", week: "This Week", month: "This Month" };
@@ -437,10 +437,11 @@ export function ModelsTabs() {
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
+                    style={!isActive ? {color:"#3F3F46"} : undefined}
                     className={`px-4 py-2 text-[13px] font-medium border transition-colors ${radiusClass} ${
                       isActive
                         ? "bg-primary text-white border-primary"
-                        : "bg-white border-border text-muted-foreground hover:bg-base-gray"
+                        : "bg-white border-border hover:bg-base-gray"
                     }`}
                   >
                     {labels[range]}
@@ -459,8 +460,8 @@ export function ModelsTabs() {
                 </svg>
               </div>
               <div>
-                <div className="text-[13px] text-muted-foreground mb-1">Total Tokens</div>
-                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]">
+                <div className="text-[13px] mb-1" style={{color:"#52525B"}}>Total Tokens</div>
+                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]" style={{color:"#18181B"}}>
                   {usageData ? formatNumber(usageData.summary.totalInputTokens + usageData.summary.totalOutputTokens) : "0"}
                 </div>
               </div>
@@ -473,8 +474,8 @@ export function ModelsTabs() {
                 </svg>
               </div>
               <div>
-                <div className="text-[13px] text-muted-foreground mb-1">Total Calls</div>
-                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]">
+                <div className="text-[13px] mb-1" style={{color:"#52525B"}}>Total Calls</div>
+                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]" style={{color:"#18181B"}}>
                   {usageData ? formatNumber(usageData.summary.totalCalls) : "0"}
                 </div>
               </div>
@@ -487,8 +488,8 @@ export function ModelsTabs() {
                 </svg>
               </div>
               <div>
-                <div className="text-[13px] text-muted-foreground mb-1">Models Used</div>
-                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]">
+                <div className="text-[13px] mb-1" style={{color:"#52525B"}}>Models Used</div>
+                <div className="text-[28px] font-bold leading-tight font-[var(--font-display,Urbanist),sans-serif]" style={{color:"#18181B"}}>
                   {usageData ? usageData.summary.modelsUsed : "0"}
                 </div>
               </div>
@@ -498,7 +499,7 @@ export function ModelsTabs() {
           {/* Model Token Ranking */}
           <div className="bg-white border border-border rounded-2xl mb-5 hover:shadow-md transition-all">
             <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="text-base font-semibold">Model Token Ranking</h3>
+              <h3 className="text-base font-semibold" style={{color:"#18181B"}}>Model Token Ranking</h3>
             </div>
             <div className="p-6">
               {usageData && usageData.byModel.length > 0 ? (
@@ -515,7 +516,7 @@ export function ModelsTabs() {
                         ? "bg-[#F5F5F4] text-[#78716C]"
                         : idx === 2
                           ? "bg-[#FFF7ED] text-[#EA580C]"
-                          : "bg-base-gray text-muted-foreground";
+                          : "bg-base-gray";
                     const rankLabel = idx < 3
                       ? ["1st", "2nd", "3rd"][idx]
                       : `#${idx + 1}`;
@@ -524,12 +525,12 @@ export function ModelsTabs() {
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-2">
                             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${rankBadge}`}>{rankLabel}</span>
-                            <span className="text-sm font-medium text-foreground">{m.modelName}</span>
-                            <span className="text-[12px] text-muted-foreground">{m.providerName}</span>
+                            <span className="text-sm font-medium" style={{color:"#18181B"}}>{m.modelName}</span>
+                            <span className="text-[12px]" style={{color:"#52525B"}}>{m.providerName}</span>
                           </div>
                           <div className="flex items-center gap-3 text-[13px]">
-                            <span className="font-medium text-foreground">{formatNumber(total)}</span>
-                            <span className="text-muted-foreground">({sharePct}%)</span>
+                            <span className="font-medium" style={{color:"#18181B"}}>{formatNumber(total)}</span>
+                            <span style={{color:"#52525B"}}>({sharePct}%)</span>
                           </div>
                         </div>
                         <div className="w-full h-2.5 bg-base-gray rounded-full overflow-hidden">
@@ -543,7 +544,7 @@ export function ModelsTabs() {
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-6">No usage data yet. Start using models to see ranking.</p>
+                <p className="text-sm text-center py-6" style={{color:"#52525B"}}>No usage data yet. Start using models to see ranking.</p>
               )}
             </div>
           </div>
@@ -551,36 +552,36 @@ export function ModelsTabs() {
           {/* Usage by Module */}
           <div className="bg-white border border-border rounded-2xl mb-5 hover:shadow-md transition-all">
             <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="text-base font-semibold">Usage by Module</h3>
+              <h3 className="text-base font-semibold" style={{color:"#18181B"}}>Usage by Module</h3>
             </div>
             {usageData && usageData.byModule.length > 0 ? (
               <div className="p-0">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-base-gray border-b border-border">
-                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Module</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Input</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Output</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Total</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Calls</th>
+                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Module</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Input</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Output</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Total</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Calls</th>
                     </tr>
                   </thead>
                   <tbody>
                     {usageData.byModule.map((r) => {
                       const MODULE_LABELS: Record<string, string> = {
-                        brainstorm: "头脑风暴",
-                        outline: "大纲生成",
-                        writing: "文档写作",
-                        embedding: "文档索引",
-                        comparison: "模型对比",
+                        brainstorm: "Brainstorm",
+                        outline: "Outline Generation",
+                        writing: "Document Writing",
+                        embedding: "Document Indexing",
+                        comparison: "Model Comparison",
                       };
                       return (
                         <tr key={r.module} className="border-b border-border/40 last:border-0 hover:bg-primary-50 transition-colors">
-                          <td className="px-4 py-3.5 text-sm font-medium">{MODULE_LABELS[r.module] ?? r.module}</td>
-                          <td className="px-4 py-3.5 text-sm text-right">{formatNumber(r.totalInputTokens)}</td>
-                          <td className="px-4 py-3.5 text-sm text-right">{formatNumber(r.totalOutputTokens)}</td>
-                          <td className="px-4 py-3.5 text-sm text-right font-medium">{formatNumber(r.totalInputTokens + r.totalOutputTokens)}</td>
-                          <td className="px-4 py-3.5 text-sm text-right">{formatNumber(r.totalCalls)}</td>
+                          <td className="px-4 py-3.5 text-sm font-medium" style={{color:"#18181B"}}>{MODULE_LABELS[r.module] ?? r.module}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#27272A"}}>{formatNumber(r.totalInputTokens)}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#27272A"}}>{formatNumber(r.totalOutputTokens)}</td>
+                          <td className="px-4 py-3.5 text-sm text-right font-medium" style={{color:"#18181B"}}>{formatNumber(r.totalInputTokens + r.totalOutputTokens)}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#27272A"}}>{formatNumber(r.totalCalls)}</td>
                         </tr>
                       );
                     })}
@@ -589,7 +590,7 @@ export function ModelsTabs() {
               </div>
             ) : (
               <div className="p-6">
-                <p className="text-sm text-muted-foreground text-center py-4">No module data yet.</p>
+                <p className="text-sm text-center py-4" style={{color:"#52525B"}}>No module data yet.</p>
               </div>
             )}
           </div>
@@ -597,39 +598,39 @@ export function ModelsTabs() {
           {/* Recent Activity */}
           <div className="bg-white border border-border rounded-2xl mb-5 hover:shadow-md transition-all">
             <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="text-base font-semibold">Recent Activity</h3>
+              <h3 className="text-base font-semibold" style={{color:"#18181B"}}>Recent Activity</h3>
             </div>
             {usageData && usageData.entries.length > 0 ? (
               <div className="p-0">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-base-gray border-b border-border">
-                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Model</th>
-                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Module</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Input</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Output</th>
-                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Date</th>
+                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Model</th>
+                      <th className="text-left text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Module</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Input</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Output</th>
+                      <th className="text-right text-[11px] font-semibold uppercase tracking-wider px-4 py-3" style={{color:"#3F3F46"}}>Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {usageData.entries.map((e) => {
                       const MODULE_LABELS: Record<string, string> = {
-                        brainstorm: "头脑风暴",
-                        outline: "大纲生成",
-                        writing: "文档写作",
-                        embedding: "文档索引",
-                        comparison: "模型对比",
+                        brainstorm: "Brainstorm",
+                        outline: "Outline Generation",
+                        writing: "Document Writing",
+                        embedding: "Document Indexing",
+                        comparison: "Model Comparison",
                       };
                       return (
                         <tr key={e.id} className="border-b border-border/40 last:border-0 hover:bg-primary-50 transition-colors">
-                          <td className="px-4 py-3.5 text-sm font-medium">
+                          <td className="px-4 py-3.5 text-sm font-medium" style={{color:"#18181B"}}>
                             {e.modelName ?? "Unknown"}
-                            {e.providerName && <span className="text-muted-foreground ml-1">({e.providerName})</span>}
+                            {e.providerName && <span className=" ml-1" style={{color:"#52525B"}}>({e.providerName})</span>}
                           </td>
-                          <td className="px-4 py-3.5 text-sm">{MODULE_LABELS[e.module] ?? e.module}</td>
-                          <td className="px-4 py-3.5 text-sm text-right">{formatNumber(e.inputTokens)}</td>
-                          <td className="px-4 py-3.5 text-sm text-right">{formatNumber(e.outputTokens)}</td>
-                          <td className="px-4 py-3.5 text-sm text-right text-muted-foreground">
+                          <td className="px-4 py-3.5 text-sm" style={{color:"#18181B"}}>{MODULE_LABELS[e.module] ?? e.module}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#27272A"}}>{formatNumber(e.inputTokens)}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#27272A"}}>{formatNumber(e.outputTokens)}</td>
+                          <td className="px-4 py-3.5 text-sm text-right" style={{color:"#52525B"}}>
                             {new Date(e.createdAt).toLocaleDateString()}
                           </td>
                         </tr>
@@ -640,7 +641,7 @@ export function ModelsTabs() {
               </div>
             ) : (
               <div className="p-6">
-                <p className="text-sm text-muted-foreground text-center py-4">No recent activity.</p>
+                <p className="text-sm text-center py-4" style={{color:"#52525B"}}>No recent activity.</p>
               </div>
             )}
           </div>
@@ -654,7 +655,7 @@ export function ModelsTabs() {
             className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <ProviderForm provider={editingProvider} onClose={handleFormClose} />
+            <ProviderForm provider={editingProvider} tab={tab as "llm" | "embedding"} onClose={handleFormClose} />
           </div>
         </div>
       )}

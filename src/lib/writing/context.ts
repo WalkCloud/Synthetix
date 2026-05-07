@@ -45,6 +45,15 @@ function buildSystemMessage(): ChatMessage {
       "- Do not fabricate references. Only cite material explicitly provided in the context.",
       "- Produce output as plain text with Markdown formatting for structure.",
       "- Match the estimated word count as closely as possible without sacrificing quality.",
+      "",
+      "Anti-AI writing rules (produce human-quality output):",
+      "- Never use: delve, tapestry, realm, pivotal, foster, seamless, empower, robust, multifaceted, nuanced (as filler), leverage (as verb).",
+      "- Never use filler transitions: \"it's worth noting\", \"importantly\", \"in conclusion\", \"to summarize\", \"navigating the landscape\".",
+      "- Vary paragraph lengths — some should be 1-2 sentences, others longer. Break symmetry.",
+      "- Make direct claims. Do not hedge with \"While it may seem...\" or \"It could be argued that...\" before every point.",
+      "- Use specific numbers, names, dates, and examples — never \"various methods\" or \"multiple approaches\".",
+      "- Do not pad with 3-item lists when a single strong statement suffices.",
+      "- Write like a senior expert explaining to a colleague, not an encyclopedia.",
     ].join("\n"),
   };
 }

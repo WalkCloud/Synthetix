@@ -30,7 +30,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
   });
 
   await db.message.create({
-    data: { sessionId: session.id, role: "system", content: "新的头脑风暴会话已创建。请描述您的文档写作需求。" },
+    data: { sessionId: session.id, role: "system", content: "A new brainstorming session has been created. Please describe your document writing needs." },
   });
 
   return NextResponse.json({ success: true, data: session }, { status: 201 });

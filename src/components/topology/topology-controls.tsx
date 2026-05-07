@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 interface TopologyControlsProps {
   readonly drafts: readonly { id: string; title: string }[];
   readonly selectedDraftId: string | null;
@@ -26,8 +28,6 @@ const GROUP_BY_OPTIONS = [
   { value: "anchor", label: "By citation anchor" },
 ] as const;
 
-const SELECT_CLASSES =
-  "px-[14px] py-2 border border-[#E4E4E7] rounded-lg text-[13px] bg-white text-[#18181B] outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2371717A%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[position:right_10px_center] bg-no-repeat pr-8";
 
 const ICON_BUTTON_CLASSES =
   "flex items-center justify-center w-9 h-9 rounded-lg text-[#52525B] hover:bg-[#F5F5F3] hover:text-[#18181B] transition-colors cursor-pointer";
@@ -47,20 +47,18 @@ export function TopologyControls({
   return (
     <div className="flex items-center gap-2.5">
       {/* Draft selector */}
-      <select
-        value={selectedDraftId ?? ""}
-        onChange={(e) => onDraftChange(e.target.value)}
-        className={SELECT_CLASSES}
-      >
-        <option value="" disabled>
-          Select a draft...
-        </option>
-        {drafts.map((draft) => (
-          <option key={draft.id} value={draft.id}>
-            {draft.title}
-          </option>
-        ))}
-      </select>
+      <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
+        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+          <SelectValue placeholder="Select a draft..."></SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {drafts.map((draft) => (
+            <SelectItem key={draft.id} value={draft.id}>
+              {draft.title}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Zoom controls */}
       <div className="flex items-center gap-1 border border-[#E4E4E7] rounded-lg p-0.5">
@@ -137,30 +135,32 @@ export function TopologyControls({
       </div>
 
       {/* Reference filter */}
-      <select
-        value={refFilter}
-        onChange={(e) => onRefFilterChange(e.target.value)}
-        className={SELECT_CLASSES}
-      >
-        {REF_FILTER_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      <Select value={refFilter} onValueChange={(v) => onRefFilterChange(v!)}>
+        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+          <SelectValue>{(v: string | null) => REF_FILTER_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {REF_FILTER_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Group by */}
-      <select
-        value={groupBy}
-        onChange={(e) => onGroupByChange(e.target.value)}
-        className={SELECT_CLASSES}
-      >
-        {GROUP_BY_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      <Select value={groupBy} onValueChange={(v) => onGroupByChange(v!)}>
+        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+          <SelectValue>{(v: string | null) => GROUP_BY_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {GROUP_BY_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

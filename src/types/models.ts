@@ -7,14 +7,14 @@ export interface ModelCapability {
 }
 
 export const MODEL_CAPABILITIES: ModelCapability[] = [
-  { capability: "chat", label: "对话" },
-  { capability: "writing", label: "写作" },
-  { capability: "embedding", label: "向量化" },
-  { capability: "rerank", label: "重排序" },
-  { capability: "vision", label: "视觉理解" },
-  { capability: "image_generation", label: "文生图" },
-  { capability: "summarization", label: "摘要" },
-  { capability: "splitting", label: "文档拆分" },
+  { capability: "chat", label: "Chat" },
+  { capability: "writing", label: "Writing" },
+  { capability: "embedding", label: "Embedding" },
+  { capability: "rerank", label: "Rerank" },
+  { capability: "vision", label: "Vision" },
+  { capability: "image_generation", label: "Image Gen" },
+  { capability: "summarization", label: "Summarization" },
+  { capability: "splitting", label: "Splitting" },
 ];
 
 export interface ProviderFormData {

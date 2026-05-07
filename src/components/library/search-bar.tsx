@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface SearchBarProps {
   onSearch: (query: string, mode: "keyword" | "semantic") => void;
@@ -20,20 +21,21 @@ export function SearchBar({ onSearch }: SearchBarProps) {
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
-          className="w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
           placeholder={mode === "keyword" ? "Search by keyword..." : "Search by meaning..."}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <select
-        className="px-3 py-2.5 border rounded-xl text-sm bg-white"
-        value={mode}
-        onChange={(e) => setMode(e.target.value as "keyword" | "semantic")}
-      >
-        <option value="keyword">Keyword</option>
-        <option value="semantic">Semantic</option>
-      </select>
+      <Select value={mode} onValueChange={(v) => setMode(v as "keyword" | "semantic")}>
+        <SelectTrigger className="text-sm w-[130px]">
+          <SelectValue>{(v: string | null) => v === 'semantic' ? 'Semantic' : 'Keyword'}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="keyword">Keyword</SelectItem>
+          <SelectItem value="semantic">Semantic</SelectItem>
+        </SelectContent>
+      </Select>
       <button
         type="submit"
         className="px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light text-sm"

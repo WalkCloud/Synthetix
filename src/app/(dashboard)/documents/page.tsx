@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface UploadItem {
   id: string;
@@ -23,6 +24,23 @@ function formatSize(bytes: number): string {
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} MB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
+
+function modelLabel(models: ModelOption[], id: string): string {
+  const m = models.find((x) => x.id === id);
+  return m ? `${m.modelName} (${m.providerName})` : "Select...";
+}
+
+const SPLIT_LABELS: Record<string, string> = {
+  "structure-llm": "Structure first + LLM semantic review",
+  "heading-only": "Heading and page boundaries only",
+  "llm-only": "LLM semantic split only",
+};
+
+const INDEX_LABELS: Record<string, string> = {
+  full: "Original + chunks + LightRAG graph",
+  original: "Original Markdown only",
+  chunks: "Chunks only",
+};
 
 function getFileExt(name: string): string {
   return name.split(".").pop()?.toLowerCase() || "";
@@ -199,23 +217,33 @@ export default function DocumentsPage() {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">LLM Model</label>
-                <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-                  {llmModels.length === 0 ? (
-                    <option value="">No models configured — add in Model Management</option>
-                  ) : (
-                    llmModels.map((m) => <option key={m.id} value={m.id}>{m.modelName} ({m.providerName})</option>)
-                  )}
-                </select>
+                <Select value={llmModel} onValueChange={(v) => setLlmModel(v!)}>
+                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                    <SelectValue>{modelLabel(llmModels, llmModel)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {llmModels.length === 0 ? (
+                      <SelectItem value="none" disabled>No models configured — add in Model Management</SelectItem>
+                    ) : (
+                      llmModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Embedding Model</label>
-                <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={embedModel} onChange={(e) => setEmbedModel(e.target.value)}>
-                  {embedModels.length === 0 ? (
-                    <option value="">No embedding models configured</option>
-                  ) : (
-                    embedModels.map((m) => <option key={m.id} value={m.id}>{m.modelName} ({m.providerName})</option>)
-                  )}
-                </select>
+                <Select value={embedModel} onValueChange={(v) => setEmbedModel(v!)}>
+                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                    <SelectValue>{modelLabel(embedModels, embedModel)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {embedModels.length === 0 ? (
+                      <SelectItem value="none" disabled>No embedding models configured</SelectItem>
+                    ) : (
+                      embedModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="col-span-2">
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Max Context Usage</label>
@@ -229,20 +257,30 @@ export default function DocumentsPage() {
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Split Strategy</label>
-                <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={splitStrategy} onChange={(e) => setSplitStrategy(e.target.value)}>
-                  <option value="structure-llm">Structure first + LLM semantic review</option>
-                  <option value="heading-only">Heading and page boundaries only</option>
-                  <option value="llm-only">LLM semantic split only</option>
-                </select>
+                <Select value={splitStrategy} onValueChange={(v) => setSplitStrategy(v!)}>
+                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                    <SelectValue>{SPLIT_LABELS[splitStrategy] ?? splitStrategy}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="structure-llm">Structure first + LLM semantic review</SelectItem>
+                    <SelectItem value="heading-only">Heading and page boundaries only</SelectItem>
+                    <SelectItem value="llm-only">LLM semantic split only</SelectItem>
+                  </SelectContent>
+                </Select>
                 <p className="text-[12px] text-muted-foreground mt-1">Uses headings, pages, tables, and then domain/topic correlation.</p>
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Index Target</label>
-                <select className="w-full px-3.5 py-2.5 border border-[#E4E4E7] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={indexTarget} onChange={(e) => setIndexTarget(e.target.value)}>
-                  <option value="full">Original + chunks + LightRAG graph</option>
-                  <option value="original">Original Markdown only</option>
-                  <option value="chunks">Chunks only</option>
-                </select>
+                <Select value={indexTarget} onValueChange={(v) => setIndexTarget(v!)}>
+                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                    <SelectValue>{INDEX_LABELS[indexTarget] ?? indexTarget}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Original + chunks + LightRAG graph</SelectItem>
+                    <SelectItem value="original">Original Markdown only</SelectItem>
+                    <SelectItem value="chunks">Chunks only</SelectItem>
+                  </SelectContent>
+                </Select>
                 <p className="text-[12px] text-muted-foreground mt-1">Stores provenance for source file, page, heading path, block, and image assets.</p>
               </div>
               <div className="col-span-2">

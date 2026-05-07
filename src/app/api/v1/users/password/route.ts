@@ -37,7 +37,7 @@ export async function PUT(request: Request) {
   const valid = await verifyPassword(currentPassword, dbUser.passwordHash);
   if (!valid) {
     return NextResponse.json(
-      { success: false, error: "当前密码错误" },
+      { success: false, error: "Current password is incorrect" },
       { status: 400 },
     );
   }
