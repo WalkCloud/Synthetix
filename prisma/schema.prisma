@@ -59,6 +59,7 @@ model ModelConfig {
   outputPrice       Float?   @map("output_price")
   localOrCloud      String   @default("local") @map("local_or_cloud")
   isDefaultFor      String?  @map("is_default_for")
+  embeddingDim      Int?     @map("embedding_dim")
   createdAt         DateTime @default(now()) @map("created_at")
 
   provider ModelProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)

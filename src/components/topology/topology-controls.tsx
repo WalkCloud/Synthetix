@@ -1,6 +1,7 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { GraphViewMode } from "@/types/topology";
 
 interface TopologyControlsProps {
   readonly drafts: readonly { id: string; title: string }[];
@@ -14,6 +15,8 @@ interface TopologyControlsProps {
   readonly onRefFilterChange: (value: string) => void;
   readonly groupBy: string;
   readonly onGroupByChange: (value: string) => void;
+  readonly graphMode: GraphViewMode;
+  readonly onGraphModeChange: (mode: GraphViewMode) => void;
 }
 
 const REF_FILTER_OPTIONS = [
@@ -27,6 +30,11 @@ const GROUP_BY_OPTIONS = [
   { value: "section", label: "By section" },
   { value: "anchor", label: "By citation anchor" },
 ] as const;
+
+const VIEW_OPTIONS = [
+  { value: "documents" as const, label: "Documents" },
+  { value: "knowledge" as const, label: "Knowledge Graph" },
+];
 
 
 const ICON_BUTTON_CLASSES =
@@ -43,22 +51,44 @@ export function TopologyControls({
   onRefFilterChange,
   groupBy,
   onGroupByChange,
+  graphMode,
+  onGraphModeChange,
 }: TopologyControlsProps) {
   return (
-    <div className="flex items-center gap-2.5">
-      {/* Draft selector */}
-      <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
-        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-          <SelectValue placeholder="Select a draft..."></SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {drafts.map((draft) => (
-            <SelectItem key={draft.id} value={draft.id}>
-              {draft.title}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="flex items-center gap-2.5 mb-4 flex-wrap">
+      {/* Graph view mode toggle */}
+      <div className="flex items-center bg-[#F5F5F3] rounded-lg p-0.5">
+        {VIEW_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onGraphModeChange(opt.value)}
+            className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors cursor-pointer ${
+              graphMode === opt.value
+                ? "bg-white text-[#18181B] shadow-sm"
+                : "text-[#A1A1AA] hover:text-[#52525B]"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Draft selector (documents mode only) */}
+      {graphMode === "documents" && (
+        <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
+          <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+            <SelectValue placeholder="Select a draft..."></SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {drafts.map((draft) => (
+              <SelectItem key={draft.id} value={draft.id}>
+                {draft.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {/* Zoom controls */}
       <div className="flex items-center gap-1 border border-[#E4E4E7] rounded-lg p-0.5">
@@ -134,33 +164,37 @@ export function TopologyControls({
         </button>
       </div>
 
-      {/* Reference filter */}
-      <Select value={refFilter} onValueChange={(v) => onRefFilterChange(v!)}>
-        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-          <SelectValue>{(v: string | null) => REF_FILTER_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {REF_FILTER_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {graphMode === "documents" && (
+        <>
+          {/* Reference filter */}
+          <Select value={refFilter} onValueChange={(v) => onRefFilterChange(v!)}>
+            <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+              <SelectValue>{(v: string | null) => REF_FILTER_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {REF_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-      {/* Group by */}
-      <Select value={groupBy} onValueChange={(v) => onGroupByChange(v!)}>
-        <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-          <SelectValue>{(v: string | null) => GROUP_BY_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {GROUP_BY_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          {/* Group by */}
+          <Select value={groupBy} onValueChange={(v) => onGroupByChange(v!)}>
+            <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
+              <SelectValue>{(v: string | null) => GROUP_BY_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {GROUP_BY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      )}
     </div>
   );
 }

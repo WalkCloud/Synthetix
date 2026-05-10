@@ -39,7 +39,7 @@ export interface ModelInfo {
 export interface LLMProvider {
   chat(params: ChatParams): Promise<ChatResponse>;
   chatStream(params: ChatParams): AsyncGenerator<ChatChunk>;
-  embed(texts: string[]): Promise<EmbedResponse>;
+  embed(texts: string[], model?: string): Promise<EmbedResponse>;
   testConnection(): Promise<boolean>;
   getModels(): Promise<ModelInfo[]>;
 }

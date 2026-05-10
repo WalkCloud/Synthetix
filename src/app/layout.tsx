@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geist = Geist({
@@ -23,6 +24,7 @@ export default function RootLayout({
     <html lang="zh-CN" className={cn(geist.variable)}>
       <body className="font-sans antialiased bg-base text-foreground">
         {children}
+        <Toaster />
       </body>
     </html>
   );

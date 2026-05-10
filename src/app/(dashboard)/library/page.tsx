@@ -45,12 +45,31 @@ export default function LibraryPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [filterFormat, setFilterFormat] = useState<string>("All");
   const [sortBy, setSortBy] = useState("Newest first");
+  // Preview modal
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; name: string; markdown: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const limit = 20;
+
+  async function handlePreview(docId: string, docName: string) {
+    setPreviewLoading(true);
+    setPreviewDoc(null);
+    try {
+      const res = await fetch(`/api/v1/library/documents/${docId}/preview`);
+      const d = await res.json();
+      if (d.success) {
+        setPreviewDoc({ id: d.data.id, name: d.data.name, markdown: d.data.markdown });
+      }
+    } catch { /* ignore */ } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   const fetchDocs = useCallback(async (p: number) => {
     setLoading(true);
     const params = new URLSearchParams({ page: String(p), limit: String(limit) });
     if (sortBy === "Name A-Z") { params.set("sort", "originalName"); params.set("order", "asc"); }
+    else if (sortBy === "Size") { params.set("sort", "originalSize"); params.set("order", "desc"); }
+    else { params.set("sort", "createdAt"); params.set("order", "desc"); }
     if (filterFormat !== "All") params.set("format", filterFormat.toLowerCase());
     const res = await fetch(`/api/v1/library/documents?${params}`);
     const data = await res.json();
@@ -59,6 +78,24 @@ export default function LibraryPage() {
   }, [sortBy, filterFormat]);
 
   useEffect(() => { if (tab === "documents") fetchDocs(page); }, [page, tab, fetchDocs]);
+
+  async function handleDelete(docId: string) {
+    if (!confirm("Delete this document and all its chunks?")) return;
+    const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.success) {
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setTotal((t) => t - 1);
+    }
+  }
+
+  async function handleReindex(docId: string) {
+    const res = await fetch(`/api/v1/documents/${docId}/reprocess`, { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      fetchDocs(page);
+    }
+  }
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
@@ -74,6 +111,11 @@ export default function LibraryPage() {
   const statReady = documents.filter((d) => d.status === "ready").length;
   const statIndexed = documents.length > 0 ? Math.round((statReady / documents.length) * 100) : 0;
   const statSize = documents.reduce((sum, d) => sum + d.originalSize, 0);
+  const maxChunks = Math.max(1, ...documents.map((d) => d.chunks?.length || 0));
+  const splitGroups = new Set(documents.flatMap((d) => (d.chunks || []).map((c) => {
+    const hp = c.headingPath;
+    return hp ? hp.split(" > ")[0] : "";
+  }).filter(Boolean))).size;
 
   return (
     <div>
@@ -156,9 +198,9 @@ export default function LibraryPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Sort: Newest first">Sort: Newest first</SelectItem>
-                  <SelectItem value="Sort: Name A-Z">Sort: Name A-Z</SelectItem>
-                  <SelectItem value="Sort: Size">Sort: Size</SelectItem>
+                  <SelectItem value="Newest first">Newest first</SelectItem>
+                  <SelectItem value="Name A-Z">Name A-Z</SelectItem>
+                  <SelectItem value="Size">Size</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -188,7 +230,6 @@ export default function LibraryPage() {
                       const fmt = doc.originalFormat;
                       const ready = doc.status === "ready";
                       const chunkCount = doc.chunks?.length || 0;
-                      const maxChunks = 40;
                       const chunkPct = Math.min(100, Math.round((chunkCount / maxChunks) * 100));
                       return (
                         <tr key={doc.id} className="border-b border-[#F0F0F0] last:border-b-0 hover:bg-[#EEF0FD] transition-colors">
@@ -231,13 +272,13 @@ export default function LibraryPage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <div className="flex gap-1">
-                              <Link href={`/library/${doc.id}`} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Preview">
+                              <button onClick={() => handlePreview(doc.id, doc.originalName)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Preview">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                              </Link>
-                              <button className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Reindex">
+                              </button>
+                              <button onClick={() => handleReindex(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Reindex">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                               </button>
-                              <button className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#FEE2E2] hover:text-[#DC2626] transition-colors" title="Delete">
+                              <button onClick={() => handleDelete(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#FEE2E2] hover:text-[#DC2626] transition-colors" title="Delete">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                               </button>
                             </div>
@@ -288,16 +329,18 @@ export default function LibraryPage() {
                 <div key={i} className="bg-white border border-[#E4E4E7] rounded-[16px] p-5 hover:border-[#D4D4D8] transition-colors">
                   <div className="flex justify-between items-center mb-2.5">
                     <span className="font-semibold text-[15px] text-foreground">{r.documentName}</span>
-                    {r.score >= 0.9 ? (
+                    {typeof r.score === "number" && r.score >= 0.9 ? (
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#16A34A]">{Math.round(r.score * 100)}% match</span>
-                    ) : r.score >= 0.8 ? (
+                    ) : typeof r.score === "number" && r.score >= 0.7 ? (
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary-100 text-primary">{Math.round(r.score * 100)}% match</span>
-                    ) : (
+                    ) : typeof r.score === "number" ? (
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706]">{Math.round(r.score * 100)}% match</span>
+                    ) : (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#EEEEE9] text-[#52525B]">Keyword match</span>
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: r.content.slice(0, 300).replace(/\b(search|document|test|content)\b/gi, "<mark class='bg-[#EEF0FD] text-primary px-1 py-px rounded-sm'>$&</mark>") }} />
+                    dangerouslySetInnerHTML={{ __html: r.content.slice(0, 300).replace(/\b(search|document|test|content)\b/gi, "<mark class='bg-[#EEF0FD] text-primary px-1 py-px rounded-sm'>" + "$&" + "</mark>") }} />
                   <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> {r.chunkId}</span>
                     {r.title && <span>{r.title}</span>}
@@ -318,8 +361,8 @@ export default function LibraryPage() {
               <h4 className="text-[15px] font-bold text-foreground mb-1.5">Original Layer</h4>
               <p className="text-[13px] text-muted-foreground leading-relaxed mb-3">Raw files, converted Markdown, images, tables, and attachments retained for audit.</p>
               <div className="flex gap-1.5 flex-wrap">
-                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#EFF6FF] text-[#2563EB]">{documents.length} originals</span>
-                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#DCFCE7] text-[#16A34A]">42 assets</span>
+                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#EFF6FF] text-[#2563EB]">{statDocs} originals</span>
+                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#DCFCE7] text-[#16A34A]">{(statSize / 1048576).toFixed(1)} MB stored</span>
               </div>
             </div>
             <div className="flex-1 bg-white border-y border-r border-[#E4E4E7] p-6 relative">
@@ -330,7 +373,7 @@ export default function LibraryPage() {
               <p className="text-[13px] text-muted-foreground leading-relaxed mb-3">Chunks with page, heading path, block ID, split relation, and provenance info.</p>
               <div className="flex gap-1.5 flex-wrap">
                 <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary">{statChunks} chunks</span>
-                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#FFF7ED] text-[#EA580C]">14 split groups</span>
+                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#FFF7ED] text-[#EA580C]">{splitGroups} topic groups</span>
               </div>
             </div>
             <div className="flex-1 bg-white border border-[#E4E4E7] p-6 rounded-r-[22px] relative">
@@ -340,13 +383,38 @@ export default function LibraryPage() {
               <h4 className="text-[15px] font-bold text-foreground mb-1.5">Semantic Layer</h4>
               <p className="text-[13px] text-muted-foreground leading-relaxed mb-3">LightRAG embeddings, entity relations, graph links, and reranked candidates.</p>
               <div className="flex gap-1.5 flex-wrap">
-                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#DCFCE7] text-[#16A34A]">Indexed</span>
-                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#EFF6FF] text-[#2563EB]">Rerank ready</span>
+                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#DCFCE7] text-[#16A34A]">{statIndexed}% indexed</span>
+                <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#EFF6FF] text-[#2563EB]">RAG active</span>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPreviewDoc(null)}>
+          <div className="bg-white rounded-[20px] shadow-2xl w-full max-w-4xl max-h-[85vh] m-4 flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="font-semibold text-lg">{previewDoc.name}</h3>
+              <button onClick={() => setPreviewDoc(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed">
+              {previewDoc.markdown}
+            </div>
+          </div>
+        </div>
+      )}
+      {previewLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+          <div className="bg-white rounded-xl shadow-lg px-6 py-4 flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-muted-foreground">Loading preview...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

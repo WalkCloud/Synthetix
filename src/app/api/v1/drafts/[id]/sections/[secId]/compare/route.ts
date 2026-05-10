@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { compareSection } from "@/lib/writing/generator";
@@ -55,10 +56,7 @@ export async function POST(
     }
 
     // Resolve two models for comparison
-    const modelARecord = await db.modelConfig.findFirst({
-      where: { isDefaultFor: "writing" },
-      include: { provider: true },
-    });
+    const modelARecord = await resolveModel("writing");
     if (!modelARecord?.provider) {
       return NextResponse.json(
         { success: false, error: "No default writing model configured. Set a default writing model in settings." },

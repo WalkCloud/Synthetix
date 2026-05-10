@@ -39,7 +39,6 @@ export function splitMarkdown(
   const sections = splitByHeadings(markdown);
   const chunks: SplitChunk[] = [];
   let currentChunk = "";
-  let currentTitle = "";
   let currentTokens = 0;
   let headingStack: string[] = [];
 
@@ -47,9 +46,12 @@ export function splitMarkdown(
     const sectionTokens = estimateTokens(section.content);
 
     if (currentTokens + sectionTokens > maxTokens && currentTokens >= minTokens) {
+      const chunkTitle = headingStack.length > 0
+        ? headingStack[headingStack.length - 1]
+        : extractTitle(currentChunk);
       chunks.push({
         index: chunks.length,
-        title: currentTitle || extractTitle(currentChunk),
+        title: chunkTitle,
         content: currentChunk.trim(),
         tokenCount: currentTokens,
         headingPath: headingStack.join(" > "),
@@ -60,7 +62,6 @@ export function splitMarkdown(
 
     if (section.heading) {
       headingStack = updateHeadingStack(headingStack, section.level, section.heading);
-      if (!currentTitle) currentTitle = section.heading;
     }
 
     currentChunk += section.content + "\n\n";
@@ -68,9 +69,12 @@ export function splitMarkdown(
   }
 
   if (currentChunk.trim()) {
+    const chunkTitle = headingStack.length > 0
+      ? headingStack[headingStack.length - 1]
+      : extractTitle(currentChunk);
     chunks.push({
       index: chunks.length,
-      title: currentTitle || extractTitle(currentChunk),
+      title: chunkTitle,
       content: currentChunk.trim(),
       tokenCount: currentTokens,
       headingPath: headingStack.join(" > "),

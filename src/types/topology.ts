@@ -1,11 +1,13 @@
 export interface TopologyNode {
   id: string;
-  type: "draft" | "reference";
+  type: "draft" | "reference" | "entity";
   label: string;
   format: string;
   size?: number;
   referenceCount: number;
   relevanceScore: number;
+  /** Entity-specific: entity type (person, concept, organization, etc.) */
+  entityType?: string;
 }
 
 export interface TopologyEdge {
@@ -14,6 +16,8 @@ export interface TopologyEdge {
   weight: number;
   sectionIds: string[];
   sectionLabels: string[];
+  /** Entity edge: relationship description */
+  description?: string;
 }
 
 export interface TopologyStats {
@@ -23,6 +27,9 @@ export interface TopologyStats {
   totalSections: number;
   mostReferencedDoc: string | null;
   coverage: string;
+  /** Knowledge graph stats */
+  totalEntities?: number;
+  totalRelations?: number;
 }
 
 export interface TopologyResponse {
@@ -31,3 +38,5 @@ export interface TopologyResponse {
   edges: TopologyEdge[];
   stats: TopologyStats;
 }
+
+export type GraphViewMode = "documents" | "knowledge";

@@ -96,6 +96,114 @@ export default function SettingsPage() {
 
   const [authMode, setAuthMode] = useState<AuthMode>("local");
   const [storageMode, setStorageMode] = useState<StorageMode>("local");
+  const [storageLocalPath, setStorageLocalPath] = useState("./data/documents");
+  const [s3Endpoint, setS3Endpoint] = useState("");
+  const [s3Region, setS3Region] = useState("us-east-1");
+  const [s3Bucket, setS3Bucket] = useState("");
+  const [s3AccessKey, setS3AccessKey] = useState("");
+  const [s3SecretKey, setS3SecretKey] = useState("");
+  const [savingStorage, setSavingStorage] = useState(false);
+  const [storageMsg, setStorageMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Database settings state
+  const [dbType, setDbType] = useState("sqlite");
+  const [pgHost, setPgHost] = useState("");
+  const [pgPort, setPgPort] = useState("5432");
+  const [pgDatabase, setPgDatabase] = useState("");
+  const [pgUser, setPgUser] = useState("");
+  const [dbConnectionUrl, setDbConnectionUrl] = useState("file:./dev.db");
+  const [savingDb, setSavingDb] = useState(false);
+
+  // Load storage settings when tab changes
+  useEffect(() => {
+    if (tab === "storage") {
+      fetch("/api/v1/settings/storage")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            const s = data.data;
+            setStorageMode(s.storageType === "s3" ? "s3" : "local");
+            setStorageLocalPath(s.localPath || "./data/documents");
+            setS3Endpoint(s.s3Endpoint || "");
+            setS3Region(s.s3Region || "us-east-1");
+            setS3Bucket(s.s3Bucket || "");
+            setS3AccessKey(s.s3AccessKey || "");
+          }
+        })
+        .catch(() => {});
+    }
+  }, [tab]);
+
+  // Load database settings
+  useEffect(() => {
+    if (tab === "database") {
+      fetch("/api/v1/settings/database")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            const s = data.data;
+            setDbType(s.dbType || "sqlite");
+            setPgHost(s.pgHost || "");
+            setPgPort(String(s.pgPort || "5432"));
+            setPgDatabase(s.pgDatabase || "");
+            setPgUser(s.pgUser || "");
+            setDbConnectionUrl(s.connectionUrl || "file:./dev.db");
+          }
+        })
+        .catch(() => {});
+    }
+  }, [tab]);
+
+  async function saveStorage() {
+    setSavingStorage(true);
+    setStorageMsg(null);
+    try {
+      const body: Record<string, unknown> = {
+        storageType: storageMode,
+        localPath: storageLocalPath || undefined,
+      };
+      if (storageMode === "s3") {
+        body.s3Endpoint = s3Endpoint || undefined;
+        body.s3Region = s3Region || undefined;
+        body.s3Bucket = s3Bucket || undefined;
+        body.s3AccessKey = s3AccessKey || undefined;
+      }
+      const res = await fetch("/api/v1/settings/storage", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      setStorageMsg(d.success ? { type: "success", text: "Storage settings saved" } : { type: "error", text: d.error });
+    } catch {
+      setStorageMsg({ type: "error", text: "Failed to save" });
+    } finally {
+      setSavingStorage(false);
+    }
+  }
+
+  async function saveDatabase() {
+    setSavingDb(true);
+    setMessage(null);
+    try {
+      const body: Record<string, unknown> = { dbType };
+      if (pgHost) body.pgHost = pgHost;
+      if (pgPort) body.pgPort = parseInt(pgPort, 10);
+      if (pgDatabase) body.pgDatabase = pgDatabase;
+      if (pgUser) body.pgUser = pgUser;
+      const res = await fetch("/api/v1/settings/database", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      setMessage(d.success ? { type: "success", text: `${d.data?.note || "Database settings saved"}` } : { type: "error", text: d.error });
+    } catch {
+      setMessage({ type: "error", text: "Failed to save" });
+    } finally {
+      setSavingDb(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/v1/users/profile")
@@ -437,7 +545,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Document Root Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="/Users/kevin/synthetix/documents" />
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
                       <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
@@ -448,7 +556,8 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Cache Directory</label>
                     <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="/Users/kevin/synthetix/.cache" />
+                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
+                    <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache.</span>
                       <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         Browse
@@ -471,9 +580,18 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="flex gap-3 mt-5">
-                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                      Save Storage Settings
+                    {storageMsg && (
+                      <div className={`text-sm px-3 py-2 rounded-lg ${storageMsg.type === "success" ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEE2E2] text-[#DC2626]"}`}>
+                        {storageMsg.text}
+                      </div>
+                    )}
+                    <button type="button" onClick={saveStorage} disabled={savingStorage} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
+                      {savingStorage ? "Saving..." : (
+                        <>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                          Save Storage Settings
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -493,22 +611,22 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">S3 Endpoint</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="https://s3.amazonaws.com" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="https://s3.amazonaws.com" value={s3Endpoint} onChange={(e) => setS3Endpoint(e.target.value)} />
                       <span className="text-xs text-muted-foreground mt-1 block">Leave empty for AWS S3 default.</span>
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Region</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="us-east-1" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={s3Region} onChange={(e) => setS3Region(e.target.value)} />
                     </div>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bucket Name</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix-documents" />
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix-documents" value={s3Bucket} onChange={(e) => setS3Bucket(e.target.value)} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Access Key ID</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="AKIAIOSFODNN7EXAMPLE" />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="AKIAIOSFODNN7EXAMPLE" value={s3AccessKey} onChange={(e) => setS3AccessKey(e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Secret Access Key</label>
@@ -521,11 +639,15 @@ export default function SettingsPage() {
                     <span className="text-xs text-muted-foreground mt-1 block">Subdirectory path within the bucket.</span>
                   </div>
                   <div className="flex gap-3 mt-5">
-                    <button type="button" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                      Save S3 Settings
+                    <button type="button" onClick={saveStorage} disabled={savingStorage} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
+                      {savingStorage ? "Saving..." : (
+                        <>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                          Save S3 Settings
+                        </>
+                      )}
                     </button>
-                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
+                    <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors" onClick={() => setStorageMode("local")}>Cancel</button>
                   </div>
                 </div>
               </div>
@@ -550,16 +672,75 @@ export default function SettingsPage() {
                     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-semibold">SQLite (Local File)</div>
-                    <div className="text-[13px] text-muted-foreground font-mono mt-0.5">file:./dev.db</div>
+                    <div className="text-sm font-semibold">{dbType === "postgresql" ? "PostgreSQL" : "SQLite (Local File)"}</div>
+                    <div className="text-[13px] text-muted-foreground font-mono mt-0.5">{dbConnectionUrl}</div>
                     <div className="text-[12px] text-muted-foreground mt-1">
-                      Synthetix uses SQLite for local/single-user deployment. To switch to PostgreSQL, update the <code className="bg-base-gray px-1 py-0.5 rounded text-[11px]">DATABASE_URL</code> environment variable and restart the server.
+                      {dbType === "postgresql"
+                        ? "Connected to PostgreSQL. Update settings below to reconfigure the database connection."
+                        : "Synthetix uses SQLite for local/single-user deployment. To switch to PostgreSQL, fill in the PostgreSQL fields below and restart the server."}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] text-[#16A34A] rounded-full text-xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
                     Active
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* PostgreSQL Config */}
+            <div className="bg-white border rounded-[16px]">
+              <div className="flex items-center justify-between px-6 py-5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+                  <h3 className="text-base font-semibold">Database Configuration</h3>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="dbType" checked={dbType === "sqlite"} onChange={() => setDbType("sqlite")} className="accent-primary" />
+                    <span className="text-sm">SQLite</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="dbType" checked={dbType === "postgresql"} onChange={() => setDbType("postgresql")} className="accent-primary" />
+                    <span className="text-sm">PostgreSQL</span>
+                  </label>
+                </div>
+                {dbType === "postgresql" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Host</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="localhost" value={pgHost} onChange={(e) => setPgHost(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Port</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="5432" value={pgPort} onChange={(e) => setPgPort(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Database</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix" value={pgDatabase} onChange={(e) => setPgDatabase(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="postgres" value={pgUser} onChange={(e) => setPgUser(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button type="button" onClick={saveDatabase} disabled={savingDb} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
+                    {savingDb ? "Saving..." : (
+                      <>
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                        Save Database Settings
+                      </>
+                    )}
+                  </button>
+                  {message && (
+                    <div className={`flex items-center text-sm ${message.type === "success" ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                      {message.text}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

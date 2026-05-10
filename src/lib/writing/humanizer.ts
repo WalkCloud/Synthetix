@@ -1,4 +1,5 @@
 import { createLLMProvider } from "@/lib/llm/factory";
+import { resolveModel } from "@/lib/llm/resolve-model";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ChatResponse } from "@/lib/llm/types";
 
@@ -164,11 +165,7 @@ export async function humanizeContent(
 }
 
 async function findWritingModel() {
-  const { db } = await import("@/lib/db");
-  const writingModel = await db.modelConfig.findFirst({
-    where: { isDefaultFor: "writing" },
-    include: { provider: true },
-  });
+  const writingModel = await resolveModel("writing");
 
   if (writingModel?.provider) {
     return {
@@ -181,21 +178,5 @@ async function findWritingModel() {
     };
   }
 
-  const fallbackModel = await db.modelConfig.findFirst({
-    where: { capabilities: { contains: "chat" } },
-    include: { provider: true },
-  });
-
-  if (!fallbackModel?.provider) {
-    throw new Error("No writing model configured for humanization.");
-  }
-
-  return {
-    provider: createLLMProvider({
-      apiBaseUrl: fallbackModel.provider.apiBaseUrl,
-      apiKey: fallbackModel.provider.apiKey,
-    }),
-    modelId: fallbackModel.modelId,
-    modelConfigId: fallbackModel.id,
-  };
+  throw new Error("No writing model configured for humanization.");
 }

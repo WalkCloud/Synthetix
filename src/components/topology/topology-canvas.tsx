@@ -157,6 +157,8 @@ export function TopologyCanvas({
 
   const draftNode = nodes.find((n) => n.type === "draft");
   const referenceNodes = nodes.filter((n) => n.type === "reference");
+  const entityNodes = nodes.filter((n) => n.type === "entity");
+  const isKGMode = entityNodes.length > 0 && !draftNode;
   const layout = computeLayout(
     containerWidth,
     containerHeight,

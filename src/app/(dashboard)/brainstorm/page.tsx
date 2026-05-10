@@ -225,6 +225,8 @@ export default function BrainstormPage() {
     if (!activeId || !outline || confirming) return;
     setConfirming(true);
     try {
+      // Persist latest outline before creating draft
+      await persistOutline(outline);
       const res = await fetch("/api/v1/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -297,8 +299,19 @@ export default function BrainstormPage() {
       ...s,
       num: String(i + 1),
     }));
-    setOutline({ ...outline, title: editTitle, sections: renumbered });
+    const updated = { ...outline, title: editTitle, sections: renumbered };
+    setOutline(updated);
     setEditing(false);
+    persistOutline(updated);
+  }
+
+  async function persistOutline(updatedOutline: typeof outline) {
+    if (!activeId || !updatedOutline) return;
+    await fetch(`/api/v1/brainstorm/outlines/${activeId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outline: updatedOutline }),
+    }).catch(() => {});
   }
 
   function updateEditSection(index: number, field: "title" | "estimatedWords", value: string) {
@@ -327,14 +340,18 @@ export default function BrainstormPage() {
   function removeSection(index: number) {
     if (!outline) return;
     const updated = outline.sections.filter((_, i) => i !== index).map((s, i) => ({ ...s, num: String(i + 1) }));
-    setOutline({ ...outline, sections: updated });
+    const newOutline = { ...outline, sections: updated };
+    setOutline(newOutline);
+    persistOutline(newOutline);
   }
 
   function insertSectionAfter(index: number) {
     if (!outline) return;
     const section: OutlineSection = { num: "", title: "", estimatedWords: 500 };
     const updated = [...outline.sections.slice(0, index + 1), section, ...outline.sections.slice(index + 1)].map((s, i) => ({ ...s, num: String(i + 1) }));
-    setOutline({ ...outline, sections: updated });
+    const newOutline = { ...outline, sections: updated };
+    setOutline(newOutline);
+    persistOutline(newOutline);
   }
 
   function updateSectionTitle(index: number, title: string) {
@@ -347,7 +364,9 @@ export default function BrainstormPage() {
     const updated = [...outline.sections];
     const [moved] = updated.splice(from, 1);
     updated.splice(to, 0, moved);
-    setOutline({ ...outline, sections: updated.map((s, i) => ({ ...s, num: String(i + 1) })) });
+    const newOutline = { ...outline, sections: updated.map((s, i) => ({ ...s, num: String(i + 1) })) };
+    setOutline(newOutline);
+    persistOutline(newOutline);
   }
 
   function updateChildTitle(parentIndex: number, childIndex: number, title: string) {

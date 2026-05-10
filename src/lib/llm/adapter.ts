@@ -162,12 +162,13 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     yield { content: "", done: true };
   }
 
-  async embed(texts: string[]): Promise<EmbedResponse> {
+  async embed(texts: string[], model?: string): Promise<EmbedResponse> {
     const url = `${this.baseApiUrl}/v1/embeddings`;
+    const requestBody = JSON.stringify({ input: texts, model: model || "text-embedding" });
     const response = await fetch(url, {
       method: "POST",
       headers: buildHeaders(this.apiKey),
-      body: JSON.stringify({ input: texts, model: "text-embedding" }),
+      body: requestBody,
     });
 
     if (!response.ok) {
