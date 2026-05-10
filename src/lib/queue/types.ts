@@ -13,6 +13,21 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
+export type SplitStrategy = "structure-llm" | "heading-only" | "llm-only";
+export type IndexTarget = "full" | "original" | "chunks";
+export type IndexMode = "basic" | "graph";
+export type QueryMode = "local" | "global" | "hybrid" | "mix" | "naive" | "bypass";
+
+export interface ProcessingOptions {
+  llmModelId?: string;
+  embedModelId?: string;
+  contextUsage?: number;
+  splitStrategy?: SplitStrategy;
+  indexTarget?: IndexTarget;
+  indexMode?: IndexMode;
+  autoSplit?: boolean;
+}
+
 export interface TaskPayload {
   [key: string]: unknown;
 }

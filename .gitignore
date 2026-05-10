@@ -55,3 +55,4 @@ prisma/*.db-journal
 dev.db
 qa-screenshots/
 scratch.js
+.gstack/

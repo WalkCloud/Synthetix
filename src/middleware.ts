@@ -132,7 +132,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // No valid tokens — redirect to login
+  // No valid tokens
+  // For API routes, return JSON 401 instead of redirecting
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  // For page routes, redirect to login
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = "/login";
   return NextResponse.redirect(loginUrl);

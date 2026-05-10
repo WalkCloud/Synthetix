@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ApiResponse } from "@/types/api";
@@ -49,10 +50,8 @@ export async function POST(
   });
   if (!session) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
-  const chatModel = await db.modelConfig.findFirst({
-    where: { isDefaultFor: "chat" },
-    include: { provider: true },
-  });
+  const chatModel = await resolveModel("chat");
+
   if (!chatModel) return NextResponse.json({ success: false, error: "No chat model configured" }, { status: 400 });
 
   const conversation = session.messages

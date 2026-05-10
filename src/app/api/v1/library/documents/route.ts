@@ -33,7 +33,7 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
       take: limit,
       include: {
         tags: { include: { tag: true } },
-        chunks: { select: { id: true, title: true, tokenCount: true } },
+        chunks: { select: { id: true, title: true, tokenCount: true, headingPath: true, index: true } },
       },
     }),
   ]);

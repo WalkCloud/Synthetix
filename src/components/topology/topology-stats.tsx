@@ -10,6 +10,12 @@ interface StatEntry {
 }
 
 function buildStatEntries(stats: TopologyStats): readonly StatEntry[] {
+  if (stats.totalEntities !== undefined) {
+    return [
+      { label: "Entities", value: String(stats.totalEntities) },
+      { label: "Relations", value: String(stats.totalRelations ?? 0) },
+    ] as const;
+  }
   return [
     { label: "Total References", value: String(stats.totalReferences) },
     { label: "Unique Documents", value: String(stats.uniqueDocuments) },
