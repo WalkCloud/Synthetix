@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
 interface UploadItem {
   id: string;
@@ -69,7 +70,9 @@ export default function DocumentsPage() {
   const [contextUsage, setContextUsage] = useState(45);
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
+  const [indexMode, setIndexMode] = useState<"basic" | "graph">("basic");
   const [autoSplit, setAutoSplit] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -108,6 +111,13 @@ export default function DocumentsPage() {
 
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("llmModelId", llmModel);
+      fd.append("embedModelId", embedModel);
+      fd.append("contextUsage", String(contextUsage));
+      fd.append("splitStrategy", splitStrategy);
+      fd.append("indexTarget", indexTarget);
+      fd.append("indexMode", indexMode);
+      fd.append("autoSplit", String(autoSplit));
       try {
         const res = await fetch("/api/v1/documents/upload", { method: "POST", body: fd });
         const data = await res.json();
@@ -122,10 +132,53 @@ export default function DocumentsPage() {
         setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: "Upload failed" } : u));
       }
     }
-  }, []);
+  }, [llmModel, embedModel, contextUsage, splitStrategy, indexTarget, indexMode, autoSplit]);
 
   function removeUpload(id: string) {
     setUploads((prev) => prev.filter((u) => u.id !== id));
+  }
+
+  async function handleProcess() {
+    const ready = uploads.filter((u) => u.status === "complete" && u.docId);
+    if (ready.length === 0) {
+      toast.error("No completed uploads to process");
+      return;
+    }
+    setProcessing(true);
+    let success = 0;
+    let fail = 0;
+    for (const u of ready) {
+      try {
+        const res = await fetch(`/api/v1/documents/${u.docId}/reprocess`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            options: {
+              llmModelId: llmModel || undefined,
+              embedModelId: embedModel || undefined,
+              contextUsage,
+              splitStrategy,
+              indexTarget,
+              autoSplit,
+            },
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          success++;
+        } else {
+          fail++;
+        }
+      } catch {
+        fail++;
+      }
+    }
+    setProcessing(false);
+    if (fail === 0) {
+      toast.success(`${success} document(s) queued for processing`);
+    } else {
+      toast.warning(`${success} queued, ${fail} failed`);
+    }
   }
 
   return (
@@ -283,6 +336,19 @@ export default function DocumentsPage() {
                 </Select>
                 <p className="text-[12px] text-muted-foreground mt-1">Stores provenance for source file, page, heading path, block, and image assets.</p>
               </div>
+              <div>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Knowledge Graph</label>
+                <Select value={indexMode} onValueChange={(v) => setIndexMode(v as "basic" | "graph")}>
+                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                    <SelectValue>{indexMode === "graph" ? "Entity extraction + knowledge graph" : "Chunk storage only (fast)"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">Chunk storage only (fast)</SelectItem>
+                    <SelectItem value="graph">Entity extraction + knowledge graph (slower, richer)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[12px] text-muted-foreground mt-1">Graph mode extracts entities and relations for enhanced retrieval and topology.</p>
+              </div>
               <div className="col-span-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -300,14 +366,32 @@ export default function DocumentsPage() {
         </div>
 
         {/* Start Processing */}
-        <div className="flex justify-end animate-fade-in-up">
-          <button className="inline-flex items-center gap-2 px-7 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light hover:shadow-lg hover:-translate-y-px transition-all text-base">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            Start Processing
-          </button>
-        </div>
+        {uploads.length > 0 && (
+          <div className="flex justify-end animate-fade-in-up">
+            <button
+              onClick={handleProcess}
+              disabled={processing || !uploads.some((u) => u.status === "complete")}
+              className="inline-flex items-center gap-2 px-7 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light hover:shadow-lg hover:-translate-y-px transition-all text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing ? (
+                <>
+                  <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.3" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  Start Processing
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

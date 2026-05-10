@@ -63,31 +63,39 @@ export async function POST(
       );
     }
 
-    // Create SectionVersion snapshot
+    // Create SectionVersion snapshot with correct source
     const wordCount = section.content.split(/\s+/).filter(Boolean).length;
     const nextVersion = section.versions.length + 1;
+
+    // Determine version source
+    const versionSource = section.selectedModel
+      ? section.selectedModel === "a" ? "generated_a" : "generated_b"
+      : section.contentA || section.contentB ? "generated" // comparison done, user picked
+      : "edited";
 
     await db.sectionVersion.create({
       data: {
         sectionId,
         version: nextVersion,
         content: section.content,
-        source: "edited",
+        source: versionSource,
         wordCount,
       },
     });
 
-    // Generate summary for context compression
+    // Step 1: accepted — user has confirmed this content
+    await db.section.update({
+      where: { id: sectionId },
+      data: { status: "accepted", wordCount },
+    });
+
+    // Step 2: Generate summary for context compression
     const summary = await generateSummary(section.content, section.title);
 
-    // Update section: summary + summarized status, then locked
-    const summarized = await db.section.update({
+    // Step 3: summarized → locked
+    await db.section.update({
       where: { id: sectionId },
-      data: {
-        summary,
-        wordCount,
-        status: "summarized",
-      },
+      data: { summary, status: "summarized" },
     });
 
     const locked = await db.section.update({

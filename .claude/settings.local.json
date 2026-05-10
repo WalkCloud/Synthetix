@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_snapshot",
+      "Bash(pnpm test:run)",
+      "mcp__chrome-devtools__take_screenshot",
+      "Bash(curl *)",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__fill",
+      "mcp__chrome-devtools__type_text",
+      "mcp__chrome-devtools__handle_dialog",
+      "mcp__chrome-devtools__press_key",
+      "mcp__chrome-devtools__list_console_messages",
+      "Skill(qa-only)",
+      "Bash(npx next *)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/react/package.json'\\); console.log\\('React version:', pkg.version\\);\")",
+      "Bash(node -e \"const pkg = require\\('./node_modules/next/package.json'\\); console.log\\('Next version:', pkg.version\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const r = require\\('react'\\); console.log\\(typeof r.use\\);\")",
+      "Bash(pnpm build *)",
+      "Bash(taskkill /F /IM \"node.exe\" /FI \"WINDOWTITLE eq *next*\")",
+      "Bash(pnpm dev *)",
+      "Bash(taskkill /PID 16084 /F)",
+      "Bash(powershell *)",
+      "Skill(qa)"
+    ]
+  }
+}

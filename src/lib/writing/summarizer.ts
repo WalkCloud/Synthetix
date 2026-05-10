@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import type { ChatMessage } from "@/lib/llm/types";
 
@@ -32,10 +32,7 @@ function buildSummaryMessages(
 }
 
 async function resolveDefaultModel() {
-  const writingModel = await db.modelConfig.findFirst({
-    where: { isDefaultFor: "writing" },
-    include: { provider: true },
-  });
+  const writingModel = await resolveModel("writing");
 
   if (writingModel?.provider) {
     return {
@@ -47,24 +44,9 @@ async function resolveDefaultModel() {
     };
   }
 
-  const fallbackModel = await db.modelConfig.findFirst({
-    where: { capabilities: { contains: "chat" } },
-    include: { provider: true },
-  });
-
-  if (!fallbackModel?.provider) {
-    throw new Error(
-      "No model available for summarization. Configure a writing or chat model in settings."
-    );
-  }
-
-  return {
-    provider: createLLMProvider({
-      apiBaseUrl: fallbackModel.provider.apiBaseUrl,
-      apiKey: fallbackModel.provider.apiKey,
-    }),
-    modelId: fallbackModel.modelId,
-  };
+  throw new Error(
+    "No model available for summarization. Configure a writing or chat model in settings."
+  );
 }
 
 export async function generateSummary(

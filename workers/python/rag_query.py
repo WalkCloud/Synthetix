@@ -1,67 +1,266 @@
-"""Synthetix LightRAG semantic query.
+"""Synthetix LightRAG semantic query — returns structured chunk results with scores.
 
-Usage: python rag_query.py --user-id <uid> --query "<text>" --mode hybrid --limit 20
-Output: JSON string to stdout (LightRAG raw response)
+Supports all LightRAG query modes:
+  - local    : entity-level retrieval (specific facts/entities)
+  - global   : theme-level retrieval (summarization, broad context)
+  - hybrid   : balanced local + global (default)
+  - mix      : graph + vector + optional reranker
+  - naive    : pure vector similarity (no graph)
+  - bypass   : LLM-only, no retrieval
+
+Usage:
+  python rag_query.py --user-id <uid> --query "<text>" --mode hybrid --limit 20
+         [--return-entities] [--return-relations]
+         [--embed-api-base <url>] [--embed-api-key <key>] [--embed-model <name>]
+         [--llm-api-base <url>] [--llm-api-key <key>] [--llm-model <name>]
+
+Output: JSON to stdout
 """
 import sys
 import json
 import os
+import re
 import argparse
 import asyncio
 
 
-async def query_rag(user_id: str, query_text: str, mode: str = "hybrid", limit: int = 20) -> str:
-    """Query LightRAG knowledge graph."""
+def load_storage_config():
+    """Build LightRAG storage configuration matching rag_index.py."""
+    kv_storage = os.getenv("LIGHTRAG_KV_STORAGE", "JsonKVStorage")
+    vector_storage = os.getenv("LIGHTRAG_VECTOR_STORAGE", "NanoVectorDBStorage")
+    graph_storage = os.getenv("LIGHTRAG_GRAPH_STORAGE", "NetworkXStorage")
+    doc_status_storage = os.getenv("LIGHTRAG_DOC_STATUS_STORAGE", "JsonDocStatusStorage")
+
+    storage_kwargs: dict = {}
+
+    if os.getenv("LIGHTRAG_PG_DATABASE_URL"):
+        kv_storage = "PGKVStorage"
+        vector_storage = "PGVectorStorage"
+        storage_kwargs["pg_database_url"] = os.environ["LIGHTRAG_PG_DATABASE_URL"]
+    elif os.getenv("POSTGRES_HOST"):
+        kv_storage = "PGKVStorage"
+        vector_storage = "PGVectorStorage"
+        storage_kwargs.update({
+            k: os.environ[k]
+            for k in [
+                "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER",
+                "POSTGRES_PASSWORD", "POSTGRES_DATABASE",
+            ]
+            if k in os.environ
+        })
+
+    if os.getenv("NEO4J_URI"):
+        graph_storage = "Neo4JStorage"
+        storage_kwargs.update({
+            k: os.environ[k]
+            for k in ["NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD"]
+            if k in os.environ
+        })
+
+    if os.getenv("MILVUS_URI"):
+        vector_storage = "MilvusVectorDBStorage"
+        storage_kwargs.update({
+            k: os.environ[k]
+            for k in [
+                "MILVUS_URI", "MILVUS_TOKEN", "MILVUS_USER",
+                "MILVUS_PASSWORD", "MILVUS_DB_NAME",
+            ]
+            if k in os.environ
+        })
+
+    if os.getenv("QDRANT_URL"):
+        vector_storage = "QdrantVectorDBStorage"
+        storage_kwargs.update({
+            k: os.environ[k]
+            for k in ["QDRANT_URL", "QDRANT_API_KEY"]
+            if k in os.environ
+        })
+
+    return kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs
+
+
+async def query_rag(
+    user_id: str,
+    query_text: str,
+    mode: str = "hybrid",
+    limit: int = 20,
+    return_entities: bool = False,
+    return_relations: bool = False,
+    embed_api_base: str = "http://localhost:11434/v1",
+    embed_api_key: str = "ollama",
+    embed_model: str = "nomic-embed-text",
+    embed_dim: int = 0,
+    llm_api_base: str = "http://localhost:11434/v1",
+    llm_api_key: str = "ollama",
+    llm_model: str = "llama3.2",
+) -> dict:
+    """Query LightRAG and return structured results: chunks, optional entities/relations."""
     working_dir = os.path.join("data", "rag", user_id)
 
     if not os.path.exists(working_dir):
-        print(json.dumps([]))
+        print(json.dumps({"chunks": [], "mode": mode}))
         return
 
     from lightrag import LightRAG, QueryParam
-    from lightrag.llm import openai_complete_if_cache, openai_embedding
+    from lightrag.llm.openai import openai_complete_if_cache, openai_embed
     from lightrag.utils import EmbeddingFunc
 
-    embed_api_base = os.environ.get("EMBED_API_BASE", "http://localhost:11434/v1")
-    embed_api_key = os.environ.get("EMBED_API_KEY", "ollama")
-    embed_model = os.environ.get("EMBED_MODEL", "nomic-embed-text")
+    kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    async def embedding_func(texts: list[str]) -> list[list[float]]:
-        return openai_embedding(
+    def embedding_func(texts: list[str]):
+        return openai_embed(
             texts,
             model=embed_model,
             base_url=embed_api_base,
             api_key=embed_api_key,
         )
 
+    async def llm_func(
+        prompt: str,
+        system_prompt: str | None = None,
+        history_messages: list = [],
+        **kwargs,
+    ) -> str:
+        return await openai_complete_if_cache(
+            model=llm_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            history_messages=history_messages,
+            base_url=llm_api_base,
+            api_key=llm_api_key,
+            **kwargs,
+        )
+
+    # Resolve effective embedding dimension
+    eff_dim = embed_dim
+    if not eff_dim:
+        model_lower = embed_model.lower()
+        if any(x in model_lower for x in ("bge-m3", "bge-large", "text-embedding-3-large", "text-embedding-ada")):
+            eff_dim = 1536
+        elif any(x in model_lower for x in ("bge", "gte", "e5")):
+            eff_dim = 1024
+        elif "text-embedding-3-small" in model_lower:
+            eff_dim = 1536
+        elif any(x in model_lower for x in ("mxbai", "nomic")):
+            eff_dim = 768
+        else:
+            eff_dim = 768
+
     rag = LightRAG(
         working_dir=working_dir,
-        llm_model_func=lambda prompt, system_prompt=None, history_messages=[], **kwargs: "",
+        llm_model_func=llm_func,
         embedding_func=EmbeddingFunc(
-            embedding_dim=768,
+            embedding_dim=eff_dim,
             max_token_size=8192,
             func=embedding_func,
         ),
+        kv_storage=kv_storage,
+        vector_storage=vector_storage,
+        graph_storage=graph_storage,
+        doc_status_storage=doc_status_storage,
+        **storage_kwargs,
     )
 
-    param = QueryParam(mode=mode, top_k=limit)
+    await rag.initialize_storages()
+
+    # Resolve mode aliases
+    valid_modes = {"local", "global", "hybrid", "mix", "naive", "bypass"}
+    if mode not in valid_modes:
+        mode = "hybrid"
+
+    param = QueryParam(
+        mode=mode,
+        chunk_top_k=limit,
+        only_need_context=True,
+    )
 
     try:
-        result = await rag.aquery(query_text, param=param)
-        print(result)
+        result = await rag.aquery_data(query_text, param=param)
+        data = result.get("data", {}) if isinstance(result, dict) else {}
+
+        chunks = data.get("chunks", [])
+        entities = data.get("entities", [])
+        relations = data.get("relationships", []) or data.get("relations", [])
+
+        output_chunks = []
+        for i, chunk in enumerate(chunks):
+            chunk_id = chunk.get("chunk_id", "")
+            content_text = chunk.get("content", "")
+
+            title = ""
+            for line in content_text.split("\n"):
+                line = line.strip()
+                if line.startswith("#"):
+                    m = re.match(r"^(#{1,6})\s+(.+)", line)
+                    if m:
+                        title = m.group(2)
+                        break
+
+            if len(chunks) > 1:
+                score = 1.0 - (i / (len(chunks) - 1)) * 0.85
+            else:
+                score = 1.0
+
+            output_chunks.append({
+                "chunk_id": chunk_id,
+                "content": content_text[:500],
+                "title": title,
+                "score": round(score, 3),
+            })
+
+        output: dict = {
+            "chunks": output_chunks,
+            "mode": mode,
+            "total_chunks": len(output_chunks),
+        }
+
+        if return_entities:
+            output["entities"] = entities[:limit] if entities else []
+
+        if return_relations:
+            output["relations"] = relations[:limit] if relations else []
+
+        print(json.dumps(output, ensure_ascii=False))
     except Exception as e:
-        print(json.dumps({"error": str(e)}))
+        print(json.dumps({"error": str(e), "mode": mode}))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="LightRAG semantic query")
     parser.add_argument("--user-id", required=True)
     parser.add_argument("--query", required=True)
-    parser.add_argument("--mode", default="hybrid")
+    parser.add_argument("--mode", default="hybrid",
+                        choices=["local", "global", "hybrid", "mix", "naive", "bypass"])
     parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--return-entities", action="store_true")
+    parser.add_argument("--return-relations", action="store_true")
+    parser.add_argument("--embed-api-base", default="http://localhost:11434/v1")
+    parser.add_argument("--embed-api-key", default="ollama")
+    parser.add_argument("--embed-model", default="nomic-embed-text")
+    parser.add_argument("--embed-dim", type=int, default=0,
+                        help="Embedding vector dimension (0=auto-detect)")
+    parser.add_argument("--llm-api-base", default="http://localhost:11434/v1")
+    parser.add_argument("--llm-api-key", default="ollama")
+    parser.add_argument("--llm-model", default="llama3.2")
     args = parser.parse_args()
 
-    asyncio.run(query_rag(args.user_id, args.query, args.mode, args.limit))
+    asyncio.run(
+        query_rag(
+            user_id=args.user_id,
+            query_text=args.query,
+            mode=args.mode,
+            limit=args.limit,
+            return_entities=args.return_entities,
+            return_relations=args.return_relations,
+            embed_api_base=args.embed_api_base,
+            embed_api_key=args.embed_api_key,
+            embed_model=args.embed_model,
+            embed_dim=args.embed_dim,
+            llm_api_base=args.llm_api_base,
+            llm_api_key=args.llm_api_key,
+            llm_model=args.llm_model,
+        )
+    )
 
 
 if __name__ == "__main__":

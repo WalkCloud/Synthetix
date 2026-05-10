@@ -104,7 +104,7 @@ export class TaskQueue {
     return false;
   }
 
-  private async processNext(): Promise<void> {
+  async processNext(): Promise<void> {
     if (this.activeCount >= this.concurrency) {
       return;
     }
@@ -147,9 +147,10 @@ export class TaskQueue {
       return;
     }
 
-    const payload: TaskPayload = inputData
-      ? (JSON.parse(inputData) as TaskPayload)
-      : {};
+    const payload: TaskPayload = {
+      ...(inputData ? (JSON.parse(inputData) as TaskPayload) : {}),
+      taskId,
+    };
 
     await db.asyncTask.update({
       where: { id: taskId },

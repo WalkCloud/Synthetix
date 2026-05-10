@@ -69,8 +69,8 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
 
@@ -90,13 +90,15 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [draftsRes, docsRes] = await Promise.all([
+        const [draftsRes, docsRes, usageRes] = await Promise.all([
           fetch("/api/v1/drafts?limit=5"),
           fetch("/api/v1/documents?limit=5"),
+          fetch("/api/v1/models/usage?days=30"),
         ]);
 
         const draftsData = await draftsRes.json();
         const docsData = await docsRes.json();
+        const usageData = await usageRes.json();
 
         const drafts: DraftSummary[] = draftsData.success ? draftsData.data : [];
         const docs: DocumentSummary[] = docsData.success ? docsData.data : [];
@@ -106,9 +108,26 @@ export default function DashboardPage() {
         setStats({
           docCount: docsData.total ?? docs.length,
           draftCount: draftsData.total ?? drafts.length,
-          totalTokens: 0,
+          totalTokens: usageData.success
+            ? (usageData.data.summary?.totalInputTokens ?? 0) + (usageData.data.summary?.totalOutputTokens ?? 0)
+            : 0,
           activeTasks: 0,
         });
+
+        // Fetch running tasks count
+        fetch("/api/v1/tasks")
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) {
+              setStats((prev) => ({
+                ...prev,
+                activeTasks: d.data.filter(
+                  (t: { status: string }) => t.status === "running" || t.status === "pending"
+                ).length,
+              }));
+            }
+          })
+          .catch(() => {});
       } catch {
         // swallow — empty state renders
       } finally {

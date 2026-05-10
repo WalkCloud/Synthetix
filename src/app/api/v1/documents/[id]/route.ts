@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
+import { resolveModel } from "@/lib/llm/resolve-model";
+import { resolveEmbeddingDim } from "@/lib/rag/dimension";
+import { deleteDocumentFromRag, buildConfig } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 const storage = new LocalStorageAdapter();
@@ -53,5 +56,24 @@ export async function DELETE(
   await storage.deleteDocument(id, user.id);
   await db.document.delete({ where: { id } });
 
+  // Clean up LightRAG index (best-effort, non-blocking)
+  deleteLightRagData(id, user.id).catch(() => {});
+
   return NextResponse.json({ success: true, data: { deleted: id } });
+}
+
+async function deleteLightRagData(docId: string, userId: string) {
+  const [embedModel, llmModel] = await Promise.all([
+    resolveModel("embedding"),
+    resolveModel("writing"),
+  ]);
+  if (!embedModel || !llmModel?.provider.apiKey) return;
+  const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
+  await deleteDocumentFromRag(
+    userId,
+    await buildConfig(embedModel),
+    await buildConfig(llmModel),
+    embedDim,
+    docId,
+  );
 }

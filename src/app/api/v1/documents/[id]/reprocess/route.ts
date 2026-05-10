@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { getQueue } from "@/lib/queue";
+import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ApiResponse } from "@/types/api";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApiResponse>> {
   const user = await getAuthUser();
@@ -18,19 +20,19 @@ export async function POST(
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
 
+  let options: ProcessingOptions = {};
+  try {
+    const body = await request.json().catch(() => ({}));
+    if (body.options) options = body.options as ProcessingOptions;
+  } catch { /* ignore parse errors */ }
+
   await db.document.update({ where: { id }, data: { status: "uploading" } });
 
-  const task = await db.asyncTask.create({
-    data: {
-      userId: user.id,
-      type: "document_convert",
-      status: "pending",
-      inputData: JSON.stringify({ docId: doc.id }),
-    },
-  });
+  const queue = getQueue();
+  const taskId = await queue.submit("document_convert", { docId: doc.id, options }, user.id);
 
   return NextResponse.json({
     success: true,
-    data: { documentId: id, taskId: task.id },
+    data: { documentId: id, taskId },
   });
 }

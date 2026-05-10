@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { resolveModel } from "@/lib/llm/resolve-model";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ChatResponse } from "@/lib/llm/types";
 import { semanticSearch } from "@/lib/search/semantic";
@@ -18,10 +19,7 @@ interface ModelResolution {
 }
 
 async function resolveDefaultWritingModel(): Promise<ModelResolution> {
-  const writingModel = await db.modelConfig.findFirst({
-    where: { isDefaultFor: "writing" },
-    include: { provider: true },
-  });
+  const writingModel = await resolveModel("writing");
 
   if (writingModel?.provider) {
     return {
@@ -34,25 +32,9 @@ async function resolveDefaultWritingModel(): Promise<ModelResolution> {
     };
   }
 
-  const fallbackModel = await db.modelConfig.findFirst({
-    where: { capabilities: { contains: "chat" } },
-    include: { provider: true },
-  });
-
-  if (!fallbackModel?.provider) {
-    throw new Error(
-      "No writing model configured. Set a default writing model or add a chat-capable model in settings."
-    );
-  }
-
-  return {
-    provider: createLLMProvider({
-      apiBaseUrl: fallbackModel.provider.apiBaseUrl,
-      apiKey: fallbackModel.provider.apiKey,
-    }),
-    modelId: fallbackModel.modelId,
-    modelConfigId: fallbackModel.id,
-  };
+  throw new Error(
+    "No writing model configured. Set a default writing model or add a chat-capable model in settings."
+  );
 }
 
 async function fetchRagReferences(

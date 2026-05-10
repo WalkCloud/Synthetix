@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { SUPPORTED_FORMATS } from "@/types/documents";
+import { getQueue } from "@/lib/queue";
+import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ApiResponse } from "@/types/api";
 import crypto from "crypto";
 
@@ -72,17 +74,21 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     data: { originalPath: filePath },
   });
 
-  const task = await db.asyncTask.create({
-    data: {
-      userId: user.id,
-      type: "document_convert",
-      status: "pending",
-      inputData: JSON.stringify({ docId: doc.id }),
-    },
-  });
+  const options: ProcessingOptions = {
+    llmModelId: (formData.get("llmModelId") as string) || undefined,
+    embedModelId: (formData.get("embedModelId") as string) || undefined,
+    contextUsage: formData.get("contextUsage") ? parseInt(formData.get("contextUsage") as string) : undefined,
+    splitStrategy: (formData.get("splitStrategy") as ProcessingOptions["splitStrategy"]) || undefined,
+    indexTarget: (formData.get("indexTarget") as ProcessingOptions["indexTarget"]) || undefined,
+    indexMode: (formData.get("indexMode") as ProcessingOptions["indexMode"]) || undefined,
+    autoSplit: formData.get("autoSplit") ? (formData.get("autoSplit") as string) === "true" : undefined,
+  };
+
+  const queue = getQueue();
+  const taskId = await queue.submit("document_convert", { docId: doc.id, options }, user.id);
 
   return NextResponse.json(
-    { success: true, data: { document: doc, taskId: task.id } },
+    { success: true, data: { document: doc, taskId } },
     { status: 201 }
   );
 }

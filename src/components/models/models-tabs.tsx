@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { ProviderForm } from "./provider-form";
 import type { Provider, UsageData } from "./types";
 
-type Tab = "llm" | "embedding" | "usage";
+type Tab = "llm" | "embedding" | "usage" | "trends";
 type TimeRange = "today" | "week" | "month";
 
 interface IconColors {
@@ -202,7 +202,18 @@ export function ModelsTabs() {
 
   useEffect(() => {
     if (tab === "usage") fetchUsage(usageDays);
+    if (tab === "trends") fetchTrends();
   }, [tab, usageDays, fetchUsage]);
+
+  const [trendsData, setTrendsData] = useState<{ total: Array<{ date: string; input: number; output: number }>; byModule: Record<string, Array<{ date: string; input: number; output: number }>>; summary: { totalInput: number; totalOutput: number; totalCalls: number; days: number } } | null>(null);
+
+  const fetchTrends = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/models/usage/trends?days=30");
+      const data = await res.json();
+      if (data.success) setTrendsData(data.data);
+    } catch { /* ignore */ }
+  }, []);
 
   async function handleTest(id: string) {
     setTestingId(id);
@@ -316,8 +327,8 @@ export function ModelsTabs() {
     <div>
       {/* Tab headers */}
       <div className="flex gap-0 border-b border-border mb-6">
-        {(["llm", "embedding", "usage"] as const).map((t) => {
-          const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", usage: "Token Usage" };
+        {(["llm", "embedding", "usage", "trends"] as const).map((t) => {
+          const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", usage: "Token Usage", trends: "Usage Trends" };
           const isActive = tab === t;
           return (
             <button
@@ -644,6 +655,61 @@ export function ModelsTabs() {
                 <p className="text-sm text-center py-4" style={{color:"#52525B"}}>No recent activity.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Usage Trends */}
+      {tab === "trends" && trendsData && (
+        <div className="space-y-6">
+          <div className="bg-white border border-[#E4E4E7] rounded-[16px] shadow-sm">
+            <div className="px-6 py-5 border-b border-[#E4E4E7]">
+              <h3 className="text-base font-semibold">30-Day Token Usage Trend</h3>
+              <p className="text-xs text-muted-foreground mt-1">Daily input + output token totals</p>
+            </div>
+            <div className="p-6">
+              <div className="flex items-end gap-1 h-48">
+                {trendsData.total.slice(-30).map((day) => {
+                  const maxVal = Math.max(...trendsData.total.map((d) => d.input + d.output), 1);
+                  const height = ((day.input + day.output) / maxVal) * 100;
+                  return (
+                    <div key={day.date} className="flex-1 flex flex-col items-center gap-1 min-w-0" title={`${day.date}\nIn: ${formatNumber(day.input)}\nOut: ${formatNumber(day.output)}`}>
+                      <div className="w-full rounded-t-sm transition-all" style={{ height: `${Math.max(height, 2)}%`, background: "linear-gradient(to top, #7C3AED, #A78BFA)" }} />
+                      {trendsData.total.length < 15 && (
+                        <span className="text-[9px] text-muted-foreground rotate-45 origin-top-left whitespace-nowrap">{day.date.slice(5)}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {trendsData.total.length >= 15 && (
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-2">
+                  <span>{trendsData.total[trendsData.total.length - 30]?.date?.slice(5) || ""}</span>
+                  <span>{trendsData.total[trendsData.total.length - 1]?.date?.slice(5) || ""}</span>
+                </div>
+              )}
+              <div className="flex justify-center gap-6 mt-4 text-[13px]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm" style={{ background: "#7C3AED" }} />
+                  Input: {formatNumber(trendsData.total.reduce((s, d) => s + d.input, 0))}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm" style={{ background: "#A78BFA" }} />
+                  Output: {formatNumber(trendsData.total.reduce((s, d) => s + d.output, 0))}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="text-center text-sm text-muted-foreground">
+            {trendsData.summary ? `${trendsData.summary.totalCalls} total calls over ${trendsData.summary.days} days` : ""}
+          </div>
+        </div>
+      )}
+      {tab === "trends" && !trendsData && (
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="w-8 h-8 mx-auto mb-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground">Loading trends...</p>
           </div>
         </div>
       )}

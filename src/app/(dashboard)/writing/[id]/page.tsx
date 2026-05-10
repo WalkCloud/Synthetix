@@ -32,6 +32,7 @@ export default function WritingPage({
   const [sectionNotes, setSectionNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isHumanizing, setIsHumanizing] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"markdown" | "pdf" | "docx">("markdown");
   const [loading, setLoading] = useState(true);
 
   const activeSection = draft?.sections.find((s) => s.id === activeSectionId) || null;
@@ -157,23 +158,27 @@ export default function WritingPage({
     setIsHumanizing(false);
   }, [activeSectionId, id, loadDraft]);
 
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async (format?: "markdown" | "pdf" | "docx") => {
+    const fmt = format || exportFormat;
     const res = await fetch(`/api/v1/drafts/${id}/export`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: fmt }),
     });
     if (res.ok) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${draft?.title || "document"}.md`;
+      const ext = fmt === "docx" ? ".docx" : fmt === "pdf" ? ".html" : ".md";
+      a.download = `${draft?.title || "document"}${ext}`;
       a.click();
       URL.revokeObjectURL(url);
     } else {
       const data = await res.json();
       alert(data.error || "Export failed");
     }
-  }, [id, draft]);
+  }, [id, draft, exportFormat]);
 
   const handleAssemble = useCallback(async () => {
     await fetch(`/api/v1/drafts/${id}/assemble`, { method: "POST" });
@@ -222,27 +227,28 @@ export default function WritingPage({
           </h2>
           <span className="text-[13px] text-[#52525B]">{draft.title}</span>
         </div>
-        <div className="flex items-center gap-2.5">
-          {allCompleted && (
-            <button
-              onClick={handleAssemble}
-              className="px-4 py-2 border border-[#E4E4E7] rounded-xl text-sm font-medium text-[#52525B] hover:bg-[#ECECEA] transition-colors cursor-pointer"
+          <div className="flex items-center gap-2.5">
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value as "markdown" | "pdf" | "docx")}
+              className="px-3 py-2 border border-[#E4E4E7] rounded-xl text-sm bg-white cursor-pointer"
             >
-              Assemble
+              <option value="markdown">Markdown (.md)</option>
+              <option value="pdf">PDF (Print HTML)</option>
+              <option value="docx">Word (.docx)</option>
+            </select>
+            <button
+              onClick={() => handleExport(exportFormat)}
+              className="flex items-center gap-1.5 px-4 py-2 border border-[#E4E4E7] rounded-xl text-sm font-medium text-[#52525B] hover:bg-[#ECECEA] transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Export
             </button>
-          )}
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 px-4 py-2 border border-[#E4E4E7] rounded-xl text-sm font-medium text-[#52525B] hover:bg-[#ECECEA] transition-colors cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Export
-          </button>
-        </div>
+          </div>
       </header>
 
       {/* 3-Panel Layout */}
