@@ -49,7 +49,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
         ) : (
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-[#EEEEE9]">
+              <tr className="border-b bg-[#F4F2EF]">
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Name</th>
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Format</th>
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Size</th>

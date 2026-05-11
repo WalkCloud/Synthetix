@@ -1,8 +1,6 @@
-import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import type { ChatResponse } from "@/lib/llm/types";
 import { semanticSearch } from "@/lib/search/semantic";
 import {
   assembleContext,
@@ -126,6 +124,40 @@ export async function generateSection(
       error instanceof Error ? error.message : "Unknown error";
     throw new Error(`Section generation failed: ${message}`);
   }
+}
+
+export async function generateSectionStream(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"],
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  constraints?: ContextInput["constraints"]
+) {
+  const { provider, modelId, modelConfigId } = await resolveDefaultWritingModel();
+
+  const ragReferences = await fetchRagReferences(
+    draft.title,
+    section.title,
+    section.description,
+    userId
+  );
+
+  const messages = assembleContext({
+    draft,
+    section,
+    completedSections,
+    ragReferences,
+    constraints,
+  });
+
+  const stream = provider.chatStream({
+    model: modelId,
+    messages,
+    temperature: GENERATION_TEMPERATURE,
+    stream: true,
+  });
+
+  return { stream, modelConfigId, ragReferences };
 }
 
 export interface ComparisonResult {

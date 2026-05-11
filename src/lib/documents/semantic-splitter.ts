@@ -6,9 +6,9 @@ interface SemanticModelConfig {
   provider: {
     id: string;
     name: string;
-    type: string;
+    providerType: string;
     apiBaseUrl: string;
-    apiKey: string;
+    apiKey: string | null;
     createdAt: Date;
     updatedAt: Date;
   };

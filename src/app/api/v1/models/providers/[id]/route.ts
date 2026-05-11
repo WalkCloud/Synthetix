@@ -74,6 +74,7 @@ export async function PUT(
         outputPrice: (m.outputPrice as number | null) ?? null,
         localOrCloud: (m.localOrCloud as string) || "local",
         isDefaultFor: (m.isDefaultFor as string | null) ?? null,
+        embeddingBatchSize: (m.embeddingBatchSize as number | null) ?? null,
       })),
     };
   }

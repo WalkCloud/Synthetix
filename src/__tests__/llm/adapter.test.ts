@@ -227,7 +227,7 @@ describe("OpenAICompatibleAdapter", () => {
 
       const result = await adapter.embed(["hello", "world"]);
 
-      expect(result).toEqual([
+      expect(result.embeddings).toEqual([
         [0.1, 0.2, 0.3],
         [0.4, 0.5, 0.6],
       ]);

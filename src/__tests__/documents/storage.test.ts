@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import fs from "fs";
+import path from "path";
 
-const TEST_ROOT = "/tmp/synthetix-test-storage";
+const TEST_ROOT = path.join("/tmp", "synthetix-test-storage");
 
 describe("LocalStorageAdapter", () => {
   const adapter = new LocalStorageAdapter(TEST_ROOT);
@@ -20,7 +21,7 @@ describe("LocalStorageAdapter", () => {
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
     const filePath = await adapter.saveOriginal("doc-1", file, "user-1");
     expect(fs.existsSync(filePath)).toBe(true);
-    expect(filePath).toContain("user-1/doc-1/original.pdf");
+    expect(filePath).toContain(path.join("user-1", "doc-1", "original.pdf"));
   });
 
   it("saves and reads markdown content", async () => {
@@ -48,6 +49,6 @@ describe("LocalStorageAdapter", () => {
 
   it("getDocumentDir returns correct path", () => {
     const dir = adapter.getDocumentDir("doc-123", "user-abc");
-    expect(dir).toBe(`${TEST_ROOT}/user-abc/doc-123`);
+    expect(dir).toBe(path.join(TEST_ROOT, "user-abc", "doc-123"));
   });
 });

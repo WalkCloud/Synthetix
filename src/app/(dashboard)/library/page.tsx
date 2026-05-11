@@ -21,7 +21,7 @@ function fileIconClass(format: string): string {
     pptx: "doc-icon-pptx bg-[#FFF7ED] text-[#EA580C]",
     xlsx: "bg-[#DCFCE7] text-[#16A34A]",
   };
-  return m[format] || "bg-[#EEEEE9] text-[#52525B]";
+  return m[format] || "bg-[#F4F2EF] text-[#6B6560]";
 }
 
 const tagColors: Record<string, string> = {
@@ -42,6 +42,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"keyword" | "semantic">("keyword");
+  const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [filterFormat, setFilterFormat] = useState<string>("All");
   const [sortBy, setSortBy] = useState("Newest first");
@@ -99,11 +100,22 @@ export default function LibraryPage() {
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
-    const endpoint = searchMode === "keyword" ? "/api/v1/library/search/keyword" : "/api/v1/library/search/semantic";
-    const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: searchQuery }) });
-    const data = await res.json();
-    if (data.success) setSearchResults(data.data);
-    setTab("semantic");
+    setIsSearching(true);
+    try {
+      const endpoint = searchMode === "keyword" ? "/api/v1/library/search/keyword" : "/api/v1/library/search/semantic";
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: searchQuery }) });
+      const data = await res.json();
+      if (data.success) {
+        setSearchResults(data.data);
+        setTab("semantic");
+      } else {
+        alert(data.error || "Search failed");
+      }
+    } catch (error) {
+      alert("Network error or server unavailable.");
+    } finally {
+      setIsSearching(false);
+    }
   }, [searchQuery, searchMode]);
 
   const statDocs = total || documents.length;
@@ -122,46 +134,52 @@ export default function LibraryPage() {
       <Header title="Document Library" />
       <div className="p-8">
         {/* Search Hero */}
-        <div className="rounded-[22px] border border-[#E4E4E7] p-8 mb-6 animate-fade-in-up"
-          style={{ background: "linear-gradient(135deg, #EEF0FD 0%, #F5F5F3 50%, #FFFFFF 100%)" }}>
+        <div className="rounded-[22px] border border-border p-8 mb-6 animate-fade-in-up"
+          style={{ background: "linear-gradient(135deg, #F3F1FC 0%, #F4F2EF 50%, #FFFFFF 100%)" }}>
           <h3 className="font-display text-[20px] font-bold text-foreground mb-1">Search Your Knowledge Base</h3>
           <p className="text-[14px] text-muted-foreground mb-5">Find documents by keyword or ask questions with AI-powered semantic search</p>
-          <div className="flex bg-white rounded-[16px] shadow-md border-2 border-[#E4E4E7] focus-within:border-primary transition-colors">
+          <div className="flex bg-white rounded-[16px] shadow-md border-2 border-[#E8E6E1] focus-within:border-primary transition-colors">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5 ml-4 my-auto text-muted-foreground shrink-0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" placeholder="Search documents or ask a question..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               className="flex-1 border-none px-4 py-4 text-[15px] outline-none bg-transparent font-sans text-foreground placeholder:text-muted-foreground" />
-            <div className="flex items-center gap-0.5 p-1.5 bg-[#EEEEE9] rounded-[12px] my-1.5 mr-1.5">
+            <div className="flex items-center gap-0.5 p-1.5 bg-[#F4F2EF] rounded-[12px] my-1.5 mr-1.5">
               <button onClick={() => setSearchMode("keyword")}
                 className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "keyword" ? "bg-white text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}>Keyword</button>
               <button onClick={() => setSearchMode("semantic")}
                 className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "semantic" ? "bg-white text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}>Semantic</button>
             </div>
-            <button onClick={handleSearch} className="btn m-1.5 px-6 py-3 bg-primary text-white font-semibold rounded-[12px] hover:bg-primary-light transition-colors text-sm">Search</button>
+            <button onClick={handleSearch} disabled={isSearching} className="btn m-1.5 px-6 py-3 bg-primary text-white font-semibold rounded-[12px] hover:bg-primary-light transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[90px]">
+              {isSearching ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                "Search"
+              )}
+            </button>
           </div>
         </div>
 
         {/* Stats Ribbon */}
         <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
-          <div className="bg-white border border-[#E4E4E7] rounded-[12px] p-4 flex items-center gap-3.5">
+          <div className="bg-white border border-[#E8E6E1] rounded-[12px] p-4 flex items-center gap-3.5">
             <div className="w-[42px] h-[42px] rounded-[12px] flex items-center justify-center bg-primary-100 text-primary">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
             <div><div className="text-[22px] font-bold text-foreground font-display">{statDocs}</div><div className="text-xs text-muted-foreground">Documents</div></div>
           </div>
-          <div className="bg-white border border-[#E4E4E7] rounded-[12px] p-4 flex items-center gap-3.5">
+          <div className="bg-white border border-[#E8E6E1] rounded-[12px] p-4 flex items-center gap-3.5">
             <div className="w-[42px] h-[42px] rounded-[12px] flex items-center justify-center bg-[#EFF6FF] text-[#2563EB]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             </div>
             <div><div className="text-[22px] font-bold text-foreground font-display">{statChunks}</div><div className="text-xs text-muted-foreground">Chunks</div></div>
           </div>
-          <div className="bg-white border border-[#E4E4E7] rounded-[12px] p-4 flex items-center gap-3.5">
+          <div className="bg-white border border-[#E8E6E1] rounded-[12px] p-4 flex items-center gap-3.5">
             <div className="w-[42px] h-[42px] rounded-[12px] flex items-center justify-center bg-[#DCFCE7] text-[#16A34A]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             </div>
             <div><div className="text-[22px] font-bold text-foreground font-display">{statIndexed}%</div><div className="text-xs text-muted-foreground">Indexed</div></div>
           </div>
-          <div className="bg-white border border-[#E4E4E7] rounded-[12px] p-4 flex items-center gap-3.5">
+          <div className="bg-white border border-[#E8E6E1] rounded-[12px] p-4 flex items-center gap-3.5">
             <div className="w-[42px] h-[42px] rounded-[12px] flex items-center justify-center bg-[#FEF3C7] text-[#D97706]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
@@ -170,7 +188,7 @@ export default function LibraryPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-0 border-b border-[#E4E4E7] mb-6">
+        <div className="flex gap-0 border-b border-[#E8E6E1] mb-6">
           {[
             { id: "documents" as TabId, label: "Documents" },
             { id: "semantic" as TabId, label: "Semantic Results" },
@@ -190,11 +208,11 @@ export default function LibraryPage() {
             <div className="flex items-center gap-2 flex-wrap mb-5">
               {["All", "PDF", "DOCX", "PPTX", "Markdown"].map((f) => (
                 <button key={f} onClick={() => { setFilterFormat(f); setPage(1); }}
-                  className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f ? "border-primary text-primary bg-primary-100" : "border-[#E4E4E7] bg-white text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}>{f}</button>
+                  className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f ? "border-primary text-primary bg-primary-100" : "border-[#E8E6E1] bg-white text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}>{f}</button>
               ))}
               <span className="flex-1" />
               <Select value={sortBy} onValueChange={(v) => setSortBy(v!)}>
-                <SelectTrigger className="h-auto px-3 py-1.5 border-[#E4E4E7] text-[13px] bg-white text-foreground font-sans cursor-pointer">
+                <SelectTrigger className="h-auto px-3 py-1.5 border-[#E8E6E1] text-[13px] bg-white text-foreground font-sans cursor-pointer">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -206,7 +224,7 @@ export default function LibraryPage() {
             </div>
 
             {/* Table */}
-            <div className="bg-white border border-[#E4E4E7] rounded-[16px] overflow-hidden">
+            <div className="bg-white border border-[#E8E6E1] rounded-[16px] overflow-hidden">
               {loading ? (
                 <div className="p-12 text-center text-muted-foreground">Loading...</div>
               ) : documents.length === 0 ? (
@@ -221,7 +239,7 @@ export default function LibraryPage() {
                   <thead>
                     <tr>
                       {["Document", "Tags", "Chunks", "Size", "Indexed", "Date", ""].map((h) => (
-                        <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-[#EEEEE9] border-b border-[#E4E4E7] first:rounded-tl-[16px] last:rounded-tr-[16px]">{h}</th>
+                        <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-[#F4F2EF] border-b border-[#E8E6E1] first:rounded-tl-[16px] last:rounded-tr-[16px]">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -232,7 +250,7 @@ export default function LibraryPage() {
                       const chunkCount = doc.chunks?.length || 0;
                       const chunkPct = Math.min(100, Math.round((chunkCount / maxChunks) * 100));
                       return (
-                        <tr key={doc.id} className="border-b border-[#F0F0F0] last:border-b-0 hover:bg-[#EEF0FD] transition-colors">
+                        <tr key={doc.id} className="border-b border-[#F4F2EF] last:border-b-0 hover:bg-[#F3F1FC] transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-3">
                               <div className={`w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0 ${fileIconClass(fmt)}`}>
@@ -253,7 +271,7 @@ export default function LibraryPage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-2">
-                              <div className="w-[60px] h-1.5 bg-[#EEEEE9] rounded-full overflow-hidden">
+                              <div className="w-[60px] h-1.5 bg-[#F4F2EF] rounded-full overflow-hidden">
                                 <div className="h-full bg-primary rounded-full" style={{ width: `${chunkPct}%` }} />
                               </div>
                               <span className="text-xs text-muted-foreground">{chunkCount}</span>
@@ -272,10 +290,10 @@ export default function LibraryPage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <div className="flex gap-1">
-                              <button onClick={() => handlePreview(doc.id, doc.originalName)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Preview">
+                              <button onClick={() => handlePreview(doc.id, doc.originalName)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors" title="Preview">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                               </button>
-                              <button onClick={() => handleReindex(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors" title="Reindex">
+                              <button onClick={() => handleReindex(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors" title="Reindex">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                               </button>
                               <button onClick={() => handleDelete(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#FEE2E2] hover:text-[#DC2626] transition-colors" title="Delete">
@@ -295,7 +313,7 @@ export default function LibraryPage() {
             {total > limit && (
               <div className="flex items-center justify-center gap-1 mt-6">
                 <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
-                  className="min-w-[36px] h-9 rounded-lg border border-[#E4E4E7] bg-white text-foreground text-sm font-medium cursor-pointer hover:bg-[#EEEEE9] disabled:opacity-40 disabled:cursor-not-allowed">&laquo;</button>
+                  className="min-w-[36px] h-9 rounded-lg border border-[#E8E6E1] bg-white text-foreground text-sm font-medium cursor-pointer hover:bg-[#F4F2EF] disabled:opacity-40 disabled:cursor-not-allowed">&laquo;</button>
                 {Array.from({ length: Math.min(5, Math.ceil(total / limit)) }, (_, i) => {
                   const totalPages = Math.ceil(total / limit);
                   let p: number;
@@ -305,11 +323,11 @@ export default function LibraryPage() {
                   else { p = page - 2 + i; }
                   return (
                     <button key={p} onClick={() => setPage(p)}
-                      className={`min-w-[36px] h-9 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${p === page ? "bg-primary text-white border-primary" : "border-[#E4E4E7] bg-white text-foreground hover:bg-[#EEEEE9]"}`}>{p}</button>
+                      className={`min-w-[36px] h-9 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${p === page ? "bg-primary text-white border-primary" : "border-[#E8E6E1] bg-white text-foreground hover:bg-[#F4F2EF]"}`}>{p}</button>
                   );
                 })}
                 <button onClick={() => setPage(Math.min(Math.ceil(total / limit), page + 1))} disabled={page >= Math.ceil(total / limit)}
-                  className="min-w-[36px] h-9 rounded-lg border border-[#E4E4E7] bg-white text-foreground text-sm font-medium cursor-pointer hover:bg-[#EEEEE9] disabled:opacity-40 disabled:cursor-not-allowed">&raquo;</button>
+                  className="min-w-[36px] h-9 rounded-lg border border-[#E8E6E1] bg-white text-foreground text-sm font-medium cursor-pointer hover:bg-[#F4F2EF] disabled:opacity-40 disabled:cursor-not-allowed">&raquo;</button>
               </div>
             )}
           </div>
@@ -318,7 +336,13 @@ export default function LibraryPage() {
         {/* Semantic Results Tab */}
         {tab === "semantic" && (
           <div className="space-y-3 animate-fade-in-up">
-            {searchResults.length === 0 ? (
+            {isSearching ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+                <h3 className="text-lg font-semibold text-foreground mb-2">Searching...</h3>
+                <p className="text-sm text-muted-foreground">This may take a few seconds, depending on the index size.</p>
+              </div>
+            ) : searchResults.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16 text-muted-foreground mb-4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <h3 className="text-lg font-semibold text-foreground mb-2">No search results</h3>
@@ -326,7 +350,7 @@ export default function LibraryPage() {
               </div>
             ) : (
               searchResults.map((r, i) => (
-                <div key={i} className="bg-white border border-[#E4E4E7] rounded-[16px] p-5 hover:border-[#D4D4D8] transition-colors">
+                <div key={i} className="bg-white border border-[#E8E6E1] rounded-[16px] p-5 hover:border-[#D4D4D8] transition-colors">
                   <div className="flex justify-between items-center mb-2.5">
                     <span className="font-semibold text-[15px] text-foreground">{r.documentName}</span>
                     {typeof r.score === "number" && r.score >= 0.9 ? (
@@ -336,11 +360,11 @@ export default function LibraryPage() {
                     ) : typeof r.score === "number" ? (
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706]">{Math.round(r.score * 100)}% match</span>
                     ) : (
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#EEEEE9] text-[#52525B]">Keyword match</span>
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#F4F2EF] text-[#6B6560]">Keyword match</span>
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: r.content.slice(0, 300).replace(/\b(search|document|test|content)\b/gi, "<mark class='bg-[#EEF0FD] text-primary px-1 py-px rounded-sm'>" + "$&" + "</mark>") }} />
+                    dangerouslySetInnerHTML={{ __html: r.content.slice(0, 300).replace(/\b(search|document|test|content)\b/gi, "<mark class='bg-[#F3F1FC] text-primary px-1 py-px rounded-sm'>" + "$&" + "</mark>") }} />
                   <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> {r.chunkId}</span>
                     {r.title && <span>{r.title}</span>}
@@ -354,7 +378,7 @@ export default function LibraryPage() {
         {/* RAG Pipeline Tab */}
         {tab === "layers" && (
           <div className="flex animate-fade-in-up">
-            <div className="flex-1 bg-white border border-[#E4E4E7] p-6 rounded-l-[22px] relative">
+            <div className="flex-1 bg-white border border-[#E8E6E1] p-6 rounded-l-[22px] relative">
               <div className="w-12 h-12 rounded-[12px] flex items-center justify-center bg-primary-100 text-primary mb-3.5">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               </div>
@@ -365,7 +389,7 @@ export default function LibraryPage() {
                 <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#DCFCE7] text-[#16A34A]">{(statSize / 1048576).toFixed(1)} MB stored</span>
               </div>
             </div>
-            <div className="flex-1 bg-white border-y border-r border-[#E4E4E7] p-6 relative">
+            <div className="flex-1 bg-white border-y border-r border-[#E8E6E1] p-6 relative">
               <div className="w-12 h-12 rounded-[12px] flex items-center justify-center bg-[#EFF6FF] text-[#2563EB] mb-3.5">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               </div>
@@ -376,7 +400,7 @@ export default function LibraryPage() {
                 <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-[#FFF7ED] text-[#EA580C]">{splitGroups} topic groups</span>
               </div>
             </div>
-            <div className="flex-1 bg-white border border-[#E4E4E7] p-6 rounded-r-[22px] relative">
+            <div className="flex-1 bg-white border border-[#E8E6E1] p-6 rounded-r-[22px] relative">
               <div className="w-12 h-12 rounded-[12px] flex items-center justify-center bg-[#DCFCE7] text-[#16A34A] mb-3.5">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg>
               </div>

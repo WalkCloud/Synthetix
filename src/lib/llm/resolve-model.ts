@@ -13,7 +13,11 @@ export async function resolveModel(capability: string): Promise<ModelWithProvide
   if (!model) {
     const all = await db.modelConfig.findMany({ include: { provider: true } });
     model = all.find((m) => {
-      try { return JSON.parse(m.capabilities as string).includes(capability); } catch { return false; }
+      try { 
+        const caps = JSON.parse(m.capabilities as string);
+        if (capability === "writing" && caps.includes("chat")) return true;
+        return caps.includes(capability); 
+      } catch { return false; }
     }) || null;
   }
 

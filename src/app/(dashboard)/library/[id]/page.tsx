@@ -123,7 +123,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                           className={`w-full text-left rounded-[10px] transition-all border ${
                             isExpanded
                               ? "bg-white border-[#D4D4D8] shadow-sm"
-                              : "bg-white/60 border-transparent hover:bg-white hover:border-[#E4E4E7]"
+                              : "bg-white/60 border-transparent hover:bg-white hover:border-slate-200"
                           }`}
                         >
                           <div className="p-3">
@@ -142,13 +142,13 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                                   </div>
                                 )}
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground bg-[#F4F4F5] px-2 py-0.5 rounded-full shrink-0">
+                              <span className="text-[11px] font-medium text-muted-foreground bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
                                 {chunk.tokenCount?.toLocaleString()} tokens
                               </span>
                             </div>
 
                             {isExpanded && chunk.content && (
-                              <div className="mt-3 pt-3 border-t border-[#E4E4E7]">
+                              <div className="mt-3 pt-3 border-t border-slate-200">
                                 <pre className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap font-sans max-h-[300px] overflow-y-auto">
                                   {chunk.content.slice(0, 2000)}
                                   {(chunk.content.length || 0) > 2000 && (
@@ -199,8 +199,8 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
               {doc.tags?.map((tag) => <TagBadge key={tag.id} name={tag.name} onRemove={removeTag} />)}
             </div>
             <form onSubmit={(e) => { e.preventDefault(); const input = (e.target as HTMLFormElement).tag as HTMLInputElement; if (input.value) { addTag(input.value); input.value = ""; } }} className="flex gap-2">
-              <input name="tag" className="flex-1 px-3 py-1.5 border rounded-lg text-sm" placeholder="Add tag..." />
-              <button type="submit" className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">Add</button>
+              <input name="tag" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-sm shadow-sm" placeholder="Add tag..." />
+              <button type="submit" className="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">Add</button>
             </form>
           </div>
         </aside>

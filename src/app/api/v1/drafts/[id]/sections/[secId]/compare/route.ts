@@ -27,7 +27,11 @@ export async function POST(
 
   const { id: draftId, secId: sectionId } = await params;
 
-  let body: { constraints?: { wordLimit?: number; additionalRequirements?: string } };
+  let body: { 
+    constraints?: { wordLimit?: number; additionalRequirements?: string };
+    modelAConfigId?: string;
+    modelBConfigId?: string;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -56,7 +60,13 @@ export async function POST(
     }
 
     // Resolve two models for comparison
-    const modelARecord = await resolveModel("writing");
+    let modelARecord = null;
+    if (body.modelAConfigId) {
+      modelARecord = await db.modelConfig.findUnique({ where: { id: body.modelAConfigId }, include: { provider: true } });
+    }
+    if (!modelARecord) {
+      modelARecord = await resolveModel("writing");
+    }
     if (!modelARecord?.provider) {
       return NextResponse.json(
         { success: false, error: "No default writing model configured. Set a default writing model in settings." },
@@ -65,13 +75,19 @@ export async function POST(
     }
 
     // Find a second model different from model A
-    const modelBRecord = await db.modelConfig.findFirst({
-      where: {
-        id: { not: modelARecord.id },
-        capabilities: { contains: "chat" },
-      },
-      include: { provider: true },
-    });
+    let modelBRecord = null;
+    if (body.modelBConfigId) {
+      modelBRecord = await db.modelConfig.findUnique({ where: { id: body.modelBConfigId }, include: { provider: true } });
+    }
+    if (!modelBRecord) {
+      modelBRecord = await db.modelConfig.findFirst({
+        where: {
+          id: { not: modelARecord.id },
+          capabilities: { contains: "chat" },
+        },
+        include: { provider: true },
+      });
+    }
     if (!modelBRecord?.provider) {
       return NextResponse.json(
         { success: false, error: "No second model available for comparison. Add another chat-capable model in settings." },

@@ -31,8 +31,8 @@ export function TopologyStatsBar({ stats }: TopologyStatsBarProps) {
     <div className="flex items-center gap-5">
       {entries.map((entry) => (
         <div key={entry.label} className="flex items-center gap-1.5">
-          <span className="text-[13px] text-[#52525B]">{entry.label}:</span>
-          <span className="text-[13px] font-bold text-[#18181B]">
+          <span className="text-[13px] text-[#6B6560]">{entry.label}:</span>
+          <span className="text-[13px] font-bold text-[#1E1B18]">
             {entry.value}
           </span>
         </div>

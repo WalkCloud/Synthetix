@@ -43,10 +43,10 @@ export function StatePills({ status }: StatePillsProps) {
             key={state.key}
             className={`text-[11px] py-1.5 px-2 rounded-lg text-center font-semibold ${
               isDone
-                ? "bg-[#DCFCE7] text-[#16A34A]"
+                ? "bg-emerald-100 text-emerald-600"
                 : isActive
-                  ? "bg-[#EEF0FD] text-[#4361EE]"
-                  : "bg-[#ECECEA] text-[#52525B]"
+                  ? "bg-primary-50 text-primary-700"
+                  : "bg-slate-100 text-slate-500"
             }`}
           >
             {state.label}
