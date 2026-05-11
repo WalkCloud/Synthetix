@@ -56,9 +56,9 @@ function getFileIconClass(ext: string): string {
     md: "bg-[#DCFCE7] text-[#16A34A]",
     html: "bg-[#FFF7ED] text-[#EA580C]",
     epub: "bg-[#EFF6FF] text-[#2563EB]",
-    txt: "bg-[#EEEEE9] text-[#52525B]",
+    txt: "bg-[#F4F2EF] text-[#6B6560]",
   };
-  return m[ext] || "bg-[#EEEEE9] text-[#52525B]";
+  return m[ext] || "bg-[#F4F2EF] text-[#6B6560]";
 }
 
 export default function DocumentsPage() {
@@ -187,7 +187,7 @@ export default function DocumentsPage() {
       <div className="p-8">
         {/* Upload Zone */}
         <div
-          className="mb-6 border-2 border-dashed border-[#E4E4E7] rounded-[16px] p-12 text-center cursor-pointer transition-all hover:border-primary hover:bg-primary-50 animate-fade-in-up"
+          className="mb-6 border-2 border-dashed border-[#E8E6E1] rounded-[16px] p-12 text-center cursor-pointer transition-all hover:border-primary hover:bg-primary-50 animate-fade-in-up"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
           onClick={() => inputRef.current?.click()}
@@ -203,8 +203,8 @@ export default function DocumentsPage() {
 
         {/* Upload Queue */}
         {uploads.length > 0 && (
-          <div className="bg-base-white border border-[#E4E4E7] rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-[#E4E4E7]">
+          <div className="bg-base-white border border-[#E8E6E1] rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#E8E6E1]">
               <h3 className="font-display text-[16px] font-semibold text-foreground">Upload Queue</h3>
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary">
                 {uploads.length} file{uploads.length !== 1 ? "s" : ""}
@@ -215,7 +215,7 @@ export default function DocumentsPage() {
                 const ext = getFileExt(item.name);
                 const ic = getFileIconClass(ext);
                 return (
-                  <div key={item.id} className="flex items-center gap-4 py-4 border-b border-[#F0F0F0] last:border-b-0">
+                  <div key={item.id} className="flex items-center gap-4 py-4 border-b border-[#F4F2EF] last:border-b-0">
                     <div className={`w-11 h-11 rounded-[12px] flex items-center justify-center shrink-0 ${ic}`}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
@@ -225,7 +225,7 @@ export default function DocumentsPage() {
                       <div className="text-[14px] font-semibold text-foreground mb-1">{item.name}</div>
                       <div className="text-[12px] text-muted-foreground">{formatSize(item.size)}</div>
                       {item.status === "converting" && (
-                        <div className="mt-2 w-full h-1.5 bg-[#EEEEE9] rounded-full overflow-hidden">
+                        <div className="mt-2 w-full h-1.5 bg-[#F4F2EF] rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${item.progress}%` }} />
                         </div>
                       )}
@@ -243,13 +243,13 @@ export default function DocumentsPage() {
                         </span>
                       )}
                       {item.status === "queued" && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-[#EEEEE9] text-[#52525B]">Queued</span>
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-[#F4F2EF] text-[#6B6560]">Queued</span>
                       )}
                       {item.status === "failed" && (
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-[#FEE2E2] text-[#DC2626]">{item.error || "Failed"}</span>
                       )}
                     </div>
-                    <button onClick={() => removeUpload(item.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#EEEEE9] hover:text-foreground transition-colors shrink-0">
+                    <button onClick={() => removeUpload(item.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors shrink-0">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                         <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                       </svg>
@@ -262,8 +262,8 @@ export default function DocumentsPage() {
         )}
 
         {/* Processing Settings */}
-        <div className="bg-base-white border border-[#E4E4E7] rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-[#E4E4E7]">
+        <div className="bg-base-white border border-[#E8E6E1] rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-[#E8E6E1]">
             <h3 className="font-display text-[16px] font-semibold text-foreground">Processing Settings</h3>
           </div>
           <div className="p-6">
@@ -302,7 +302,7 @@ export default function DocumentsPage() {
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Max Context Usage</label>
                 <div className="flex items-center gap-3">
                   <input type="range" min="10" max="100" value={contextUsage}
-                    className="flex-1 h-2 bg-[#F0F0F0] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
+                    className="flex-1 h-2 bg-[#F4F2EF] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
                     onChange={(e) => setContextUsage(Number(e.target.value))} />
                   <span className="text-[14px] font-semibold text-primary min-w-[36px] text-right">{contextUsage}%</span>
                 </div>
@@ -357,7 +357,7 @@ export default function DocumentsPage() {
                   </div>
                   <label className="relative w-11 h-6 cursor-pointer">
                     <input type="checkbox" checked={autoSplit} onChange={(e) => setAutoSplit(e.target.checked)} className="sr-only peer"/>
-                    <span className="absolute inset-0 bg-[#E4E4E7] rounded-full transition-all duration-200 peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:bg-white after:rounded-full after:transition-transform after:duration-200 peer-checked:after:translate-x-5"/>
+                    <span className="absolute inset-0 bg-[#E8E6E1] rounded-full transition-all duration-200 peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:bg-white after:rounded-full after:transition-transform after:duration-200 peer-checked:after:translate-x-5"/>
                   </label>
                 </div>
               </div>

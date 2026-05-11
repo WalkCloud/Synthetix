@@ -31,9 +31,15 @@ export default function WritingPage({
   const [references, setReferences] = useState<Reference[]>([]);
   const [sectionNotes, setSectionNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [exportFormat, setExportFormat] = useState<"markdown" | "pdf" | "docx">("markdown");
   const [loading, setLoading] = useState(true);
+  
+  // Model selection states
+  const [models, setModels] = useState<any[]>([]);
+  const [selectedModelA, setSelectedModelA] = useState<string>("");
+  const [selectedModelB, setSelectedModelB] = useState<string>("");
 
   const activeSection = draft?.sections.find((s) => s.id === activeSectionId) || null;
 
@@ -54,31 +60,99 @@ export default function WritingPage({
 
   useEffect(() => {
     loadDraft();
-  }, [id]);
+  }, [id, loadDraft]);
+
+  useEffect(() => {
+    fetch("/api/v1/models/providers")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          const allModels = data.data.flatMap((p: any) => p.models || []);
+          const chatModels = allModels.filter((m: any) => {
+            const caps = typeof m.capabilities === "string" ? JSON.parse(m.capabilities) : (m.capabilities || []);
+            return caps.includes("chat");
+          });
+          setModels(chatModels);
+        }
+      })
+      .catch((err) => console.error("Failed to load models:", err));
+  }, []);
 
   const handleGenerate = useCallback(
-    async (mode: GenerationMode) => {
+    async (mode: GenerationMode, constraints?: { wordLimit: number; additionalRequirements: string }) => {
       if (!activeSectionId) return;
       setIsGenerating(true);
+      setStreamingContent("");
 
       const endpoint =
         mode === "compare"
           ? `/api/v1/drafts/${id}/sections/${activeSectionId}/compare`
           : `/api/v1/drafts/${id}/sections/${activeSectionId}/generate`;
 
+      const payload = {
+        constraints,
+        modelAConfigId: mode === "compare" && selectedModelA && selectedModelA !== "auto" ? selectedModelA : undefined,
+        modelBConfigId: mode === "compare" && selectedModelB && selectedModelB !== "auto" ? selectedModelB : undefined,
+      };
+
       try {
-        const res = await fetch(endpoint, { method: "POST" });
-        const data = await res.json();
-        if (data.success && data.data.references) {
-          setReferences(data.data.references);
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.headers.get("Content-Type")?.includes("text/event-stream")) {
+          const reader = res.body?.getReader();
+          if (!reader) throw new Error("No response stream");
+
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let contentBuf = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            let eolIndex;
+            while ((eolIndex = buffer.indexOf("\n\n")) >= 0) {
+              const message = buffer.slice(0, eolIndex).trim();
+              buffer = buffer.slice(eolIndex + 2);
+              
+              if (message.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(message.slice(6));
+                  if (data.type === "references") setReferences(data.references);
+                  else if (data.type === "chunk") {
+                    contentBuf += data.content;
+                    setStreamingContent(contentBuf);
+                  } else if (data.type === "error") {
+                    alert(data.error);
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+          await loadDraft();
+          setStreamingContent("");
+        } else {
+          const data = await res.json();
+          
+          if (!data.success) {
+            alert(data.error || "Generation failed");
+          } else if (data.data && data.data.references) {
+            setReferences(data.data.references);
+          }
+          await loadDraft();
         }
-        await loadDraft();
       } catch (err) {
         console.error("Generation failed:", err);
+        alert(err instanceof Error ? err.message : "Generation failed");
       }
       setIsGenerating(false);
     },
-    [activeSectionId, id, loadDraft]
+    [activeSectionId, id, loadDraft, selectedModelA, selectedModelB]
   );
 
   const handleSelectModel = useCallback(
@@ -187,10 +261,10 @@ export default function WritingPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center text-[#A1A1AA]">
-          <div className="w-10 h-10 mx-auto mb-3 border-3 border-[#4361EE] border-t-transparent rounded-full animate-spin" />
-          <p>Loading draft...</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50/50">
+        <div className="text-center text-slate-400">
+          <div className="w-10 h-10 mx-auto mb-3 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium">Loading draft...</p>
         </div>
       </div>
     );
@@ -198,12 +272,12 @@ export default function WritingPage({
 
   if (!draft) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50/50">
         <div className="text-center">
-          <p className="text-lg font-medium text-[#52525B] mb-2">Draft not found</p>
+          <p className="text-lg font-medium text-slate-600 mb-2">Draft not found</p>
           <button
             onClick={() => router.push("/writing")}
-            className="text-sm text-[#4361EE] hover:underline cursor-pointer"
+            className="text-sm font-medium text-primary-600 hover:underline cursor-pointer"
           >
             Back to drafts
           </button>
@@ -220,18 +294,18 @@ export default function WritingPage({
   return (
     <div className="min-h-screen">
       {/* Custom Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between px-6 h-16 bg-[rgba(247,246,243,0.85)] backdrop-blur-xl border-b border-[#E4E4E7]">
+      <header className="sticky top-0 z-10 flex items-center justify-between px-6 h-[60px] bg-white/80 backdrop-blur-xl border-b border-slate-200">
         <div>
-          <h2 className="text-[22px] font-semibold font-display text-[#18181B]">
+          <h2 className="text-[20px] font-semibold font-display text-foreground">
             Document Writing
           </h2>
-          <span className="text-[13px] text-[#52525B]">{draft.title}</span>
+          <span className="text-[13px] font-medium text-slate-500">{draft.title}</span>
         </div>
           <div className="flex items-center gap-2.5">
             <select
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as "markdown" | "pdf" | "docx")}
-              className="px-3 py-2 border border-[#E4E4E7] rounded-xl text-sm bg-white cursor-pointer"
+              className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 bg-white cursor-pointer focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all shadow-sm"
             >
               <option value="markdown">Markdown (.md)</option>
               <option value="pdf">PDF (Print HTML)</option>
@@ -239,7 +313,7 @@ export default function WritingPage({
             </select>
             <button
               onClick={() => handleExport(exportFormat)}
-              className="flex items-center gap-1.5 px-4 py-2 border border-[#E4E4E7] rounded-xl text-sm font-medium text-[#52525B] hover:bg-[#ECECEA] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors cursor-pointer shadow-sm"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -265,6 +339,11 @@ export default function WritingPage({
         <EditorPanel
           section={activeSection}
           allSections={sections}
+          models={models}
+          selectedModelA={selectedModelA}
+          selectedModelB={selectedModelB}
+          onModelAChange={setSelectedModelA}
+          onModelBChange={setSelectedModelB}
           onGenerate={handleGenerate}
           onSelectModel={handleSelectModel}
           onMerge={handleMerge}
@@ -273,6 +352,7 @@ export default function WritingPage({
           onHumanize={handleHumanize}
           isGenerating={isGenerating}
           isHumanizing={isHumanizing}
+          streamingContent={streamingContent}
         />
 
         <ReferencePanel

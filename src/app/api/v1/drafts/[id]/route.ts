@@ -27,13 +27,7 @@ export async function GET(
       where: { id, userId: user.id },
       include: {
         sections: {
-          where: { parentId: null },
           orderBy: { index: "asc" },
-          include: {
-            children: {
-              orderBy: { index: "asc" },
-            },
-          },
         },
       },
     });

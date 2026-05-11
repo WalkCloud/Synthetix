@@ -108,7 +108,7 @@ export function LoginForm() {
         className="hidden lg:flex w-1/2 flex-col justify-center p-16 relative overflow-hidden"
         style={{
           background:
-            "radial-gradient(ellipse at 20% 80%, rgba(99, 102, 241, 0.3) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%), linear-gradient(135deg, #4361EE 0%, #3651D4 50%, #2B45C8 100%)",
+            "radial-gradient(ellipse at 20% 80%, rgba(91, 79, 181, 0.3) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(58, 46, 133, 0.12) 0%, transparent 50%), linear-gradient(135deg, #3A2E85 0%, #5B4FB5 50%, #2A1F6E 100%)",
         }}
       >
         {/* Floating circle: top-right */}

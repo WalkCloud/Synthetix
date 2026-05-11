@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Library v2 — Synthetix</title>
+  <link rel="stylesheet" href="shared-styles-v2.css">
+  <style>
+    .search-hero {
+      background: linear-gradient(135deg, #F3F1FC 0%, #F5F4FA 30%, #FAF9F7 60%, #FFFFFF 100%);
+      border-radius: var(--radius-xl); padding: 28px 32px;
+      margin-bottom: 24px; border: 1px solid var(--color-border);
+    }
+    .search-hero h3 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 19px; font-weight: 700; margin-bottom: 3px;
+      color: var(--color-text);
+    }
+    .search-hero p {
+      font-size: 13px; color: var(--color-text-secondary); margin-bottom: 18px;
+    }
+    .search-bar {
+      display: flex; background: var(--color-bg-white);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+      border: 1px solid var(--color-border); transition: border-color 0.2s;
+    }
+    .search-bar:focus-within {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(58,46,133,0.08);
+    }
+    .search-bar input {
+      flex: 1; border: none; padding: 14px 18px; font-size: 14px;
+      outline: none; background: transparent; font-family: 'Inter', sans-serif;
+      color: var(--color-text);
+    }
+    .search-bar input::placeholder { color: var(--color-text-muted); font-style: normal; }
+    .search-mode-toggle {
+      display: flex; align-items: center; gap: 1px;
+      padding: 5px; background: var(--color-bg-gray); border-radius: var(--radius-md);
+      margin: 5px;
+    }
+    .search-mode-btn {
+      padding: 7px 13px; border-radius: var(--radius-md); border: none;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      background: transparent; color: var(--color-text-muted);
+      font-family: 'Inter', sans-serif; transition: all 0.2s;
+    }
+    .search-mode-btn.active {
+      background: var(--color-bg-white); color: var(--color-primary);
+      box-shadow: var(--shadow-xs);
+    }
+    .search-bar .btn { margin: 5px; border-radius: var(--radius-md); }
+    .stats-ribbon {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+      margin-bottom: 24px;
+    }
+    .ribbon-card {
+      background: var(--color-bg-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+      transition: all 0.2s;
+    }
+    .ribbon-card:hover { border-color: #D5D3CE; }
+    .ribbon-icon {
+      width: 38px; height: 38px; border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ribbon-icon svg { width: 18px; height: 18px; }
+    .ribbon-value {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 20px; font-weight: 700; color: var(--color-text);
+    }
+    .ribbon-label { font-size: 11px; color: var(--color-text-muted); margin-top: 1px; }
+    .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
+    .filter-chip {
+      padding: 5px 12px; border-radius: var(--radius-full);
+      border: 1px solid var(--color-border); background: var(--color-bg-white);
+      font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+      color: var(--color-text-secondary); font-family: 'Inter', sans-serif;
+    }
+    .filter-chip:hover, .filter-chip.active {
+      border-color: var(--color-primary); color: var(--color-primary);
+      background: var(--color-primary-50);
+    }
+    .sort-select {
+      padding: 6px 12px; border: 1px solid var(--color-border);
+      border-radius: var(--radius-md); font-size: 12px;
+      background: var(--color-bg-white); color: var(--color-text);
+      font-family: 'Inter', sans-serif; cursor: pointer; margin-left: auto;
+    }
+    .doc-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .doc-table th {
+      padding: 10px 14px; font-size: 10px; font-weight: 600;
+      color: var(--color-text-muted); text-transform: uppercase;
+      letter-spacing: 0.04em; text-align: left;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-gray);
+      font-family: 'Inter', sans-serif;
+    }
+    .doc-table th:first-child { border-radius: var(--radius-xl) 0 0 0; }
+    .doc-table th:last-child { border-radius: 0 var(--radius-xl) 0 0; }
+    .doc-table td {
+      padding: 13px 14px; border-bottom: 1px solid var(--color-border-light);
+      font-size: 13px; vertical-align: middle; color: var(--color-text);
+    }
+    .doc-table tr:hover td { background: var(--color-primary-50); }
+    .doc-name-cell { display: flex; align-items: center; gap: 10px; }
+    .doc-icon {
+      width: 32px; height: 32px; border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .doc-icon svg { width: 16px; height: 16px; }
+    .doc-icon-pdf { background: #FEE2E2; color: #DC2626; }
+    .doc-icon-docx { background: #EFF6FF; color: #1D4ED8; }
+    .doc-icon-md { background: #DCFCE7; color: #0E7C3A; }
+    .doc-icon-pptx { background: #FFF7ED; color: #B45309; }
+    .doc-name-text { font-weight: 600; color: var(--color-text); margin-bottom: 1px; font-size: 13px; }
+    .doc-source-text { font-size: 11px; color: var(--color-text-muted); }
+    .chunk-bar { display: flex; align-items: center; gap: 7px; }
+    .chunk-bar-bg { width: 55px; height: 5px; background: var(--color-bg-gray); border-radius: 3px; overflow: hidden; }
+    .chunk-bar-fill { height: 100%; border-radius: 3px; background: var(--color-primary-light); }
+    .idx-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 3px 9px; border-radius: var(--radius-full);
+      font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif;
+    }
+    .idx-badge-ok { background: #DCFCE7; color: #0E7C3A; }
+    .idx-badge-partial { background: #FEF3C7; color: #B45309; }
+    .act-btn {
+      background: none; border: none; cursor: pointer;
+      padding: 5px; border-radius: var(--radius-md);
+      color: var(--color-text-muted); transition: all 0.15s;
+    }
+    .act-btn:hover { background: var(--color-bg-gray); color: var(--color-text); }
+    .act-btn.act-danger:hover { color: #DC2626; background: #FEE2E2; }
+    .pagination { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 22px; }
+    .pagination button {
+      min-width: 34px; height: 34px; border-radius: var(--radius-md);
+      border: 1px solid var(--color-border); background: var(--color-bg-white);
+      color: var(--color-text); font-size: 13px; font-weight: 500;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+    }
+    .pagination button.active {
+      background: var(--color-primary); color: white;
+      border-color: var(--color-primary);
+    }
+    .sr-card {
+      border: 1px solid var(--color-border); border-radius: var(--radius-xl);
+      padding: 18px 22px; margin-bottom: 10px;
+      transition: border-color 0.2s; background: var(--color-bg-white);
+    }
+    .sr-card:hover { border-color: #D5D3CE; }
+    .sr-snippet { font-size: 13px; color: var(--color-text-secondary); line-height: 1.7; }
+    .sr-snippet mark { background: #E8E4F7; color: var(--color-primary); padding: 1px 3px; border-radius: 2px; }
+    .sr-meta {
+      display: flex; gap: 14px; margin-top: 9px; font-size: 11px;
+      color: var(--color-text-muted);
+    }
+    .sr-meta span { display: flex; align-items: center; gap: 3px; }
+    .sr-meta svg { width: 12px; height: 12px; }
+    .rag-pipeline { display: flex; align-items: stretch; }
+    .rag-stage {
+      flex: 1; background: var(--color-bg-white);
+      border: 1px solid var(--color-border); padding: 22px; position: relative;
+    }
+    .rag-stage:first-child { border-radius: var(--radius-xl) 0 0 var(--radius-xl); }
+    .rag-stage:last-child { border-radius: 0 var(--radius-xl) var(--radius-xl) 0; }
+    .rag-stage-icon {
+      width: 44px; height: 44px; border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center; margin-bottom: 12px;
+    }
+    .rag-stage-icon svg { width: 22px; height: 22px; }
+    .rag-stage h4 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 14px; font-weight: 700; margin-bottom: 5px; color: var(--color-text);
+    }
+    .rag-stage p {
+      font-size: 12px; color: var(--color-text-secondary);
+      line-height: 1.6; margin-bottom: 10px;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <h1>Synthetix</h1>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Workspace</div>
+        <a href="dashboard-v2.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </a>
+        <a href="f1-init.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Document Init
+        </a>
+        <a href="f2-library-v2.html" class="sidebar-nav-item active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Document Library
+        </a>
+        <a href="f3-brainstorm.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Mind Organization
+        </a>
+      </div>
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Authoring</div>
+        <a href="f4-writing.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Document Writing
+        </a>
+        <a href="f5-topology.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Document Topology
+        </a>
+      </div>
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-group-title">Settings</div>
+        <a href="f6-models.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></svg>
+          Model Management
+        </a>
+        <a href="f7-users.html" class="sidebar-nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          User Management
+        </a>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">KL</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">Kevin Lee</div>
+          <div class="sidebar-user-role">Admin</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <header class="main-header">
+      <h2 class="main-header-title">Document Library</h2>
+      <div class="main-header-actions">
+        <span style="font-size:13px;color:var(--color-text-muted)">6 documents &middot; 126 chunks indexed</span>
+      </div>
+    </header>
+
+    <div class="main-body">
+      <!-- Search Hero -->
+      <div class="search-hero animate-in">
+        <h3>Search Your Knowledge Base</h3>
+        <p>Find documents by keyword or ask questions with AI-powered semantic search</p>
+        <div class="search-bar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;margin-left:14px;color:var(--color-text-muted);flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search documents or ask a question...">
+          <div class="search-mode-toggle">
+            <button class="search-mode-btn active" onclick="setSearchMode(this)" style="cursor:pointer">Keyword</button>
+            <button class="search-mode-btn" onclick="setSearchMode(this)" style="cursor:pointer">Semantic</button>
+          </div>
+          <button class="btn btn-primary" style="cursor:pointer">Search</button>
+        </div>
+      </div>
+
+      <!-- Stats Ribbon -->
+      <div class="stats-ribbon">
+        <div class="ribbon-card animate-in-1">
+          <div class="ribbon-icon" style="background:var(--color-primary-100);color:var(--color-primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+          <div><div class="ribbon-value">6</div><div class="ribbon-label">Documents</div></div>
+        </div>
+        <div class="ribbon-card animate-in-2">
+          <div class="ribbon-icon" style="background:var(--color-primary-100);color:var(--color-primary-light)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
+          <div><div class="ribbon-value">126</div><div class="ribbon-label">Chunks</div></div>
+        </div>
+        <div class="ribbon-card animate-in-3">
+          <div class="ribbon-icon" style="background:#DCFCE7;color:#0E7C3A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div><div class="ribbon-value">100%</div><div class="ribbon-label">Indexed</div></div>
+        </div>
+        <div class="ribbon-card animate-in-4">
+          <div class="ribbon-icon" style="background:#FEF3C7;color:#B45309"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div><div class="ribbon-value">31.6</div><div class="ribbon-label">MB Total</div></div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('documents')" style="cursor:pointer">Documents</button>
+        <button class="tab" onclick="switchTab('semantic')" style="cursor:pointer">Semantic Results</button>
+        <button class="tab" onclick="switchTab('layers')" style="cursor:pointer">RAG Pipeline</button>
+      </div>
+
+      <!-- Documents Tab -->
+      <div id="tab-documents" class="tab-content active">
+        <div class="filter-chips">
+          <button class="filter-chip active" style="cursor:pointer">All</button>
+          <button class="filter-chip" style="cursor:pointer">PDF</button>
+          <button class="filter-chip" style="cursor:pointer">DOCX</button>
+          <button class="filter-chip" style="cursor:pointer">PPTX</button>
+          <button class="filter-chip" style="cursor:pointer">Markdown</button>
+          <select class="sort-select"><option>Sort: Newest first</option><option>Sort: Name A-Z</option><option>Sort: Size</option></select>
+        </div>
+
+        <div class="card" style="overflow:hidden">
+          <table class="doc-table">
+            <thead><tr><th>Document</th><th>Tags</th><th>Chunks</th><th>Size</th><th>Indexed</th><th>Date</th><th style="width:90px">Actions</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-pdf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">System Architecture</div><div class="doc-source-text">architecture-design.pdf</div></div></div></td>
+                <td><span class="tag tag-purple">Architecture</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:85%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">34</span></div></td>
+                <td>12.4 MB</td>
+                <td><span class="idx-badge idx-badge-ok">&check; Ready</span></td>
+                <td style="color:var(--color-text-secondary)">Jan 28</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-docx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">REST API Guide</div><div class="doc-source-text">api-documentation.docx</div></div></div></td>
+                <td><span class="tag tag-blue">API</span> <span class="tag tag-green">REST</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:45%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">18</span></div></td>
+                <td>3.2 MB</td>
+                <td><span class="idx-badge idx-badge-ok">&check; Ready</span></td>
+                <td style="color:var(--color-text-secondary)">Feb 10</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-pdf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">Product Requirements</div><div class="doc-source-text">product-requirements.pdf</div></div></div></td>
+                <td><span class="tag tag-orange">Product</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:60%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">24</span></div></td>
+                <td>5.8 MB</td>
+                <td><span class="idx-badge idx-badge-ok">&check; Ready</span></td>
+                <td style="color:var(--color-text-secondary)">Mar 5</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">Database Schema</div><div class="doc-source-text">db-schema.md</div></div></div></td>
+                <td><span class="tag tag-green">Database</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:25%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">10</span></div></td>
+                <td>0.8 MB</td>
+                <td><span class="idx-badge idx-badge-ok">&check; Ready</span></td>
+                <td style="color:var(--color-text-secondary)">Mar 12</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-pptx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">Deployment Manual</div><div class="doc-source-text">deployment-guide.pptx</div></div></div></td>
+                <td><span class="tag tag-orange">DevOps</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:70%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">28</span></div></td>
+                <td>7.1 MB</td>
+                <td><span class="idx-badge idx-badge-ok">&check; Ready</span></td>
+                <td style="color:var(--color-text-secondary)">Mar 20</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div class="doc-name-cell"><div class="doc-icon doc-icon-pdf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="doc-name-text">Security Audit Report</div><div class="doc-source-text">security-audit.pdf</div></div></div></td>
+                <td><span class="tag tag-purple">Security</span></td>
+                <td><div class="chunk-bar"><div class="chunk-bar-bg"><div class="chunk-bar-fill" style="width:30%"></div></div><span style="font-size:11px;color:var(--color-text-muted)">12</span></div></td>
+                <td>2.3 MB</td>
+                <td><span class="idx-badge idx-badge-partial">&#8635; Partial</span></td>
+                <td style="color:var(--color-text-secondary)">Apr 1</td>
+                <td><div style="display:flex;gap:4px"><button class="act-btn" title="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="act-btn" title="Reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button><button class="act-btn act-danger" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button style="cursor:pointer">&laquo;</button>
+          <button class="active" style="cursor:pointer">1</button>
+          <button style="cursor:pointer">2</button>
+          <button style="cursor:pointer">3</button>
+          <button style="cursor:pointer">&raquo;</button>
+        </div>
+      </div>
+
+      <!-- Semantic Results Tab -->
+      <div id="tab-semantic" class="tab-content">
+        <div class="sr-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:600;font-size:14px;color:var(--color-text)">Microservices Patterns.pdf</span>
+            <span class="idx-badge idx-badge-ok">95% match</span>
+          </div>
+          <div class="sr-snippet">...The API Gateway pattern acts as a single entry point for all client requests, handling <mark>routing, load balancing, and authentication</mark>. Each microservice communicates through well-defined APIs...</div>
+          <div class="sr-meta">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> Page 47</span>
+            <span>chunk-047</span>
+            <span>h2/api-gateway</span>
+          </div>
+        </div>
+        <div class="sr-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:600;font-size:14px;color:var(--color-text)">API Design Guide.docx</span>
+            <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:var(--radius-full);background:var(--color-primary-100);color:var(--color-primary)">87% match</span>
+          </div>
+          <div class="sr-snippet">...RESTful API design principles emphasize resource-based URLs, proper HTTP methods, and <mark>consistent response formats</mark>. When designing inter-service communication, consider using async messaging...</div>
+          <div class="sr-meta">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> Section 3.2</span>
+            <span>block api-032</span>
+            <span>ref-128</span>
+          </div>
+        </div>
+        <div class="sr-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:600;font-size:14px;color:var(--color-text)">AWS Architecture.pdf</span>
+            <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:var(--radius-full);background:#FEF3C7;color:#B45309">82% match</span>
+          </div>
+          <div class="sr-snippet">...The deployment strategy leverages Kubernetes on EKS with auto-scaling groups. <mark>Container orchestration</mark> is managed through Helm charts, while infrastructure uses Terraform...</div>
+          <div class="sr-meta">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> Chapter 5</span>
+            <span>image aws-eks-02</span>
+            <span>ref-204</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RAG Pipeline Tab -->
+      <div id="tab-layers" class="tab-content">
+        <div class="rag-pipeline">
+          <div class="rag-stage">
+            <div class="rag-stage-icon" style="background:var(--color-primary-100);color:var(--color-primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <h4>Original Layer</h4>
+            <p>Raw files, converted Markdown, images, tables, and attachments retained for audit.</p>
+            <div style="display:flex;gap:5px;flex-wrap:wrap"><span class="tag tag-blue">8 originals</span><span class="tag tag-green">42 assets</span></div>
+          </div>
+          <div class="rag-stage">
+            <div class="rag-stage-icon" style="background:var(--color-primary-100);color:var(--color-primary-light)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
+            <h4>Chunk Layer</h4>
+            <p>Chunks with page, heading path, block ID, split relation, and provenance info.</p>
+            <div style="display:flex;gap:5px;flex-wrap:wrap"><span class="tag tag-purple">126 chunks</span><span class="tag tag-orange">14 groups</span></div>
+          </div>
+          <div class="rag-stage">
+            <div class="rag-stage-icon" style="background:#DCFCE7;color:#0E7C3A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m8.66-14.5l-5.2 3m-5 2.9l-5.2 3M22.66 17.5l-5.2-3m-5-2.9l-5.2-3"/></svg></div>
+            <h4>Semantic Layer</h4>
+            <p>LightRAG embeddings, entity relations, knowledge graph links, and reranked candidates.</p>
+            <div style="display:flex;gap:5px;flex-wrap:wrap"><span class="tag tag-green">Indexed</span><span class="tag tag-purple">KG active</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      event.target.classList.add('active');
+    }
+    function setSearchMode(el) {
+      el.parentElement.querySelectorAll('.search-mode-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+    }
+  </script>
+</body>
+</html>

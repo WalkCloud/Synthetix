@@ -15,6 +15,7 @@ interface FormModelConfig {
   inputPrice: number | null;
   outputPrice: number | null;
   isDefaultFor: string | null;
+  embeddingBatchSize: number | null;
 }
 
 interface ProviderFormProps {
@@ -34,6 +35,7 @@ const defaultModel: FormModelConfig = {
   inputPrice: null,
   outputPrice: null,
   isDefaultFor: null,
+  embeddingBatchSize: 10,
 };
 
 function parseCapabilities(raw: string): string[] {
@@ -58,6 +60,7 @@ function toFormModel(m: ApiModelConfig): FormModelConfig {
     inputPrice: m.inputPrice,
     outputPrice: m.outputPrice,
     isDefaultFor: m.isDefaultFor,
+    embeddingBatchSize: m.embeddingBatchSize ?? 10,
   };
 }
 
@@ -101,10 +104,11 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         ...m,
         capabilities: caps,
         modelType: undefined,
+        embeddingBatchSize: m.modelType === "embedding" ? m.embeddingBatchSize : undefined,
       };
       delete cleaned.modelType;
       for (const [k, v] of Object.entries(cleaned)) {
-        if (v === null) delete cleaned[k];
+        if (v === null || v === undefined) delete cleaned[k];
       }
       return cleaned;
     });
@@ -143,7 +147,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
       <div className="space-y-4 mb-6">
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Provider Name</label>
-          <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
             value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My Ollama" required />
         </div>
         <div>
@@ -165,14 +169,14 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Base URL</label>
-          <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
             value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} placeholder="http://localhost:11434" required />
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">
             API Key {!isLocal && !isEdit && <span className="text-destructive">*</span>}
           </label>
-          <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          <input type="password" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
             value={apiKey} onChange={(e) => setApiKey(e.target.value)}
             placeholder={isEdit ? "Leave empty to keep current" : isLocal ? "Optional for local services" : "Enter API Key"}
             required={!isLocal && !isEdit} />
@@ -187,24 +191,31 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         </div>
         <div className="space-y-4">
           {models.map((m, i) => (
-            <div key={i} className="border rounded-lg p-4 bg-[#FAFAFA]">
+            <div key={i} className="border border-slate-200 rounded-xl p-5 bg-slate-50">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model ID</label>
-                  <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
                     value={m.modelId} onChange={(e) => updateModel(i, "modelId", e.target.value)} placeholder="e.g. qwen2.5:7b" required />
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model Name</label>
-                  <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
                     value={m.modelName} onChange={(e) => updateModel(i, "modelName", e.target.value)} placeholder="e.g. Qwen 2.5 7B" required />
                 </div>
               </div>
               <div className="mt-3">
                 <label className="block text-xs text-muted-foreground mb-1">Context Window <span className="font-normal">(optional, auto-detected on test)</span></label>
-                <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
                   value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
               </div>
+              {m.modelType === "embedding" && (
+                <div className="mt-3">
+                  <label className="block text-xs text-muted-foreground mb-1">Embedding Batch Size <span className="font-normal">(max texts per API call, default 10)</span></label>
+                  <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                    value={m.embeddingBatchSize ?? 10} onChange={(e) => updateModel(i, "embeddingBatchSize", parseInt(e.target.value, 10) || 10)} placeholder="10" />
+                </div>
+              )}
               {models.length > 1 && (
                 <button type="button" onClick={() => removeModel(i)} className="text-xs text-red-500 hover:underline mt-2">Remove</button>
               )}
@@ -214,9 +225,9 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
       </div>
 
       <div className="flex gap-3 justify-end">
-        <button type="button" onClick={onClose} className="px-5 py-2.5 border rounded-lg text-sm font-medium hover:bg-[#F4F4F5]">Cancel</button>
+        <button type="button" onClick={onClose} className="px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 text-slate-700 transition-colors">Cancel</button>
         <button type="submit" disabled={saving}
-          className="px-5 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-light transition-all disabled:opacity-50">
+          className="px-5 py-2.5 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition-all shadow-sm disabled:opacity-50">
           {saving ? "Saving..." : isEdit ? "Update" : "Create"}
         </button>
       </div>

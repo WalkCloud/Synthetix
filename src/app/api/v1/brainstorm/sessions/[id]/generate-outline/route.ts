@@ -89,7 +89,10 @@ export async function POST(
 
     await db.brainstormSession.update({
       where: { id },
-      data: { outline: JSON.stringify(outline) },
+      data: { 
+        outline: JSON.stringify(outline),
+        title: outline.title || session.title
+      },
     });
 
     await recordTokenUsage({

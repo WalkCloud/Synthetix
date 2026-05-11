@@ -32,6 +32,7 @@ const modelConfigSchema = z.object({
   outputPrice: z.number().optional(),
   localOrCloud: z.enum(["local", "cloud"]).default("local"),
   isDefaultFor: z.string().optional(),
+  embeddingBatchSize: z.number().int().min(1).max(1000).optional(),
 });
 
 const providerSchema = z.object({
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
           outputPrice: m.outputPrice,
           localOrCloud: m.localOrCloud,
           isDefaultFor: m.isDefaultFor,
+          embeddingBatchSize: m.embeddingBatchSize,
         })),
       },
     },

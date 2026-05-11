@@ -25,7 +25,7 @@ export function UploadZone({ onUpload, disabled }: UploadZoneProps) {
   return (
     <div
       className={`relative border-2 border-dashed rounded-[20px] p-12 text-center transition-all cursor-pointer
-        ${dragging ? "border-primary bg-primary-50/50 scale-[1.01]" : "border-[#E4E4E7] hover:border-primary/30 hover:bg-[#EEEEE9]/50"}
+        ${dragging ? "border-primary bg-primary-50/50 scale-[1.01]" : "border-[#E8E6E1] hover:border-primary/30 hover:bg-[#F4F2EF]/50"}
         ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}

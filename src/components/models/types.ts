@@ -10,6 +10,8 @@ export interface ModelConfig {
   outputPrice: number | null;
   localOrCloud: string;
   isDefaultFor: string | null;
+  embeddingDim: number | null;
+  embeddingBatchSize: number | null;
 }
 
 export interface Provider {

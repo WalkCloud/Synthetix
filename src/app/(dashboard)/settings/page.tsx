@@ -10,9 +10,10 @@ interface UserProfile {
   displayName: string;
 }
 
-type Tab = "profile" | "auth" | "storage" | "database";
+type Tab = "profile" | "auth" | "storage" | "database" | "rag";
 type AuthMode = "local" | "appwrite";
 type StorageMode = "local" | "s3";
+type RagVectorDb = "local" | "pgvector" | "milvus" | "qdrant";
 
 
 const tabs: { id: Tab; label: string }[] = [
@@ -20,6 +21,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "auth", label: "Authentication Settings" },
   { id: "storage", label: "Storage Settings" },
   { id: "database", label: "Database Settings" },
+  { id: "rag", label: "Vector Database" },
 ];
 
 interface MigrationEntry {
@@ -54,7 +56,7 @@ function MigrationHistory() {
     <div className="border rounded-[16px] overflow-hidden">
       <table className="w-full">
         <thead>
-          <tr className="border-b bg-[#EEEEE9]">
+          <tr className="border-b bg-[#F4F2EF]">
             <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Migration</th>
             <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Status</th>
             <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Applied</th>
@@ -114,6 +116,26 @@ export default function SettingsPage() {
   const [dbConnectionUrl, setDbConnectionUrl] = useState("file:./dev.db");
   const [savingDb, setSavingDb] = useState(false);
 
+  // RAG / Vector DB state
+  const [ragVectorDb, setRagVectorDb] = useState<RagVectorDb>("local");
+  const [ragPgHost, setRagPgHost] = useState("");
+  const [ragPgPort, setRagPgPort] = useState("5432");
+  const [ragPgDatabase, setRagPgDatabase] = useState("");
+  const [ragPgUser, setRagPgUser] = useState("");
+  const [ragPgPassword, setRagPgPassword] = useState("");
+  const [ragNeo4jUri, setRagNeo4jUri] = useState("");
+  const [ragNeo4jUser, setRagNeo4jUser] = useState("");
+  const [ragNeo4jPassword, setRagNeo4jPassword] = useState("");
+  const [ragMilvusUri, setRagMilvusUri] = useState("");
+  const [ragMilvusToken, setRagMilvusToken] = useState("");
+  const [ragMilvusUser, setRagMilvusUser] = useState("");
+  const [ragMilvusPassword, setRagMilvusPassword] = useState("");
+  const [ragMilvusDbName, setRagMilvusDbName] = useState("");
+  const [ragQdrantUrl, setRagQdrantUrl] = useState("");
+  const [ragQdrantApiKey, setRagQdrantApiKey] = useState("");
+  const [savingRag, setSavingRag] = useState(false);
+  const [ragMsg, setRagMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   // Load storage settings when tab changes
   useEffect(() => {
     if (tab === "storage") {
@@ -148,6 +170,36 @@ export default function SettingsPage() {
             setPgDatabase(s.pgDatabase || "");
             setPgUser(s.pgUser || "");
             setDbConnectionUrl(s.connectionUrl || "file:./dev.db");
+          }
+        })
+        .catch(() => {});
+    }
+  }, [tab]);
+
+  // Load RAG settings
+  useEffect(() => {
+    if (tab === "rag") {
+      fetch("/api/v1/settings/rag")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            const s = data.data;
+            setRagVectorDb(s.ragVectorDb || "local");
+            setRagPgHost(s.ragPgHost || "");
+            setRagPgPort(String(s.ragPgPort || "5432"));
+            setRagPgDatabase(s.ragPgDatabase || "");
+            setRagPgUser(s.ragPgUser || "");
+            setRagPgPassword(s.ragPgPassword || "");
+            setRagNeo4jUri(s.ragNeo4jUri || "");
+            setRagNeo4jUser(s.ragNeo4jUser || "");
+            setRagNeo4jPassword(s.ragNeo4jPassword || "");
+            setRagMilvusUri(s.ragMilvusUri || "");
+            setRagMilvusToken(s.ragMilvusToken || "");
+            setRagMilvusUser(s.ragMilvusUser || "");
+            setRagMilvusPassword(s.ragMilvusPassword || "");
+            setRagMilvusDbName(s.ragMilvusDbName || "");
+            setRagQdrantUrl(s.ragQdrantUrl || "");
+            setRagQdrantApiKey(s.ragQdrantApiKey || "");
           }
         })
         .catch(() => {});
@@ -202,6 +254,30 @@ export default function SettingsPage() {
       setMessage({ type: "error", text: "Failed to save" });
     } finally {
       setSavingDb(false);
+    }
+  }
+
+  async function saveRag() {
+    setSavingRag(true);
+    setRagMsg(null);
+    try {
+      const res = await fetch("/api/v1/settings/rag", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ragVectorDb,
+          ragPgHost, ragPgPort: parseInt(ragPgPort, 10), ragPgDatabase, ragPgUser, ragPgPassword,
+          ragNeo4jUri, ragNeo4jUser, ragNeo4jPassword,
+          ragMilvusUri, ragMilvusToken, ragMilvusUser, ragMilvusPassword, ragMilvusDbName,
+          ragQdrantUrl, ragQdrantApiKey,
+        }),
+      });
+      const d = await res.json();
+      setRagMsg(d.success ? { type: "success", text: "Vector database settings saved. Restart server to apply." } : { type: "error", text: d.error });
+    } catch {
+      setRagMsg({ type: "error", text: "Failed to save" });
+    } finally {
+      setSavingRag(false);
     }
   }
 
@@ -337,7 +413,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
-                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={profile?.username || ""} disabled />
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-[#F4F2EF] text-muted-foreground cursor-not-allowed" value={profile?.username || ""} disabled />
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Display Name</label>
@@ -347,7 +423,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Email</label>
                     <div className="relative">
-                      <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-[#EEEEE9] text-muted-foreground cursor-not-allowed" value={email} disabled />
+                      <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-[#F4F2EF] text-muted-foreground cursor-not-allowed" value={email} disabled />
                       <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                     </div>
                     <span className="text-xs text-muted-foreground mt-1 block">Email cannot be changed. Contact your administrator if needed.</span>
@@ -382,7 +458,7 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setAuthMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "local" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
+                  <button onClick={() => setAuthMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
                     <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${authMode === "local" ? "bg-primary border-primary" : "border-border"}`}>
                       <svg className={`w-3 h-3 text-white ${authMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
@@ -394,7 +470,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="text-[13px] text-muted-foreground leading-relaxed">Username and password stored locally. Best for offline deployment.</div>
                   </button>
-                  <button onClick={() => setAuthMode("appwrite")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "appwrite" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
+                  <button onClick={() => setAuthMode("appwrite")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "appwrite" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
                     <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${authMode === "appwrite" ? "bg-primary border-primary" : "border-border"}`}>
                       <svg className={`w-3 h-3 text-white ${authMode === "appwrite" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
@@ -432,7 +508,7 @@ export default function SettingsPage() {
                         <div className="mt-3">
                           <div className="flex gap-1 mb-1.5">
                             {[1, 2, 3, 4].map((i) => (
-                              <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-[#F0F0F0]"}`} />
+                              <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-[#F4F2EF]"}`} />
                             ))}
                           </div>
                           <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-[#DC2626]" : strength.label === "Medium" ? "text-[#D97706]" : "text-[#16A34A]"}`}>{strength.label}</span>
@@ -504,7 +580,7 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setStorageMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "local" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
+                  <button onClick={() => setStorageMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
                     <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${storageMode === "local" ? "bg-primary border-primary" : "border-border"}`}>
                       <svg className={`w-3 h-3 text-white ${storageMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
@@ -516,7 +592,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="text-[13px] text-muted-foreground leading-relaxed">Store documents on your local file system. Best for offline deployment.</div>
                   </button>
-                  <button onClick={() => setStorageMode("s3")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "s3" ? "border-primary bg-primary-50" : "border-[#F0F0F0] hover:border-primary-light hover:bg-primary-50"}`}>
+                  <button onClick={() => setStorageMode("s3")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "s3" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
                     <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${storageMode === "s3" ? "bg-primary border-primary" : "border-border"}`}>
                       <svg className={`w-3 h-3 text-white ${storageMode === "s3" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                     </div>
@@ -566,12 +642,12 @@ export default function SettingsPage() {
                     <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache. Can be safely deleted.</span>
                   </div>
                   {/* Storage Usage */}
-                  <div className="mt-5 p-4 bg-[#EEEEE9] rounded-[16px]">
+                  <div className="mt-5 p-4 bg-[#F4F2EF] rounded-[16px]">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-semibold">Storage Usage</span>
                       <span className="text-[13px] text-muted-foreground">2.4 GB / 50 GB</span>
                     </div>
-                    <div className="w-full h-2.5 bg-[#F0F0F0] rounded-full overflow-hidden">
+                    <div className="w-full h-2.5 bg-[#F4F2EF] rounded-full overflow-hidden">
                       <div className="h-full bg-primary rounded-full" style={{ width: "4.8%" }} />
                     </div>
                     <div className="flex gap-5 mt-3 text-[13px] text-muted-foreground">
@@ -767,6 +843,211 @@ export default function SettingsPage() {
                 <div className="text-sm font-semibold mb-3">Migration History</div>
                 <MigrationHistory />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* RAG / Vector Database Tab */}
+        {tab === "rag" && (
+          <div className="space-y-6">
+            {/* Mode Selection */}
+            <div className="bg-white border rounded-[16px]">
+              <div className="flex items-center justify-between px-6 py-5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                  <h3 className="text-base font-semibold">Vector Database Provider</h3>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <button onClick={() => setRagVectorDb("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
+                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "local" ? "bg-primary border-primary" : "border-border"}`}>
+                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
+                      </div>
+                      <div className="text-[15px] font-semibold">Local (NanoVectorDB)</div>
+                    </div>
+                    <div className="text-[13px] text-muted-foreground leading-relaxed">Default local vector storage. Zero configuration, works offline.</div>
+                  </button>
+                  <button onClick={() => setRagVectorDb("pgvector")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "pgvector" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
+                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "pgvector" ? "bg-primary border-primary" : "border-border"}`}>
+                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "pgvector" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+                      </div>
+                      <div className="text-[15px] font-semibold">pgvector (PostgreSQL)</div>
+                    </div>
+                    <div className="text-[13px] text-muted-foreground leading-relaxed">Production-grade vector search using PostgreSQL + pgvector extension.</div>
+                  </button>
+                  <button onClick={() => setRagVectorDb("milvus")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "milvus" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
+                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "milvus" ? "bg-primary border-primary" : "border-border"}`}>
+                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "milvus" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div className="w-10 h-10 rounded-lg bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                      </div>
+                      <div className="text-[15px] font-semibold">Milvus</div>
+                    </div>
+                    <div className="text-[13px] text-muted-foreground leading-relaxed">High-performance vector database for billion-scale similarity search.</div>
+                  </button>
+                  <button onClick={() => setRagVectorDb("qdrant")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "qdrant" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
+                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "qdrant" ? "bg-primary border-primary" : "border-border"}`}>
+                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "qdrant" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div className="w-10 h-10 rounded-lg bg-[#F0FDF4] text-[#16A34A] flex items-center justify-center">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                      </div>
+                      <div className="text-[15px] font-semibold">Qdrant</div>
+                    </div>
+                    <div className="text-[13px] text-muted-foreground leading-relaxed">Rust-based vector search engine with rich filtering and quantization.</div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* PostgreSQL/pgvector Config */}
+            {ragVectorDb === "pgvector" && (
+              <div className="bg-white border rounded-[16px]">
+                <div className="flex items-center justify-between px-6 py-5 border-b">
+                  <div className="flex items-center gap-2.5">
+                    <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+                    <h3 className="text-base font-semibold">PostgreSQL / pgvector Configuration</h3>
+                  </div>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Host</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="localhost" value={ragPgHost} onChange={(e) => setRagPgHost(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Port</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="5432" value={ragPgPort} onChange={(e) => setRagPgPort(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Database</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix_rag" value={ragPgDatabase} onChange={(e) => setRagPgDatabase(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="postgres" value={ragPgUser} onChange={(e) => setRagPgUser(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
+                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter password" value={ragPgPassword} onChange={(e) => setRagPgPassword(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Neo4j Config (graph storage, shared across all vector DB options) */}
+            <div className="bg-white border rounded-[16px]">
+              <div className="flex items-center justify-between px-6 py-5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+                  <h3 className="text-base font-semibold">Neo4j Graph Storage (Optional)</h3>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-[13px] text-muted-foreground">Optional graph database for entity relationship storage. Only needed for "graph" index mode.</p>
+                <div>
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Neo4j URI</label>
+                  <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="bolt://localhost:7687" value={ragNeo4jUri} onChange={(e) => setRagNeo4jUri(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="neo4j" value={ragNeo4jUser} onChange={(e) => setRagNeo4jUser(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
+                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter password" value={ragNeo4jPassword} onChange={(e) => setRagNeo4jPassword(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Milvus Config */}
+            {ragVectorDb === "milvus" && (
+              <div className="bg-white border rounded-[16px]">
+                <div className="flex items-center justify-between px-6 py-5 border-b">
+                  <div className="flex items-center gap-2.5">
+                    <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                    <h3 className="text-base font-semibold">Milvus Configuration</h3>
+                  </div>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Milvus URI</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="http://localhost:19530" value={ragMilvusUri} onChange={(e) => setRagMilvusUri(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Token (Optional)</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter authentication token" value={ragMilvusToken} onChange={(e) => setRagMilvusToken(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username (Optional)</label>
+                      <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="root" value={ragMilvusUser} onChange={(e) => setRagMilvusUser(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password (Optional)</label>
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter password" value={ragMilvusPassword} onChange={(e) => setRagMilvusPassword(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Database Name</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="default" value={ragMilvusDbName} onChange={(e) => setRagMilvusDbName(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Qdrant Config */}
+            {ragVectorDb === "qdrant" && (
+              <div className="bg-white border rounded-[16px]">
+                <div className="flex items-center justify-between px-6 py-5 border-b">
+                  <div className="flex items-center gap-2.5">
+                    <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    <h3 className="text-base font-semibold">Qdrant Configuration</h3>
+                  </div>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Qdrant URL</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="http://localhost:6333" value={ragQdrantUrl} onChange={(e) => setRagQdrantUrl(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Key (Optional)</label>
+                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter API key" value={ragQdrantApiKey} onChange={(e) => setRagQdrantApiKey(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Save button */}
+            <div className="flex gap-3">
+              <button type="button" onClick={saveRag} disabled={savingRag} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
+                {savingRag ? "Saving..." : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    Save Vector DB Settings
+                  </>
+                )}
+              </button>
+              {ragMsg && (
+                <div className={`flex items-center text-sm ${ragMsg.type === "success" ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                  {ragMsg.text}
+                </div>
+              )}
             </div>
           </div>
         )}

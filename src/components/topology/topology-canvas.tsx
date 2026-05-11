@@ -17,7 +17,7 @@ const FORMAT_COLORS: Record<string, string> = {
   docx: "#EA580C",
   md: "#16A34A",
   markdown: "#16A34A",
-  draft: "#4361EE",
+  draft: "#3A2E85",
 } as const;
 
 const FORMAT_BG: Record<string, string> = {
@@ -25,15 +25,15 @@ const FORMAT_BG: Record<string, string> = {
   docx: "#FFF7ED",
   md: "#F0FDF4",
   markdown: "#F0FDF4",
-  draft: "#EEF0FD",
+  draft: "#F3F1FC",
 } as const;
 
 function getFormatColor(format: string): string {
-  return FORMAT_COLORS[format.toLowerCase()] ?? "#4361EE";
+  return FORMAT_COLORS[format.toLowerCase()] ?? "#3A2E85";
 }
 
 function getFormatBg(format: string): string {
-  return FORMAT_BG[format.toLowerCase()] ?? "#EEF0FD";
+  return FORMAT_BG[format.toLowerCase()] ?? "#F3F1FC";
 }
 
 function FormatNodeIcon({ format }: { readonly format: string }) {
@@ -189,7 +189,7 @@ export function TopologyCanvas({
   const draftCy = containerHeight * 0.4;
 
   return (
-    <div className="relative min-h-[560px] bg-[#F5F5F3] border border-[#E4E4E7] rounded-2xl overflow-hidden">
+    <div className="relative min-h-[560px] bg-[#F4F2EF] border border-[#E8E6E1] rounded-2xl overflow-hidden">
       {/* Animated dash keyframes */}
       <style>{`
         @keyframes topo-dash {
@@ -199,8 +199,8 @@ export function TopologyCanvas({
           animation: topo-dash 1.2s linear infinite;
         }
         @keyframes topo-pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(67, 97, 238, 0.3); }
-          50% { box-shadow: 0 0 0 12px rgba(67, 97, 238, 0); }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(58, 46, 133, 0.3); }
+          50% { box-shadow: 0 0 0 12px rgba(58, 46, 133, 0); }
         }
         .topo-pulse {
           animation: topo-pulse 2.5s ease-in-out infinite;
@@ -255,7 +255,7 @@ export function TopologyCanvas({
               top: draftCy - 70,
               width: 140,
               height: 140,
-              background: "linear-gradient(135deg, #4361EE, #3651D4)",
+              background: "linear-gradient(135deg, #3A2E85, #2A1F6E)",
             }}
           >
             <DraftIcon />
@@ -294,7 +294,7 @@ export function TopologyCanvas({
                 height: 100,
                 borderWidth: 2,
                 borderStyle: "solid",
-                borderColor: isSelected ? color : "#E4E4E7",
+                borderColor: isSelected ? color : "#E8E6E1",
                 backgroundColor: isSelected ? bg : "white",
               }}
             >
@@ -305,7 +305,7 @@ export function TopologyCanvas({
                 <FormatNodeIcon format={node.format} />
               </div>
               <span
-                className="text-[11px] font-semibold text-[#18181B] leading-tight text-center line-clamp-2"
+                className="text-[11px] font-semibold text-[#1E1B18] leading-tight text-center line-clamp-2"
                 style={{ color }}
               >
                 {node.label}

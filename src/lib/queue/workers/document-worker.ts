@@ -9,6 +9,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
+import { syncFtsIndex } from "@/lib/search/fts";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import { spawn } from "child_process";
 import fs from "fs";
@@ -219,21 +220,36 @@ export async function processDocument(taskId: string): Promise<void> {
       const provider = createLLMProvider(embedModel.provider);
       const texts = allChunks.map((c) => c.content);
 
-      const BATCH_SIZE = 64;
+      // Use model's configured batch size, fall back to 10
+      const baseBatchSize = embedModel.embeddingBatchSize || 10;
       let totalEmbedTokens = 0;
-      for (let b = 0; b < texts.length; b += BATCH_SIZE) {
-        const batch = texts.slice(b, b + BATCH_SIZE);
-        const embedResult = await provider.embed(batch, embedModel.modelId);
-        totalEmbedTokens += embedResult.inputTokens;
+      let batchSize = baseBatchSize;
+      let batchIndex = 0;
 
-        for (let i = 0; i < batch.length; i++) {
-          await db.documentChunk.update({
-            where: { id: allChunks[b + i].id },
-            data: {
-              embedding: float32ToBuffer(new Float32Array(embedResult.embeddings[i])),
-              embedModel: embedModel.modelId,
-            },
-          });
+      while (batchIndex < texts.length) {
+        const batch = texts.slice(batchIndex, batchIndex + batchSize);
+        try {
+          const embedResult = await provider.embed(batch, embedModel.modelId);
+          totalEmbedTokens += embedResult.inputTokens;
+
+          for (let i = 0; i < batch.length; i++) {
+            await db.documentChunk.update({
+              where: { id: allChunks[batchIndex + i].id },
+              data: {
+                embedding: float32ToBuffer(new Float32Array(embedResult.embeddings[i])),
+                embedModel: embedModel.modelId,
+              },
+            });
+          }
+          batchIndex += batch.length;
+        } catch (err) {
+          const msg = String(err);
+          if (msg.includes("batch") && batchSize > 1) {
+            // Auto-reduce batch size on batch size errors
+            batchSize = Math.max(1, Math.floor(batchSize / 2));
+            continue;
+          }
+          throw err;
         }
       }
 
@@ -246,6 +262,9 @@ export async function processDocument(taskId: string): Promise<void> {
         referenceId: docId,
       }).catch(() => {});
     }
+
+    // Sync FTS5 index after chunks are created
+    await syncFtsIndex().catch(() => {});
 
     // LightRAG indexing (skip if indexTarget is "original" or "chunks")
     const needRag = indexTarget === "full";

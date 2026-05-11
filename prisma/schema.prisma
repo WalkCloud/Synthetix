@@ -60,6 +60,7 @@ model ModelConfig {
   localOrCloud      String   @default("local") @map("local_or_cloud")
   isDefaultFor      String?  @map("is_default_for")
   embeddingDim      Int?     @map("embedding_dim")
+  embeddingBatchSize Int?    @map("embedding_batch_size") @default(10)
   createdAt         DateTime @default(now()) @map("created_at")
 
   provider ModelProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)

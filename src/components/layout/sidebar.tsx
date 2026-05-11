@@ -143,9 +143,9 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white border-r flex flex-col z-50">
       {/* Brand */}
-      <div className="flex items-center gap-3 px-6 py-[22px] border-b">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border/[0.6]">
         <svg
-          className="w-8 h-8 text-primary shrink-0"
+          className="w-[30px] h-[30px] text-primary shrink-0"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -159,14 +159,14 @@ export function Sidebar() {
           <line x1="16" y1="17" x2="8" y2="17" />
           <line x1="10" y1="9" x2="8" y2="9" />
         </svg>
-        <h1 className="text-[22px] font-semibold font-display">Synthetix</h1>
+        <h1 className="text-xl font-bold font-display tracking-tight">Synthetix</h1>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 overflow-y-auto">
+      <nav className="flex-1 py-3 px-3 overflow-y-auto">
         {navGroups.map((group) => (
-          <div key={group.group} className="mb-7">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground px-3.5 mb-2">
+          <div key={group.group} className="mb-6">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70 px-3 mb-1.5">
               {group.group}
             </div>
             {group.items.map((item) => {
@@ -177,17 +177,14 @@ export function Sidebar() {
                 <Link
                   key={`${group.group}-${item.label}`}
                   href={item.href}
-                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors relative ${
+                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors ${
                     isActive
-                      ? "bg-primary-100 text-primary font-semibold"
-                      : "text-muted-foreground hover:bg-primary-50 hover:text-foreground"
+                      ? "bg-primary-50 text-primary font-semibold"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                   }`}
                 >
-                  {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full" />
-                  )}
                   <svg
-                    className="w-5 h-5 shrink-0"
+                    className="w-[18px] h-[18px] shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -206,17 +203,17 @@ export function Sidebar() {
       </nav>
 
       {/* User Footer */}
-      <div className="p-4 border-t">
-        <div className="flex items-center gap-3 px-2 py-2.5 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-semibold text-sm shrink-0">
+      <div className="p-3 border-t border-border/[0.6]">
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-secondary transition-colors">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-semibold text-xs shrink-0">
             {initials || "U"}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold truncate">{displayName || "User"}</div>
-            <div className="text-xs text-muted-foreground">Admin</div>
+            <div className="text-[13px] font-semibold truncate">{displayName || "User"}</div>
+            <div className="text-[11px] text-muted-foreground">Admin</div>
           </div>
           <svg
-            className="w-4 h-4 text-muted-foreground shrink-0"
+            className="w-3.5 h-3.5 text-muted-foreground shrink-0"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
