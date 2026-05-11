@@ -18,6 +18,24 @@ interface UserSettings {
   pgPort?: number;
   pgDatabase?: string;
   pgUser?: string;
+  // RAG / Vector DB settings
+  ragVectorDb?: string;
+  ragPgUrl?: string;
+  ragPgHost?: string;
+  ragPgPort?: number;
+  ragPgDatabase?: string;
+  ragPgUser?: string;
+  ragPgPassword?: string;
+  ragNeo4jUri?: string;
+  ragNeo4jUser?: string;
+  ragNeo4jPassword?: string;
+  ragMilvusUri?: string;
+  ragMilvusToken?: string;
+  ragMilvusUser?: string;
+  ragMilvusPassword?: string;
+  ragMilvusDbName?: string;
+  ragQdrantUrl?: string;
+  ragQdrantApiKey?: string;
 }
 
 const SETTINGS_DIR = path.resolve("data/settings");

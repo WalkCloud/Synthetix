@@ -16,12 +16,12 @@ const FORMAT_CONFIG: Record<
   docx: { color: "#EA580C", bg: "#FFF7ED", label: "DOCX" },
   md: { color: "#16A34A", bg: "#F0FDF4", label: "MD" },
   markdown: { color: "#16A34A", bg: "#F0FDF4", label: "MD" },
-  draft: { color: "#4361EE", bg: "#EEF0FD", label: "Draft" },
+  draft: { color: "#3A2E85", bg: "#F3F1FC", label: "Draft" },
 } as const;
 
 function getFormatConfig(format: string) {
   const key = format.toLowerCase();
-  return FORMAT_CONFIG[key] ?? { color: "#4361EE", bg: "#EEF0FD", label: format };
+  return FORMAT_CONFIG[key] ?? { color: "#3A2E85", bg: "#F3F1FC", label: format };
 }
 
 function FormatIcon({ format }: { readonly format: string }) {
@@ -118,16 +118,16 @@ export function TopologyDetailPanel({
   const relevance = formatRelevance(node.relevanceScore);
 
   return (
-    <div className="absolute right-5 top-5 z-20 w-[280px] bg-white rounded-2xl border border-[#E4E4E7] shadow-lg overflow-hidden">
+    <div className="absolute right-5 top-5 z-20 w-[280px] bg-white rounded-2xl border border-[#E8E6E1] shadow-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E4E4E7]">
-        <span className="text-[13px] font-semibold text-[#18181B]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E6E1]">
+        <span className="text-[13px] font-semibold text-[#1E1B18]">
           Node Details
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-[#A1A1AA] hover:text-[#18181B] hover:bg-[#F5F5F3] transition-colors cursor-pointer"
+          className="flex items-center justify-center w-7 h-7 rounded-md text-[#8C887F] hover:text-[#1E1B18] hover:bg-[#F4F2EF] transition-colors cursor-pointer"
           aria-label="Close detail panel"
         >
           <svg
@@ -151,7 +151,7 @@ export function TopologyDetailPanel({
         {/* Document name + format tag */}
         <div className="flex items-center gap-2">
           <FormatIcon format={node.format} />
-          <span className="text-[13px] font-semibold text-[#18181B] truncate flex-1">
+          <span className="text-[13px] font-semibold text-[#1E1B18] truncate flex-1">
             {node.label}
           </span>
           <span
@@ -164,18 +164,18 @@ export function TopologyDetailPanel({
 
         {/* Size */}
         <div className="flex items-center justify-between">
-          <span className="text-[12px] text-[#A1A1AA]">Size</span>
-          <span className="text-[12px] text-[#52525B]">
+          <span className="text-[12px] text-[#8C887F]">Size</span>
+          <span className="text-[12px] text-[#6B6560]">
             {formatFileSize(node.size)}
           </span>
         </div>
 
         {/* Relevance */}
         <div className="flex items-center justify-between">
-          <span className="text-[12px] text-[#A1A1AA]">Relevance</span>
+          <span className="text-[12px] text-[#8C887F]">Relevance</span>
           <span
             className={`text-[12px] font-medium ${
-              relevance.isHigh ? "text-green-600" : "text-[#52525B]"
+              relevance.isHigh ? "text-green-600" : "text-[#6B6560]"
             }`}
           >
             {relevance.text}
@@ -185,14 +185,14 @@ export function TopologyDetailPanel({
         {/* Referenced in */}
         {edge.sectionLabels.length > 0 && (
           <div>
-            <span className="text-[12px] text-[#A1A1AA] block mb-1.5">
+            <span className="text-[12px] text-[#8C887F] block mb-1.5">
               Referenced in
             </span>
             <div className="flex flex-wrap gap-1.5">
               {edge.sectionLabels.map((label) => (
                 <span
                   key={label}
-                  className="rounded-md px-2 py-0.5 text-[11px] font-medium text-[#4361EE] bg-[#EEF0FD]"
+                  className="rounded-md px-2 py-0.5 text-[11px] font-medium text-[#3A2E85] bg-[#F3F1FC]"
                 >
                   {label}
                 </span>
@@ -203,10 +203,10 @@ export function TopologyDetailPanel({
 
         {/* Source anchors placeholder */}
         <div>
-          <span className="text-[12px] text-[#A1A1AA] block mb-1.5">
+          <span className="text-[12px] text-[#8C887F] block mb-1.5">
             Source Anchors
           </span>
-          <span className="text-[12px] text-[#A1A1AA] italic">
+          <span className="text-[12px] text-[#8C887F] italic">
             Available in P5
           </span>
         </div>
@@ -215,13 +215,13 @@ export function TopologyDetailPanel({
         <div className="flex gap-2 pt-1">
           <button
             type="button"
-            className={`${BUTTON_CLASSES} border border-[#E4E4E7] text-[#18181B] hover:bg-[#F5F5F3]`}
+            className={`${BUTTON_CLASSES} border border-[#E8E6E1] text-[#1E1B18] hover:bg-[#F4F2EF]`}
           >
             View Doc
           </button>
           <button
             type="button"
-            className={`${BUTTON_CLASSES} bg-[#4361EE] text-white hover:bg-[#3651D4]`}
+            className={`${BUTTON_CLASSES} bg-[#3A2E85] text-white hover:bg-[#2A1F6E]`}
           >
             Open in Library
           </button>

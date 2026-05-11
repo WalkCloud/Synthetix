@@ -199,7 +199,11 @@ export default function BrainstormPage() {
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST" });
       const d = await res.json();
-      if (d.success) { setOutline(d.data); setStatus("Complete"); }
+      if (d.success) { 
+        setOutline(d.data); 
+        setStatus("Complete"); 
+        setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, title: d.data.title || "New Brainstorming Session" } : s));
+      }
     } finally {
       setLoading(false);
     }
@@ -283,7 +287,7 @@ export default function BrainstormPage() {
   function startEditing() {
     if (!outline) return;
     setEditTitle(outline.title);
-    setEditSections(outline.sections.map((s) => ({ ...s })));
+    setEditSections(outline.sections.map((s) => ({ ...s, children: s.children?.map(c => ({...c})) })));
     setEditing(true);
   }
 
@@ -298,6 +302,7 @@ export default function BrainstormPage() {
     const renumbered = editSections.map((s, i) => ({
       ...s,
       num: String(i + 1),
+      children: s.children?.map((c, ci) => ({ ...c, num: `${i + 1}.${ci + 1}` }))
     }));
     const updated = { ...outline, title: editTitle, sections: renumbered };
     setOutline(updated);
@@ -323,6 +328,42 @@ export default function BrainstormPage() {
         }
         return { ...s, [field]: value };
       }),
+    );
+  }
+
+  function updateEditChild(parentIndex: number, childIndex: number, field: "title" | "estimatedWords", value: string) {
+    setEditSections((prev) =>
+      prev.map((s, i) => {
+        if (i !== parentIndex) return s;
+        if (!s.children) return s;
+        const children = s.children.map((c, ci) => {
+          if (ci !== childIndex) return c;
+          if (field === "estimatedWords") return { ...c, estimatedWords: parseInt(value) || 0 };
+          return { ...c, [field]: value };
+        });
+        return { ...s, children };
+      })
+    );
+  }
+
+  function removeEditChild(parentIndex: number, childIndex: number) {
+    setEditSections((prev) =>
+      prev.map((s, i) => {
+        if (i !== parentIndex) return s;
+        if (!s.children) return s;
+        return { ...s, children: s.children.filter((_, ci) => ci !== childIndex) };
+      })
+    );
+  }
+
+  function addEditChild(parentIndex: number) {
+    setEditSections((prev) =>
+      prev.map((s, i) => {
+        if (i !== parentIndex) return s;
+        const children = s.children ? [...s.children] : [];
+        children.push({ num: `${i + 1}.${children.length + 1}`, title: "", estimatedWords: 300 });
+        return { ...s, children };
+      })
     );
   }
 
@@ -396,11 +437,11 @@ export default function BrainstormPage() {
     <div className="flex h-screen flex-col bg-background">
       <Header title="Mind Organization" />
 
-      <div className="h-[calc(100vh-64px)] overflow-hidden px-8 py-6">
-        <div className="grid h-full overflow-hidden rounded-[16px] border bg-white shadow-sm xl:grid-cols-[minmax(300px,26%)_minmax(400px,1fr)_minmax(280px,28%)]">
+      <div className="h-[calc(100vh-64px)] overflow-hidden bg-slate-50/50 px-6 py-6 xl:px-8">
+        <div className="mx-auto flex h-full max-w-[1600px] gap-6">
           {/* Session History */}
-          <section className="hidden min-w-0 flex-col overflow-hidden border-r bg-white xl:flex">
-            <div className="flex items-center justify-between border-b bg-white px-5 py-4">
+          <section className="hidden w-[280px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
               <h4 className="font-display text-sm font-bold text-foreground">Sessions</h4>
               <button
                 onClick={createSession}
@@ -411,7 +452,7 @@ export default function BrainstormPage() {
               </button>
             </div>
 
-            <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto bg-[#FAFAFA] p-4">
+            <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4">
               {sessions.map((s) => (
                 <div
                   key={s.id}
@@ -469,8 +510,8 @@ export default function BrainstormPage() {
           </section>
 
           {/* Conversation */}
-          <section className="flex min-w-0 flex-col overflow-hidden bg-white">
-            <div className="flex items-center justify-between border-b bg-white px-6 py-5">
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <MessageSquare className="h-5 w-5 shrink-0 text-primary" />
                 <h3 className="truncate font-display text-base font-bold text-foreground">
@@ -485,7 +526,7 @@ export default function BrainstormPage() {
               )}
             </div>
 
-            <div className="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto bg-[#FAFAFA] p-6">
+            <div className="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto bg-slate-50 p-6">
               {!activeSession && (
                 <div className="flex flex-1 flex-col items-center justify-center text-center">
                   <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-primary">
@@ -570,13 +611,13 @@ export default function BrainstormPage() {
               <div ref={messagesEnd} />
             </div>
 
-            <div className="border-t bg-white px-6 py-4">
-              <div className="flex items-end gap-3 rounded-[16px] border bg-muted px-3 py-2 transition focus-within:border-primary focus-within:bg-white focus-within:ring-[3px] focus-within:ring-primary/15">
+            <div className="bg-slate-50/50 px-6 pb-6 pt-3 shrink-0">
+              <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10">
                 <label
-                  className={`relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[12px] text-muted-foreground transition hover:bg-white hover:text-foreground ${!activeSession || loading ? "pointer-events-none opacity-40" : ""}`}
+                  className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${!activeSession || loading ? "pointer-events-none opacity-40" : ""}`}
                   title="Upload Document"
                 >
-                  <Paperclip className="h-4 w-4" />
+                  <Paperclip className="h-4.5 w-4.5" />
                   <input
                     type="file"
                     accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md"
@@ -596,35 +637,34 @@ export default function BrainstormPage() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                   disabled={!activeSession}
-                  className="min-h-10 max-h-[120px] flex-1 resize-none bg-transparent px-1 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-9 max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={loading || !input.trim() || !activeSession}
-                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[12px] bg-primary text-white transition hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                   title="Send"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-4.5 w-4.5" />
                 </button>
               </div>
             </div>
           </section>
 
           {/* Right Panel */}
-          <section className="hidden min-w-0 flex-col overflow-hidden border-l bg-white xl:flex">
-            <div className="flex flex-1 flex-col overflow-hidden border-b p-6">
-              <div className="mb-4 flex items-center justify-between gap-3 font-display text-base font-bold text-foreground">
-                <span className="flex items-center gap-2">
-                  <LayoutList className="h-[18px] w-[18px]" />
-                  Outline
-                </span>
-                {outline && (
-                  <span className="font-sans text-xs font-semibold text-muted-foreground">
-                    ~{totalWords().toLocaleString()} words
-                  </span>
-                )}
+          <section className="hidden w-[340px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
+              <div className="flex items-center gap-2 font-display text-base font-bold text-foreground">
+                <LayoutList className="h-[18px] w-[18px]" />
+                Outline
               </div>
-
+              {outline && (
+                <span className="font-sans text-xs font-semibold text-muted-foreground">
+                  ~{totalWords().toLocaleString()} words
+                </span>
+              )}
+            </div>
+            <div className="flex flex-1 flex-col overflow-hidden p-6">
               {outline ? (
                 <>
                   {editing ? (
@@ -644,30 +684,68 @@ export default function BrainstormPage() {
                     {editing ? (
                       <div className="space-y-3">
                         {editSections.map((s, i) => (
-                          <div key={i} className="flex items-center gap-2 rounded-[12px] border bg-white p-3 shadow-sm">
-                            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="w-5 shrink-0 text-sm font-bold text-primary">{i + 1}.</span>
-                            <input
-                              type="text"
-                              value={s.title}
-                              onChange={(e) => updateEditSection(i, "title", e.target.value)}
-                              placeholder="Section title..."
-                              className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={s.estimatedWords || ""}
-                              onChange={(e) => updateEditSection(i, "estimatedWords", e.target.value)}
-                              className="w-16 shrink-0 rounded-lg border bg-[#FAFAFA] px-2 py-1 text-center text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-                              placeholder="words"
-                            />
-                            <button
-                              onClick={() => removeEditSection(i)}
-                              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                          <div key={i} className="rounded-[12px] border bg-white shadow-sm overflow-hidden">
+                            <div className="flex items-center gap-2 p-3">
+                              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <span className="w-5 shrink-0 text-sm font-bold text-primary">{i + 1}.</span>
+                              <input
+                                type="text"
+                                value={s.title}
+                                onChange={(e) => updateEditSection(i, "title", e.target.value)}
+                                placeholder="Section title..."
+                                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground focus:outline-none"
+                              />
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={s.estimatedWords || ""}
+                                onChange={(e) => updateEditSection(i, "estimatedWords", e.target.value)}
+                                className="w-16 shrink-0 rounded-lg border bg-slate-50 px-2 py-1 text-center text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                placeholder="words"
+                              />
+                              <button
+                                onClick={() => removeEditSection(i)}
+                                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            <div className="bg-slate-50/50 border-t p-2 space-y-2">
+                              {s.children?.map((c, ci) => (
+                                <div key={ci} className="flex items-center gap-2 pl-6 pr-1">
+                                  <span className="min-w-6 shrink-0 text-xs font-semibold text-primary/70">{i + 1}.{ci + 1}</span>
+                                  <input
+                                    type="text"
+                                    value={c.title}
+                                    onChange={(e) => updateEditChild(i, ci, "title", e.target.value)}
+                                    placeholder="Sub-chapter title..."
+                                    className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground focus:outline-none border-b border-dashed border-slate-300 focus:border-primary-400"
+                                  />
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={c.estimatedWords || ""}
+                                    onChange={(e) => updateEditChild(i, ci, "estimatedWords", e.target.value)}
+                                    className="w-14 shrink-0 rounded bg-white border border-slate-200 px-1.5 py-0.5 text-center text-[11px] text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/20"
+                                    placeholder="words"
+                                  />
+                                  <button
+                                    onClick={() => removeEditChild(i, ci)}
+                                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-red-500"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="pl-6 pt-1 pb-1">
+                                <button
+                                  onClick={() => addEditChild(i)}
+                                  className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-primary/60 hover:text-primary transition-colors"
+                                >
+                                  <Plus className="h-3 w-3" /> Add Sub-chapter
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         ))}
                         <button
@@ -755,7 +833,7 @@ export default function BrainstormPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex flex-1 flex-col items-center justify-center bg-[#FAFAFA] px-4 text-center">
+                <div className="flex flex-1 flex-col items-center justify-center bg-slate-50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary">
                     <LayoutList className="h-7 w-7" />
                   </div>
@@ -774,47 +852,50 @@ export default function BrainstormPage() {
               )}
             </div>
 
-            <div className="flex gap-3 bg-white px-6 py-4">
+            <div className="bg-slate-50/50 px-6 py-5 border-t border-slate-200 shrink-0">
               {editing ? (
-                <>
+                <div className="flex gap-3">
                   <button
                     onClick={saveEditing}
-                    className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[12px] bg-primary px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-primary-light"
+                    className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-3 text-[13px] font-semibold text-white transition hover:bg-primary-700 shadow-sm"
                   >
-                    <Check className="h-3.5 w-3.5" /> Save
+                    <Check className="h-4 w-4" /> Save
                   </button>
                   <button
                     onClick={cancelEditing}
-                    className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[12px] border bg-white px-3 py-2 text-[13px] font-semibold text-foreground transition hover:bg-muted"
+                    className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm"
                   >
-                    <X className="h-3.5 w-3.5" /> Cancel
+                    <X className="h-4 w-4" /> Cancel
                   </button>
-                </>
+                </div>
               ) : (
-                <>
-                  <button
-                    onClick={startEditing}
-                    disabled={!outline}
-                    className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[12px] border bg-white px-3 py-2 text-[13px] font-semibold text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Edit3 className="h-3.5 w-3.5" /> Edit
-                  </button>
-                  <button
-                    onClick={clearOutline}
-                    disabled={loading || !outline}
-                    className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[12px] bg-transparent px-3 py-2 text-[13px] font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    Regenerate
-                  </button>
+                <div className="flex flex-col gap-3">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={startEditing}
+                      disabled={!outline}
+                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+                    >
+                      <Edit3 className="h-4 w-4" /> Edit
+                    </button>
+                    <button
+                      onClick={clearOutline}
+                      disabled={loading || !outline}
+                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+                    >
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Regenerate
+                    </button>
+                  </div>
                   <button
                     onClick={confirmAndWrite}
                     disabled={confirming || !outline}
-                    className="flex-[1.5] cursor-pointer rounded-[12px] bg-accent px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
                   >
+                    {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                     {confirming ? "Preparing..." : "Confirm & Write"}
                   </button>
-                </>
+                </div>
               )}
             </div>
           </section>

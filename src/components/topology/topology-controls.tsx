@@ -38,7 +38,7 @@ const VIEW_OPTIONS = [
 
 
 const ICON_BUTTON_CLASSES =
-  "flex items-center justify-center w-9 h-9 rounded-lg text-[#52525B] hover:bg-[#F5F5F3] hover:text-[#18181B] transition-colors cursor-pointer";
+  "flex items-center justify-center w-9 h-9 rounded-lg text-[#6B6560] hover:bg-[#F4F2EF] hover:text-[#1E1B18] transition-colors cursor-pointer";
 
 export function TopologyControls({
   drafts,
@@ -57,7 +57,7 @@ export function TopologyControls({
   return (
     <div className="flex items-center gap-2.5 mb-4 flex-wrap">
       {/* Graph view mode toggle */}
-      <div className="flex items-center bg-[#F5F5F3] rounded-lg p-0.5">
+      <div className="flex items-center bg-[#F4F2EF] rounded-lg p-0.5">
         {VIEW_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -65,8 +65,8 @@ export function TopologyControls({
             onClick={() => onGraphModeChange(opt.value)}
             className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors cursor-pointer ${
               graphMode === opt.value
-                ? "bg-white text-[#18181B] shadow-sm"
-                : "text-[#A1A1AA] hover:text-[#52525B]"
+                ? "bg-white text-[#1E1B18] shadow-sm"
+                : "text-[#8C887F] hover:text-[#6B6560]"
             }`}
           >
             {opt.label}
@@ -91,7 +91,7 @@ export function TopologyControls({
       )}
 
       {/* Zoom controls */}
-      <div className="flex items-center gap-1 border border-[#E4E4E7] rounded-lg p-0.5">
+      <div className="flex items-center gap-1 border border-[#E8E6E1] rounded-lg p-0.5">
         <button
           type="button"
           onClick={onZoomIn}

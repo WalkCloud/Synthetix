@@ -37,7 +37,7 @@ If the user confirms the current outline, reply directly: OUTLINE_REQUESTED
 ## Response Principles
 - Keep each reply concise and clear, avoid lengthy responses
 - Use chapter-level Markdown lists for the outline, do not expand into content
-- Always reply in English, maintain a professional and efficient tone`;
+- Always reply in the SAME LANGUAGE as the user's input. If the user speaks Chinese, you MUST reply in Chinese. If English, reply in English. Maintain a professional and efficient tone.`;
 
 export async function POST(
   request: Request,
@@ -100,14 +100,7 @@ export async function POST(
       data: { sessionId: id, role: "ai", content: aiContent },
     });
 
-    // Auto-rename session on first user message using the user's input as title
-    if (session.title === "New Brainstorming Session") {
-      const shortTitle = content.length > 40 ? content.slice(0, 40) + "…" : content;
-      await db.brainstormSession.update({
-        where: { id },
-        data: { title: shortTitle },
-      }).catch(() => {});
-    }
+    // Intentionally removed auto-rename. Session title will be updated when the outline is generated.
 
     await recordTokenUsage({
       userId: user.id,

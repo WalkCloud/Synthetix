@@ -50,7 +50,7 @@ export function UploadProgress({ items }: { items: UploadItem[] }) {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex-1 h-1.5 bg-[#F0F0F0] rounded-full overflow-hidden">
+              <div className="flex-1 h-1.5 bg-[#F4F2EF] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
                     item.status === "failed" ? "bg-[#DC2626]" : "bg-primary"

@@ -1,16 +1,25 @@
 import { db } from "@/lib/db";
+import { tokenizeChinese, tokenizeQuery } from "./tokenizer";
 import type { SearchResult } from "@/types/documents";
 
 let ftsReady = false;
 
-async function ensureFtsTable(): Promise<void> {
+export async function ensureFtsTable(): Promise<void> {
   if (ftsReady) return;
+  // Content table approach: store pre-tokenized text, use default tokenizer (whitespace-split)
   await db.$executeRawUnsafe(`
     CREATE VIRTUAL TABLE IF NOT EXISTS document_fts USING fts5(
       title, content, content=document_chunks, content_rowid=rowid
     )
   `);
   ftsReady = true;
+}
+
+export async function syncFtsIndex(): Promise<void> {
+  await ensureFtsTable();
+  await db.$executeRawUnsafe(
+    `INSERT INTO document_fts(document_fts) VALUES('rebuild')`
+  );
 }
 
 export async function searchByKeyword(
@@ -20,15 +29,13 @@ export async function searchByKeyword(
 ): Promise<SearchResult[]> {
   await ensureFtsTable();
 
-  // Rebuild FTS index to catch new chunks
-  await db.$executeRawUnsafe(
-    `INSERT INTO document_fts(document_fts) VALUES('rebuild')`
-  );
-
-  const safeQuery = query.replace(/['"*]/g, "").trim();
+  const safeQuery = query.trim();
   if (!safeQuery) return [];
 
-  // FTS5 content table: fts.rowid = document_chunks.rowid (SQLite internal rowid)
+  // Tokenize the query with jieba for Chinese + keep English as-is
+  const tokenized = tokenizeQuery(safeQuery);
+  if (!tokenized) return [];
+
   const rows = await db.$queryRawUnsafe<
     { rowid: number; rank: number; snippet: string; chunk_id: string; document_id: string; title: string; document_name: string }[]
   >(
@@ -41,7 +48,7 @@ export async function searchByKeyword(
      WHERE document_fts MATCH ?
      ORDER BY f.rank
      LIMIT ? OFFSET ?`,
-    safeQuery,
+    tokenized,
     limit,
     offset
   );
