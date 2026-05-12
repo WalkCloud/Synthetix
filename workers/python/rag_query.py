@@ -182,6 +182,19 @@ async def query_rag(
         entities = data.get("entities", [])
         relations = data.get("relationships", []) or data.get("relations", [])
 
+        cosine_map: dict[str, float] = {}
+        try:
+            vdb_results = await rag.chunks_vdb.query(
+                query_text, top_k=max(limit, len(chunks)) * 2
+            )
+            for vr in vdb_results:
+                cid = vr.get("id", "")
+                dist = vr.get("distance", 0.0)
+                if cid and isinstance(dist, (int, float)):
+                    cosine_map[cid] = float(dist)
+        except Exception:
+            pass
+
         output_chunks = []
         for i, chunk in enumerate(chunks):
             chunk_id = chunk.get("chunk_id", "")
@@ -196,8 +209,12 @@ async def query_rag(
                         title = m.group(2)
                         break
 
-            if len(chunks) > 1:
-                score = 1.0 - (i / (len(chunks) - 1)) * 0.85
+            raw_score = cosine_map.get(chunk_id)
+            if raw_score is not None:
+                score = max(0.0, min(1.0, raw_score))
+            elif len(chunks) > 1:
+                t = i / (len(chunks) - 1)
+                score = 1.0 - t * t * 0.3
             else:
                 score = 1.0
 
@@ -205,7 +222,7 @@ async def query_rag(
                 "chunk_id": chunk_id,
                 "content": content_text[:500],
                 "title": title,
-                "score": round(score, 3),
+                "score": round(score, 4),
             })
 
         output: dict = {

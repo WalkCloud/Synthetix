@@ -85,45 +85,45 @@ interface FlatSectionInput {
   description: string | null;
   keyPoints: string | null;
   estimatedWords: number | null;
+  depth: number;
+  path: number[];
+}
+
+interface OutlineSectionLike {
+  title: string;
+  keyPoints?: string[];
+  estimatedWords?: number;
+  children?: OutlineSectionLike[];
+}
+
+function flattenRecursive(
+  sections: OutlineSectionLike[],
+  parentPath: number[],
+  depth: number
+): FlatSectionInput[] {
+  const result: FlatSectionInput[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const currentPath = [...parentPath, i];
+    result.push({
+      parentId: null,
+      index: i,
+      title: section.title,
+      description: null,
+      keyPoints: section.keyPoints ? JSON.stringify(section.keyPoints) : null,
+      estimatedWords: section.estimatedWords ?? null,
+      depth,
+      path: currentPath,
+    });
+    if (section.children && section.children.length > 0) {
+      result.push(...flattenRecursive(section.children, currentPath, depth + 1));
+    }
+  }
+  return result;
 }
 
 function flattenOutlineSections(outline: OutlineData): FlatSectionInput[] {
-  return outline.sections.reduce<FlatSectionInput[]>(
-    (acc, section, sectionIndex) => {
-      const parent: FlatSectionInput = {
-        parentId: null,
-        index: sectionIndex,
-        title: section.title,
-        description: null,
-        keyPoints: section.keyPoints ? JSON.stringify(section.keyPoints) : null,
-        estimatedWords: section.estimatedWords ?? null,
-      };
-
-      const children: FlatSectionInput[] = Array.isArray(section.children)
-        ? section.children.map((child, childIndex) => ({
-            parentId: null, // placeholder; resolved during creation
-            index: sectionIndex * 100 + childIndex + 1,
-            title: child.title,
-            description: null,
-            keyPoints: child.keyPoints
-              ? JSON.stringify(child.keyPoints)
-              : null,
-            estimatedWords: child.estimatedWords ?? null,
-          }))
-        : [];
-
-      return [...acc, parent, ...children];
-    },
-    []
-  );
-}
-
-function isParentSection(index: number): boolean {
-  return index < 100;
-}
-
-function parentIndexOf(childIndex: number): number {
-  return Math.floor(childIndex / 100);
+  return flattenRecursive(outline.sections, [], 0);
 }
 
 async function createDraftWithSections(
@@ -142,44 +142,27 @@ async function createDraftWithSections(
   });
 
   const flatSections = flattenOutlineSections(outline);
+  const idMap = new Map<string, string>();
 
-  // Create parent sections first to obtain IDs, then link children
-  const parentSections = flatSections.filter((s) => isParentSection(s.index));
+  let globalIndex = 0;
+  for (const section of flatSections) {
+    const parentPathKey = section.path.slice(0, -1).join(",");
+    const parentId = section.depth > 0 ? (idMap.get(parentPathKey) ?? null) : null;
 
-  let createdParents: Awaited<ReturnType<typeof db.section.create>>[] = [];
-  for (const parent of parentSections) {
     const created = await db.section.create({
       data: {
         draftId: draft.id,
-        parentId: null,
-        index: parent.index,
-        title: parent.title,
-        description: parent.description,
-        keyPoints: parent.keyPoints,
-        estimatedWords: parent.estimatedWords,
+        parentId,
+        index: globalIndex++,
+        title: section.title,
+        description: section.description,
+        keyPoints: section.keyPoints,
+        estimatedWords: section.estimatedWords,
         status: "pending",
       },
     });
-    createdParents = [...createdParents, created];
-  }
 
-  const childSections = flatSections.filter((s) => !isParentSection(s.index));
-
-  for (const child of childSections) {
-    const parentArrayIndex = parentIndexOf(child.index);
-    const parentRecord = createdParents[parentArrayIndex];
-    await db.section.create({
-      data: {
-        draftId: draft.id,
-        parentId: parentRecord?.id ?? null,
-        index: child.index,
-        title: child.title,
-        description: child.description,
-        keyPoints: child.keyPoints,
-        estimatedWords: child.estimatedWords,
-        status: "pending",
-      },
-    });
+    idMap.set(section.path.join(","), created.id);
   }
 
   return db.draft.findUnique({

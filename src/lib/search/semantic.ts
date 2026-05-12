@@ -123,23 +123,36 @@ async function searchViaDirectEmbedding(
 
   if (chunks.length === 0) return [];
 
-  return chunks
+  const scored = chunks
     .map((chunk) => {
       if (!chunk.embedding) return null;
       const chunkEmb = bufferToFloat32(new Uint8Array(chunk.embedding));
-      const score = cosineSimilarity(queryEmbedding, chunkEmb);
-      return {
-        chunkId: chunk.id,
-        documentId: chunk.document.id,
-        documentName: chunk.document.originalName,
-        title: chunk.title,
-        content: chunk.content.slice(0, 500),
-        score: Math.round(score * 1000) / 1000,
-      };
+      const raw = cosineSimilarity(queryEmbedding, chunkEmb);
+      return { chunk, raw };
     })
-    .filter((r): r is SearchResult => r !== null)
-    .sort((a, b) => b.score - a.score)
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.raw - a.raw)
     .slice(0, limit);
+
+  if (scored.length === 0) return [];
+
+  const minRaw = scored[scored.length - 1].raw;
+  const maxRaw = scored[0].raw;
+  const range = maxRaw - minRaw || 1;
+
+  return scored.map((r, i) => {
+    const normalized = range > 0.01
+      ? 0.7 + 0.3 * ((r.raw - minRaw) / range)
+      : 0.7 + 0.3 * (1 - i / Math.max(scored.length - 1, 1));
+    return {
+      chunkId: r.chunk.id,
+      documentId: r.chunk.document.id,
+      documentName: r.chunk.document.originalName,
+      title: r.chunk.title,
+      content: r.chunk.content.slice(0, 500),
+      score: Math.round(normalized * 1000) / 1000,
+    };
+  });
 }
 
 export async function semanticSearch(
@@ -185,28 +198,21 @@ export async function semanticSearch(
       );
 
       if (ragResults.chunks.length > 0) {
-        // Map chunk_ids to document info from DB
         const chunkIds = ragResults.chunks.map((r) => r.chunk_id);
-        const docChunkMap = new Map<string, { docId: string; docName: string }>();
+        const docIds = [...new Set(chunkIds.map((rid) => rid.split("/")[0]).filter(Boolean))];
 
-        for (const rid of chunkIds) {
-          const docId = rid.split("/")[0];
-          if (docId && !docChunkMap.has(rid)) {
-            try {
-              const doc = await db.document.findUnique({
-                where: { id: docId },
-                select: { id: true, originalName: true },
-              });
-              if (doc) docChunkMap.set(rid, { docId: doc.id, docName: doc.originalName });
-            } catch { /* ignore */ }
-          }
-        }
+        const docs = await db.document.findMany({
+          where: { id: { in: docIds } },
+          select: { id: true, originalName: true },
+        });
+        const docMap = new Map(docs.map((d) => [d.id, { docId: d.id, docName: d.originalName }]));
 
         return ragResults.chunks.map((r) => {
-          const docInfo = docChunkMap.get(r.chunk_id);
+          const docId = r.chunk_id.split("/")[0] || "";
+          const docInfo = docMap.get(docId);
           return {
             chunkId: r.chunk_id,
-            documentId: docInfo?.docId || r.chunk_id.split("/")[0] || "",
+            documentId: docInfo?.docId || docId,
             documentName: docInfo?.docName || "",
             title: r.title || null,
             content: r.content,
@@ -214,8 +220,8 @@ export async function semanticSearch(
           };
         });
       }
-    } catch {
-      // LightRAG failed — fall through to direct embedding search
+    } catch (err) {
+      console.error("[semantic] LightRAG failed:", err instanceof Error ? err.stack : err);
     }
   }
 

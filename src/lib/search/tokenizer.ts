@@ -19,7 +19,17 @@ export function tokenizeChinese(text: string): string {
 
 export function tokenizeQuery(query: string): string {
   const jieba = getJieba();
-  const tokens = jieba.cutForSearch(query);
-  // Build FTS5 query: each token must be present
-  return tokens.filter((t) => t.trim().length > 0).map((t) => `"${t}"`).join(" ");
+  const tokens = jieba.cutForSearch(query).filter((t) => t.trim().length > 0);
+  const uniqueTokens = [...new Set(tokens)];
+  if (uniqueTokens.length === 0) return "";
+  if (uniqueTokens.length <= 3) {
+    return uniqueTokens.map((t) => `"${t}"`).join(" ");
+  }
+  const groups: string[] = [];
+  const windowSize = Math.min(3, uniqueTokens.length);
+  for (let i = 0; i <= uniqueTokens.length - windowSize; i++) {
+    const group = uniqueTokens.slice(i, i + windowSize).map((t) => `"${t}"`).join(" ");
+    groups.push(`(${group})`);
+  }
+  return groups.join(" OR ");
 }
