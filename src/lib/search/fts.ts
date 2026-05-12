@@ -3,23 +3,57 @@ import { tokenizeChinese, tokenizeQuery } from "./tokenizer";
 import type { SearchResult } from "@/types/documents";
 
 let ftsReady = false;
+let ftsIndexed = false;
 
 export async function ensureFtsTable(): Promise<void> {
   if (ftsReady) return;
-  // Content table approach: store pre-tokenized text, use default tokenizer (whitespace-split)
+  const existing = await db.$queryRawUnsafe<{ sql: string }[]>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='document_fts'`
+  );
+  if (existing.length > 0 && existing[0].sql?.includes("content=document_chunks")) {
+    await db.$executeRawUnsafe(`DROP TABLE IF EXISTS document_fts`);
+  }
   await db.$executeRawUnsafe(`
     CREATE VIRTUAL TABLE IF NOT EXISTS document_fts USING fts5(
-      title, content, content=document_chunks, content_rowid=rowid
+      title, content
     )
   `);
   ftsReady = true;
 }
 
+async function ensureFtsIndexed(): Promise<void> {
+  if (ftsIndexed) return;
+  const count = await db.$queryRawUnsafe<{ c: number }[]>(
+    `SELECT COUNT(*) as c FROM document_fts`
+  );
+  if (count[0]?.c > 0) {
+    ftsIndexed = true;
+    return;
+  }
+  const chunkCount = await db.$queryRawUnsafe<{ c: number }[]>(
+    `SELECT COUNT(*) as c FROM document_chunks`
+  );
+  if (chunkCount[0]?.c > 0) {
+    await syncFtsIndex();
+  }
+  ftsIndexed = true;
+}
+
 export async function syncFtsIndex(): Promise<void> {
   await ensureFtsTable();
-  await db.$executeRawUnsafe(
-    `INSERT INTO document_fts(document_fts) VALUES('rebuild')`
+  const chunks = await db.$queryRawUnsafe<
+    { rowid: number; title: string; content: string }[]
+  >(`SELECT rowid, title, content FROM document_chunks`);
+  await db.$executeRawUnsafe(`DELETE FROM document_fts`);
+  if (chunks.length === 0) return;
+  await db.$executeRawUnsafe(`INSERT INTO document_fts(rowid, title, content) VALUES ${chunks.map(() => '(?, ?, ?)').join(',')}`,
+    ...chunks.flatMap((chunk) => [
+      chunk.rowid,
+      chunk.title ? tokenizeChinese(chunk.title) : "",
+      chunk.content ? tokenizeChinese(chunk.content) : "",
+    ])
   );
+  ftsIndexed = true;
 }
 
 export async function searchByKeyword(
@@ -28,11 +62,11 @@ export async function searchByKeyword(
   offset = 0
 ): Promise<SearchResult[]> {
   await ensureFtsTable();
+  await ensureFtsIndexed();
 
   const safeQuery = query.trim();
   if (!safeQuery) return [];
 
-  // Tokenize the query with jieba for Chinese + keep English as-is
   const tokenized = tokenizeQuery(safeQuery);
   if (!tokenized) return [];
 
