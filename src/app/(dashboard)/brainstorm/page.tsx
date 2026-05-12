@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import {
-  MessageSquare, LayoutList, Plus, Send, RefreshCw, CheckCircle2,
+  MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
   Trash2, Check, X, GripVertical, FileText
 } from "lucide-react";
@@ -246,7 +246,12 @@ export default function BrainstormPage() {
   }
 
   function totalWords(): number {
-    return outline?.sections.reduce((sum, s) => sum + (s.estimatedWords || 0), 0) || 0;
+    return sumWords(outline?.sections);
+  }
+
+  function sumWords(sections?: OutlineSection[]): number {
+    if (!sections) return 0;
+    return sections.reduce((sum, s) => sum + (s.estimatedWords || 0) + sumWords(s.children), 0);
   }
 
   function formatTime(d: string): string {
@@ -284,10 +289,74 @@ export default function BrainstormPage() {
   const activeMessageCount = activeSession?._count?.messages ?? messages.length;
   const displayStatus = outline ? "Outline Ready" : status === "Complete" ? "Complete" : "Deepening Phase";
 
+  function deepClone(sections: OutlineSection[]): OutlineSection[] {
+    return sections.map(s => ({ ...s, children: s.children ? deepClone(s.children) : undefined }));
+  }
+
+  function getByPath(sections: OutlineSection[], path: number[]): OutlineSection | undefined {
+    if (path.length === 0) return undefined;
+    const [head, ...rest] = path;
+    const node = sections[head];
+    if (!node) return undefined;
+    if (rest.length === 0) return node;
+    return getByPath(node.children || [], rest);
+  }
+
+  function updateByPath(sections: OutlineSection[], path: number[], updater: (s: OutlineSection) => OutlineSection): OutlineSection[] {
+    if (path.length === 0) return sections;
+    const [head, ...rest] = path;
+    return sections.map((s, i) => {
+      if (i !== head) return s;
+      if (rest.length === 0) return updater(s);
+      return { ...s, children: updateByPath(s.children || [], rest, updater) };
+    });
+  }
+
+  function removeByPath(sections: OutlineSection[], path: number[]): OutlineSection[] {
+    if (path.length === 0) return sections;
+    const [head, ...rest] = path;
+    if (rest.length === 0) return sections.filter((_, i) => i !== head);
+    return sections.map((s, i) => {
+      if (i !== head) return s;
+      return { ...s, children: removeByPath(s.children || [], rest) };
+    });
+  }
+
+  function addChildAtPath(sections: OutlineSection[], path: number[], defaults: { num: string; title: string; estimatedWords: number }): OutlineSection[] {
+    if (path.length === 0) {
+      return [...sections, defaults];
+    }
+    const [head, ...rest] = path;
+    return sections.map((s, i) => {
+      if (i !== head) return s;
+      if (rest.length === 0) {
+        const children = [...(s.children || []), defaults];
+        return { ...s, children };
+      }
+      return { ...s, children: addChildAtPath(s.children || [], rest, defaults) };
+    });
+  }
+
+  function renumberSections(sections: OutlineSection[], prefix = ""): OutlineSection[] {
+    return sections.map((s, i) => {
+      const num = prefix ? `${prefix}.${i + 1}` : String(i + 1);
+      return { ...s, num, children: s.children ? renumberSections(s.children, num) : undefined };
+    });
+  }
+
+  function numForPath(sections: OutlineSection[], path: number[]): string {
+    if (path.length === 0) return "";
+    const [head, ...rest] = path;
+    if (rest.length === 0) return String(head + 1);
+    const parentNum = String(head + 1);
+    const childNum = numForPath(sections[head]?.children || [], rest.map(r => r));
+    return `${parentNum}.${childNum}`;
+  }
+
   function startEditing() {
     if (!outline) return;
     setEditTitle(outline.title);
-    setEditSections(outline.sections.map((s) => ({ ...s, children: s.children?.map(c => ({...c})) })));
+    setEditSections(deepClone(outline.sections));
     setEditing(true);
   }
 
@@ -299,11 +368,7 @@ export default function BrainstormPage() {
 
   function saveEditing() {
     if (!outline) return;
-    const renumbered = editSections.map((s, i) => ({
-      ...s,
-      num: String(i + 1),
-      children: s.children?.map((c, ci) => ({ ...c, num: `${i + 1}.${ci + 1}` }))
-    }));
+    const renumbered = renumberSections(editSections);
     const updated = { ...outline, title: editTitle, sections: renumbered };
     setOutline(updated);
     setEditing(false);
@@ -319,56 +384,26 @@ export default function BrainstormPage() {
     }).catch(() => {});
   }
 
-  function updateEditSection(index: number, field: "title" | "estimatedWords", value: string) {
+  function updateEditNode(path: number[], field: "title" | "estimatedWords", value: string) {
     setEditSections((prev) =>
-      prev.map((s, i) => {
-        if (i !== index) return s;
-        if (field === "estimatedWords") {
-          return { ...s, estimatedWords: parseInt(value) || 0 };
-        }
-        return { ...s, [field]: value };
-      }),
+      updateByPath(prev, path, (s) =>
+        field === "estimatedWords" ? { ...s, estimatedWords: parseInt(value) || 0 } : { ...s, [field]: value }
+      )
     );
   }
 
-  function updateEditChild(parentIndex: number, childIndex: number, field: "title" | "estimatedWords", value: string) {
-    setEditSections((prev) =>
-      prev.map((s, i) => {
-        if (i !== parentIndex) return s;
-        if (!s.children) return s;
-        const children = s.children.map((c, ci) => {
-          if (ci !== childIndex) return c;
-          if (field === "estimatedWords") return { ...c, estimatedWords: parseInt(value) || 0 };
-          return { ...c, [field]: value };
-        });
-        return { ...s, children };
-      })
-    );
+  function removeEditNode(path: number[]) {
+    setEditSections((prev) => removeByPath(prev, path));
   }
 
-  function removeEditChild(parentIndex: number, childIndex: number) {
+  function addEditChild(parentPath: number[]) {
+    const parent = getByPath(editSections, parentPath);
+    const childCount = parent?.children?.length || 0;
+    const parentNum = parentPath.length > 0 ? numForPath(editSections, parentPath) : String(editSections.length + 1);
+    const childNum = `${parentNum}.${childCount + 1}`;
     setEditSections((prev) =>
-      prev.map((s, i) => {
-        if (i !== parentIndex) return s;
-        if (!s.children) return s;
-        return { ...s, children: s.children.filter((_, ci) => ci !== childIndex) };
-      })
+      addChildAtPath(prev, parentPath, { num: childNum, title: "", estimatedWords: 200 })
     );
-  }
-
-  function addEditChild(parentIndex: number) {
-    setEditSections((prev) =>
-      prev.map((s, i) => {
-        if (i !== parentIndex) return s;
-        const children = s.children ? [...s.children] : [];
-        children.push({ num: `${i + 1}.${children.length + 1}`, title: "", estimatedWords: 300 });
-        return { ...s, children };
-      })
-    );
-  }
-
-  function removeEditSection(index: number) {
-    setEditSections((prev) => prev.filter((_, i) => i !== index));
   }
 
   function addEditSection() {
@@ -378,26 +413,35 @@ export default function BrainstormPage() {
     ]);
   }
 
-  function removeSection(index: number) {
-    if (!outline) return;
-    const updated = outline.sections.filter((_, i) => i !== index).map((s, i) => ({ ...s, num: String(i + 1) }));
-    const newOutline = { ...outline, sections: updated };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
   function insertSectionAfter(index: number) {
     if (!outline) return;
     const section: OutlineSection = { num: "", title: "", estimatedWords: 500 };
-    const updated = [...outline.sections.slice(0, index + 1), section, ...outline.sections.slice(index + 1)].map((s, i) => ({ ...s, num: String(i + 1) }));
-    const newOutline = { ...outline, sections: updated };
+    const updated = [...outline.sections.slice(0, index + 1), section, ...outline.sections.slice(index + 1)];
+    const newOutline = { ...outline, sections: renumberSections(updated) };
     setOutline(newOutline);
     persistOutline(newOutline);
   }
 
-  function updateSectionTitle(index: number, title: string) {
+  function updateNodeTitle(path: number[], title: string) {
     if (!outline) return;
-    setOutline({ ...outline, sections: outline.sections.map((s, i) => i === index ? { ...s, title } : s) });
+    const updated = updateByPath(outline.sections, path, (s) => ({ ...s, title }));
+    setOutline({ ...outline, sections: updated });
+  }
+
+  function removeNode(path: number[]) {
+    if (!outline) return;
+    const updated = removeByPath(outline.sections, path);
+    const newOutline = { ...outline, sections: renumberSections(updated) };
+    setOutline(newOutline);
+    persistOutline(newOutline);
+  }
+
+  function insertChildAfter(parentPath: number[], childIndex: number) {
+    if (!outline) return;
+    const updated = addChildAtPath(outline.sections, [...parentPath, childIndex], { num: "", title: "", estimatedWords: 200 });
+    const newOutline = { ...outline, sections: renumberSections(updated) };
+    setOutline(newOutline);
+    persistOutline(newOutline);
   }
 
   function reorderSections(from: number, to: number) {
@@ -405,32 +449,263 @@ export default function BrainstormPage() {
     const updated = [...outline.sections];
     const [moved] = updated.splice(from, 1);
     updated.splice(to, 0, moved);
-    const newOutline = { ...outline, sections: updated.map((s, i) => ({ ...s, num: String(i + 1) })) };
+    const newOutline = { ...outline, sections: renumberSections(updated) };
     setOutline(newOutline);
     persistOutline(newOutline);
   }
 
-  function updateChildTitle(parentIndex: number, childIndex: number, title: string) {
-    if (!outline) return;
-    setOutline({
-      ...outline,
-      sections: outline.sections.map((s, i) => {
-        if (i !== parentIndex || !s.children) return s;
-        const children = s.children.map((c, ci) => ci === childIndex ? { ...c, title } : c);
-        return { ...s, children };
-      }),
-    });
+  function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth }: {
+    section: OutlineSection;
+    path: number[];
+    onUpdate: (path: number[], field: "title" | "estimatedWords", value: string) => void;
+    onRemove: (path: number[]) => void;
+    onAddChild: (parentPath: number[]) => void;
+    depth: number;
+  }) {
+    const isTop = depth === 0;
+    const indent = depth > 0 ? `pl-${Math.min(depth * 4, 12)}` : "";
+
+    return (
+      <div className={isTop ? "rounded-[12px] border bg-white shadow-sm overflow-hidden" : undefined}>
+        <div className={`flex items-center gap-2 ${isTop ? "p-3" : "py-2 pr-1"} ${indent}`}>
+          {isTop && <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          <span className={`shrink-0 ${isTop ? "w-5 text-sm font-bold" : "min-w-6 text-xs font-semibold"} text-primary`}>
+            {section.num}
+          </span>
+          <input
+            type="text"
+            value={section.title}
+            onChange={(e) => onUpdate(path, "title", e.target.value)}
+            placeholder={isTop ? "Section title..." : "Sub-section title..."}
+            className={`min-w-0 flex-1 bg-transparent text-foreground focus:outline-none ${isTop ? "text-sm font-semibold" : "text-[13px] border-b border-dashed border-slate-300 focus:border-primary-400"}`}
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={section.estimatedWords || ""}
+            onChange={(e) => onUpdate(path, "estimatedWords", e.target.value)}
+            className={`shrink-0 rounded ${isTop ? "w-16 rounded-lg border bg-slate-50 px-2 py-1 text-xs focus:ring-2 focus:ring-primary/20" : "w-14 border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary/20"} text-center text-muted-foreground focus:outline-none`}
+            placeholder="words"
+          />
+          <button
+            onClick={() => onRemove(path)}
+            className={`flex shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-red-500 ${isTop ? "h-7 w-7 rounded-lg hover:bg-red-50 hover:text-red-600" : "h-6 w-6"}`}
+          >
+            {isTop ? <Trash2 className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        {isTop && section.children && section.children.length > 0 && (
+          <div className="border-t bg-slate-50/50 p-2 space-y-2">
+            {section.children.map((child, ci) => (
+              <EditOutlineNode
+                key={ci}
+                section={child}
+                path={[...path, ci]}
+                onUpdate={onUpdate}
+                onRemove={onRemove}
+                onAddChild={onAddChild}
+                depth={depth + 1}
+              />
+            ))}
+          </div>
+        )}
+        {!isTop && section.children && section.children.length > 0 && (
+          <div className="space-y-1">
+            {section.children.map((child, ci) => (
+              <EditOutlineNode
+                key={ci}
+                section={child}
+                path={[...path, ci]}
+                onUpdate={onUpdate}
+                onRemove={onRemove}
+                onAddChild={onAddChild}
+                depth={depth + 1}
+              />
+            ))}
+          </div>
+        )}
+        {(isTop || (section.children && section.children.length > 0)) && (
+          <div className={`${isTop ? "pl-6 pt-1 pb-1" : "pl-4 pt-0.5 pb-0.5"}`}>
+            <button
+              onClick={() => onAddChild(path)}
+              className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-primary/60 hover:text-primary transition-colors"
+            >
+              <Plus className="h-3 w-3" /> Add Sub-section
+            </button>
+          </div>
+        )}
+        {!isTop && !section.children?.length && (
+          <div className="pl-4 pt-0.5 pb-0.5">
+            <button
+              onClick={() => onAddChild(path)}
+              className="flex cursor-pointer items-center gap-1 text-[10px] font-semibold text-primary/50 hover:text-primary transition-colors"
+            >
+              <Plus className="h-2.5 w-2.5" /> Add Sub-section
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
-  function removeChildSection(parentIndex: number, childIndex: number) {
-    if (!outline) return;
-    setOutline({
-      ...outline,
-      sections: outline.sections.map((s, i) => {
-        if (i !== parentIndex || !s.children) return s;
-        return { ...s, children: s.children.filter((_, ci) => ci !== childIndex) };
-      }),
-    });
+  function DisplayOutlineNode({ section, path, depth, isDraggable, dragIndex, setDragIndex, onReorder, onUpdateTitle, onRemove, onInsertChild, onAddChild, onInsertAfter }: {
+    section: OutlineSection;
+    path: number[];
+    depth: number;
+    isDraggable: boolean;
+    dragIndex: number | null;
+    setDragIndex: (i: number | null) => void;
+    onReorder: (from: number, to: number) => void;
+    onUpdateTitle: (path: number[], title: string) => void;
+    onRemove: (path: number[]) => void;
+    onInsertChild: (parentPath: number[], childIndex: number) => void;
+    onAddChild: (parentPath: number[]) => void;
+    onInsertAfter: (path: number[]) => void;
+  }) {
+    const isTop = depth === 0;
+
+    if (isTop) {
+      return (
+        <li
+          draggable={isDraggable}
+          onDragStart={() => isDraggable && setDragIndex(path[0])}
+          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary-50/30"); }}
+          onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); }}
+          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); if (dragIndex !== null && isDraggable) onReorder(dragIndex, path[0]); setDragIndex(null); }}
+          onDragEnd={() => setDragIndex(null)}
+          className={`group/section rounded-[12px] border bg-white shadow-sm transition ${dragIndex === path[0] ? "opacity-40" : ""}`}
+        >
+          <div className="flex items-center gap-2 px-3 py-2.5">
+            {isDraggable && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/30 transition group-hover/section:text-muted-foreground" />}
+            <span className="min-w-5 shrink-0 text-sm font-bold text-primary">{section.num}.</span>
+            <input
+              value={section.title}
+              onChange={(e) => onUpdateTitle(path, e.target.value)}
+              placeholder="Enter chapter title..."
+              className="min-w-0 flex-1 bg-transparent text-sm font-semibold leading-5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            />
+            <span className="shrink-0 text-[11px] text-muted-foreground">~{section.estimatedWords || 500}w</span>
+            <button
+              onClick={() => onRemove(path)}
+              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/30 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/section:opacity-100"
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+          {section.children && section.children.length > 0 && (
+            <ul className="border-t bg-slate-50/50 px-3 py-2">
+              {section.children.map((child, ci) => (
+                <DisplayOutlineNode
+                  key={ci}
+                  section={child}
+                  path={[...path, ci]}
+                  depth={depth + 1}
+                  isDraggable={false}
+                  dragIndex={dragIndex}
+                  setDragIndex={setDragIndex}
+                  onReorder={onReorder}
+                  onUpdateTitle={onUpdateTitle}
+                  onRemove={onRemove}
+                  onInsertChild={onInsertChild}
+                  onAddChild={onAddChild}
+                  onInsertAfter={onInsertAfter}
+                />
+              ))}
+              <li className="py-1">
+                <button
+                  onClick={() => onAddChild(path)}
+                  className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
+                >
+                  <Plus className="h-3 w-3" /> Add sub-section
+                </button>
+              </li>
+            </ul>
+          )}
+          {(!section.children || section.children.length === 0) && (
+            <div className="border-t bg-slate-50/50 px-3 py-1.5">
+              <button
+                onClick={() => onAddChild(path)}
+                className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
+              >
+                <Plus className="h-3 w-3" /> Add sub-section
+              </button>
+            </div>
+          )}
+        </li>
+      );
+    }
+
+    return (
+      <>
+        <li
+          className="group/child relative flex items-center gap-2 rounded-lg py-1.5 pl-4"
+        >
+          <span className={`shrink-0 text-xs font-semibold ${depth === 1 ? "text-primary/70" : "text-primary/50"}`}>
+            {section.num}
+          </span>
+          <input
+            value={section.title}
+            onChange={(e) => onUpdateTitle(path, e.target.value)}
+            placeholder="Enter title..."
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+          />
+          <span className="shrink-0 text-[10px] text-muted-foreground">~{section.estimatedWords || 300}w</span>
+          <button
+            onClick={() => onInsertAfter(path)}
+            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-primary/0 transition hover:bg-primary-50 hover:text-primary group-hover/child:text-primary/40"
+            title="Insert after"
+          >
+            <Plus className="h-2.5 w-2.5" />
+          </button>
+          <button
+            onClick={() => onRemove(path)}
+            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/0 transition hover:bg-red-50 hover:text-red-500 group-hover/child:text-muted-foreground/30"
+          >
+            <Trash2 className="h-2.5 w-2.5" />
+          </button>
+        </li>
+        {section.children && section.children.length > 0 && (
+          <ul className="pl-4">
+            {section.children.map((child, ci) => (
+              <DisplayOutlineNode
+                key={ci}
+                section={child}
+                path={[...path, ci]}
+                depth={depth + 1}
+                isDraggable={false}
+                dragIndex={dragIndex}
+                setDragIndex={setDragIndex}
+                onReorder={onReorder}
+                onUpdateTitle={onUpdateTitle}
+                onRemove={onRemove}
+                onInsertChild={onInsertChild}
+                onAddChild={onAddChild}
+                onInsertAfter={onInsertAfter}
+              />
+            ))}
+            <li className="py-0.5">
+              <button
+                onClick={() => onAddChild(path)}
+                className="flex cursor-pointer items-center gap-1 pl-4 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
+              >
+                <Plus className="h-2.5 w-2.5" /> Add sub-section
+              </button>
+            </li>
+          </ul>
+        )}
+        {!section.children?.length && (
+          <div className="pl-8 py-0.5 opacity-0 transition-opacity group-hover/child:opacity-100">
+            <button
+              onClick={() => onAddChild(path)}
+              className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
+            >
+              <Plus className="h-2.5 w-2.5" /> Add sub-section
+            </button>
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
@@ -684,69 +959,15 @@ export default function BrainstormPage() {
                     {editing ? (
                       <div className="space-y-3">
                         {editSections.map((s, i) => (
-                          <div key={i} className="rounded-[12px] border bg-white shadow-sm overflow-hidden">
-                            <div className="flex items-center gap-2 p-3">
-                              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-                              <span className="w-5 shrink-0 text-sm font-bold text-primary">{i + 1}.</span>
-                              <input
-                                type="text"
-                                value={s.title}
-                                onChange={(e) => updateEditSection(i, "title", e.target.value)}
-                                placeholder="Section title..."
-                                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground focus:outline-none"
-                              />
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={s.estimatedWords || ""}
-                                onChange={(e) => updateEditSection(i, "estimatedWords", e.target.value)}
-                                className="w-16 shrink-0 rounded-lg border bg-slate-50 px-2 py-1 text-center text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                placeholder="words"
-                              />
-                              <button
-                                onClick={() => removeEditSection(i)}
-                                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                            <div className="bg-slate-50/50 border-t p-2 space-y-2">
-                              {s.children?.map((c, ci) => (
-                                <div key={ci} className="flex items-center gap-2 pl-6 pr-1">
-                                  <span className="min-w-6 shrink-0 text-xs font-semibold text-primary/70">{i + 1}.{ci + 1}</span>
-                                  <input
-                                    type="text"
-                                    value={c.title}
-                                    onChange={(e) => updateEditChild(i, ci, "title", e.target.value)}
-                                    placeholder="Sub-chapter title..."
-                                    className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground focus:outline-none border-b border-dashed border-slate-300 focus:border-primary-400"
-                                  />
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={c.estimatedWords || ""}
-                                    onChange={(e) => updateEditChild(i, ci, "estimatedWords", e.target.value)}
-                                    className="w-14 shrink-0 rounded bg-white border border-slate-200 px-1.5 py-0.5 text-center text-[11px] text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/20"
-                                    placeholder="words"
-                                  />
-                                  <button
-                                    onClick={() => removeEditChild(i, ci)}
-                                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-red-500"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              ))}
-                              <div className="pl-6 pt-1 pb-1">
-                                <button
-                                  onClick={() => addEditChild(i)}
-                                  className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-primary/60 hover:text-primary transition-colors"
-                                >
-                                  <Plus className="h-3 w-3" /> Add Sub-chapter
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                          <EditOutlineNode
+                            key={i}
+                            section={s}
+                            path={[i]}
+                            onUpdate={updateEditNode}
+                            onRemove={removeEditNode}
+                            onAddChild={addEditChild}
+                            depth={0}
+                          />
                         ))}
                         <button
                           onClick={addEditSection}
@@ -759,67 +980,35 @@ export default function BrainstormPage() {
                       <>
                       <ul className="space-y-2">
                         {outline.sections.map((s, i) => (
-                          <li
+                          <DisplayOutlineNode
                             key={i}
-                            draggable
-                            onDragStart={() => setDragIndex(i)}
-                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary-50/30"); }}
-                            onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); }}
-                            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); if (dragIndex !== null) reorderSections(dragIndex, i); setDragIndex(null); }}
-                            onDragEnd={() => setDragIndex(null)}
-                            className={`group/section rounded-[12px] border bg-white shadow-sm transition ${dragIndex === i ? "opacity-40" : ""}`}
-                          >
-                            <div className="flex items-center gap-2 px-3 py-2.5">
-                              <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/30 transition group-hover/section:text-muted-foreground" />
-                              <span className="min-w-5 shrink-0 text-sm font-bold text-primary">{s.num}.</span>
-                              {s.title ? (
-                                <span className="min-w-0 flex-1 break-words text-sm font-semibold leading-5 text-foreground">{s.title}</span>
-                              ) : (
-                                <input
-                                  autoFocus
-                                  value={s.title}
-                                  onChange={(e) => updateSectionTitle(i, e.target.value)}
-                                  placeholder="Enter chapter title..."
-                                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                                />
-                              )}
-                              <span className="shrink-0 text-[11px] text-muted-foreground">~{s.estimatedWords || 500}w</span>
-                              <button
-                                onClick={() => removeSection(i)}
-                                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/30 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/section:opacity-100"
-                                title="Delete chapter"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                            {s.children && s.children.length > 0 && (
-                              <ul className="border-t bg-slate-50/50 px-3 py-2">
-                                {s.children.map((c, ci) => (
-                                  <li key={ci} className="group/child flex items-center gap-2 rounded-lg py-1.5 pl-4">
-                                    <span className="min-w-6 shrink-0 text-xs font-semibold text-primary/70">{c.num}</span>
-                                    {c.title ? (
-                                      <span className="min-w-0 flex-1 break-words text-[13px] leading-5 text-foreground/80">{c.title}</span>
-                                    ) : (
-                                      <input
-                                        autoFocus
-                                        value={c.title}
-                                        onChange={(e) => updateChildTitle(i, ci, e.target.value)}
-                                        placeholder="Enter sub-chapter title..."
-                                        className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                                      />
-                                    )}
-                                    <span className="shrink-0 text-[10px] text-muted-foreground">~{c.estimatedWords || 300}w</span>
-                                    <button
-                                      onClick={() => removeChildSection(i, ci)}
-                                      className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/20 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/child:opacity-100"
-                                    >
-                                      <Trash2 className="h-2.5 w-2.5" />
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </li>
+                            section={s}
+                            path={[i]}
+                            depth={0}
+                            isDraggable={true}
+                            dragIndex={dragIndex}
+                            setDragIndex={setDragIndex}
+                            onReorder={reorderSections}
+                            onUpdateTitle={updateNodeTitle}
+                            onRemove={removeNode}
+                            onInsertChild={insertChildAfter}
+                            onAddChild={(parentPath) => {
+                              if (!outline) return;
+                              const updated = addChildAtPath(outline.sections, parentPath, { num: "", title: "", estimatedWords: 200 });
+                              const newOutline = { ...outline, sections: renumberSections(updated) };
+                              setOutline(newOutline);
+                              persistOutline(newOutline);
+                            }}
+                            onInsertAfter={(path) => {
+                              if (!outline) return;
+                              const parentPath = path.slice(0, -1);
+                              const myIndex = path[path.length - 1];
+                              const updated = addChildAtPath(outline.sections, [...parentPath, myIndex], { num: "", title: "", estimatedWords: 200 });
+                              const newOutline = { ...outline, sections: renumberSections(updated) };
+                              setOutline(newOutline);
+                              persistOutline(newOutline);
+                            }}
+                          />
                         ))}
                       </ul>
                       <button
