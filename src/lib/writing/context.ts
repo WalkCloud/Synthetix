@@ -18,7 +18,10 @@ export interface ContextInput {
     status: string;
   }[];
   ragReferences: {
+    documentId?: string;
+    chunkId?: string;
     documentName: string;
+    title?: string | null;
     content: string;
     score: number;
   }[];
