@@ -53,6 +53,31 @@ prisma/*.db-journal
 
 # local dev artifacts
 dev.db
+dev-output.log
 qa-screenshots/
 scratch.js
 .gstack/
+
+# runtime data
+data/
+
+# QA test scripts and screenshots
+qa-*.png
+qa-*.mjs
+qa-*.py
+screenshots/
+
+# temp/test files
+tmp-*.txt
+test_*.ts
+test_out.txt
+
+# IDE / tool artifacts
+.trae/
+.claude/worktrees/
+
+# archive (not for distribution)
+_archive/
+
+# prototype mockups (design reference only)
+prototype/

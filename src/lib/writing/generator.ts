@@ -50,7 +50,10 @@ async function fetchRagReferences(
   try {
     const results = await semanticSearch(query, userId, RAG_REFERENCE_LIMIT);
     return results.map((result) => ({
+      documentId: result.documentId,
+      chunkId: result.chunkId,
       documentName: result.documentName,
+      title: result.title,
       content: result.content,
       score: result.score,
     }));

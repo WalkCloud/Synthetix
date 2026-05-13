@@ -143,7 +143,7 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white border-r flex flex-col z-50">
       {/* Brand */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border/[0.6]">
+      <div className="h-16 shrink-0 flex items-center gap-3 px-6 border-b border-border">
         <svg
           className="w-[30px] h-[30px] text-primary shrink-0"
           viewBox="0 0 24 24"

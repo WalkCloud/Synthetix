@@ -93,7 +93,7 @@ export function ConstraintsBar({
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Model A
               </label>
-              <Select value={selectedModelA || "auto"} onValueChange={onModelAChange}>
+              <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
                 <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
                   <SelectValue placeholder="Auto Default">
                     {selectedModelA && selectedModelA !== "auto"
@@ -111,7 +111,7 @@ export function ConstraintsBar({
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Model B
               </label>
-              <Select value={selectedModelB || "auto"} onValueChange={onModelBChange}>
+              <Select value={selectedModelB || "auto"} onValueChange={(v) => { if (v) onModelBChange(v); }}>
                 <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
                   <SelectValue placeholder="Auto Default">
                     {selectedModelB && selectedModelB !== "auto"
