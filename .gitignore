@@ -24,6 +24,13 @@
 .DS_Store
 *.pem
 
+# Next.js default template assets (unused)
+public/file.svg
+public/globe.svg
+public/next.svg
+public/vercel.svg
+public/window.svg
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -74,7 +81,15 @@ test_out.txt
 
 # IDE / tool artifacts
 .trae/
-.claude/worktrees/
+.claude/
+.gstack/
+_docs/
+AGENTS.md
+CLAUDE.md
+
+# AI-generated plans/specs
+docs/superpowers/
+docs/design-v2-spec.md
 
 # archive (not for distribution)
 _archive/
