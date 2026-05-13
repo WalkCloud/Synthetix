@@ -1,177 +1,244 @@
 # Synthetix
 
-AI-powered long-document authoring workbench — traceable, controllable, segmentable.
+Self-hostable AI writing workbench for traceable long-form documents.
 
-Upload reference documents, brainstorm with AI, generate structured outlines, write chapter-by-chapter with A/B model comparison, and export publication-ready documents. Every section tracks its source references for full provenance.
+Synthetix helps you turn reference material into structured, source-grounded drafts. Upload documents, build a RAG knowledge base, brainstorm with AI, create recursive outlines, write section by section, compare model outputs, and export long-form documents with references preserved.
+
+> **Status**
+>
+> - Current version: `v0.5.3.0`
+> - Synthetix is an early open-source release.
+> - Local self-hosting is the primary deployment target today.
+> - APIs, UI flows, and deployment options may change as the project evolves.
+
+## Why Synthetix?
+
+Long-form writing often depends on scattered source material: PDFs, reports, policy documents, meeting notes, technical references, and internal knowledge bases. Synthetix gives you a local-first workspace for turning those sources into traceable drafts without losing the connection between generated text and the documents that informed it.
+
+Use Synthetix for:
+
+- Research reports that need source-grounded claims
+- Technical proposals that draw from internal documentation
+- Policy and compliance documents where provenance matters
+- Knowledge-base-driven drafts for teams or organizations
+- Long-form business, academic, or analytical writing
+
+The goal is not just to generate text. The goal is to help you organize evidence, explore ideas, write incrementally, compare outputs, revise safely, and preserve references through export.
+
+## Core Workflow
+
+```text
+Upload references → Convert to Markdown → Split and index into RAG → Brainstorm with AI → Generate and edit an outline → Write section by section → Compare model outputs → Humanize, revise, and export
+```
 
 ## Features
 
-- **Document Library** — Upload PDF/DOCX/PPTX/EPUB/etc., auto-convert to Markdown, index into RAG knowledge graph. Full-text search (FTS5 + jieba Chinese tokenization) and semantic search with real cosine similarity scores.
-- **Mind Organization** — Socratic AI brainstorming sessions. Chat with the AI architect, generate multi-level outlines (unlimited depth), edit recursively, drag-and-drop reorder.
-- **Document Writing** — Section-by-section generation with A/B model comparison, humanizer, version history, rollback, and reference tracking.
-- **Knowledge Graph** — LightRAG-powered entity/relation extraction, subgraph export, knowledge graph CRUD management.
-- **Topology View** — Visual graph of document structure and reference relationships.
-- **Model Management** — Pluggable LLM providers (Ollama, OpenAI, DeepSeek, any `/v1/chat/completions` API), capability-based model resolution, usage tracking.
-- **Enterprise-Ready Storage** — SQLite by default; pluggable RAG backends (pgvector, Neo4j, Milvus, Qdrant).
+### Document Library
 
-## Tech Stack
+Upload reference documents and manage them in a searchable library. Synthetix converts documents to Markdown, stores document metadata, supports tags, and prepares content for downstream search and writing workflows.
 
-| Category | Technology |
-|---|---|
-| Framework | Next.js 16 (App Router, Turbopack) |
-| Language | TypeScript 5 (strict) |
-| Database | SQLite + Prisma 7 |
-| Styling | Tailwind CSS 4 + shadcn/ui v4 |
-| Auth | JWT (jose HS256) + bcryptjs |
-| Search | FTS5 + @node-rs/jieba + LightRAG semantic |
-| LLM | OpenAI-compatible adapter |
-| RAG | LightRAG (Python workers) |
-| Validation | Zod 4 |
-| Testing | Vitest 4 |
+Search combines SQLite FTS5 with `@node-rs/jieba` Chinese tokenization for keyword search and semantic retrieval for meaning-based discovery.
+
+### RAG and Knowledge Graph
+
+Synthetix integrates with LightRAG through Python workers to index document chunks, retrieve relevant context, and manage knowledge graph data. The knowledge layer supports entity and relationship extraction, graph retrieval, and reference-aware writing workflows.
+
+Local storage works out of the box. Advanced storage backends such as PostgreSQL/pgvector, Neo4j, Milvus, and Qdrant are supported through optional LightRAG configuration.
+
+### Brainstorming, Chat, and Outlines
+
+Use brainstorm/chat sessions to explore topics before drafting, ask questions against your project context, and turn useful conversations into document structure. Generate outlines from conversations and edit them recursively with N-level outline support, so long documents can be planned at the depth they need.
+
+### Section Writing
+
+Write drafts section by section instead of generating an entire document at once. Synthetix retrieves relevant context for each section, preserves section references, supports A/B model comparison, stores section versions, and lets you roll back when needed.
+
+The writing workflow also includes a draft topology view for understanding document structure and section relationships, plus a humanizer for revising AI-generated text and reducing repetitive or machine-like phrasing.
+
+### Export
+
+Export assembled drafts through the built-in export pipeline so generated long-form documents can leave the workspace with their reference-aware structure preserved.
+
+### Model Management
+
+Configure Ollama, OpenAI, DeepSeek, or any OpenAI-compatible `/v1/chat/completions` provider. Synthetix supports capability-based model resolution, provider testing, encrypted API key storage, token usage recording, and usage trends.
+
+### Settings Management
+
+Manage application settings in the UI, including RAG configuration, storage options, and database settings for local or advanced deployments.
+
+### Self-Hosted by Default
+
+Synthetix is designed for local self-hosting first. SQLite and the local filesystem are the default storage foundation, while Python workers handle document conversion, RAG indexing/querying, graph management, and export tasks.
+
+Docker deployment, cloud deployment, team collaboration modes, and plugin-style extension points are roadmap or advanced targets.
 
 ## Quick Start
 
-```bash
-# Prerequisites: Node.js 20+, Python 3.10+, pnpm
+### Prerequisites
 
-# Clone
+- Node.js 20+
+- Python 3.10+
+- pnpm
+- An LLM provider, such as Ollama, OpenAI, DeepSeek, or another OpenAI-compatible service
+
+### Run locally
+
+```bash
 git clone https://github.com/WalkCloud/Synthetix.git
 cd Synthetix
-
-# Install
 pnpm install
-
-# Configure environment
 cp .env.example .env
-# Edit .env — set DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY
-
-# Database setup
 npx prisma migrate dev
 npx prisma generate
-
-# Start dev server
 pnpm dev
 ```
 
-Open http://localhost:3000 — the setup wizard will guide you through creating an admin account and configuring your first LLM provider.
+Open http://localhost:3000 and use the setup wizard to create your admin account and configure your first LLM provider.
 
-## Environment Variables
+## Configuration
 
-**Required:**
+Create a local `.env` file from `.env.example` before starting the app.
+
+### Required environment variables
 
 | Variable | Description |
-|---|---|
-| `DATABASE_URL` | SQLite connection string, e.g. `file:./dev.db` |
-| `JWT_SECRET` | Secret for JWT signing (32 chars recommended) |
-| `ENCRYPTION_KEY` | AES-256-GCM key for provider API key encryption (exactly 32 chars) |
+| --- | --- |
+| `DATABASE_URL` | Database connection string. For local SQLite, use a file-based URL such as `file:./dev.db`. |
+| `JWT_SECRET` | Secret used to sign JWT access and refresh tokens. |
+| `ENCRYPTION_KEY` | 32-character AES-256-GCM key used to encrypt provider API keys. |
 
-**Optional:**
+### Optional application variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PYTHON_PATH` | `python3` | Python interpreter path |
-| `NEXT_PUBLIC_APP_NAME` | `Synthetix` | Application display name |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Application base URL |
+| Variable | Description |
+| --- | --- |
+| `JWT_ACCESS_EXPIRES` | Access token lifetime. |
+| `JWT_REFRESH_EXPIRES` | Refresh token lifetime. |
+| `PYTHON_PATH` | Python interpreter path. Defaults to `python3`. |
+| `NEXT_PUBLIC_APP_NAME` | Public application name shown in the UI. |
+| `NEXT_PUBLIC_APP_URL` | Public application URL, such as `http://localhost:3000`. |
 
-**LightRAG Storage (optional):**
+### Optional LightRAG variables
 
-| Variable | Default |
-|---|---|
-| `LIGHTRAG_KV_STORAGE` | `JsonKVStorage` |
-| `LIGHTRAG_VECTOR_STORAGE` | `NanoVectorDBStorage` |
-| `LIGHTRAG_GRAPH_STORAGE` | `NetworkXStorage` |
-| `LIGHTRAG_PG_DATABASE_URL` | PostgreSQL connection for pgvector |
-| `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` | Neo4j graph database |
-| `MILVUS_URI` / `MILVUS_TOKEN` | Milvus vector database |
-| `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant vector database |
+| Variable | Description |
+| --- | --- |
+| `LIGHTRAG_KV_STORAGE` | LightRAG key-value storage backend. |
+| `LIGHTRAG_VECTOR_STORAGE` | LightRAG vector storage backend. |
+| `LIGHTRAG_GRAPH_STORAGE` | LightRAG graph storage backend. |
+| `LIGHTRAG_DOC_STATUS_STORAGE` | LightRAG document status storage backend. |
+| `LIGHTRAG_PG_DATABASE_URL` | PostgreSQL connection string for PostgreSQL/pgvector-backed LightRAG storage. |
+| `NEO4J_URI` | Neo4j connection URI. |
+| `NEO4J_USERNAME` | Neo4j username. |
+| `NEO4J_PASSWORD` | Neo4j password. |
+| `MILVUS_URI` | Milvus connection URI. |
+| `MILVUS_TOKEN` | Milvus authentication token. |
+| `QDRANT_URL` | Qdrant service URL. |
+| `QDRANT_API_KEY` | Qdrant API key. |
 
-## Project Structure
-
-```
-synthetix/
-├── prisma/
-│   └── schema.prisma              # 16 models, UUID PKs, snake_case mapping
-├── workers/python/
-│   ├── convert.py                 # Document → Markdown (MarkItDown)
-│   ├── rag_index.py               # LightRAG indexing (basic + graph modes)
-│   ├── rag_query.py               # Semantic search (6 query modes)
-│   ├── rag_manage.py              # Knowledge graph CRUD
-│   └── export.py                  # Markdown → PDF/DOCX export
-├── src/
-│   ├── app/
-│   │   ├── (auth)/                # Login, setup wizard
-│   │   ├── (dashboard)/           # Authenticated pages (sidebar + header)
-│   │   │   ├── brainstorm/        # Mind Organization
-│   │   │   ├── documents/         # Document Init
-│   │   │   ├── library/           # Document Library
-│   │   │   ├── writing/           # Document Writing
-│   │   │   ├── topology/          # Document Topology
-│   │   │   ├── models/            # Model Management
-│   │   │   └── settings/          # User Management
-│   │   └── api/v1/                # REST API (11 route groups)
-│   ├── components/
-│   │   ├── ui/                    # shadcn/ui components
-│   │   ├── layout/                # Sidebar, header
-│   │   └── ...                    # Feature-specific components
-│   ├── lib/
-│   │   ├── auth/                  # JWT, password hashing, session
-│   │   ├── crypto.ts              # AES-256-GCM encryption
-│   │   ├── db.ts                  # Prisma client singleton
-│   │   ├── llm/                   # OpenAI-compatible adapter, factory
-│   │   ├── queue/                 # In-process async task queue
-│   │   ├── rag/                   # LightRAG integration
-│   │   ├── search/                # FTS5 + semantic search + tokenizer
-│   │   └── writing/               # Generator, humanizer, context assembly
-│   ├── types/                     # Shared TypeScript interfaces
-│   ├── __tests__/                 # Vitest tests
-│   ├── proxy.ts                   # JWT auth guard
-│   └── instrumentation.ts        # Queue initialization on startup
-├── docs/                          # Product requirements, design specs
-└── prototype/                     # Static HTML/CSS mockups
-```
+Do not commit `.env`, provider API keys, local databases, uploaded documents, generated exports, or local RAG artifacts. These files may contain secrets, proprietary documents, or derived source content.
 
 ## Architecture
 
-### Core Workflow
+Synthetix is a Next.js 16 App Router application with API routes, local persistence, Python worker processes, and OpenAI-compatible LLM integration.
 
+- **App routes**: `src/app/(auth)` contains login and setup flows. `src/app/(dashboard)` contains authenticated product pages. `src/app/api/v1` contains the REST API.
+- **Auth proxy**: `src/proxy.ts` guards authenticated routes, validates JWT access tokens, rotates tokens with refresh tokens, and redirects or returns API errors when sessions are invalid.
+- **Database and API shape**: Prisma 7 stores application data in SQLite by default. API routes use a common response envelope: `{ success, data?, error? }`.
+- **Task queue**: `src/lib/queue` provides the in-process async queue. `src/instrumentation.ts` initializes workers at runtime.
+- **Python workers**: `workers/python/convert.py`, `workers/python/rag_index.py`, `workers/python/rag_query.py`, `workers/python/rag_manage.py`, and `workers/python/export.py` handle conversion, RAG operations, knowledge graph management, and export.
+- **LLM integration**: `src/lib/llm` provides provider adapters, model resolution, connection testing, embeddings, chat completions, and usage recording.
+- **Writing engine**: `src/lib/writing` assembles retrieved context, generates section content, summarizes sections, and humanizes generated drafts.
+
+## Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| Framework | Next.js 16 App Router |
+| Language | TypeScript 5 |
+| UI | React 19, Tailwind CSS 4, shadcn/ui v4, Base UI |
+| Database | SQLite, Prisma 7, `better-sqlite3` |
+| Auth | JWT with `jose`, password hashing with `bcryptjs` |
+| Validation | Zod 4 |
+| Search and RAG | SQLite FTS5, `@node-rs/jieba`, LightRAG |
+| LLM integration | OpenAI-compatible adapter for Ollama, OpenAI, DeepSeek, and compatible providers |
+| Workers | Python workers launched from Node.js |
+| Testing | Vitest 4 |
+
+## Project Structure
+
+```text
+Synthetix/
+├── prisma/
+│   └── schema.prisma
+├── workers/
+│   └── python/
+│       ├── convert.py
+│       ├── rag_index.py
+│       ├── rag_query.py
+│       ├── rag_manage.py
+│       └── export.py
+├── src/
+│   ├── app/
+│   │   ├── (auth)/
+│   │   ├── (dashboard)/
+│   │   └── api/v1/
+│   ├── components/
+│   ├── lib/
+│   │   ├── auth/
+│   │   ├── documents/
+│   │   ├── llm/
+│   │   ├── queue/
+│   │   ├── rag/
+│   │   ├── search/
+│   │   ├── settings/
+│   │   └── writing/
+│   ├── types/
+│   ├── proxy.ts
+│   └── instrumentation.ts
+├── docs/
+├── prototype/
+└── README.md
 ```
-Upload Documents → Convert to Markdown → RAG Index → Brainstorm with AI → Generate Outline → Write Chapter-by-Chapter → Export
-```
 
-### Key Design Decisions
-
-- **Proxy (not middleware)** — `src/proxy.ts` handles JWT auth for Next.js 16. Token rotation (access 15m + refresh 7d) happens in-place, no extra API call.
-- **API Envelope** — All routes return `{ success: boolean, data?: T, error?: string }`.
-- **In-process Queue** — No Redis. Async tasks (document processing, RAG indexing) run in-process with configurable concurrency (default 3).
-- **Recursive Outline** — Unlimited depth outline with path-array CRUD, recursive rendering, and N-level draft creation.
-- **A/B Model Comparison** — Each section supports dual-model generation with user selection and version history.
-- **Reference Traceability** — Every generated section tracks source references (document, chunk, relevance score).
-- **Python Workers** — Document conversion, RAG operations, and export run via `child_process.spawn` with configurable Python path.
-
-### Database
-
-SQLite with 16 Prisma models: `User`, `ModelProvider`, `ModelConfig`, `AsyncTask`, `TokenUsage`, `Document`, `DocumentChunk`, `Tag`, `DocumentTag`, `BrainstormSession`, `Message`, `Draft`, `Section`, `SectionVersion`, `SectionReference`. All use UUID PKs, `created_at`/`updated_at` timestamps, cascade deletes.
-
-## Scripts
+## Development
 
 ```bash
-pnpm dev               # Dev server (port 3000)
-pnpm build             # Production build (also catches TS errors)
-pnpm lint              # ESLint
-pnpm test              # Vitest in watch mode
-pnpm test:run          # Vitest single run
-npx prisma studio      # Browse database
-npx prisma migrate dev # Create migration
+pnpm dev
+pnpm build
+pnpm lint
+pnpm test
+pnpm test:run
+npx prisma studio
+npx prisma generate
+npx prisma migrate dev --name init
+pnpm vitest run src/__tests__/auth/jwt.test.ts
 ```
 
-## Deployment Modes
+Use `pnpm dev` to start the local development server. Use Prisma commands after schema changes or when you need to inspect the local database.
 
-| Mode | Storage | LLM | Use Case |
-|---|---|---|---|
-| **Offline Local** | SQLite + filesystem | Ollama | Personal, intranet, data-sensitive |
-| **Offline Docker** | MinIO + SQLite/PostgreSQL | Ollama | Small teams, server intranet |
-| **Cloud** | S3 + PostgreSQL | Cloud LLM APIs | Team collaboration, multi-device |
+## Roadmap
+
+- Docker Compose deployment for easier local and server installation
+- Team and cloud modes for collaborative writing workflows
+- More export formats and richer export customization
+- Provider and plugin extension points
+- Contributor guide, issue templates, and documentation templates
+- More automated test coverage across API routes, workers, and UI workflows
+
+## Contributing
+
+Contributions are welcome. If you want to make a large change, open an issue first so maintainers and contributors can discuss the approach before implementation.
+
+Good first contribution areas include:
+
+- Setup and deployment documentation
+- Tests for API routes, workers, and writing flows
+- Provider compatibility fixes and examples
+- Export pipeline improvements
+- UI polish and accessibility improvements
 
 ## License
 
-Private — All rights reserved.
+Synthetix is licensed under the [Apache License 2.0](LICENSE).
+
+Apache 2.0 allows use, modification, distribution, and commercial use, and includes an explicit patent grant from contributors.
