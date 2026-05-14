@@ -137,14 +137,17 @@ export class OpenAICompatibleAdapter implements LLMProvider {
           try {
             const parsed = JSON.parse(data) as {
               choices: Array<{
-                delta: { content?: string };
+                delta: { content?: string; reasoning_content?: string };
                 finish_reason: string | null;
               }>;
               usage?: { prompt_tokens?: number; completion_tokens?: number };
             };
-            const content = parsed.choices[0]?.delta?.content ?? "";
+            const delta = parsed.choices[0]?.delta;
+            const content = delta?.content ?? "";
+            const reasoning = delta?.reasoning_content ?? "";
             const isDone = parsed.choices[0]?.finish_reason != null;
             const chunk: ChatChunk = { content, done: isDone };
+            if (reasoning) chunk.reasoning = reasoning;
             if (parsed.usage) {
               chunk.inputTokens = parsed.usage.prompt_tokens;
               chunk.outputTokens = parsed.usage.completion_tokens;

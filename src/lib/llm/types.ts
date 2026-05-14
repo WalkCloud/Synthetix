@@ -13,6 +13,7 @@ export interface ChatParams {
 
 export interface ChatChunk {
   content: string;
+  reasoning?: string;
   done: boolean;
   inputTokens?: number;
   outputTokens?: number;
