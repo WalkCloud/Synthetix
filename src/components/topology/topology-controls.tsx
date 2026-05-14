@@ -77,8 +77,10 @@ export function TopologyControls({
       {/* Draft selector (documents mode only) */}
       {graphMode === "documents" && (
         <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
-          <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-            <SelectValue placeholder="Select a draft..."></SelectValue>
+          <SelectTrigger className="w-[200px] text-[13px] bg-white cursor-pointer">
+            <SelectValue placeholder="Select a draft...">
+              {(v: string | null) => drafts.find(d => d.id === v)?.title ?? "Select a draft..."}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {drafts.map((draft) => (

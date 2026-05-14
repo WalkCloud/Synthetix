@@ -244,8 +244,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Two-Column: Recent Docs + Active Tasks */}
-        <div className="grid grid-cols-[1fr_400px] gap-6 animate-fade-in-up-6">
-          
+        <div className="grid grid-cols-2 gap-6 animate-fade-in-up-6">
+
           {/* Recent Documents */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -256,9 +256,9 @@ export default function DashboardPage() {
             </div>
             <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+                <div className="py-12 text-center text-muted-foreground text-sm">Loading...</div>
               ) : recentDocs.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">
+                <div className="py-12 text-center text-muted-foreground text-sm">
                   No documents yet. Upload your first document to get started.
                 </div>
               ) : (
@@ -267,22 +267,22 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={doc.id}
-                      className={`flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors cursor-pointer group ${
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer group ${
                         i < recentDocs.length - 1 ? "border-b border-slate-100" : ""
                       }`}
                       onClick={() => router.push(`/library/${doc.id}`)}
                     >
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center group-hover:bg-primary-50 group-hover:text-primary transition-colors flex-shrink-0">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center group-hover:bg-primary-50 group-hover:text-primary transition-colors flex-shrink-0">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                           <polyline points="14 2 14 8 20 8" />
                         </svg>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-foreground text-sm truncate">{doc.originalName}</h4>
+                        <h4 className="font-medium text-foreground text-sm truncate">{doc.originalName}</h4>
                         <p className="text-xs text-muted-foreground mt-0.5">{formatTimeAgo(doc.createdAt)}</p>
                       </div>
-                      <div className={`flex items-center gap-1.5 px-2.5 py-1 ${sc.bg} ${sc.text} rounded-lg text-xs font-semibold border ${sc.border}`}>
+                      <div className={`flex items-center gap-1.5 px-2 py-0.5 ${sc.bg} ${sc.text} rounded-md text-[10px] font-semibold border ${sc.border}`}>
                         <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} ${doc.status === 'converting' ? 'animate-pulse' : ''}`}></div>
                         {sc.label}
                       </div>
@@ -301,43 +301,47 @@ export default function DashboardPage() {
                 View all &rarr;
               </Link>
             </div>
-            <div className="bg-white border border-border rounded-2xl shadow-soft p-2 space-y-1">
+            <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+                <div className="py-12 text-center text-muted-foreground text-sm">Loading...</div>
               ) : recentDrafts.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">
+                <div className="py-12 text-center text-muted-foreground text-sm">
                   No drafts yet. Start by brainstorming an outline.
                 </div>
               ) : (
-                recentDrafts.map((draft) => {
+                recentDrafts.map((draft, i) => {
                   const progress = draft.progress ?? { completed: 0, total: 0 };
                   return (
                     <div
                       key={draft.id}
-                      className="p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer flex gap-3 items-start border border-transparent hover:border-slate-100"
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer group ${
+                        i < recentDrafts.length - 1 ? "border-b border-slate-100" : ""
+                      }`}
                       onClick={() => router.push(`/writing/${draft.id}`)}
                     >
-                      <div
-                        className={`w-2 h-2 rounded-full mt-1.5 status-dot shrink-0 ${
-                          draft.status === "drafting"
-                            ? "bg-primary animate-pulse"
-                            : draft.status === "completed"
-                              ? "bg-green-500"
-                              : "bg-blue-500"
-                        }`}
-                      />
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            draft.status === "drafting"
+                              ? "bg-primary animate-pulse"
+                              : draft.status === "completed"
+                                ? "bg-green-500"
+                                : "bg-blue-500"
+                          }`}
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start mb-1">
-                          <h4 className="font-semibold text-foreground text-sm truncate">{draft.title}</h4>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${statusColors[draft.status] ?? ""}`}>
+                        <div className="flex justify-between items-center">
+                          <h4 className="font-medium text-foreground text-sm truncate">{draft.title}</h4>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ml-2 flex-shrink-0 ${statusColors[draft.status] ?? ""}`}>
                             {statusLabels[draft.status] ?? draft.status}
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground mb-2">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {progress.completed}/{progress.total} sections · {formatTimeAgo(draft.updatedAt)}
                         </p>
                         {draft.status === "drafting" && progress.total > 0 && (
-                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
                             <div
                               className="h-full bg-primary rounded-full transition-all duration-300"
                               style={{ width: `${(progress.completed / progress.total) * 100}%` }}

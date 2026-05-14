@@ -9,6 +9,22 @@ function getErrorMessage(error: unknown): string {
   return "Unexpected error";
 }
 
+async function generateSummaryBackground(sectionId: string, content: string, title: string) {
+  try {
+    const summary = await generateSummary(content, title);
+    await db.section.update({
+      where: { id: sectionId },
+      data: { summary, status: "locked" },
+    });
+  } catch (err) {
+    console.error(`Summary generation failed for section ${sectionId}:`, err);
+    await db.section.update({
+      where: { id: sectionId },
+      data: { status: "locked" },
+    });
+  }
+}
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
@@ -46,7 +62,6 @@ export async function POST(
       );
     }
 
-    // Must have content — if only comparison results exist, user must select first
     if (!section.content) {
       if (section.contentA || section.contentB) {
         return NextResponse.json(
@@ -63,14 +78,12 @@ export async function POST(
       );
     }
 
-    // Create SectionVersion snapshot with correct source
     const wordCount = section.content.split(/\s+/).filter(Boolean).length;
     const nextVersion = section.versions.length + 1;
 
-    // Determine version source
     const versionSource = section.selectedModel
       ? section.selectedModel === "a" ? "generated_a" : "generated_b"
-      : section.contentA || section.contentB ? "generated" // comparison done, user picked
+      : section.contentA || section.contentB ? "generated"
       : "edited";
 
     await db.sectionVersion.create({
@@ -83,25 +96,12 @@ export async function POST(
       },
     });
 
-    // Step 1: accepted — user has confirmed this content
-    await db.section.update({
-      where: { id: sectionId },
-      data: { status: "accepted", wordCount },
-    });
-
-    // Step 2: Generate summary for context compression
-    const summary = await generateSummary(section.content, section.title);
-
-    // Step 3: summarized → locked
-    await db.section.update({
-      where: { id: sectionId },
-      data: { summary, status: "summarized" },
-    });
-
     const locked = await db.section.update({
       where: { id: sectionId },
-      data: { status: "locked" },
+      data: { status: "locked", wordCount },
     });
+
+    generateSummaryBackground(sectionId, section.content, section.title);
 
     return NextResponse.json({ success: true, data: locked });
   } catch (error: unknown) {

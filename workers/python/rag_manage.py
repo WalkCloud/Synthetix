@@ -102,7 +102,7 @@ async def action_entity_detail(rag, entity_name: str, max_depth: int = 2, max_no
             max_depth=max_depth,
             max_nodes=max_nodes,
         )
-        return {"entity": entity_name, "graph": kg}
+        return {"entity": entity_name, "graph": kg.model_dump()}
     except Exception as e:
         return {"error": str(e), "entity": entity_name}
 
