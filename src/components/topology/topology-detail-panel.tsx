@@ -4,228 +4,88 @@ import type { TopologyNode, TopologyEdge } from "@/types/topology";
 
 interface TopologyDetailPanelProps {
   readonly node: TopologyNode;
-  readonly edge: TopologyEdge;
+  readonly edge: TopologyEdge | null;
   readonly onClose: () => void;
 }
 
-const FORMAT_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  pdf: { color: "#2563EB", bg: "#EFF6FF", label: "PDF" },
-  docx: { color: "#EA580C", bg: "#FFF7ED", label: "DOCX" },
-  md: { color: "#16A34A", bg: "#F0FDF4", label: "MD" },
-  markdown: { color: "#16A34A", bg: "#F0FDF4", label: "MD" },
-  draft: { color: "#3A2E85", bg: "#F3F1FC", label: "Draft" },
-} as const;
+const COLORS: Record<string, string> = {
+  pdf: "#2563EB", docx: "#EA580C", md: "#16A34A", markdown: "#16A34A",
+  draft: "#7C3AED", entity: "#7C3AED",
+};
+const BGS: Record<string, string> = {
+  pdf: "#EFF6FF", docx: "#FFF7ED", md: "#F0FDF4", markdown: "#F0FDF4",
+  draft: "#F3F1FC", entity: "#F5F3FF",
+};
 
-function getFormatConfig(format: string) {
-  const key = format.toLowerCase();
-  return FORMAT_CONFIG[key] ?? { color: "#3A2E85", bg: "#F3F1FC", label: format };
+function formatRelevance(score: number): string {
+  return `${Math.round(score * 100)}%`;
 }
-
-function FormatIcon({ format }: { readonly format: string }) {
-  const cfg = getFormatConfig(format);
-
-  if (cfg.label === "PDF") {
-    return (
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={cfg.color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
-    );
-  }
-
-  if (cfg.label === "DOCX") {
-    return (
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={cfg.color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <line x1="10" y1="9" x2="8" y2="9" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={cfg.color}
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-    </svg>
-  );
-}
-
-function formatFileSize(bytes: number | undefined): string {
-  if (bytes === undefined || bytes === 0) {
-    return "Unknown";
-  }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatRelevance(score: number): { text: string; isHigh: boolean } {
-  const percentage = Math.round(score * 100);
-  return { text: `${percentage}%`, isHigh: percentage >= 70 };
-}
-
-const BUTTON_CLASSES =
-  "flex-1 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors cursor-pointer";
 
 export function TopologyDetailPanel({
   node,
   edge,
   onClose,
 }: TopologyDetailPanelProps) {
-  const cfg = getFormatConfig(node.format);
-  const relevance = formatRelevance(node.relevanceScore);
+  const color = COLORS[node.format.toLowerCase()] ?? "#7C3AED";
+  const bgColor = BGS[node.format.toLowerCase()] ?? "#F3F1FC";
+  const fmtLabel = node.format.toUpperCase();
 
   return (
-    <div className="absolute right-5 top-5 z-20 w-[280px] bg-white rounded-2xl border border-[#E8E6E1] shadow-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E6E1]">
-        <span className="text-[13px] font-semibold text-[#1E1B18]">
-          Node Details
-        </span>
+    <div className="absolute right-4 top-4 z-30 w-[260px] max-h-[calc(100%-32px)] bg-white/95 backdrop-blur-sm border border-[#E8E6E1] rounded-xl shadow-xl flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#F0EEEB] shrink-0">
+        <span className="text-[12px] font-semibold text-[#1E1B18]">Details</span>
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-[#8C887F] hover:text-[#1E1B18] hover:bg-[#F4F2EF] transition-colors cursor-pointer"
-          aria-label="Close detail panel"
+          className="flex items-center justify-center w-6 h-6 rounded-md text-[#8C887F] hover:text-[#1E1B18] hover:bg-[#F4F2EF] transition-colors cursor-pointer"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </div>
-
-      {/* Body */}
-      <div className="px-4 py-3 space-y-3">
-        {/* Document name + format tag */}
+      <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1">
         <div className="flex items-center gap-2">
-          <FormatIcon format={node.format} />
-          <span className="text-[13px] font-semibold text-[#1E1B18] truncate flex-1">
-            {node.label}
-          </span>
-          <span
-            className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
-            style={{ color: cfg.color, backgroundColor: cfg.bg }}
-          >
-            {cfg.label}
-          </span>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: bgColor }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+            </svg>
+          </div>
+          <span className="text-[12px] font-semibold text-[#1E1B18] truncate flex-1">{node.label}</span>
+          <span className="shrink-0 rounded-md px-1.5 py-px text-[10px] font-medium" style={{ color, backgroundColor: bgColor }}>{fmtLabel}</span>
         </div>
 
-        {/* Size */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-[#8C887F]">Size</span>
-          <span className="text-[12px] text-[#6B6560]">
-            {formatFileSize(node.size)}
-          </span>
-        </div>
+        {node.relevanceScore > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-[#8C887F]">Relevance</span>
+            <span className="text-[11px] font-medium text-[#6B6560]">{formatRelevance(node.relevanceScore)}</span>
+          </div>
+        )}
 
-        {/* Relevance */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-[#8C887F]">Relevance</span>
-          <span
-            className={`text-[12px] font-medium ${
-              relevance.isHigh ? "text-green-600" : "text-[#6B6560]"
-            }`}
-          >
-            {relevance.text}
-          </span>
-        </div>
+        {node.referenceCount > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-[#8C887F]">References</span>
+            <span className="text-[11px] font-medium text-[#6B6560]">{node.referenceCount}</span>
+          </div>
+        )}
 
-        {/* Referenced in */}
-        {edge.sectionLabels.length > 0 && (
+        {edge && edge.sectionLabels.length > 0 && (
           <div>
-            <span className="text-[12px] text-[#8C887F] block mb-1.5">
-              Referenced in
-            </span>
-            <div className="flex flex-wrap gap-1.5">
+            <span className="text-[11px] text-[#8C887F] block mb-1">Referenced in sections</span>
+            <div className="flex flex-wrap gap-1">
               {edge.sectionLabels.map((label) => (
-                <span
-                  key={label}
-                  className="rounded-md px-2 py-0.5 text-[11px] font-medium text-[#3A2E85] bg-[#F3F1FC]"
-                >
-                  {label}
-                </span>
+                <span key={label} className="rounded-md px-1.5 py-px text-[10px] font-medium text-[#7C3AED] bg-[#F3F1FC]">{label}</span>
               ))}
             </div>
           </div>
         )}
 
-        {/* Source anchors placeholder */}
-        <div>
-          <span className="text-[12px] text-[#8C887F] block mb-1.5">
-            Source Anchors
-          </span>
-          <span className="text-[12px] text-[#8C887F] italic">
-            Available in P5
-          </span>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            className={`${BUTTON_CLASSES} border border-[#E8E6E1] text-[#1E1B18] hover:bg-[#F4F2EF]`}
-          >
-            View Doc
-          </button>
-          <button
-            type="button"
-            className={`${BUTTON_CLASSES} bg-[#3A2E85] text-white hover:bg-[#2A1F6E]`}
-          >
-            Open in Library
-          </button>
-        </div>
+        {edge && edge.description && (
+          <div>
+            <span className="text-[11px] text-[#8C887F] block mb-0.5">Description</span>
+            <span className="text-[11px] text-[#6B6560] leading-relaxed">{edge.description}</span>
+          </div>
+        )}
       </div>
     </div>
   );

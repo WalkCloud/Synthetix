@@ -8,6 +8,9 @@ function getErrorMessage(error: unknown): string {
   return "Unexpected error";
 }
 
+const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
+const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -23,7 +26,7 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const draft = await db.draft.findFirst({
+    let draft = await db.draft.findFirst({
       where: { id, userId: user.id },
       include: {
         sections: {
@@ -37,6 +40,27 @@ export async function GET(
         { success: false, error: "Draft not found" },
         { status: 404 }
       );
+    }
+
+    const now = Date.now();
+    const stuckSectionIds = draft.sections
+      .filter((s) => {
+        if (!TRANSIENT_STATUSES.includes(s.status)) return false;
+        const elapsed = now - new Date(s.updatedAt).getTime();
+        return elapsed > STUCK_THRESHOLD_MS;
+      })
+      .map((s) => s.id);
+
+    if (stuckSectionIds.length > 0) {
+      await db.section.updateMany({
+        where: { id: { in: stuckSectionIds } },
+        data: { status: "failed" },
+      });
+      const refreshed = await db.draft.findFirst({
+        where: { id, userId: user.id },
+        include: { sections: { orderBy: { index: "asc" } } },
+      });
+      if (refreshed) draft = refreshed;
     }
 
     return NextResponse.json({ success: true, data: draft });

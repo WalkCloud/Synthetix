@@ -32,9 +32,13 @@ export default function WritingPage({
   const [sectionNotes, setSectionNotes] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
   const [isHumanizing, setIsHumanizing] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [exportFormat, setExportFormat] = useState<"markdown" | "pdf" | "docx">("markdown");
   const [loading, setLoading] = useState(true);
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [referenceCollapsed, setReferenceCollapsed] = useState(false);
   
   // Model selection states
   const [models, setModels] = useState<any[]>([]);
@@ -48,19 +52,33 @@ export default function WritingPage({
     const data = await res.json();
     if (data.success) {
       setDraft(data.data);
-      if (!activeSectionId && data.data.sections.length > 0) {
-        const firstPending = data.data.sections.find(
-          (s: SectionMeta) => s.status !== "locked" && s.status !== "summarized"
-        );
-        setActiveSectionId(firstPending?.id || data.data.sections[0].id);
-      }
+      setActiveSectionId((prev) => {
+        if (prev) return prev;
+        if (data.data.sections.length > 0) {
+          const firstPending = data.data.sections.find(
+            (s: SectionMeta) => s.status !== "locked" && s.status !== "summarized"
+          );
+          return firstPending?.id || data.data.sections[0].id;
+        }
+        return prev;
+      });
     }
     setLoading(false);
-  }, [id, activeSectionId]);
+  }, [id]);
 
   useEffect(() => {
     loadDraft();
   }, [id, loadDraft]);
+
+  useEffect(() => {
+    if (!draft) return;
+    const hasServerGenerating = draft.sections.some(
+      (s) => (s.status === "generating" || s.status === "retrieving") && !isGenerating
+    );
+    if (!hasServerGenerating) return;
+    const interval = setInterval(() => loadDraft(), 10000);
+    return () => clearInterval(interval);
+  }, [draft, isGenerating, loadDraft]);
 
   useEffect(() => {
     fetch("/api/v1/models/providers")
@@ -83,6 +101,7 @@ export default function WritingPage({
       if (!activeSectionId) return;
       setIsGenerating(true);
       setStreamingContent("");
+      setIsThinking(false);
 
       const endpoint =
         mode === "compare"
@@ -102,7 +121,16 @@ export default function WritingPage({
           body: JSON.stringify(payload),
         });
 
-        if (res.headers.get("Content-Type")?.includes("text/event-stream")) {
+        if (!res.ok) {
+          const text = await res.text();
+          let msg = `Request failed (${res.status})`;
+          try { const j = JSON.parse(text); msg = j.error || msg; } catch {}
+          throw new Error(msg);
+        }
+
+        const isStream = res.headers.get("Content-Type")?.includes("text/event-stream");
+
+        if (isStream) {
           const reader = res.body?.getReader();
           if (!reader) throw new Error("No response stream");
 
@@ -124,7 +152,10 @@ export default function WritingPage({
                 try {
                   const data = JSON.parse(message.slice(6));
                   if (data.type === "references") setReferences(data.references);
-                  else if (data.type === "chunk") {
+                  else if (data.type === "reasoning") {
+                    setIsThinking(true);
+                  } else if (data.type === "chunk") {
+                    setIsThinking(false);
                     contentBuf += data.content;
                     setStreamingContent(contentBuf);
                   } else if (data.type === "error") {
@@ -171,41 +202,29 @@ export default function WritingPage({
     [activeSectionId, id, loadDraft]
   );
 
-  const handleMerge = useCallback(async () => {
-    if (!activeSectionId || !draft) return;
-    const section = draft.sections.find((s) => s.id === activeSectionId);
-    if (!section?.contentA || !section?.contentB) return;
-
-    const merged = `${section.contentA}\n\n---\n\n${section.contentB}`;
-    const res = await fetch(
-      `/api/v1/drafts/${id}/sections/${activeSectionId}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: merged }),
-      }
-    );
-    if (res.ok) await loadDraft();
-  }, [activeSectionId, id, draft, loadDraft]);
-
   const handleConfirm = useCallback(async () => {
     if (!activeSectionId) return;
-    const res = await fetch(
-      `/api/v1/drafts/${id}/sections/${activeSectionId}/confirm`,
-      { method: "POST" }
-    );
-    if (res.ok) {
-      await loadDraft();
-      if (draft) {
-        const sections = draft.sections;
-        const currentIdx = sections.findIndex((s) => s.id === activeSectionId);
-        const nextPending = sections
-          .slice(currentIdx + 1)
-          .find(
-            (s) => s.status === "pending" || s.status === "failed"
-          );
-        if (nextPending) setActiveSectionId(nextPending.id);
+    setIsConfirming(true);
+    try {
+      const res = await fetch(
+        `/api/v1/drafts/${id}/sections/${activeSectionId}/confirm`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        await loadDraft();
+        if (draft) {
+          const sections = draft.sections;
+          const currentIdx = sections.findIndex((s) => s.id === activeSectionId);
+          const nextPending = sections
+            .slice(currentIdx + 1)
+            .find(
+              (s) => s.status === "pending" || s.status === "failed"
+            );
+          if (nextPending) setActiveSectionId(nextPending.id);
+        }
       }
+    } finally {
+      setIsConfirming(false);
     }
   }, [activeSectionId, id, draft, loadDraft]);
 
@@ -294,18 +313,39 @@ export default function WritingPage({
   return (
     <div className="min-h-screen">
       {/* Custom Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between px-6 h-[60px] bg-white/80 backdrop-blur-xl border-b border-slate-200">
-        <div>
-          <h2 className="text-[20px] font-semibold font-display text-foreground">
-            Document Writing
-          </h2>
-          <span className="text-[13px] font-medium text-slate-500">{draft.title}</span>
+      <header className="sticky top-0 z-10 flex items-center justify-between px-8 h-16 bg-white/95 backdrop-blur-md border-b border-border">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setOutlineCollapsed(!outlineCollapsed)}
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+              outlineCollapsed
+                ? "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                : "bg-primary-50 border-primary/20 text-primary"
+            }`}
+            title={outlineCollapsed ? "Expand Outline" : "Collapse Outline"}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+              {outlineCollapsed ? (
+                <polyline points="13 8 17 12 13 16" />
+              ) : (
+                <polyline points="15 8 11 12 15 16" />
+              )}
+            </svg>
+          </button>
+          <div>
+            <h2 className="text-lg font-bold font-display tracking-tight text-slate-800">
+              Document Writing
+            </h2>
+            <span className="text-xs font-medium text-muted-foreground mt-0.5 block">{draft.title}</span>
+          </div>
         </div>
           <div className="flex items-center gap-2.5">
             <select
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as "markdown" | "pdf" | "docx")}
-              className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 bg-white cursor-pointer focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all shadow-sm"
+              className="px-3 py-2 border border-border rounded-xl text-xs font-medium text-foreground bg-white cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all shadow-sm"
             >
               <option value="markdown">Markdown (.md)</option>
               <option value="pdf">PDF (Print HTML)</option>
@@ -313,7 +353,7 @@ export default function WritingPage({
             </select>
             <button
               onClick={() => handleExport(exportFormat)}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors cursor-pointer shadow-sm"
+              className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-xl text-xs font-semibold text-foreground bg-white hover:bg-secondary transition-colors cursor-pointer shadow-sm"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -322,44 +362,78 @@ export default function WritingPage({
               </svg>
               Export
             </button>
+            <button
+              onClick={() => setReferenceCollapsed(!referenceCollapsed)}
+              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                referenceCollapsed
+                  ? "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                  : "bg-primary-50 border-primary/20 text-primary"
+              }`}
+              title={referenceCollapsed ? "Expand Reference Panel" : "Collapse Reference Panel"}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="15" y1="3" x2="15" y2="21" />
+                {referenceCollapsed ? (
+                  <polyline points="11 8 7 12 11 16" />
+                ) : (
+                  <polyline points="9 8 13 12 9 16" />
+                )}
+              </svg>
+            </button>
           </div>
       </header>
 
       {/* 3-Panel Layout */}
       <div
-        className="grid h-[calc(100vh-64px)]"
-        style={{ gridTemplateColumns: "260px 1fr 300px" }}
+        className="grid h-[calc(100vh-64px)] transition-all duration-300"
+        style={{
+          gridTemplateColumns: `${outlineCollapsed ? "0px" : "260px"} 1fr ${
+            referenceCollapsed ? "0px" : "300px"
+          }`,
+        }}
       >
-        <OutlinePanel
-          sections={sections}
-          activeSectionId={activeSectionId}
-          onSelectSection={setActiveSectionId}
-        />
+        <div className="overflow-hidden border-r border-border transition-all duration-300 h-full">
+          <div className="w-[260px] h-full">
+            <OutlinePanel
+              sections={sections}
+              activeSectionId={activeSectionId}
+              onSelectSection={setActiveSectionId}
+            />
+          </div>
+        </div>
 
-        <EditorPanel
-          section={activeSection}
-          allSections={sections}
-          models={models}
-          selectedModelA={selectedModelA}
-          selectedModelB={selectedModelB}
-          onModelAChange={setSelectedModelA}
-          onModelBChange={setSelectedModelB}
-          onGenerate={handleGenerate}
-          onSelectModel={handleSelectModel}
-          onMerge={handleMerge}
-          onConfirm={handleConfirm}
-          onRegenerate={handleRegenerate}
-          onHumanize={handleHumanize}
-          isGenerating={isGenerating}
-          isHumanizing={isHumanizing}
-          streamingContent={streamingContent}
-        />
+        <div className="min-w-0 h-full">
+          <EditorPanel
+            section={activeSection}
+            allSections={sections}
+            models={models}
+            selectedModelA={selectedModelA}
+            selectedModelB={selectedModelB}
+            onModelAChange={setSelectedModelA}
+            onModelBChange={setSelectedModelB}
+            onGenerate={handleGenerate}
+            onSelectModel={handleSelectModel}
+            onConfirm={handleConfirm}
+            onRegenerate={handleRegenerate}
+            onHumanize={handleHumanize}
+            isGenerating={isGenerating}
+            isThinking={isThinking}
+            isHumanizing={isHumanizing}
+            isConfirming={isConfirming}
+            streamingContent={streamingContent}
+          />
+        </div>
 
-        <ReferencePanel
-          references={references}
-          sectionNotes={sectionNotes}
-          onSectionNotesChange={setSectionNotes}
-        />
+        <div className="overflow-hidden border-l border-border transition-all duration-300 h-full">
+          <div className="w-[300px] h-full">
+            <ReferencePanel
+              references={references}
+              sectionNotes={sectionNotes}
+              onSectionNotesChange={setSectionNotes}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
