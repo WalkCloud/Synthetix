@@ -74,7 +74,7 @@ const REWRITE_PROMPT = `You are an expert human writer. Rewrite the following te
 - Break patterns — if three paragraphs are similar length, make one a single line
 - Reference specific tools, dates, people, places — not "various methods" or "multiple approaches"
 - Maintain all factual content and technical accuracy from the original
-- Preserve all citations and references from source material
+- Preserve all factual content and technical accuracy from the original, but do not reintroduce source material references or citations that the original text does not contain
 - Keep the same language (Chinese/English) as the original
 
 ## Tone
