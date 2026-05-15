@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
+import { getAssetFilePath } from "@/lib/writing/diagram-generator";
 import type { ApiResponse } from "@/types/api";
 
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
@@ -41,10 +42,37 @@ async function buildMarkdown(draftId: string, userId: string): Promise<string> {
     throw new Error("No confirmed sections available to export");
   }
 
+  const sectionIds = sections.map((s) => s.id);
+  const assets = await db.sectionAsset.findMany({
+    where: {
+      draftId,
+      sectionId: { in: sectionIds },
+      status: "ready",
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const assetsBySection = new Map<string, typeof assets>();
+  for (const asset of assets) {
+    const list = assetsBySection.get(asset.sectionId) || [];
+    list.push(asset);
+    assetsBySection.set(asset.sectionId, list);
+  }
+
   const titleHeader = `# ${draft.title}\n\n`;
-  const sectionParts = sections.map(
-    (section) => `## ${section.title}\n\n${section.content ?? ""}\n\n`
-  );
+  const sectionParts = sections.map((section) => {
+    let content = `## ${section.title}\n\n${section.content ?? ""}`;
+
+    const sectionAssets = assetsBySection.get(section.id);
+    if (sectionAssets && sectionAssets.length > 0) {
+      const imageParts = sectionAssets
+        .filter((a) => a.path)
+        .map((a) => `\n\n![图：${a.title}](/api/v1/drafts/${draftId}/sections/${a.sectionId}/assets/${a.id}/serve)`);
+      content += imageParts.join("");
+    }
+
+    return content + "\n\n";
+  });
   return titleHeader + sectionParts.join("");
 }
 
@@ -82,12 +110,14 @@ export async function POST(
       });
     }
 
+    const svgInlinedMarkdown = await inlineSvgImages(markdown);
+
     // Write temp markdown for Python converter
     if (!fs.existsSync(TMP_DIR)) {
       fs.mkdirSync(TMP_DIR, { recursive: true });
     }
     const tmpMd = path.join(TMP_DIR, `export-${draftId}.md`);
-    fs.writeFileSync(tmpMd, markdown, "utf-8");
+    fs.writeFileSync(tmpMd, svgInlinedMarkdown, "utf-8");
 
     if (format === "pdf") {
       const tmpPdf = path.join(TMP_DIR, `export-${draftId}.html`);
@@ -165,4 +195,36 @@ function runExport(input: string, output: string, format: string): Promise<void>
     });
     proc.on("error", (err: Error) => reject(err));
   });
+}
+
+async function inlineSvgImages(markdown: string): Promise<string> {
+  const imgRe = /!\[([^\]]*)\]\(([^)]*\/assets\/[^)]*\/serve)\)/g;
+  const matches = [...markdown.matchAll(imgRe)];
+
+  if (matches.length === 0) return markdown;
+
+  let result = markdown;
+  for (const match of matches) {
+    const alt = match[1];
+    const url = match[2];
+
+    const assetIdMatch = url.match(/\/assets\/([^/]+)\/serve/);
+    if (!assetIdMatch) continue;
+
+    const assetId = assetIdMatch[1];
+    const asset = await db.sectionAsset.findUnique({ where: { id: assetId } });
+    if (!asset || !asset.path || asset.status !== "ready") continue;
+
+    try {
+      const filePath = getAssetFilePath(asset.path);
+      const svgContent = fs.readFileSync(filePath, "utf-8");
+      const base64 = Buffer.from(svgContent).toString("base64");
+      const dataUri = `data:image/svg+xml;base64,${base64}`;
+      result = result.replace(match[0], `![${alt}](${dataUri})`);
+    } catch {
+      result = result.replace(match[0], `*${alt}（图片待生成）*`);
+    }
+  }
+
+  return result;
 }
