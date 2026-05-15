@@ -137,6 +137,51 @@ def export_to_docx(md_path: str, output_path: str) -> dict:
             doc.add_paragraph("─" * 60)
         elif line == "":
             pass  # skip empty lines
+        elif line.startswith("!["):
+            caption_end = line.find("](")
+            url_end = line.rfind(")")
+            if caption_end > 0 and url_end > caption_end:
+                alt_text = line[2:caption_end]
+                image_ref = line[caption_end + 2:url_end]
+
+                image_path = None
+                if image_ref.startswith("data:image/svg+xml;base64,"):
+                    import base64
+                    import tempfile
+                    b64_data = image_ref[len("data:image/svg+xml;base64,"):]
+                    try:
+                        svg_bytes = base64.b64decode(b64_data)
+                        tmp = tempfile.NamedTemporaryFile(suffix=".svg", delete=False, mode="wb")
+                        tmp.write(svg_bytes)
+                        tmp.close()
+                        image_path = tmp.name
+                    except Exception:
+                        pass
+                elif image_ref.startswith("data/"):
+                    image_path = os.path.abspath(image_ref)
+
+                if image_path and os.path.exists(image_path):
+                    try:
+                        from docx.shared import Inches as _Inches
+                        doc.add_picture(image_path, width=_Inches(5.5))
+                        last_paragraph = doc.paragraphs[-1]
+                        last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        if alt_text:
+                            cap = doc.add_paragraph()
+                            cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            cap_run = cap.add_run(alt_text)
+                            cap_run.font.size = Pt(9)
+                            cap_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                    except Exception:
+                        _add_image_placeholder(doc, alt_text)
+                    finally:
+                        if image_ref.startswith("data:"):
+                            try:
+                                os.unlink(image_path)
+                            except OSError:
+                                pass
+                else:
+                    _add_image_placeholder(doc, alt_text)
         elif line.startswith("|"):
             # Simple table handling
             rows = [line]
@@ -154,6 +199,13 @@ def export_to_docx(md_path: str, output_path: str) -> dict:
 
     doc.save(output_path)
     return {"status": "ok", "format": "docx", "output": output_path}
+
+
+def _add_image_placeholder(doc, alt_text: str):
+    p = doc.add_paragraph()
+    run = p.add_run(f"[{alt_text}]")
+    run.font.italic = True
+    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 
 
 def add_md_table(doc, rows: list[str]):
