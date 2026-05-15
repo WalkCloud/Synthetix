@@ -186,7 +186,11 @@ export function EditorPanel({
       {isLocked && section.content && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="p-5 text-[15px] leading-loose text-slate-700">
-            <ContentRenderer content={section.content} />
+            <ContentRenderer
+              content={section.content}
+              draftId={section.draftId}
+              sectionId={section.id}
+            />
           </div>
           <div className="px-[18px] py-3 border-t border-slate-200 text-[13px] text-slate-500 font-medium bg-slate-50/50">
             {countWords(section.content)} words
@@ -263,6 +267,8 @@ export function EditorPanel({
           onSelectA={() => onSelectModel("a")}
           onSelectB={() => onSelectModel("b")}
           onEdit={handleEdit}
+          draftId={section.draftId}
+          sectionId={section.id}
           mode={isComparing && section.contentB ? "compare" : "single"}
         />
       )}
