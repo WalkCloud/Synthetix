@@ -38,6 +38,40 @@ function buildSystemMessage(): ChatMessage {
     content: [
       "You are a professional document writer. Your task is to write complete sections for normal business, technical, research, or analytical documents.",
       "",
+      "## CRITICAL: DIAGRAM OUTPUT FORMAT",
+      "When writing about system architecture, technical processes, data flows, deployment topology, component relationships, or sequences, you MUST embed diagram request blocks directly in your output text to visualize the structure or flow. These blocks will be parsed and rendered as actual diagrams.",
+      "",
+      "Diagram request format (output this exact syntax inline in your text):",
+      "[DIAGRAM_REQUEST:",
+      "type=architecture",
+      "title=<diagram title in the same language as the document>",
+      "purpose=<what the diagram shows>",
+      "placement=after_current_paragraph",
+      "nodes=<comma-separated key entities>",
+      "flows=<comma-separated relationships using ->>",
+      "]",
+      "",
+      "Example (embedded after a paragraph about platform layers):",
+      "The platform uses a three-layer architecture. Each layer handles a specific domain.",
+      "[DIAGRAM_REQUEST:",
+      "type=architecture",
+      "title=平台分层架构图",
+      "purpose=Show the three-layer architecture: infrastructure, platform, and application management",
+      "placement=after_current_paragraph",
+      "nodes=基础设施层,容器平台层,应用管理层",
+      "flows=基础设施层->容器平台层,容器平台层->应用管理层",
+      "]",
+      "The infrastructure layer provides compute and storage resources...",
+      "",
+      "Rules:",
+      "- MUST include diagram requests for sections about architecture, processes, flows, deployment, components, sequences, or any technical structure.",
+      "- Do NOT include diagram requests for purely narrative, analytical, policy, or summary sections.",
+      "- Place each diagram request immediately after the paragraph that describes the concept it visualizes.",
+      "- At most 2 diagram requests per section.",
+      "- Diagram type must be one of: architecture, flowchart, data-flow, deployment, component, sequence, comparison, timeline, security.",
+      "",
+      "---",
+      "",
       "The reference material is provided only to help you understand the topic, facts, terminology, and background. Do not expose the existence of the reference material in the final text.",
       "",
       "Writing goals:",
@@ -85,22 +119,6 @@ function buildSystemMessage(): ChatMessage {
       "- Do not include a bibliography, citation list, or reference list unless the user explicitly requests one.",
       "- Produce output as plain text with Markdown formatting for structure.",
       "- Match the estimated word count as closely as possible without sacrificing quality.",
-      "",
-      "Diagram rules:",
-      "- For sections about system architecture, technical processes, data flows, deployment topology, component relationships, or sequences, you MUST include at least one diagram request block to visualize the structure or flow.",
-      "- For sections that are purely narrative, analytical, policy-based, or textual in nature (e.g., background, overview, summary, conclusions), do NOT include diagram requests.",
-      "- Use this exact format for diagram requests:",
-      "[DIAGRAM_REQUEST:",
-      "type=<diagram type from: architecture|flowchart|data-flow|deployment|component|sequence|comparison|timeline|security>",
-      "title=<descriptive diagram title in the same language as the document>",
-      "purpose=<one sentence explaining what the diagram should show>",
-      "placement=after_current_paragraph",
-      "nodes=<comma-separated list of key nodes/entities shown in the diagram>",
-      "flows=<comma-separated list of key relationships or arrows between nodes, using -> for direction>",
-      "]",
-      "- Place diagram requests immediately after the paragraph that describes the relevant concept, not at the end of the section.",
-      "- Do not use diagram requests for decorative images, photos, or illustrations.",
-      "- Limit to at most 2 diagram requests per section.",
     ].join("\n"),
   };
 }
@@ -227,6 +245,9 @@ const DIAGRAM_KEYWORDS = [
   "调用", "call", "通信", "communication", "协议", "protocol",
   "安全架构", "security.?architecture", "技术方案", "technical.?solution",
   "平台架构", "platform.?architecture", "服务架构", "service.?architecture",
+  "容器化", "container", "devops", "流水线", "高可用", "ha.?design",
+  "容灾", "disaster.?recovery", "集群", "cluster", "编排", "orchestrat",
+  "分层", "layered", "中间件", "middleware", "迁移", "migration.?strateg",
 ];
 
 function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
@@ -277,7 +298,7 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   if (sectionNeedsDiagram(input.section)) {
     userParts.push("");
     userParts.push(
-      "IMPORTANT: This section describes a system, process, or technical structure. You MUST include at least one [DIAGRAM_REQUEST:...] block in your output to visualize the architecture, flow, or relationships described. Place it right after the paragraph that introduces the relevant concept."
+      "IMPORTANT: This section is about a technical structure (architecture, process, flow, or system). You MUST include at least one [DIAGRAM_REQUEST:...] block in your output. For example, after describing the system layers, insert:\n[DIAGRAM_REQUEST:\ntype=architecture\ntitle=<appropriate title>\npurpose=<what it shows>\nplacement=after_current_paragraph\nnodes=<key entities>\nflows=<key relationships using ->>\n]\nPlace it right after the paragraph that introduces the relevant concept."
     );
   }
 
