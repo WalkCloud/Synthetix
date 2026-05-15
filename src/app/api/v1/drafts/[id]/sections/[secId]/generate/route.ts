@@ -5,6 +5,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
 import { persistDiagramAssets } from "@/lib/writing/assets";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
+import { auditSection } from "@/lib/writing/auditor";
 
 export async function POST(
   request: Request,
@@ -139,6 +140,20 @@ export async function POST(
           inputTokens: inTokens,
           outputTokens: outTokens,
         }).catch(() => {});
+
+        (async () => {
+          try {
+            const auditResult = await auditSection(section.title, finalContent || fullContent, section.keyPoints);
+            const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
+            const existing = current?.constraints ? JSON.parse(current.constraints) : {};
+            await db.section.update({
+              where: { id: sectionId },
+              data: { constraints: JSON.stringify({ ...existing, _audit: auditResult }) },
+            });
+          } catch (err) {
+            console.error(`Background audit failed for section ${sectionId}:`, err);
+          }
+        })();
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
         controller.close();
