@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
 import { persistDiagramAssets } from "@/lib/writing/assets";
+import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 
 export async function POST(
   request: Request,
@@ -125,6 +126,10 @@ export async function POST(
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "assets", count: assetCount })}\n\n`)
           );
+
+          generateAllPendingAssets(draftId, sectionId).catch((err) => {
+            console.error(`Background diagram generation failed for section ${sectionId}:`, err);
+          });
         }
 
         await recordTokenUsage({
