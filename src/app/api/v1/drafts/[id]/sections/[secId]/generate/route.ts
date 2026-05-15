@@ -3,9 +3,12 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
+import { parseDiagramRequests } from "@/lib/writing/diagram";
 import { persistDiagramAssets } from "@/lib/writing/assets";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
+
+const DIAGRAM_CLEANUP_RE = /\[DIAGRAM_REQUEST:\s*[\s\S]*?\]\s*/g;
 
 export async function POST(
   request: Request,
@@ -115,17 +118,52 @@ export async function POST(
         let finalContent = fullContent;
         let assetCount = 0;
 
-        try {
-          const result = await persistDiagramAssets(draftId, sectionId, fullContent);
-          finalContent = result.cleaned || fullContent;
-          assetCount = result.assets;
-        } catch (assetErr) {
-          console.error(`persistDiagramAssets failed for section ${sectionId}:`, assetErr);
-          const { parseDiagramRequests } = await import("@/lib/writing/diagram");
-          const fallback = parseDiagramRequests(fullContent);
-          finalContent = fallback.cleaned || fullContent;
-          assetCount = 0;
+        const hasDiagram = fullContent.includes("DIAGRAM_REQUEST");
+        console.log(`[generate] section="${section.title}" hasDiagram=${hasDiagram} contentLen=${fullContent.length}`);
+
+        if (hasDiagram) {
+          const parsed = parseDiagramRequests(fullContent);
+          console.log(`[generate] parseDiagramRequests: diagrams=${parsed.diagrams.length} cleanedLen=${parsed.cleaned.length}`);
+
+          if (parsed.diagrams.length > 0) {
+            try {
+              await db.sectionAsset.deleteMany({ where: { sectionId } });
+              for (const diagram of parsed.diagrams) {
+                await db.sectionAsset.create({
+                  data: {
+                    draftId,
+                    sectionId,
+                    type: "diagram",
+                    title: diagram.title,
+                    description: diagram.purpose,
+                    prompt: diagram.raw,
+                    status: "pending",
+                    metadata: JSON.stringify({
+                      diagramType: diagram.type,
+                      placement: diagram.placement,
+                      nodes: diagram.nodes,
+                      flows: diagram.flows,
+                    }),
+                  },
+                });
+              }
+              assetCount = parsed.diagrams.length;
+              console.log(`[generate] assets created: ${assetCount}`);
+            } catch (assetErr) {
+              console.error(`[generate] asset creation failed:`, assetErr);
+            }
+          }
+
+          finalContent = parsed.cleaned;
         }
+
+        const safetyClean = finalContent.replace(DIAGRAM_CLEANUP_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+        if (safetyClean !== finalContent) {
+          console.warn(`[generate] safety cleanup still found DIAGRAM_REQUEST remnants!`);
+          finalContent = safetyClean;
+        }
+
+        console.log(`[generate] saving: len=${finalContent.length} hasDiagram=${finalContent.includes("DIAGRAM_REQUEST")}`);
 
         await db.section.update({
           where: { id: sectionId },
