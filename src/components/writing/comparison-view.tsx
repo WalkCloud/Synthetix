@@ -14,6 +14,8 @@ interface ComparisonViewProps {
   onSelectB: () => void;
   onEdit: (content: string, source: "a" | "b") => void;
   mode: "compare" | "single";
+  draftId?: string;
+  sectionId?: string;
 }
 
 function countWords(text: string): number {
@@ -30,6 +32,8 @@ function ModelPanel({
   onSelect,
   onCopy,
   onEdit,
+  draftId,
+  sectionId,
 }: {
   label: string;
   dotColor: "green" | "blue";
@@ -38,6 +42,8 @@ function ModelPanel({
   onSelect: () => void;
   onCopy: () => void;
   onEdit: () => void;
+  draftId?: string;
+  sectionId?: string;
 }) {
   return (
     <div className={`bg-white rounded-2xl overflow-hidden shadow-sm transition-colors ${
@@ -73,7 +79,7 @@ function ModelPanel({
       </div>
       <div className="p-5 text-[15px] leading-loose text-slate-700 min-h-[260px]">
         {content ? (
-          <ContentRenderer content={content} />
+          <ContentRenderer content={content} draftId={draftId || ""} sectionId={sectionId || ""} />
         ) : (
           <div className="text-slate-400 italic">Waiting for generation...</div>
         )}
@@ -116,6 +122,8 @@ export function ComparisonView({
   onSelectB,
   onEdit,
   mode,
+  draftId,
+  sectionId,
 }: ComparisonViewProps) {
   if (mode === "single") {
     return (
@@ -142,7 +150,7 @@ export function ComparisonView({
         </div>
         <div className="p-5 text-[15px] leading-loose text-slate-700 min-h-[260px]">
           {contentA ? (
-            <ContentRenderer content={contentA} />
+            <ContentRenderer content={contentA} draftId={draftId || ""} sectionId={sectionId || ""} />
           ) : (
             <div className="text-slate-400 italic">Waiting for generation...</div>
           )}
@@ -164,6 +172,8 @@ export function ComparisonView({
         onSelect={onSelectA}
         onCopy={() => contentA && navigator.clipboard.writeText(contentA)}
         onEdit={() => contentA && onEdit(contentA, "a")}
+        draftId={draftId}
+        sectionId={sectionId}
       />
       <ModelPanel
         label={modelBName}
@@ -173,6 +183,8 @@ export function ComparisonView({
         onSelect={onSelectB}
         onCopy={() => contentB && navigator.clipboard.writeText(contentB)}
         onEdit={() => contentB && onEdit(contentB, "b")}
+        draftId={draftId}
+        sectionId={sectionId}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { diagramTypeLabel } from "@/lib/writing/diagram";
 import type { DiagramRequest } from "@/lib/writing/diagram";
 
@@ -36,5 +37,39 @@ export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export function DiagramView({ serveUrl, title }: { serveUrl: string; title?: string }) {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    return (
+      <figure className="my-4 border border-dashed border-red-200 rounded-xl bg-red-50/50 p-4">
+        <div className="text-sm text-red-600 flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M15 9l-6 6M9 9l6 6" />
+          </svg>
+          Diagram failed to load
+        </div>
+      </figure>
+    );
+  }
+
+  return (
+    <figure className="my-5">
+      <img
+        src={serveUrl}
+        alt={title || "Architecture diagram"}
+        className="w-full rounded-xl border border-slate-200 bg-white"
+        onError={() => setError(true)}
+      />
+      {title && (
+        <figcaption className="text-center text-xs text-slate-400 mt-2">
+          {title}
+        </figcaption>
+      )}
+    </figure>
   );
 }

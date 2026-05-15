@@ -4,11 +4,8 @@ import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
 import { parseDiagramRequests } from "@/lib/writing/diagram";
-import { persistDiagramAssets } from "@/lib/writing/assets";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
-
-const DIAGRAM_CLEANUP_RE = /\[DIAGRAM_REQUEST:\s*[\s\S]*?\]\s*/g;
 
 export async function POST(
   request: Request,
@@ -115,55 +112,40 @@ export async function POST(
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
 
-        let finalContent = fullContent;
+        const { diagrams, cleaned } = parseDiagramRequests(fullContent);
+
+        let finalContent = cleaned;
         let assetCount = 0;
 
-        const hasDiagram = fullContent.includes("DIAGRAM_REQUEST");
-        console.log(`[generate] section="${section.title}" hasDiagram=${hasDiagram} contentLen=${fullContent.length}`);
+        console.log(`[generate] section="${section.title}" diagrams=${diagrams.length}`);
 
-        if (hasDiagram) {
-          const parsed = parseDiagramRequests(fullContent);
-          console.log(`[generate] parseDiagramRequests: diagrams=${parsed.diagrams.length} cleanedLen=${parsed.cleaned.length}`);
-
-          if (parsed.diagrams.length > 0) {
-            try {
-              await db.sectionAsset.deleteMany({ where: { sectionId } });
-              for (const diagram of parsed.diagrams) {
-                await db.sectionAsset.create({
-                  data: {
-                    draftId,
-                    sectionId,
-                    type: "diagram",
-                    title: diagram.title,
-                    description: diagram.purpose,
-                    prompt: diagram.raw,
-                    status: "pending",
-                    metadata: JSON.stringify({
-                      diagramType: diagram.type,
-                      placement: diagram.placement,
-                      nodes: diagram.nodes,
-                      flows: diagram.flows,
-                    }),
-                  },
-                });
-              }
-              assetCount = parsed.diagrams.length;
-              console.log(`[generate] assets created: ${assetCount}`);
-            } catch (assetErr) {
-              console.error(`[generate] asset creation failed:`, assetErr);
+        if (diagrams.length > 0) {
+          try {
+            await db.sectionAsset.deleteMany({ where: { sectionId } });
+            for (const diagram of diagrams) {
+              await db.sectionAsset.create({
+                data: {
+                  draftId,
+                  sectionId,
+                  type: "diagram",
+                  title: diagram.title,
+                  description: diagram.purpose,
+                  prompt: diagram.raw,
+                  status: "pending",
+                  metadata: JSON.stringify({
+                    diagramType: diagram.type,
+                    placement: diagram.placement,
+                    nodes: diagram.nodes,
+                    flows: diagram.flows,
+                  }),
+                },
+              });
             }
+            console.log(`[generate] assets created: ${diagrams.length}`);
+          } catch (assetErr) {
+            console.error(`[generate] asset creation failed:`, assetErr);
           }
-
-          finalContent = parsed.cleaned;
         }
-
-        const safetyClean = finalContent.replace(DIAGRAM_CLEANUP_RE, "").replace(/\n{3,}/g, "\n\n").trim();
-        if (safetyClean !== finalContent) {
-          console.warn(`[generate] safety cleanup still found DIAGRAM_REQUEST remnants!`);
-          finalContent = safetyClean;
-        }
-
-        console.log(`[generate] saving: len=${finalContent.length} hasDiagram=${finalContent.includes("DIAGRAM_REQUEST")}`);
 
         await db.section.update({
           where: { id: sectionId },
@@ -174,14 +156,37 @@ export async function POST(
           },
         });
 
+        if (diagrams.length > 0) {
+          try {
+            const genResult = await generateAllPendingAssets(draftId, sectionId);
+            console.log(`[generate] SVG gen: total=${genResult.total} ok=${genResult.succeeded} fail=${genResult.failed}`);
+
+            if (genResult.succeeded > 0) {
+              const readyAssets = await db.sectionAsset.findMany({
+                where: { sectionId, draftId, status: "ready" },
+                orderBy: { createdAt: "asc" },
+              });
+
+              const markers = readyAssets.map((a) => `\n\n[DIAGRAM:${a.id}]\n\n`).join("");
+              const markedContent = finalContent + markers;
+
+              await db.section.update({
+                where: { id: sectionId },
+                data: { content: markedContent },
+              });
+
+              assetCount = readyAssets.length;
+              console.log(`[generate] markers inserted: ${readyAssets.length} assets`);
+            }
+          } catch (genErr) {
+            console.error(`[generate] SVG generation failed:`, genErr);
+          }
+        }
+
         if (assetCount > 0) {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "assets", count: assetCount })}\n\n`)
           );
-
-          generateAllPendingAssets(draftId, sectionId).catch((err) => {
-            console.error(`Background diagram generation failed for section ${sectionId}:`, err);
-          });
         }
 
         await recordTokenUsage({
