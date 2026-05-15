@@ -243,6 +243,7 @@ model Section {
   children Section[] @relation("SectionTree")
   versions SectionVersion[]
   references SectionReference[]
+  assets     SectionAsset[]
 
   @@index([draftId, index])
   @@map("sections")
@@ -280,4 +281,28 @@ model SectionReference {
   @@index([documentId])
   @@index([sectionId, documentId])
   @@map("section_references")
+}
+
+model SectionAsset {
+  id          String   @id @default(uuid())
+  draftId     String   @map("draft_id")
+  sectionId   String   @map("section_id")
+  type        String   // diagram | image | mermaid | svg
+  title       String
+  description String?
+  prompt      String?
+  path        String?
+  mimeType    String?  @map("mime_type")
+  width       Int?
+  height      Int?
+  status      String   @default("pending") // pending | generating | ready | failed
+  metadata    String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([draftId])
+  @@index([sectionId])
+  @@map("section_assets")
 }
