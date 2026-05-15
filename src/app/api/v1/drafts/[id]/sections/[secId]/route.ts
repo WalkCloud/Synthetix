@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { parseDiagramRequests } from "@/lib/writing/diagram";
 import type { ApiResponse } from "@/types/api";
 
 function getErrorMessage(error: unknown): string {
@@ -127,9 +128,12 @@ export async function PUT(
       updateData.wordCount = sourceContent.split(/\s+/).filter(Boolean).length;
       updateData.status = "reviewing";
     } else if (body.content !== undefined) {
-      // Direct content edit
-      updateData.content = body.content;
-      updateData.wordCount = body.content.split(/\s+/).filter(Boolean).length;
+      const { cleaned, diagrams } = parseDiagramRequests(body.content);
+      updateData.content = cleaned;
+      updateData.wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+      if (diagrams.length > 0) {
+        console.warn(`PUT section ${sectionId}: ${diagrams.length} DIAGRAM_REQUEST blocks found in edited content — stripped but not persisted as assets. Re-generate the section to create diagram assets.`);
+      }
     }
 
     if (body.constraints !== undefined) {
