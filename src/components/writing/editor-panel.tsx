@@ -31,6 +31,7 @@ interface EditorPanelProps {
   isHumanizing: boolean;
   isConfirming: boolean;
   streamingContent?: string;
+  assetCount?: number;
 }
 
 export function EditorPanel({
@@ -51,6 +52,7 @@ export function EditorPanel({
   isHumanizing,
   isConfirming,
   streamingContent = "",
+  assetCount = 0,
 }: EditorPanelProps) {
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
   const [wordLimit, setWordLimit] = useState(800);
@@ -145,6 +147,15 @@ export function EditorPanel({
         <span className="text-[13px] text-slate-500 font-medium">
           {section.estimatedWords ? `Estimated ~${section.estimatedWords} words` : "No word estimate"}
           {section.description && ` — ${section.description}`}
+          {assetCount > 0 && (
+            <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[11px] font-semibold">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+                <rect x="2" y="2" width="12" height="12" rx="2" />
+                <path d="M2 6h12M6 2v12" />
+              </svg>
+              {assetCount} diagram{assetCount > 1 ? "s" : ""}
+            </span>
+          )}
         </span>
       </div>
 
