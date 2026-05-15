@@ -87,17 +87,18 @@ function buildSystemMessage(): ChatMessage {
       "- Match the estimated word count as closely as possible without sacrificing quality.",
       "",
       "Diagram rules:",
-      "- When a diagram (architecture, flowchart, data-flow, deployment, sequence, comparison, timeline, or security diagram) would significantly improve the section, insert a diagram request block.",
+      "- For sections about system architecture, technical processes, data flows, deployment topology, component relationships, or sequences, you MUST include at least one diagram request block to visualize the structure or flow.",
+      "- For sections that are purely narrative, analytical, policy-based, or textual in nature (e.g., background, overview, summary, conclusions), do NOT include diagram requests.",
       "- Use this exact format for diagram requests:",
       "[DIAGRAM_REQUEST:",
       "type=<diagram type from: architecture|flowchart|data-flow|deployment|component|sequence|comparison|timeline|security>",
-      "title=<diagram title>",
+      "title=<descriptive diagram title in the same language as the document>",
       "purpose=<one sentence explaining what the diagram should show>",
       "placement=after_current_paragraph",
-      "nodes=<comma-separated list of key nodes/entities>",
-      "flows=<comma-separated list of key relationships or arrows, using -> for direction>",
+      "nodes=<comma-separated list of key nodes/entities shown in the diagram>",
+      "flows=<comma-separated list of key relationships or arrows between nodes, using -> for direction>",
       "]",
-      "- Only insert diagram requests where a visual would add real value. Do not insert them for trivial or purely textual content.",
+      "- Place diagram requests immediately after the paragraph that describes the relevant concept, not at the end of the section.",
       "- Do not use diagram requests for decorative images, photos, or illustrations.",
       "- Limit to at most 2 diagram requests per section.",
     ].join("\n"),
@@ -217,6 +218,30 @@ function buildConstraintsBlock(
   return parts.join("\n");
 }
 
+const DIAGRAM_KEYWORDS = [
+  "架构", "architecture", "拓扑", "topology", "部署", "deployment",
+  "流程", "flow", "workflow", "数据流", "data.?flow", "组件", "component",
+  "时序", "sequence", "系统设计", "system.?design", "模块", "module",
+  "接口", "interface", "集成", "integration", "网络", "network",
+  "微服务", "microservice", "pipeline", "管道", "交互", "interaction",
+  "调用", "call", "通信", "communication", "协议", "protocol",
+  "安全架构", "security.?architecture", "技术方案", "technical.?solution",
+  "平台架构", "platform.?architecture", "服务架构", "service.?architecture",
+];
+
+function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
+  const text = [
+    section.title,
+    section.description,
+    section.keyPoints,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return DIAGRAM_KEYWORDS.some((kw) => new RegExp(kw, "i").test(text));
+}
+
 export function assembleContext(input: ContextInput): ChatMessage[] {
   const userParts: string[] = [];
 
@@ -248,6 +273,13 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   userParts.push(
     "Write the final reader-facing content for the target section now. Use the reference material only as background support, and do not mention the reference material itself."
   );
+
+  if (sectionNeedsDiagram(input.section)) {
+    userParts.push("");
+    userParts.push(
+      "IMPORTANT: This section describes a system, process, or technical structure. You MUST include at least one [DIAGRAM_REQUEST:...] block in your output to visualize the architecture, flow, or relationships described. Place it right after the paragraph that introduces the relevant concept."
+    );
+  }
 
   return [
     buildSystemMessage(),
