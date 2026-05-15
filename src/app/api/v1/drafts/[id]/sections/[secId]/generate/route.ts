@@ -112,13 +112,26 @@ export async function POST(
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
 
-        const { cleaned: finalContent, assets: assetCount } = await persistDiagramAssets(draftId, sectionId, fullContent);
+        let finalContent = fullContent;
+        let assetCount = 0;
+
+        try {
+          const result = await persistDiagramAssets(draftId, sectionId, fullContent);
+          finalContent = result.cleaned || fullContent;
+          assetCount = result.assets;
+        } catch (assetErr) {
+          console.error(`persistDiagramAssets failed for section ${sectionId}:`, assetErr);
+          const { parseDiagramRequests } = await import("@/lib/writing/diagram");
+          const fallback = parseDiagramRequests(fullContent);
+          finalContent = fallback.cleaned || fullContent;
+          assetCount = 0;
+        }
 
         await db.section.update({
           where: { id: sectionId },
           data: {
-            content: finalContent || fullContent,
-            wordCount: (finalContent || fullContent).split(/\s+/).filter(Boolean).length,
+            content: finalContent,
+            wordCount: finalContent.split(/\s+/).filter(Boolean).length,
             status: "reviewing",
           },
         });
@@ -143,7 +156,7 @@ export async function POST(
 
         (async () => {
           try {
-            const auditResult = await auditSection(section.title, finalContent || fullContent, section.keyPoints);
+            const auditResult = await auditSection(section.title, finalContent, section.keyPoints);
             const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
             const existing = current?.constraints ? JSON.parse(current.constraints) : {};
             await db.section.update({
