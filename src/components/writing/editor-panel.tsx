@@ -5,6 +5,7 @@ import type { SectionMeta, GenerationMode } from "@/types/writing";
 import { StatePills } from "./state-pills";
 import { ConstraintsBar } from "./constraints-bar";
 import { ComparisonView } from "./comparison-view";
+import { ContentRenderer } from "./content-renderer";
 
 interface SectionConstraints {
   wordLimit: number;
@@ -174,9 +175,7 @@ export function EditorPanel({
       {isLocked && section.content && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="p-5 text-[15px] leading-loose text-slate-700">
-            {section.content.split("\n\n").map((p, i) => (
-              <p key={i} className="mb-3">{p}</p>
-            ))}
+            <ContentRenderer content={section.content} />
           </div>
           <div className="px-[18px] py-3 border-t border-slate-200 text-[13px] text-slate-500 font-medium bg-slate-50/50">
             {countWords(section.content)} words

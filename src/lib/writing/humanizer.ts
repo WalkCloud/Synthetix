@@ -75,6 +75,7 @@ const REWRITE_PROMPT = `You are an expert human writer. Rewrite the following te
 - Reference specific tools, dates, people, places — not "various methods" or "multiple approaches"
 - Maintain all factual content and technical accuracy from the original
 - Preserve all factual content and technical accuracy from the original, but do not reintroduce source material references or citations that the original text does not contain
+- Preserve any [DIAGRAM_REQUEST:...] blocks exactly as they are. Do not modify, paraphrase, or remove them.
 - Keep the same language (Chinese/English) as the original
 
 ## Tone

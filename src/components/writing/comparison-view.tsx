@@ -1,5 +1,7 @@
 "use client";
 
+import { ContentRenderer } from "./content-renderer";
+
 interface ComparisonViewProps {
   contentA: string | null;
   contentB: string | null;
@@ -71,11 +73,7 @@ function ModelPanel({
       </div>
       <div className="p-5 text-[15px] leading-loose text-slate-700 min-h-[260px]">
         {content ? (
-          content.split("\n\n").map((p, i) => (
-            <p key={i} className="mb-3">
-              {p}
-            </p>
-          ))
+          <ContentRenderer content={content} />
         ) : (
           <div className="text-slate-400 italic">Waiting for generation...</div>
         )}
@@ -144,7 +142,7 @@ export function ComparisonView({
         </div>
         <div className="p-5 text-[15px] leading-loose text-slate-700 min-h-[260px]">
           {contentA ? (
-            contentA.split("\n\n").map((p, i) => <p key={i} className="mb-3">{p}</p>)
+            <ContentRenderer content={contentA} />
           ) : (
             <div className="text-slate-400 italic">Waiting for generation...</div>
           )}
