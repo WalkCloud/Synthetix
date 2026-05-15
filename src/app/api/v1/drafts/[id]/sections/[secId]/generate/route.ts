@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
+import { persistDiagramAssets } from "@/lib/writing/assets";
 
 export async function POST(
   request: Request,
@@ -109,14 +110,22 @@ export async function POST(
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
 
+        const { cleaned: finalContent, assets: assetCount } = await persistDiagramAssets(draftId, sectionId, fullContent);
+
         await db.section.update({
           where: { id: sectionId },
           data: {
-            content: fullContent,
-            wordCount: fullContent.split(/\s+/).filter(Boolean).length,
+            content: finalContent || fullContent,
+            wordCount: (finalContent || fullContent).split(/\s+/).filter(Boolean).length,
             status: "reviewing",
           },
         });
+
+        if (assetCount > 0) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "assets", count: assetCount })}\n\n`)
+          );
+        }
 
         await recordTokenUsage({
           userId: user.id,
