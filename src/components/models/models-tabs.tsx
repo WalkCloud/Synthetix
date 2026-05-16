@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { ProviderForm } from "./provider-form";
 import type { Provider, UsageData } from "./types";
 
-type Tab = "llm" | "embedding" | "usage";
+type Tab = "llm" | "embedding" | "image" | "usage";
 type TimeRange = "today" | "week" | "month";
 
 interface IconColors {
@@ -305,6 +305,21 @@ export function ModelsTabs() {
     return result;
   }, [providers]);
 
+  const imageModels = useMemo(() => {
+    const result: Array<{ provider: Provider; modelIndex: number; iconColors: IconColors }> = [];
+    providers.forEach((p) => {
+      p.models.forEach((m, idx) => {
+        try {
+          const caps = JSON.parse(m.capabilities ?? "[]");
+          if (!Array.isArray(caps) || !caps.includes("image_generation")) return;
+        } catch { return; }
+        const colorIdx = result.length % MODEL_ICON_COLORS.length;
+        result.push({ provider: p, modelIndex: idx, iconColors: MODEL_ICON_COLORS[colorIdx] });
+      });
+    });
+    return result;
+  }, [providers]);
+
   const renderAddCard = (title: string, subtitle: string, onClick: () => void) => (
     <button
       onClick={onClick}
@@ -327,8 +342,8 @@ export function ModelsTabs() {
     <div className="max-w-5xl mx-auto">
       {/* Tab headers */}
       <div className="flex gap-2 border-b border-border mb-8 pb-px">
-        {(["llm", "embedding", "usage"] as const).map((t) => {
-          const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", usage: "Usage Analytics" };
+        {(["llm", "embedding", "image", "usage"] as const).map((t) => {
+          const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", image: "Image Generation", usage: "Usage Analytics" };
           const isActive = tab === t;
           return (
             <button
@@ -431,6 +446,52 @@ export function ModelsTabs() {
               () => { setEditingProvider(null); setShowForm(true); },
             )}
           </div>
+        </div>
+      )}
+
+      {/* Tab: Image Generation Models */}
+      {tab === "image" && (
+        <div className="animate-fade-in-up">
+          <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+            Configure text-to-image models for the Gen feature in the writing panel. These models generate illustrations from text prompts via OpenAI-compatible image APIs.
+          </p>
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground">Loading...</div>
+          ) : (
+            <div className="space-y-4">
+              {imageModels.map(({ provider, modelIndex, iconColors }) => {
+                const model = provider.models[modelIndex];
+                return (
+                  <ModelCard
+                    key={`${provider.id}-${model.id}`}
+                    name={model.modelName}
+                    providerName={provider.name}
+                    contextWindow={model.contextWindow}
+                    isActive={provider.isActive}
+                    isTesting={testingId === provider.id}
+                    testResult={testResult?.id === provider.id ? testResult : null}
+                    isDeleting={deletingId === provider.id}
+                    iconColors={iconColors}
+                    onTest={() => handleTest(provider.id)}
+                    onEdit={() => handleEdit(provider)}
+                    onDelete={() => setDeletingId(provider.id)}
+                    onDeleteConfirm={() => handleDelete(provider.id)}
+                    onDeleteCancel={() => setDeletingId(null)}
+                  />
+                );
+              })}
+              {imageModels.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground text-sm border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                  No image generation models configured. Add a provider with an image generation model (e.g. DALL-E, Flux, Wanx).
+                </div>
+              )}
+              {renderAddCard(
+                "Add Image Model",
+                "DALL-E, Flux, Wanx, or other OpenAI-compatible image endpoint",
+                () => { setEditingProvider(null); setShowForm(true); },
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -713,7 +774,7 @@ export function ModelsTabs() {
             className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <ProviderForm provider={editingProvider} tab={tab as "llm" | "embedding"} onClose={handleFormClose} />
+            <ProviderForm provider={editingProvider} tab={tab === "usage" ? "llm" : (tab as "llm" | "embedding" | "image")} onClose={handleFormClose} />
           </div>
         </div>
       )}

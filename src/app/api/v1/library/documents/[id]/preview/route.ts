@@ -34,6 +34,12 @@ export async function GET(
 
   const markdown = fs.readFileSync(doc.markdownPath, "utf-8");
 
+  // Rewrite relative image paths to absolute API paths
+  const rewritten = markdown.replace(
+    /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
+    `![$1](/api/v1/documents/${id}/images/$2)`
+  );
+
   // Return raw markdown — frontend renders with a markdown library
   return NextResponse.json({
     success: true,
@@ -41,7 +47,7 @@ export async function GET(
       id: doc.id,
       name: doc.originalName,
       status: doc.status,
-      markdown,
+      markdown: rewritten,
     },
   });
 }

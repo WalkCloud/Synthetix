@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DocumentMeta, SearchResult } from "@/types/documents";
@@ -35,6 +36,7 @@ const tagColors: Record<string, string> = {
 };
 
 export default function LibraryPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<TabId>("documents");
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [total, setTotal] = useState(0);
@@ -48,24 +50,7 @@ export default function LibraryPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [filterFormat, setFilterFormat] = useState<string>("All");
   const [sortBy, setSortBy] = useState("Newest first");
-  // Preview modal
-  const [previewDoc, setPreviewDoc] = useState<{ id: string; name: string; markdown: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const limit = 20;
-
-  async function handlePreview(docId: string, docName: string) {
-    setPreviewLoading(true);
-    setPreviewDoc(null);
-    try {
-      const res = await fetch(`/api/v1/library/documents/${docId}/preview`);
-      const d = await res.json();
-      if (d.success) {
-        setPreviewDoc({ id: d.data.id, name: d.data.name, markdown: d.data.markdown });
-      }
-    } catch { /* ignore */ } finally {
-      setPreviewLoading(false);
-    }
-  }
 
   const fetchDocs = useCallback(async (p: number) => {
     setLoading(true);
@@ -300,7 +285,7 @@ export default function LibraryPage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <div className="flex gap-1">
-                              <button onClick={() => handlePreview(doc.id, doc.originalName)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors" title="Preview">
+                              <button onClick={() => router.push(`/library/${doc.id}`)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors" title="View">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                               </button>
                               <button onClick={() => handleReindex(doc.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-[#F4F2EF] hover:text-foreground transition-colors" title="Reindex">
@@ -426,30 +411,6 @@ export default function LibraryPage() {
 
       </div>
 
-      {/* Preview Modal */}
-      {previewDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPreviewDoc(null)}>
-          <div className="bg-white rounded-[20px] shadow-2xl w-full max-w-4xl max-h-[85vh] m-4 flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-semibold text-lg">{previewDoc.name}</h3>
-              <button onClick={() => setPreviewDoc(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed">
-              {previewDoc.markdown}
-            </div>
-          </div>
-        </div>
-      )}
-      {previewLoading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
-          <div className="bg-white rounded-xl shadow-lg px-6 py-4 flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-muted-foreground">Loading preview...</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

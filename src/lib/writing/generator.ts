@@ -35,12 +35,22 @@ async function resolveDefaultWritingModel(): Promise<ModelResolution> {
   );
 }
 
+interface RagConfig {
+  mode: "auto" | "manual" | "off";
+  documentIds: string[];
+}
+
 async function fetchRagReferences(
   draftTitle: string,
   sectionTitle: string,
   sectionDescription: string | null | undefined,
-  userId: string
+  userId: string,
+  ragConfig?: RagConfig
 ): Promise<ContextInput["ragReferences"]> {
+  if (ragConfig?.mode === "off") {
+    return [];
+  }
+
   const queryParts = [draftTitle, sectionTitle];
   if (sectionDescription) {
     queryParts.push(sectionDescription);
@@ -49,7 +59,7 @@ async function fetchRagReferences(
 
   try {
     const results = await semanticSearch(query, userId, RAG_REFERENCE_LIMIT);
-    return results.map((result) => ({
+    let mapped = results.map((result) => ({
       documentId: result.documentId,
       chunkId: result.chunkId,
       documentName: result.documentName,
@@ -57,6 +67,13 @@ async function fetchRagReferences(
       content: result.content,
       score: result.score,
     }));
+
+    if (ragConfig?.mode === "manual" && ragConfig.documentIds.length > 0) {
+      const allowed = new Set(ragConfig.documentIds);
+      mapped = mapped.filter((r) => r.documentId && allowed.has(r.documentId));
+    }
+
+    return mapped;
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Unknown error";
@@ -72,9 +89,18 @@ export interface GenerationResult {
   outputTokens: number;
 }
 
+function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | null }): RagConfig {
+  const mode = (section.ragMode || "auto") as RagConfig["mode"];
+  let documentIds: string[] = [];
+  try {
+    documentIds = JSON.parse(section.ragDocumentIds || "[]");
+  } catch { documentIds = []; }
+  return { mode, documentIds };
+}
+
 export async function generateSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   constraints?: ContextInput["constraints"]
@@ -85,7 +111,8 @@ export async function generateSection(
     draft.title,
     section.title,
     section.description,
-    userId
+    userId,
+    parseRagConfig(section)
   );
 
   const messages = assembleContext({
@@ -131,18 +158,46 @@ export async function generateSection(
 
 export async function generateSectionStream(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
-  constraints?: ContextInput["constraints"]
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string
 ) {
-  const { provider, modelId, modelConfigId } = await resolveDefaultWritingModel();
+  let provider: ReturnType<typeof createLLMProvider>;
+  let modelId: string;
+  let modelConfigId: string;
+
+  if (customModelConfigId) {
+    // Use custom model
+    const { db } = await import("@/lib/db");
+    const modelConfig = await db.modelConfig.findUnique({
+      where: { id: customModelConfigId },
+      include: { provider: true },
+    });
+    if (!modelConfig?.provider) {
+      throw new Error(`Model config ${customModelConfigId} not found`);
+    }
+    provider = createLLMProvider({
+      apiBaseUrl: modelConfig.provider.apiBaseUrl,
+      apiKey: modelConfig.provider.apiKey,
+    });
+    modelId = modelConfig.modelId;
+    modelConfigId = modelConfig.id;
+  } else {
+    // Use default writing model
+    const resolved = await resolveDefaultWritingModel();
+    provider = resolved.provider;
+    modelId = resolved.modelId;
+    modelConfigId = resolved.modelConfigId;
+  }
 
   const ragReferences = await fetchRagReferences(
     draft.title,
     section.title,
     section.description,
-    userId
+    userId,
+    parseRagConfig(section)
   );
 
   const messages = assembleContext({
@@ -176,7 +231,7 @@ export interface ComparisonResult {
 
 export async function compareSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
@@ -194,7 +249,8 @@ export async function compareSection(
     draft.title,
     section.title,
     section.description,
-    userId
+    userId,
+    parseRagConfig(section)
   );
 
   const messages = assembleContext({

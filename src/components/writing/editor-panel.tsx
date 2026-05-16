@@ -26,12 +26,14 @@ interface EditorPanelProps {
   onConfirm: () => void;
   onRegenerate: () => void;
   onHumanize: () => void;
+  onUnlock: () => void;
   isGenerating: boolean;
   isThinking: boolean;
   isHumanizing: boolean;
   isConfirming: boolean;
   streamingContent?: string;
   assetCount?: number;
+  assetRenderVer?: number;
 }
 
 export function EditorPanel({
@@ -47,12 +49,14 @@ export function EditorPanel({
   onConfirm,
   onRegenerate,
   onHumanize,
+  onUnlock,
   isGenerating,
   isThinking,
   isHumanizing,
   isConfirming,
   streamingContent = "",
   assetCount = 0,
+  assetRenderVer,
 }: EditorPanelProps) {
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
   const [wordLimit, setWordLimit] = useState(800);
@@ -61,6 +65,13 @@ export function EditorPanel({
   const [displayedContent, setDisplayedContent] = useState("");
   const typingRef = useRef<number | null>(null);
   const targetRef = useRef("");
+
+  // Update wordLimit when section changes
+  useEffect(() => {
+    if (section?.estimatedWords) {
+      setWordLimit(section.estimatedWords);
+    }
+  }, [section?.estimatedWords]);
 
   useEffect(() => {
     if (!isGenerating || !streamingContent) {
@@ -169,6 +180,7 @@ export function EditorPanel({
           generationMode={generationMode}
           wordLimit={wordLimit}
           additionalRequirements={additionalRequirements}
+          estimatedWords={section.estimatedWords}
           models={models}
           selectedModelA={selectedModelA}
           selectedModelB={selectedModelB}
@@ -190,10 +202,34 @@ export function EditorPanel({
               content={section.content}
               draftId={section.draftId}
               sectionId={section.id}
+              renderVer={assetRenderVer}
             />
           </div>
-          <div className="px-[18px] py-3 border-t border-slate-200 text-[13px] text-slate-500 font-medium bg-slate-50/50">
-            {countWords(section.content)} words
+          <div className="px-[18px] py-3 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
+            <span className="text-[13px] text-slate-500 font-medium">
+              {countWords(section.content)} words
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onUnlock}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                </svg>
+                Edit
+              </button>
+              <button
+                onClick={() => { onUnlock(); setTimeout(onRegenerate, 300); }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 border border-primary-200 text-primary-600 rounded-lg text-xs font-semibold hover:bg-primary-50 transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                Regenerate
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -255,7 +291,7 @@ export function EditorPanel({
         </div>
       )}
 
-      {(isComparing || isReviewing) && editingContent === null && (
+      {(isComparing || isReviewing) && editingContent === null && !isGenerating && (
         <ComparisonView
           contentA={section.contentA || section.content}
           contentB={section.contentB}
@@ -273,8 +309,8 @@ export function EditorPanel({
         />
       )}
 
-      {/* Action Bar — only show when content is available */}
-      {canConfirm && editingContent === null && (
+      {/* Action Bar — only show when content is available and not generating */}
+      {canConfirm && editingContent === null && !isGenerating && (
         <div className="flex items-center justify-end gap-3 mt-5">
           <button
             onClick={onRegenerate}

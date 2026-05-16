@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { db } from "@/lib/db";
 import { buildSpecFromRawPrompt } from "@/lib/writing/diagram-spec";
 import { renderDiagramSvg } from "@/lib/writing/diagram-renderer";
+import { generateImageAsset } from "@/lib/writing/image-generator";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
 
@@ -18,6 +19,10 @@ export async function generateDiagramAsset(assetId: string): Promise<{
   const asset = await db.sectionAsset.findUnique({ where: { id: assetId } });
   if (!asset) {
     return { success: false, error: "Asset not found" };
+  }
+
+  if (asset.type === "image") {
+    return generateImageAsset(assetId);
   }
 
   if (asset.type !== "diagram" && asset.type !== "svg") {

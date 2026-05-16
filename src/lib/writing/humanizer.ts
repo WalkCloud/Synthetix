@@ -11,7 +11,7 @@ import type { ChatResponse } from "@/lib/llm/types";
 
 const HUMANIZER_TEMPERATURE = 0.75;
 
-const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing patterns. Analyze the text below and identify which of these 29 patterns appear:
+const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing patterns. Analyze the text below and identify which of these 35 patterns appear:
 
 **Content Patterns:**
 1. Hedging language ("it's worth noting", "it's important to consider", "importantly")
@@ -21,7 +21,7 @@ const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing pa
 5. Symmetrical paragraph lengths throughout
 6. Safe, balanced takes that avoid commitment
 
-**Language/Grammar Patterns:**
+**Language/Grammar Patterns (English):**
 7. "Delve" / "delves" — the hallmark AI verb
 8. "Tapestry" / "rich tapestry" / "intricate tapestry"
 9. "Navigating [abstract concept]" — "navigating the landscape", "navigating challenges"
@@ -36,19 +36,27 @@ const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing pa
 18. "Innovative" / "cutting-edge" / "groundbreaking"
 19. "Robust" / "scalable" / "dynamic"
 
+**Language/Grammar Patterns (Chinese):**
+20. Hard-banned words: 此外, 织锦, 格局, 标志着, 毋庸置疑, 举足轻重, 淋漓尽致, 相得益彰, 薪火相传, 砥砺前行
+21. Soft-constraint overuse (≥3/paragraph without evidence): 至关重要, 关键, 核心, 赋能, 助力, 驱动, 引领, 打造, 高效, 智能
+22. Negative parallelisms: "不是...而是...不是...而是..."
+23. Forced tripartite: "不仅...还...更..."
+24. Em-dash overuse: more than 1 per 500 characters
+
 **Style Patterns:**
-20. Every paragraph starts with a topic sentence
-21. Transition sentences between every paragraph
-22. Lists of exactly 3 items everywhere
-23. Definitions followed by examples in the same rigid pattern
-24. No voice — reads like an encyclopedia entry
-25. Perfect grammar with zero personality
+25. Every paragraph starts with a topic sentence
+26. Transition sentences between every paragraph
+27. Lists of exactly 3 items everywhere
+28. Definitions followed by examples in the same rigid pattern
+29. No voice — reads like an encyclopedia entry
+30. Perfect grammar with zero personality
 
 **Communication Patterns:**
-26. Over-explaining obvious concepts
-27. Restating the same point with different words
-28. Apologizing or hedging before making a point ("While it may seem...")
-29. Ending with a call-to-action or inspirational note
+31. Over-explaining obvious concepts
+32. Restating the same point with different words
+33. Apologizing or hedging before making a point ("While it may seem...")
+34. Ending with a call-to-action or inspirational note
+35. Paragraphs outside 80-300 Chinese character range
 
 For each pattern found, quote the specific text and explain why it feels AI-generated. Be thorough — your audit determines rewrite quality.
 
@@ -86,9 +94,11 @@ const REWRITE_PROMPT = `You are an expert human writer. Rewrite the following te
 
 ## Anti-Pattern Checklist
 Before finalizing, verify NONE of these remain:
-- "delve", "tapestry", "realm", "pivotal", "foster", "seamless", "empower", "robust", "multifaceted"
-- "it's worth noting", "importantly", "in conclusion"
-- Every paragraph starting with a topic sentence
+  - "delve", "tapestry", "realm", "pivotal", "foster", "seamless", "empower", "robust", "multifaceted"
+  - "it's worth noting", "importantly", "in conclusion"
+  - Chinese hard-banned: 此外, 织锦, 格局, 标志着, 毋庸置疑, 举足轻重, 淋漓尽致, 相得益彰, 薪火相传, 砥砺前行
+  - Chinese soft-constraint overuse: 至关重要, 赋能, 助力, 驱动, 引领 (max 2 per paragraph)
+  - Every paragraph starting with a topic sentence
 - Lists of exactly 3 items
 - Hedging before every claim
 - Symmetrical paragraph lengths

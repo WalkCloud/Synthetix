@@ -23,7 +23,12 @@ export async function GET(
 
   try {
     const content = await storage.readMarkdown(id, user.id);
-    return NextResponse.json({ success: true, data: { content } });
+    // Rewrite relative image paths to absolute API paths
+    const rewritten = content.replace(
+      /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
+      `![$1](/api/v1/documents/${id}/images/$2)`
+    );
+    return NextResponse.json({ success: true, data: { content: rewritten } });
   } catch {
     return NextResponse.json(
       { success: false, error: "Content not yet available" },

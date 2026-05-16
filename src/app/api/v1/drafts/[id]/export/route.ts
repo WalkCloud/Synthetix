@@ -110,7 +110,7 @@ export async function POST(
       });
     }
 
-    const svgInlinedMarkdown = await inlineSvgImages(markdown);
+    const svgInlinedMarkdown = await inlineAssetImages(markdown);
 
     // Write temp markdown for Python converter
     if (!fs.existsSync(TMP_DIR)) {
@@ -197,7 +197,7 @@ function runExport(input: string, output: string, format: string): Promise<void>
   });
 }
 
-async function inlineSvgImages(markdown: string): Promise<string> {
+async function inlineAssetImages(markdown: string): Promise<string> {
   const imgRe = /!\[([^\]]*)\]\(([^)]*\/assets\/[^)]*\/serve)\)/g;
   const matches = [...markdown.matchAll(imgRe)];
 
@@ -217,10 +217,18 @@ async function inlineSvgImages(markdown: string): Promise<string> {
 
     try {
       const filePath = getAssetFilePath(asset.path);
-      const svgContent = fs.readFileSync(filePath, "utf-8");
-      const base64 = Buffer.from(svgContent).toString("base64");
-      const dataUri = `data:image/svg+xml;base64,${base64}`;
-      result = result.replace(match[0], `![${alt}](${dataUri})`);
+
+      if (asset.mimeType === "image/png" || asset.path.endsWith(".png")) {
+        const fileContent = fs.readFileSync(filePath);
+        const base64 = fileContent.toString("base64");
+        const dataUri = `data:image/png;base64,${base64}`;
+        result = result.replace(match[0], `![${alt}](${dataUri})`);
+      } else {
+        const svgContent = fs.readFileSync(filePath, "utf-8");
+        const base64 = Buffer.from(svgContent).toString("base64");
+        const dataUri = `data:image/svg+xml;base64,${base64}`;
+        result = result.replace(match[0], `![${alt}](${dataUri})`);
+      }
     } catch {
       result = result.replace(match[0], `*${alt}（图片待生成）*`);
     }
