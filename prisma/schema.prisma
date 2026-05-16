@@ -235,6 +235,8 @@ model Section {
   modelA          String?  @map("model_a")
   modelB          String?  @map("model_b")
   selectedModel   String?  @map("selected_model")
+  ragMode         String   @default("auto") @map("rag_mode")
+  ragDocumentIds  String?  @map("rag_document_ids")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

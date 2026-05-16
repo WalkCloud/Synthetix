@@ -63,13 +63,16 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     }
 
     const data = (await response.json()) as {
-      choices: Array<{ message: { content: string } }>;
+      choices: Array<{ message: { content: string; reasoning_content?: string } }>;
       usage: { prompt_tokens: number; completion_tokens: number };
       model: string;
     };
 
+    const msg = data.choices[0]?.message;
+    const content = msg?.content || msg?.reasoning_content || "";
+
     return {
-      content: data.choices[0]?.message?.content ?? "",
+      content,
       inputTokens: data.usage?.prompt_tokens ?? 0,
       outputTokens: data.usage?.completion_tokens ?? 0,
       model: data.model ?? params.model,

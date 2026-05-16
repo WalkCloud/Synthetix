@@ -8,6 +8,7 @@ interface ConstraintsBarProps {
   generationMode: GenerationMode;
   wordLimit: number;
   additionalRequirements: string;
+  estimatedWords?: number | null;
   models: any[];
   selectedModelA: string;
   selectedModelB: string;
@@ -25,6 +26,7 @@ export function ConstraintsBar({
   generationMode,
   wordLimit,
   additionalRequirements,
+  estimatedWords,
   models,
   selectedModelA,
   selectedModelB,
@@ -60,7 +62,7 @@ export function ConstraintsBar({
           </Select>
         </div>
 
-        <div className="w-[100px]">
+        <div className="w-[120px]">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
             Word Limit
           </label>
@@ -68,6 +70,7 @@ export function ConstraintsBar({
             type="number"
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             value={wordLimit}
+            placeholder={estimatedWords ? `Recommended ${estimatedWords}` : "500"}
             onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
           />
         </div>
@@ -87,6 +90,29 @@ export function ConstraintsBar({
           </Select>
         </div>
 
+        {/* Model selection for single mode */}
+        {generationMode === "single" && (
+          <div className="min-w-[150px] flex-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Model
+            </label>
+            <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
+              <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
+                <SelectValue placeholder="Auto Default">
+                  {selectedModelA && selectedModelA !== "auto"
+                    ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
+                    : "Auto Default"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto Default</SelectItem>
+                {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Model selection for compare mode */}
         {generationMode === "compare" && (
           <>
             <div className="min-w-[150px] flex-1">
@@ -137,7 +163,10 @@ export function ConstraintsBar({
           <input
             type="text"
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
-            placeholder="e.g., Include sequence diagrams..."
+            placeholder={estimatedWords
+              ? `Recommended ${estimatedWords} words, e.g., "use bullet points, include examples"...`
+              : "e.g., Include sequence diagrams..."
+            }
             value={additionalRequirements}
             onChange={(e) => onAdditionalRequirementsChange(e.target.value)}
           />

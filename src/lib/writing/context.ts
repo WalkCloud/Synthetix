@@ -38,40 +38,6 @@ function buildSystemMessage(): ChatMessage {
     content: [
       "You are a professional document writer. Your task is to write complete sections for normal business, technical, research, or analytical documents.",
       "",
-      "## CRITICAL: DIAGRAM OUTPUT FORMAT",
-      "When writing about system architecture, technical processes, data flows, deployment topology, component relationships, or sequences, you MUST embed diagram request blocks directly in your output text to visualize the structure or flow. These blocks will be parsed and rendered as actual diagrams.",
-      "",
-      "Diagram request format (output this exact syntax inline in your text):",
-      "[DIAGRAM_REQUEST:",
-      "type=architecture",
-      "title=<diagram title in the same language as the document>",
-      "purpose=<what the diagram shows>",
-      "placement=after_current_paragraph",
-      "nodes=<comma-separated key entities>",
-      "flows=<comma-separated relationships using ->>",
-      "]",
-      "",
-      "Example (embedded after a paragraph about platform layers):",
-      "The platform uses a three-layer architecture. Each layer handles a specific domain.",
-      "[DIAGRAM_REQUEST:",
-      "type=architecture",
-      "title=平台分层架构图",
-      "purpose=Show the three-layer architecture: infrastructure, platform, and application management",
-      "placement=after_current_paragraph",
-      "nodes=基础设施层,容器平台层,应用管理层",
-      "flows=基础设施层->容器平台层,容器平台层->应用管理层",
-      "]",
-      "The infrastructure layer provides compute and storage resources...",
-      "",
-      "Rules:",
-      "- MUST include diagram requests for sections about architecture, processes, flows, deployment, components, sequences, or any technical structure.",
-      "- Do NOT include diagram requests for purely narrative, analytical, policy, or summary sections.",
-      "- Place each diagram request immediately after the paragraph that describes the concept it visualizes.",
-      "- At most 2 diagram requests per section.",
-      "- Diagram type must be one of: architecture, flowchart, data-flow, deployment, component, sequence, comparison, timeline, security.",
-      "",
-      "---",
-      "",
       "The reference material is provided only to help you understand the topic, facts, terminology, and background. Do not expose the existence of the reference material in the final text.",
       "",
       "Writing goals:",
@@ -105,6 +71,24 @@ function buildSystemMessage(): ChatMessage {
       "- Do not over-explain obvious concepts.",
       "- Do not end with a generic inspirational summary or call to action.",
       "",
+      "## HARD-BANNED WORDS (never use these):",
+      "- 此外 / 织锦 / 格局 / 不可磨灭的印记 / 标志着 / 毋庸置疑 / 举足轻重",
+      "- 淋漓尽致 / 相得益彰 / 薪火相传 / 砥砺前行 / 鸿篇巨制 / 匠心独运",
+      "- 蔚为大观 / 异彩纷呈 / 引领风潮 / 翻天覆地 / 跨越式发展",
+      "- If you catch yourself using any of the above, rephrase immediately.",
+      "",
+      "## SOFT-CONSTRAINT WORDS (max 2 occurrences per paragraph without concrete evidence):",
+      "- 至关重要 / 关键 / 核心 / 赋能 / 助力 / 驱动 / 引领 / 打造",
+      "- 高效 / 智能 / 全面 / 一站式 / 端到端 / 无缝衔接",
+      "- Each occurrence must be backed by specific data, metrics, or concrete examples.",
+      "",
+      "## PARAGRAPH RULES:",
+      "- Each paragraph must be 80-300 Chinese characters (or equivalent in English).",
+      "- Every paragraph must have a clear topic sentence or transitional phrase.",
+      "- Avoid forced tripartite structures (\"不仅...还...更...\").",
+      "- Avoid negative parallelisms (\"不是...而是...不是...而是...\").",
+      "- Avoid em-dash overuse. Use at most 1 em-dash per 500 characters.",
+      "",
       "Structure rules:",
       "- Follow the target section scope. Do not write content for other chapters.",
       "- If the section is a parent or overview section, write a concise overview and avoid duplicating details that belong in child sections.",
@@ -119,6 +103,19 @@ function buildSystemMessage(): ChatMessage {
       "- Do not include a bibliography, citation list, or reference list unless the user explicitly requests one.",
       "- Produce output as plain text with Markdown formatting for structure.",
       "- Match the estimated word count as closely as possible without sacrificing quality.",
+      "",
+      "## DIAGRAM SYNTAX (use ONLY when explicitly instructed below)",
+      "If the user message below explicitly asks you to include a diagram, embed it inline using this syntax:",
+      "[DIAGRAM_REQUEST:",
+      "type=<architecture|flowchart|data-flow|deployment|component|sequence|comparison|timeline|security>",
+      "title=<diagram title>",
+      "purpose=<what the diagram shows>",
+      "placement=after_current_paragraph",
+      "nodes=<comma-separated key entities>",
+      "flows=<comma-separated relationships using ->>",
+      "]",
+      "Place the diagram block immediately after the paragraph that describes the relevant concept.",
+      "Do NOT include a diagram unless the user message explicitly asks you to.",
     ].join("\n"),
   };
 }
@@ -133,7 +130,21 @@ function buildOutlineSummary(draft: ContextInput["draft"]): string {
 
   try {
     const parsed = JSON.parse(draft.outline) as unknown;
-    if (Array.isArray(parsed)) {
+
+    if (typeof parsed === "object" && parsed !== null && "sections" in parsed) {
+      const outlineData = parsed as { sections: { num: string; title: string; children?: { num: string; title: string }[] }[] };
+      const lines: string[] = ["Outline (hierarchy - parent sections marked with ▶):"];
+      for (const section of outlineData.sections) {
+        const hasChildren = section.children && section.children.length > 0;
+        lines.push(`  ${hasChildren ? "▶" : " "} ${section.num} ${section.title}${hasChildren ? " (parent - do NOT write child section content)" : ""}`);
+        if (section.children) {
+          for (const child of section.children) {
+            lines.push(`      ${child.num} ${child.title} (separate section - do NOT include under parent)`);
+          }
+        }
+      }
+      outlineEntries.push(lines.join("\n"));
+    } else if (Array.isArray(parsed)) {
       const sectionTitles = parsed
         .map((item: unknown, index: number) => {
           if (typeof item === "object" && item !== null && "title" in item) {
@@ -237,17 +248,23 @@ function buildConstraintsBlock(
 }
 
 const DIAGRAM_KEYWORDS = [
-  "架构", "architecture", "拓扑", "topology", "部署", "deployment",
-  "流程", "flow", "workflow", "数据流", "data.?flow", "组件", "component",
-  "时序", "sequence", "系统设计", "system.?design", "模块", "module",
-  "接口", "interface", "集成", "integration", "网络", "network",
-  "微服务", "microservice", "pipeline", "管道", "交互", "interaction",
-  "调用", "call", "通信", "communication", "协议", "protocol",
-  "安全架构", "security.?architecture", "技术方案", "technical.?solution",
-  "平台架构", "platform.?architecture", "服务架构", "service.?architecture",
-  "容器化", "container", "devops", "流水线", "高可用", "ha.?design",
-  "容灾", "disaster.?recovery", "集群", "cluster", "编排", "orchestrat",
-  "分层", "layered", "中间件", "middleware", "迁移", "migration.?strateg",
+  "架构设计", "architecture",
+  "拓扑", "topology",
+  "部署架构", "deployment architecture",
+  "流程图", "flowchart", "flow diagram",
+  "数据流", "data flow",
+  "组件", "component diagram",
+  "时序", "sequence",
+  "整体分层", "layered architecture",
+  "网络模型", "network model", "network topology",
+  "微服务", "microservice",
+  "集群部署", "cluster deployment",
+  "高可用架构", "high availability",
+  "容灾", "disaster recovery",
+  "全流程", "end-to-end", "pipeline",
+  "分阶段实施", "phased", "milestone timeline",
+  "工具体系", "toolchain",
+  "多租户", "multi-tenant",
 ];
 
 function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
@@ -276,6 +293,32 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
     userParts.push(completedSummary);
   }
 
+  // detect if target section is a parent (has child sections in outline)
+  let isParent = false;
+  try {
+    const parsed = JSON.parse(input.draft.outline) as unknown;
+    if (typeof parsed === "object" && parsed !== null && "sections" in parsed) {
+      const outlineData = parsed as { sections: { num: string; title: string; children?: { num: string; title: string }[] }[] };
+      const cleanTitle = input.section.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
+      for (const s of outlineData.sections) {
+        const cleanS = s.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
+        if (cleanS === cleanTitle && s.children && s.children.length > 0) {
+          isParent = true;
+          break;
+        }
+        if (s.children) {
+          for (const c of s.children) {
+            const cleanC = c.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
+            if (cleanC === cleanTitle) {
+              isParent = false;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
   const ragSection = buildRagReferencesSection(input.ragReferences);
   if (ragSection) {
     userParts.push("");
@@ -290,15 +333,22 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
     userParts.push(buildConstraintsBlock(input.constraints));
   }
 
-  userParts.push("");
-  userParts.push(
-    "Write the final reader-facing content for the target section now. Use the reference material only as background support, and do not mention the reference material itself."
-  );
+  if (isParent) {
+    userParts.push("");
+    userParts.push(
+      "IMPORTANT: This section has child subsections (indicated with ▶ in the outline above). Write a CONCISE OVERVIEW that introduces the topic scope at a high level. Do NOT write detailed content for child subsections — those will be generated separately under their own titles. Keep it brief (200-500 words recommended)."
+    );
+  } else {
+    userParts.push("");
+    userParts.push(
+      "Write the final reader-facing content for the target section now. Use the reference material only as background support, and do not mention the reference material itself. You may use ## sub-headings to structure the content within this section if appropriate."
+    );
+  }
 
   if (sectionNeedsDiagram(input.section)) {
     userParts.push("");
     userParts.push(
-      "IMPORTANT: This section is about a technical structure (architecture, process, flow, or system). You MUST include at least one [DIAGRAM_REQUEST:...] block in your output. For example, after describing the system layers, insert:\n[DIAGRAM_REQUEST:\ntype=architecture\ntitle=<appropriate title>\npurpose=<what it shows>\nplacement=after_current_paragraph\nnodes=<key entities>\nflows=<key relationships using ->>\n]\nPlace it right after the paragraph that introduces the relevant concept."
+      "The system has detected that this section covers a structural or visual topic. Please include ONE [DIAGRAM_REQUEST:...] block in your output after the paragraph that best describes the architecture/flow/topology. Use the syntax documented in the system prompt. If the section content ends up being conceptual rather than structural, you may skip the diagram."
     );
   }
 

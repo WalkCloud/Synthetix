@@ -4,17 +4,21 @@ import { segmentContent } from "@/lib/writing/diagram";
 import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
 
 const DIAGRAM_MARKER_RE = /\[DIAGRAM:([a-f0-9-]+)\]/g;
+const IMAGE_MARKER_RE = /\[IMAGE:([a-f0-9-]+)\]/g;
 
 export function ContentRenderer({
   content,
   draftId,
   sectionId,
+  renderVer,
 }: {
   content: string;
   draftId: string;
   sectionId: string;
+  renderVer?: number;
 }) {
   const segments = segmentContent(content);
+  const v = renderVer ?? Date.now();
 
   return (
     <>
@@ -23,15 +27,26 @@ export function ContentRenderer({
           return <DiagramPlaceholder key={`dg-${i}`} diagram={seg.diagram} />;
         }
 
-        const parts: Array<{ type: "text" | "diagram"; content: string; assetId?: string }> = [];
+        if (seg.kind === "image") {
+          return (
+            <div key={`img-req-${i}`} className="my-3 p-3 border border-dashed border-blue-300 rounded-lg bg-blue-50/50 text-center">
+              <p className="text-sm text-blue-600 font-medium">📷 {seg.image.title}</p>
+              <p className="text-xs text-muted-foreground mt-1">图片待生成</p>
+            </div>
+          );
+        }
+
+        const parts: Array<{ type: "text" | "diagram" | "image"; content: string; assetId?: string }> = [];
         let lastIndex = 0;
         let match: RegExpExecArray | null;
-        DIAGRAM_MARKER_RE.lastIndex = 0;
-        while ((match = DIAGRAM_MARKER_RE.exec(seg.content)) !== null) {
+
+        const ALL_MARKER_RE = /\[(DIAGRAM|IMAGE):([a-f0-9-]+)\]/g;
+        ALL_MARKER_RE.lastIndex = 0;
+        while ((match = ALL_MARKER_RE.exec(seg.content)) !== null) {
           if (match.index > lastIndex) {
             parts.push({ type: "text", content: seg.content.slice(lastIndex, match.index) });
           }
-          parts.push({ type: "diagram", content: match[0], assetId: match[1] });
+          parts.push({ type: match[1].toLowerCase() as "diagram" | "image", content: match[0], assetId: match[2] });
           lastIndex = match.index + match[0].length;
         }
         if (lastIndex < seg.content.length) {
@@ -54,7 +69,12 @@ export function ContentRenderer({
               part.type === "diagram" && part.assetId ? (
                 <DiagramView
                   key={`dv-${i}-${j}`}
-                  serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${part.assetId}/serve`}
+                  serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${part.assetId}/serve?v=${v}`}
+                />
+              ) : part.type === "image" && part.assetId ? (
+                <DiagramView
+                  key={`iv-${i}-${j}`}
+                  serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${part.assetId}/serve?v=${v}`}
                 />
               ) : (
                 part.content

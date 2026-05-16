@@ -1,14 +1,14 @@
 import { db } from "@/lib/db";
-import { parseDiagramRequests, type DiagramRequest } from "@/lib/writing/diagram";
+import { parseDiagramRequests, type DiagramRequest, type ImageRequest } from "@/lib/writing/diagram";
 
 export async function persistDiagramAssets(
   draftId: string,
   sectionId: string,
   content: string
 ): Promise<{ assets: number; cleaned: string }> {
-  const { diagrams, cleaned } = parseDiagramRequests(content);
+  const { diagrams, images, cleaned } = parseDiagramRequests(content);
 
-  if (diagrams.length === 0) {
+  if (diagrams.length === 0 && images.length === 0) {
     return { assets: 0, cleaned };
   }
 
@@ -32,7 +32,25 @@ export async function persistDiagramAssets(
     });
   }
 
-  return { assets: diagrams.length, cleaned };
+  for (const image of images) {
+    if (!image.prompt) continue;
+    await db.sectionAsset.create({
+      data: {
+        draftId,
+        sectionId,
+        type: "image",
+        title: image.title,
+        description: image.prompt.slice(0, 200),
+        prompt: image.raw,
+        status: "pending",
+        metadata: JSON.stringify({
+          imagePrompt: image.prompt,
+        }),
+      },
+    });
+  }
+
+  return { assets: diagrams.length + images.length, cleaned };
 }
 
 export async function getSectionAssets(draftId: string, sectionId: string) {
@@ -49,7 +67,7 @@ export async function deleteSectionAssets(draftId: string, sectionId: string) {
 }
 
 export function replaceDiagramBlocksWithPlaceholders(content: string): string {
-  return content.replace(
+  let result = content.replace(
     /\[DIAGRAM_REQUEST:[\s\S]*?\]/g,
     (match) => {
       const parsed = parseDiagramRequests(match);
@@ -58,4 +76,16 @@ export function replaceDiagramBlocksWithPlaceholders(content: string): string {
       return `[图片占位符 — ${d.title}：图表待生成]`;
     }
   );
+
+  result = result.replace(
+    /\[IMAGE_REQUEST:[\s\S]*?\]/g,
+    (match) => {
+      const parsed = parseDiagramRequests(match);
+      if (parsed.images.length === 0) return match;
+      const img = parsed.images[0];
+      return `[图片占位符 — ${img.title}：图片待生成]`;
+    }
+  );
+
+  return result;
 }
