@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
-import { parseDiagramRequests } from "@/lib/writing/diagram";
+import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
 
@@ -18,7 +18,7 @@ export async function POST(
 
   const { id: draftId, secId: sectionId } = await params;
 
-  let body: { constraints?: { wordLimit?: number; additionalRequirements?: string } };
+  let body: { constraints?: { wordLimit?: number; additionalRequirements?: string }; modelAConfigId?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -68,7 +68,8 @@ export async function POST(
           section,
           completedSections,
           user.id,
-          constraints
+          constraints,
+          body.modelAConfigId
         );
 
         modelConfigId = result.modelConfigId;
@@ -112,14 +113,14 @@ export async function POST(
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
 
-        const { diagrams, cleaned } = parseDiagramRequests(fullContent);
+        const { diagrams, images, cleaned } = parseDiagramRequests(fullContent);
 
         let finalContent = cleaned;
         let assetCount = 0;
 
-        console.log(`[generate] section="${section.title}" diagrams=${diagrams.length}`);
+        console.log(`[generate] section="${section.title}" diagrams=${diagrams.length} images=${images.length}`);
 
-        if (diagrams.length > 0) {
+        if (diagrams.length > 0 || images.length > 0) {
           try {
             await db.sectionAsset.deleteMany({ where: { sectionId } });
             for (const diagram of diagrams) {
@@ -141,7 +142,22 @@ export async function POST(
                 },
               });
             }
-            console.log(`[generate] assets created: ${diagrams.length}`);
+            for (const image of images) {
+              if (!image.prompt) continue;
+              await db.sectionAsset.create({
+                data: {
+                  draftId,
+                  sectionId,
+                  type: "image",
+                  title: image.title,
+                  description: image.prompt.slice(0, 200),
+                  prompt: image.raw,
+                  status: "pending",
+                  metadata: JSON.stringify({ imagePrompt: image.prompt }),
+                },
+              });
+            }
+            console.log(`[generate] assets created: ${diagrams.length} diagrams, ${images.length} images`);
           } catch (assetErr) {
             console.error(`[generate] asset creation failed:`, assetErr);
           }
@@ -156,7 +172,7 @@ export async function POST(
           },
         });
 
-        if (diagrams.length > 0) {
+        if (diagrams.length > 0 || images.length > 0) {
           try {
             const genResult = await generateAllPendingAssets(draftId, sectionId);
             console.log(`[generate] SVG gen: total=${genResult.total} ok=${genResult.succeeded} fail=${genResult.failed}`);
@@ -167,16 +183,30 @@ export async function POST(
                 orderBy: { createdAt: "asc" },
               });
 
-              const markers = readyAssets.map((a) => `\n\n[DIAGRAM:${a.id}]\n\n`).join("");
-              const markedContent = finalContent + markers;
+              // Build position-aware content: replace diagram/image requests in-place
+              const segments = segmentContent(fullContent);
+              const diagramAssets = readyAssets.filter((a) => a.type === "diagram" || a.type === "svg");
+              const imageAssets = readyAssets.filter((a) => a.type === "image");
+              let dIdx = 0, iIdx = 0;
+              const positionedParts: string[] = [];
+              for (const seg of segments) {
+                if (seg.kind === "text") {
+                  positionedParts.push(seg.content);
+                } else if (seg.kind === "diagram" && dIdx < diagramAssets.length) {
+                  positionedParts.push(`\n\n[DIAGRAM:${diagramAssets[dIdx++].id}]\n\n`);
+                } else if (seg.kind === "image" && iIdx < imageAssets.length) {
+                  positionedParts.push(`\n\n[IMAGE:${imageAssets[iIdx++].id}]\n\n`);
+                }
+              }
+
+              const markedContent = positionedParts.join("");
+              assetCount = readyAssets.length;
 
               await db.section.update({
                 where: { id: sectionId },
                 data: { content: markedContent },
               });
-
-              assetCount = readyAssets.length;
-              console.log(`[generate] markers inserted: ${readyAssets.length} assets`);
+              console.log(`[generate] markers placed in-position: ${readyAssets.length} assets`);
             }
           } catch (genErr) {
             console.error(`[generate] SVG generation failed:`, genErr);

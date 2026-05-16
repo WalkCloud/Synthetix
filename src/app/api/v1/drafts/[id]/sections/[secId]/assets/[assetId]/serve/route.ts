@@ -25,11 +25,17 @@ export async function GET(
   try {
     const filePath = getAssetFilePath(asset.path);
     const data = await fs.readFile(filePath);
+    const etag = `"${asset.id}-${asset.updatedAt?.getTime() || Date.now()}"`;
+
+    if (_request.headers.get("If-None-Match") === etag) {
+      return new Response(null, { status: 304, headers: { "ETag": etag } });
+    }
 
     return new Response(data, {
       headers: {
         "Content-Type": asset.mimeType || "image/svg+xml",
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "no-cache, must-revalidate",
+        "ETag": etag,
       },
     });
   } catch {

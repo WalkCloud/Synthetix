@@ -19,6 +19,15 @@ interface Reference {
   sourceInfo?: string;
 }
 
+interface SectionAssetItem {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  mimeType?: string | null;
+  prompt?: string | null;
+}
+
 export default function WritingPage({
   params,
 }: {
@@ -39,6 +48,7 @@ export default function WritingPage({
   const [loading, setLoading] = useState(true);
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [referenceCollapsed, setReferenceCollapsed] = useState(false);
+  const [sectionAssets, setSectionAssets] = useState<SectionAssetItem[]>([]);
   
   // Model selection states
   const [models, setModels] = useState<any[]>([]);
@@ -46,6 +56,28 @@ export default function WritingPage({
   const [selectedModelB, setSelectedModelB] = useState<string>("");
 
   const activeSection = draft?.sections.find((s) => s.id === activeSectionId) || null;
+
+  const loadAssets = useCallback(async () => {
+    if (!activeSectionId) { setSectionAssets([]); return; }
+    try {
+      const res = await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}/assets`);
+      const data = await res.json();
+      if (data.success) {
+        setSectionAssets(
+          (data.data || []).map((a: any) => ({
+            id: a.id,
+            type: a.type,
+            title: a.title,
+            status: a.status,
+            mimeType: a.mimeType,
+            prompt: a.prompt,
+          }))
+        );
+      }
+    } catch {}
+  }, [id, activeSectionId]);
+
+  useEffect(() => { loadAssets(); }, [loadAssets]);
 
   const loadDraft = useCallback(async () => {
     const res = await fetch(`/api/v1/drafts/${id}`);
@@ -110,7 +142,7 @@ export default function WritingPage({
 
       const payload = {
         constraints,
-        modelAConfigId: mode === "compare" && selectedModelA && selectedModelA !== "auto" ? selectedModelA : undefined,
+        modelAConfigId: selectedModelA && selectedModelA !== "auto" ? selectedModelA : undefined,
         modelBConfigId: mode === "compare" && selectedModelB && selectedModelB !== "auto" ? selectedModelB : undefined,
       };
 
@@ -205,6 +237,8 @@ export default function WritingPage({
   const handleConfirm = useCallback(async () => {
     if (!activeSectionId) return;
     setIsConfirming(true);
+    setStreamingContent("");
+    setIsThinking(false);
     try {
       const res = await fetch(
         `/api/v1/drafts/${id}/sections/${activeSectionId}/confirm`,
@@ -229,8 +263,21 @@ export default function WritingPage({
   }, [activeSectionId, id, draft, loadDraft]);
 
   const handleRegenerate = useCallback(() => {
+    setStreamingContent("");
+    setIsThinking(false);
     handleGenerate("single");
   }, [handleGenerate]);
+
+  const handleUnlock = useCallback(async () => {
+    if (!activeSectionId) return;
+    try {
+      const res = await fetch(
+        `/api/v1/drafts/${id}/sections/${activeSectionId}/unlock`,
+        { method: "POST" }
+      );
+      if (res.ok) await loadDraft();
+    } catch {}
+  }, [activeSectionId, id, loadDraft]);
 
   const handleHumanize = useCallback(async () => {
     if (!activeSectionId) return;
@@ -277,6 +324,33 @@ export default function WritingPage({
     await fetch(`/api/v1/drafts/${id}/assemble`, { method: "POST" });
     await loadDraft();
   }, [id, loadDraft]);
+
+  const handleRagConfigChange = useCallback(async (ragMode: string, ragDocumentIds: string[]) => {
+    if (!activeSectionId) return;
+    try {
+      await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ragMode, ragDocumentIds }),
+      });
+      await loadDraft();
+    } catch {}
+  }, [id, activeSectionId, loadDraft]);
+
+  const handleInsertAsset = useCallback(async (assetId: string) => {
+    if (!activeSectionId || !activeSection) return;
+    const current = activeSection.content || "";
+    const marker = `\n[IMAGE:${assetId}]\n`;
+    const updated = current + marker;
+    try {
+      await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: updated }),
+      });
+      await loadDraft();
+    } catch {}
+  }, [id, activeSectionId, activeSection, loadDraft]);
 
   if (loading) {
     return (
@@ -417,11 +491,13 @@ export default function WritingPage({
             onConfirm={handleConfirm}
             onRegenerate={handleRegenerate}
             onHumanize={handleHumanize}
+            onUnlock={handleUnlock}
             isGenerating={isGenerating}
             isThinking={isThinking}
             isHumanizing={isHumanizing}
             isConfirming={isConfirming}
             streamingContent={streamingContent}
+            assetRenderVer={sectionAssets[0]?.prompt?.length ?? sectionAssets.length}
           />
         </div>
 
@@ -431,6 +507,15 @@ export default function WritingPage({
               references={references}
               sectionNotes={sectionNotes}
               onSectionNotesChange={setSectionNotes}
+              draftId={id}
+              sectionId={activeSectionId}
+              sectionContent={activeSection?.content || ""}
+              sectionRagMode={activeSection?.ragMode || "auto"}
+              sectionRagDocumentIds={(() => { try { return JSON.parse(activeSection?.ragDocumentIds || "[]"); } catch { return []; } })()}
+              assets={sectionAssets}
+              onAssetChanged={loadAssets}
+              onRagConfigChange={handleRagConfigChange}
+              onInsertAsset={handleInsertAsset}
             />
           </div>
         </div>

@@ -63,6 +63,8 @@ export interface SectionMeta {
   modelA: string | null;
   modelB: string | null;
   selectedModel: string | null;
+  ragMode: string;
+  ragDocumentIds: string | null;
   createdAt: string;
   updatedAt: string;
   children?: SectionMeta[];

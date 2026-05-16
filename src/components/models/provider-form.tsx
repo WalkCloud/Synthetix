@@ -7,7 +7,7 @@ import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./
 interface FormModelConfig {
   modelId: string;
   modelName: string;
-  modelType: "llm" | "embedding";
+  modelType: "llm" | "embedding" | "image";
   capabilities: string[];
   contextWindow: number;
   maxOutputTokens: number | null;
@@ -20,7 +20,7 @@ interface FormModelConfig {
 
 interface ProviderFormProps {
   provider: ProviderType | null;
-  tab: "llm" | "embedding";
+  tab: "llm" | "embedding" | "image";
   onClose: () => void;
 }
 
@@ -48,7 +48,7 @@ function parseCapabilities(raw: string): string[] {
 
 function toFormModel(m: ApiModelConfig): FormModelConfig {
   const caps = parseCapabilities(m.capabilities);
-  const modelType = caps.includes("embedding") || caps.includes("embed") ? "embedding" : "llm";
+  const modelType = caps.includes("embedding") || caps.includes("embed") ? "embedding" : caps.includes("image_generation") ? "image" : "llm";
   return {
     modelId: m.modelId,
     modelName: m.modelName,
@@ -71,7 +71,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
   const [apiBaseUrl, setApiBaseUrl] = useState(provider?.apiBaseUrl || "");
   const [apiKey, setApiKey] = useState(provider?.apiKey || "");
   const isLocal = providerType === "ollama" || providerType === "custom";
-  const resolvedModelType = tab === "embedding" ? "embedding" : "llm" as const;
+  const resolvedModelType = tab === "embedding" ? "embedding" : tab === "image" ? "image" : "llm" as const;
   const [models, setModels] = useState<FormModelConfig[]>(
     provider?.models?.length
       ? provider.models.map(toFormModel)
@@ -99,7 +99,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
     setSaving(true);
 
     const cleanModels = models.map((m) => {
-      const caps = m.modelType === "embedding" ? ["embedding"] : ["chat"];
+      const caps = m.modelType === "embedding" ? ["embedding"] : m.modelType === "image" ? ["image_generation"] : ["chat"];
       const cleaned: Record<string, unknown> = {
         ...m,
         capabilities: caps,
@@ -196,19 +196,26 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model ID</label>
                   <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
-                    value={m.modelId} onChange={(e) => updateModel(i, "modelId", e.target.value)} placeholder="e.g. qwen2.5:7b" required />
+                    value={m.modelId} onChange={(e) => updateModel(i, "modelId", e.target.value)} placeholder={m.modelType === "image" ? "e.g. dall-e-3" : "e.g. qwen2.5:7b"} required />
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model Name</label>
                   <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
-                    value={m.modelName} onChange={(e) => updateModel(i, "modelName", e.target.value)} placeholder="e.g. Qwen 2.5 7B" required />
+                    value={m.modelName} onChange={(e) => updateModel(i, "modelName", e.target.value)} placeholder={m.modelType === "image" ? "e.g. DALL-E 3" : "e.g. Qwen 2.5 7B"} required />
                 </div>
               </div>
-              <div className="mt-3">
-                <label className="block text-xs text-muted-foreground mb-1">Context Window <span className="font-normal">(optional, auto-detected on test)</span></label>
-                <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
-                  value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
-              </div>
+              {m.modelType !== "image" && (
+                <div className="mt-3">
+                  <label className="block text-xs text-muted-foreground mb-1">Context Window <span className="font-normal">(optional, auto-detected on test)</span></label>
+                  <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                    value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
+                </div>
+              )}
+              {m.modelType === "image" && (
+                <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+                  <p className="text-xs text-blue-700">This model will be used by the <strong>Gen</strong> button in the writing panel to generate images from text prompts via the <code className="bg-blue-100 px-1 rounded">/v1/images/generations</code> API.</p>
+                </div>
+              )}
               {m.modelType === "embedding" && (
                 <div className="mt-3">
                   <label className="block text-xs text-muted-foreground mb-1">Embedding Batch Size <span className="font-normal">(max texts per API call, default 10)</span></label>

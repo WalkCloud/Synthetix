@@ -9,6 +9,10 @@ export interface StorageAdapter {
   readChunk(docId: string, chunkIndex: number, userId: string): Promise<string>;
   deleteDocument(docId: string, userId: string): Promise<void>;
   getDocumentDir(docId: string, userId: string): string;
+  getImagesDir(docId: string, userId: string): string;
+  listImages(docId: string, userId: string): string[];
+  readImage(docId: string, userId: string, filename: string): Buffer | null;
+  getImagePath(docId: string, userId: string, filename: string): string;
 }
 
 const ROOT = process.env.DOCUMENT_ROOT || "./data/documents";
@@ -70,5 +74,32 @@ export class LocalStorageAdapter implements StorageAdapter {
   async deleteDocument(docId: string, userId: string): Promise<void> {
     const dir = this.getDocumentDir(docId, userId);
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  }
+
+  getImagesDir(docId: string, userId: string): string {
+    return path.join(this.getDocumentDir(docId, userId), "images");
+  }
+
+  listImages(docId: string, userId: string): string[] {
+    const dir = this.getImagesDir(docId, userId);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => {
+      const ext = f.split(".").pop()?.toLowerCase() || "";
+      return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"].includes(ext);
+    });
+  }
+
+  readImage(docId: string, userId: string, filename: string): Buffer | null {
+    const filePath = path.join(this.getImagesDir(docId, userId), filename);
+    if (!fs.existsSync(filePath)) return null;
+    // Prevent path traversal
+    const resolved = path.resolve(filePath);
+    const imagesDir = path.resolve(this.getImagesDir(docId, userId));
+    if (!resolved.startsWith(imagesDir)) return null;
+    return fs.readFileSync(filePath);
+  }
+
+  getImagePath(docId: string, userId: string, filename: string): string {
+    return path.join(this.getImagesDir(docId, userId), filename);
   }
 }

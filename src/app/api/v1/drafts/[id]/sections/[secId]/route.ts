@@ -13,6 +13,8 @@ interface UpdateSectionBody {
   content?: string;
   selectedSource?: "a" | "b";
   constraints?: string;
+  ragMode?: "auto" | "manual" | "off";
+  ragDocumentIds?: string[];
 }
 
 export async function GET(
@@ -128,16 +130,24 @@ export async function PUT(
       updateData.wordCount = sourceContent.split(/\s+/).filter(Boolean).length;
       updateData.status = "reviewing";
     } else if (body.content !== undefined) {
-      const { cleaned, diagrams } = parseDiagramRequests(body.content);
+      const { cleaned, diagrams, images } = parseDiagramRequests(body.content);
       updateData.content = cleaned;
       updateData.wordCount = cleaned.split(/\s+/).filter(Boolean).length;
-      if (diagrams.length > 0) {
-        console.warn(`PUT section ${sectionId}: ${diagrams.length} DIAGRAM_REQUEST blocks found in edited content — stripped but not persisted as assets. Re-generate the section to create diagram assets.`);
+      if (diagrams.length > 0 || images.length > 0) {
+        console.warn(`PUT section ${sectionId}: ${diagrams.length} DIAGRAM_REQUEST + ${images.length} IMAGE_REQUEST blocks found in edited content — stripped but not persisted as assets. Re-generate the section to create assets.`);
       }
     }
 
     if (body.constraints !== undefined) {
       updateData.constraints = body.constraints;
+    }
+
+    if (body.ragMode !== undefined) {
+      updateData.ragMode = body.ragMode;
+    }
+
+    if (body.ragDocumentIds !== undefined) {
+      updateData.ragDocumentIds = JSON.stringify(body.ragDocumentIds);
     }
 
     const updatedSection = await db.section.update({

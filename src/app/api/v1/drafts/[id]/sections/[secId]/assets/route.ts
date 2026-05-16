@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
 ): Promise<NextResponse<ApiResponse>> {
   const user = await getAuthUser();
@@ -25,6 +25,16 @@ export async function GET(
   const assets = await db.sectionAsset.findMany({
     where: { draftId, sectionId },
     orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      status: true,
+      mimeType: true,
+      prompt: true,
+      path: true,
+      createdAt: true,
+    },
   });
 
   return NextResponse.json({ success: true, data: assets });
