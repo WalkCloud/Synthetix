@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { resolveModel } from "@/lib/llm/resolve-model";
+import { parseCapabilities } from "@/lib/llm/capabilities";
 import { decrypt } from "@/lib/crypto";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
@@ -135,10 +136,7 @@ export async function generateImageAsset(assetId: string): Promise<ImageGenerati
     const provider = imageModel.provider;
     const configuredModelId = imageModel.modelId;
 
-    const imageCaps = (() => {
-      try { return JSON.parse(imageModel.capabilities as string); } catch { return []; }
-    })();
-    const isImageCapable = Array.isArray(imageCaps) && imageCaps.includes("image_generation");
+    const isImageCapable = parseCapabilities(imageModel.capabilities).includes("image_generation");
 
     let imageBuffer: Buffer | null = null;
 
@@ -162,7 +160,8 @@ export async function generateImageAsset(assetId: string): Promise<ImageGenerati
             candidateModel
           );
           if (imageBuffer) break;
-        } catch {
+        } catch (err) {
+          console.warn(`Image fallback model ${candidateModel} failed:`, err);
           continue;
         }
       }

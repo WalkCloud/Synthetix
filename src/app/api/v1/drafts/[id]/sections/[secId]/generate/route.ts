@@ -225,7 +225,7 @@ export async function POST(
           module: "writing",
           inputTokens: inTokens,
           outputTokens: outTokens,
-        }).catch(() => {});
+        }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
         (async () => {
           try {
@@ -247,7 +247,7 @@ export async function POST(
         await db.section.update({
           where: { id: sectionId },
           data: { status: "failed" },
-        }).catch(() => {});
+        }).catch((err) => { console.warn("Failed to update section status:", err); });
         const message = error instanceof Error ? error.message : "Stream failed";
         try {
           controller.enqueue(

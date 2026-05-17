@@ -1,13 +1,15 @@
+export type UserRole = "admin" | "user";
+
 export interface AuthUser {
   id: string;
   username: string;
   email: string | null;
   displayName: string;
-  role: string;
+  role: UserRole;
 }
 
 export interface JWTPayload {
   userId: string;
   username: string;
-  role: string;
+  role: UserRole;
 }

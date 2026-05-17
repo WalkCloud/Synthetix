@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { OutlinePanel } from "@/components/writing/outline-panel";
 import { EditorPanel } from "@/components/writing/editor-panel";
 import { ReferencePanel } from "@/components/writing/reference-panel";
+import { parseCapabilities } from "@/lib/llm/capabilities";
 import type { DraftMeta, SectionMeta, GenerationMode } from "@/types/writing";
 
 interface DraftDetail extends DraftMeta {
@@ -119,8 +120,7 @@ export default function WritingPage({
         if (data.success) {
           const allModels = data.data.flatMap((p: any) => p.models || []);
           const chatModels = allModels.filter((m: any) => {
-            const caps = typeof m.capabilities === "string" ? JSON.parse(m.capabilities) : (m.capabilities || []);
-            return caps.includes("chat");
+            return parseCapabilities(m.capabilities).includes("chat");
           });
           setModels(chatModels);
         }
@@ -245,22 +245,27 @@ export default function WritingPage({
         { method: "POST" }
       );
       if (res.ok) {
-        await loadDraft();
-        if (draft) {
-          const sections = draft.sections;
-          const currentIdx = sections.findIndex((s) => s.id === activeSectionId);
-          const nextPending = sections
+        // Fetch fresh draft data and use it directly (avoid stale closure)
+        const refresh = await fetch(`/api/v1/drafts/${id}`);
+        const data = await refresh.json();
+        if (data.success) {
+          const freshSections: SectionMeta[] = data.data.sections;
+          setDraft(data.data);
+          const currentIdx = freshSections.findIndex((s) => s.id === activeSectionId);
+          const nextPending = freshSections
             .slice(currentIdx + 1)
             .find(
               (s) => s.status === "pending" || s.status === "failed"
             );
-          if (nextPending) setActiveSectionId(nextPending.id);
+          if (nextPending) {
+            setActiveSectionId(nextPending.id);
+          }
         }
       }
     } finally {
       setIsConfirming(false);
     }
-  }, [activeSectionId, id, draft, loadDraft]);
+  }, [activeSectionId, id]);
 
   const handleRegenerate = useCallback(() => {
     setStreamingContent("");
@@ -332,6 +337,18 @@ export default function WritingPage({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ragMode, ragDocumentIds }),
+      });
+      await loadDraft();
+    } catch {}
+  }, [id, activeSectionId, loadDraft]);
+
+  const handleSaveEdit = useCallback(async (content: string) => {
+    if (!activeSectionId) return;
+    try {
+      await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
       });
       await loadDraft();
     } catch {}
@@ -492,6 +509,7 @@ export default function WritingPage({
             onRegenerate={handleRegenerate}
             onHumanize={handleHumanize}
             onUnlock={handleUnlock}
+            onSaveEdit={handleSaveEdit}
             isGenerating={isGenerating}
             isThinking={isThinking}
             isHumanizing={isHumanizing}

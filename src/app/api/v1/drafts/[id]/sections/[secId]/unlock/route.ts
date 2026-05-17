@@ -36,7 +36,7 @@ export async function POST(
 
     const updated = await db.section.update({
       where: { id: sectionId },
-      data: { status: "pending" },
+      data: { status: "reviewing" },
     });
 
     return NextResponse.json({ success: true, data: updated });

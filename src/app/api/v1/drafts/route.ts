@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { getErrorMessage } from "@/lib/api-helpers";
 import type { ApiResponse, PaginatedResponse } from "@/types/api";
 import type { OutlineData } from "@/types/writing";
 
@@ -22,11 +23,6 @@ function isValidOutline(outline: unknown): outline is OutlineData {
       typeof (section as Record<string, unknown>).num === "string" &&
       typeof (section as Record<string, unknown>).title === "string"
   );
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
 }
 
 type OutlineResult =

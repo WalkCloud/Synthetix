@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { TopologyCanvas } from "@/components/topology/topology-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
-import { TopologyLegend } from "@/components/topology/topology-legend";
 import { TopologyStatsBar } from "@/components/topology/topology-stats";
 import type { TopologyResponse, GraphViewMode } from "@/types/topology";
 
@@ -20,10 +19,10 @@ export default function TopologyPage() {
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [refFilter, setRefFilter] = useState("all");
-  const [groupBy, setGroupBy] = useState("document");
   const [graphMode, setGraphMode] = useState<GraphViewMode>("documents");
-
+  const [kgSearch, setKgSearch] = useState("");
+  const [kgCenter, setKgCenter] = useState("");
+  const kgCacheRef = useRef<TopologyResponse | null>(null);
   useEffect(() => {
     fetch("/api/v1/drafts?limit=100")
       .then((r) => r.json())
@@ -53,46 +52,43 @@ export default function TopologyPage() {
     setLoading(false);
   }, []);
 
-  const loadKnowledgeGraph = useCallback(async () => {
+  const loadKnowledgeGraph = useCallback(async (entity?: string) => {
     setLoading(true);
     setSelectedNodeId(null);
     try {
-      const res = await fetch("/api/v1/knowledge/graph?depth=3&max_nodes=100");
+      const params = new URLSearchParams({ depth: "2", max_nodes: "100", mode: "core" });
+      if (entity) { params.set("entity", entity); params.set("mode", "graph"); }
+      const res = await fetch(`/api/v1/knowledge/graph?${params}`);
       const d = await res.json();
       if (d.success && d.data?.graph) {
         const kg = d.data.graph;
-        setTopology({
-          draft: { id: "kg-root", title: "Knowledge Graph", status: "ready" },
+        const stats = {
+          totalReferences: 0, uniqueDocuments: 0, sectionsWithReferences: 0, totalSections: 0,
+          mostReferencedDoc: null, coverage: "",
+          totalEntities: kg.nodes?.length || 0,
+          totalRelations: kg.edges?.length || 0,
+          leafCount: d.data.leaf_count || 0,
+        };
+        const data: TopologyResponse = {
+          draft: { id: "kg-root", title: entity || "Knowledge Graph", status: "ready" },
           nodes: kg.nodes.map((node: { id: string; label: string; type: string; description: string }) => ({
-            id: node.id,
-            type: "entity" as const,
-            label: node.label,
-            format: "entity",
-            referenceCount: 0,
-            relevanceScore: 0,
-            entityType: node.type,
+            id: node.id, type: "entity" as const,
+            label: node.label || node.id?.slice(0, 30) || "Entity",
+            format: "entity", referenceCount: 0, relevanceScore: 0,
+            entityType: node.type || "entity",
           })),
           edges: kg.edges.map((edge: { source: string; target: string; label: string; weight: number; description: string }) => ({
-            source: edge.source,
-            target: edge.target,
-            weight: edge.weight || 1,
-            sectionIds: [],
-            sectionLabels: [],
+            source: edge.source, target: edge.target,
+            weight: edge.weight || 1, sectionIds: [], sectionLabels: [],
             description: edge.description,
           })),
-          stats: {
-            totalReferences: 0,
-            uniqueDocuments: 0,
-            sectionsWithReferences: 0,
-            totalSections: 0,
-            mostReferencedDoc: null,
-            coverage: "",
-            totalEntities: kg.nodes?.length || 0,
-            totalRelations: kg.edges?.length || 0,
-          },
-        });
+          stats,
+        };
+        setTopology(data);
+        // Cache for fast switching
+        if (!entity) kgCacheRef.current = data;
       } else {
-        setTopology({ draft: { id: "", title: "", status: "" }, nodes: [], edges: [], stats: { totalReferences: 0, uniqueDocuments: 0, sectionsWithReferences: 0, totalSections: 0, mostReferencedDoc: null, coverage: "" } });
+        setTopology(null);
       }
     } catch {
       setTopology(null);
@@ -103,10 +99,15 @@ export default function TopologyPage() {
   useEffect(() => {
     if (graphMode === "documents") {
       if (selectedDraftId) loadTopology(selectedDraftId);
+    } else if (kgCenter) {
+      loadKnowledgeGraph(kgCenter);
+    } else if (kgCacheRef.current && !kgCenter) {
+      setTopology(kgCacheRef.current);
+      setLoading(false);
     } else {
       loadKnowledgeGraph();
     }
-  }, [selectedDraftId, graphMode, loadTopology, loadKnowledgeGraph]);
+  }, [selectedDraftId, graphMode, loadTopology, loadKnowledgeGraph, kgCenter]);
 
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.2, 3)), []);
   const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.2, 0.4)), []);
@@ -135,12 +136,16 @@ export default function TopologyPage() {
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
               onZoomFit={handleZoomFit}
-              refFilter={refFilter}
-              onRefFilterChange={setRefFilter}
-              groupBy={groupBy}
-              onGroupByChange={setGroupBy}
               graphMode={graphMode}
               onGraphModeChange={setGraphMode}
+              kgSearch={kgSearch}
+              onKgSearchChange={setKgSearch}
+              onKgSearchSubmit={() => { if (kgSearch.trim()) { setKgCenter(kgSearch.trim()); setKgSearch(""); }}}
+              kgCenter={kgCenter}
+              onKgCenterClear={() => setKgCenter("")}
+              totalEntities={topology?.stats?.totalEntities}
+              totalRelations={topology?.stats?.totalRelations}
+              leafCount={topology?.stats?.leafCount}
             />
             <div className="bg-[#F4F2EF] border border-[#E8E6E1] rounded-[16px] min-h-[560px] flex items-center justify-center">
               <div className="text-center text-[#8C887F]">
@@ -174,21 +179,31 @@ export default function TopologyPage() {
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
               onZoomFit={handleZoomFit}
-              refFilter={refFilter}
-              onRefFilterChange={setRefFilter}
-              groupBy={groupBy}
-              onGroupByChange={setGroupBy}
               graphMode={graphMode}
               onGraphModeChange={setGraphMode}
+              kgSearch={kgSearch}
+              onKgSearchChange={setKgSearch}
+              onKgSearchSubmit={() => { if (kgSearch.trim()) { setKgCenter(kgSearch.trim()); setKgSearch(""); }}}
+              kgCenter={kgCenter}
+              onKgCenterClear={() => setKgCenter("")}
+              totalEntities={topology?.stats?.totalEntities}
+              totalRelations={topology?.stats?.totalRelations}
+              leafCount={topology?.stats?.leafCount}
             />
-            <TopologyLegend />
             {topology && topology.nodes.length > 0 ? (
               <TopologyCanvas
                 nodes={topology.nodes}
                 edges={topology.edges}
                 zoom={zoom}
                 selectedNodeId={selectedNodeId}
-                onNodeClick={setSelectedNodeId}
+                onNodeClick={(nodeId) => {
+                  setSelectedNodeId(nodeId);
+                  if (graphMode === "knowledge") {
+                    const node = topology?.nodes.find(n => n.id === nodeId);
+                    if (node) setKgCenter(node.label || nodeId);
+                  }
+                }}
+                graphMode={graphMode}
               />
             ) : (
               <div className="bg-[#F4F2EF] border border-[#E8E6E1] rounded-[16px] min-h-[560px] flex items-center justify-center">

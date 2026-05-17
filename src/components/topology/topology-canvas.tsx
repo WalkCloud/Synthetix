@@ -10,6 +10,7 @@ interface TopologyCanvasProps {
   readonly zoom: number;
   readonly selectedNodeId: string | null;
   readonly onNodeClick: (nodeId: string) => void;
+  readonly graphMode?: "documents" | "knowledge";
 }
 
 const COLORS: Record<string, string> = {
@@ -29,6 +30,7 @@ export function TopologyCanvas({
   zoom,
   selectedNodeId,
   onNodeClick,
+  graphMode = "documents",
 }: TopologyCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const angleRef = useRef(0);
@@ -45,7 +47,8 @@ export function TopologyCanvas({
   const cardOffsets = useRef<Record<string, { dx: number; dy: number }>>({});
 
   const draftNode = useMemo(() => nodes.find((n) => n.type === "draft"), [nodes]);
-  const refNodes = useMemo(() => nodes.filter((n) => n.type === "reference"), [nodes]);
+  const refNodes = useMemo(() => nodes.filter((n) => n.type === "reference" || n.type === "entity"), [nodes]);
+  const isKnowledge = graphMode === "knowledge";
 
   useEffect(() => {
     const el = containerRef.current;
@@ -131,30 +134,34 @@ export function TopologyCanvas({
 
   const cx = size.w / 2;
   const cy = size.h / 2;
-  const radius = Math.min(size.w, size.h) * 0.34;
+  const radius = Math.min(size.w, size.h) * 0.34 * zoom;
 
   const items = useMemo(() => {
     const result: {
       id: string; label: string; format: string; weight: number;
       color: string; bg: string; x: number; y: number;
     }[] = [];
-    for (let i = 0; i < refNodes.length; i++) {
-      const angle = (2 * Math.PI * i) / refNodes.length + angleRef.current;
+    const n = refNodes.length;
+    for (let i = 0; i < n; i++) {
+      const angle = isKnowledge
+        ? (2 * Math.PI * i) / Math.max(n, 1) + angleRef.current * 0.5
+        : (2 * Math.PI * i) / Math.max(n, 1) + angleRef.current;
+      const r = isKnowledge ? radius * (0.6 + 0.4 * (i % 3) / 3) : radius;
       const edge = edges.find((e) => e.target === refNodes[i].id);
       const off = cardOffsets.current[refNodes[i].id] ?? { dx: 0, dy: 0 };
       result.push({
         id: refNodes[i].id,
-        label: refNodes[i].label,
-        format: refNodes[i].format,
+        label: refNodes[i].label || refNodes[i].entityType || "Entity",
+        format: refNodes[i].format || "entity",
         weight: edge?.weight ?? 1,
-        color: clr(refNodes[i].format),
-        bg: bgc(refNodes[i].format),
-        x: cx + Math.cos(angle) * radius + off.dx,
-        y: cy + Math.sin(angle) * radius + off.dy,
+        color: clr(refNodes[i].format || "entity"),
+        bg: bgc(refNodes[i].format || "entity"),
+        x: cx + Math.cos(angle) * r + off.dx,
+        y: cy + Math.sin(angle) * r + off.dy,
       });
     }
     return result;
-  }, [refNodes, edges, cx, cy, radius, tick]);
+  }, [refNodes, edges, cx, cy, radius, tick, isKnowledge, zoom]);
 
   const selectedNode = selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null;
   const selectedEdge = selectedNodeId
@@ -174,6 +181,18 @@ export function TopologyCanvas({
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         {items.map((it) => {
           const sel = it.id === selectedNodeId;
+          if (isKnowledge) {
+            // Draw edges between connected entity pairs
+            const connectedEdges = edges.filter((e) => e.target === it.id);
+            return connectedEdges.map((edge, j) => {
+              const sourceItem = items.find((item) => item.id === edge.source);
+              if (!sourceItem) return null;
+              return (
+                <line key={`${it.id}-${j}`} x1={sourceItem.x} y1={sourceItem.y} x2={it.x} y2={it.y}
+                  stroke={it.color} strokeWidth={1} opacity={0.25} />
+              );
+            });
+          }
           return (
             <line key={it.id} x1={cx} y1={cy} x2={it.x} y2={it.y}
               stroke={it.color} strokeWidth={sel ? 2.5 : 1.5} opacity={sel ? 0.7 : 0.35} />

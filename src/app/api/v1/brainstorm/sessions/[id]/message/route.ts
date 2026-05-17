@@ -109,7 +109,7 @@ export async function POST(
       inputTokens,
       outputTokens,
       referenceId: id,
-    }).catch(() => {});
+    }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
     // Check if outline was requested
     const outlineRequested = aiContent.includes("OUTLINE_REQUESTED");

@@ -7,20 +7,23 @@ const secret = new TextEncoder().encode(
 const accessExpires = process.env.JWT_ACCESS_EXPIRES || "15m";
 const refreshExpires = process.env.JWT_REFRESH_EXPIRES || "7d";
 
-export async function signAccessToken(payload: JWTPayload): Promise<string> {
+export async function signToken(
+  payload: JWTPayload,
+  expiresIn: string
+): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(accessExpires)
+    .setExpirationTime(expiresIn)
     .setIssuedAt()
     .sign(secret);
 }
 
+export async function signAccessToken(payload: JWTPayload): Promise<string> {
+  return signToken(payload, accessExpires);
+}
+
 export async function signRefreshToken(payload: JWTPayload): Promise<string> {
-  return new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(refreshExpires)
-    .setIssuedAt()
-    .sign(secret);
+  return signToken(payload, refreshExpires);
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {

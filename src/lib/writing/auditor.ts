@@ -1,5 +1,4 @@
-import { createLLMProvider } from "@/lib/llm/factory";
-import { resolveModel } from "@/lib/llm/resolve-model";
+import { resolveLLMClient } from "@/lib/llm/client";
 import { buildAuditPrompt, parseAuditResponse, type AuditResult } from "./audit";
 
 export async function auditSection(
@@ -7,8 +6,8 @@ export async function auditSection(
   content: string,
   keyPoints?: string | null
 ): Promise<AuditResult> {
-  const writingModel = await resolveModel("writing");
-  if (!writingModel?.provider) {
+  const client = await resolveLLMClient("writing");
+  if (!client) {
     return {
       passed: true,
       score: 100,
@@ -17,16 +16,11 @@ export async function auditSection(
     };
   }
 
-  const provider = createLLMProvider({
-    apiBaseUrl: writingModel.provider.apiBaseUrl,
-    apiKey: writingModel.provider.apiKey,
-  });
-
   const { system, user } = buildAuditPrompt(title, content, keyPoints);
 
   try {
-    const response = await provider.chat({
-      model: writingModel.modelId,
+    const response = await client.provider.chat({
+      model: client.modelId,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -37,10 +31,13 @@ export async function auditSection(
     return parseAuditResponse(response.content);
   } catch (error) {
     console.error("Section audit failed:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
     return {
-      passed: true,
-      score: 100,
-      issues: [],
+      passed: false,
+      score: 0,
+      issues: [
+        { rule: "audit_error", severity: "critical", detail: `Audit execution failed: ${message}` },
+      ],
       checkedAt: new Date().toISOString(),
     };
   }

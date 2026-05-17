@@ -1,5 +1,5 @@
+import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { resolveModel } from "@/lib/llm/resolve-model";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
 import {
@@ -9,31 +9,6 @@ import {
 
 const RAG_REFERENCE_LIMIT = 20;
 const GENERATION_TEMPERATURE = 0.7;
-
-interface ModelResolution {
-  provider: ReturnType<typeof createLLMProvider>;
-  modelId: string;
-  modelConfigId: string;
-}
-
-async function resolveDefaultWritingModel(): Promise<ModelResolution> {
-  const writingModel = await resolveModel("writing");
-
-  if (writingModel?.provider) {
-    return {
-      provider: createLLMProvider({
-        apiBaseUrl: writingModel.provider.apiBaseUrl,
-        apiKey: writingModel.provider.apiKey,
-      }),
-      modelId: writingModel.modelId,
-      modelConfigId: writingModel.id,
-    };
-  }
-
-  throw new Error(
-    "No writing model configured. Set a default writing model or add a chat-capable model in settings."
-  );
-}
 
 interface RagConfig {
   mode: "auto" | "manual" | "off";
@@ -105,7 +80,7 @@ export async function generateSection(
   userId: string,
   constraints?: ContextInput["constraints"]
 ): Promise<GenerationResult> {
-  const { provider, modelId, modelConfigId } = await resolveDefaultWritingModel();
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
 
   const ragReferences = await fetchRagReferences(
     draft.title,
@@ -142,7 +117,7 @@ export async function generateSection(
       module: "writing",
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
-    }).catch(() => {});
+    }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
     return {
       content: response.content,
@@ -186,7 +161,7 @@ export async function generateSectionStream(
     modelConfigId = modelConfig.id;
   } else {
     // Use default writing model
-    const resolved = await resolveDefaultWritingModel();
+    const resolved = await getLLMClient("writing");
     provider = resolved.provider;
     modelId = resolved.modelId;
     modelConfigId = resolved.modelConfigId;

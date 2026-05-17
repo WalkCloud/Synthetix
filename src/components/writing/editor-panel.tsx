@@ -27,6 +27,7 @@ interface EditorPanelProps {
   onRegenerate: () => void;
   onHumanize: () => void;
   onUnlock: () => void;
+  onSaveEdit?: (content: string) => void;
   isGenerating: boolean;
   isThinking: boolean;
   isHumanizing: boolean;
@@ -50,6 +51,7 @@ export function EditorPanel({
   onRegenerate,
   onHumanize,
   onUnlock,
+  onSaveEdit,
   isGenerating,
   isThinking,
   isHumanizing,
@@ -195,44 +197,44 @@ export function EditorPanel({
       )}
 
       {/* Content Display */}
-      {isLocked && section.content && (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-          <div className="p-5 text-[15px] leading-loose text-slate-700">
-            <ContentRenderer
-              content={section.content}
-              draftId={section.draftId}
-              sectionId={section.id}
-              renderVer={assetRenderVer}
-            />
-          </div>
-          <div className="px-[18px] py-3 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
-            <span className="text-[13px] text-slate-500 font-medium">
-              {countWords(section.content)} words
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onUnlock}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                </svg>
-                Edit
-              </button>
-              <button
-                onClick={() => { onUnlock(); setTimeout(onRegenerate, 300); }}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 border border-primary-200 text-primary-600 rounded-lg text-xs font-semibold hover:bg-primary-50 transition-colors cursor-pointer"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-                Regenerate
-              </button>
+          {isLocked && section.content && (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+              <div className="p-5 text-[15px] leading-loose text-slate-700">
+                <ContentRenderer
+                  content={section.content}
+                  draftId={section.draftId}
+                  sectionId={section.id}
+                  renderVer={assetRenderVer}
+                />
+              </div>
+              <div className="px-[18px] py-3 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                <span className="text-[13px] text-slate-500 font-medium">
+                  {countWords(section.content)} words
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { onUnlock(); setEditingContent(section.content || ""); }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    </svg>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => { onUnlock(); setTimeout(onRegenerate, 300); }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 border border-primary-200 text-primary-600 rounded-lg text-xs font-semibold hover:bg-primary-50 transition-colors cursor-pointer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                    Regenerate
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
       {isServerGenerating && (
         <div className="bg-white border border-primary-200 rounded-2xl overflow-hidden shadow-sm">
@@ -280,7 +282,7 @@ export function EditorPanel({
           <div className="flex justify-end px-[18px] py-3 border-t border-slate-200 bg-slate-50/50">
             <button
               onClick={() => {
-                onSelectModel("a");
+                onSaveEdit?.(editingContent);
                 setEditingContent(null);
               }}
               className="px-4 py-1.5 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700 transition-colors cursor-pointer shadow-sm"

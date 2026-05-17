@@ -10,6 +10,7 @@ For enterprise deployments, set LIGHTRAG_* env vars for pgvector/Milvus/Qdrant/N
 Usage:
   python rag_index.py --doc-id <id> --user-id <uid> --chunks-dir <dir>
          --index-mode [basic|graph]
+         [--embeddings-file <path>]          # pre-computed embeddings (avoids API calls)
          [--embed-api-base <url>] [--embed-api-key <key>] [--embed-model <name>]
          [--llm-api-base <url>] [--llm-api-key <key>] [--llm-model <name>]
 
@@ -18,6 +19,7 @@ Output: JSON to stdout
 import sys
 import json
 import os
+import struct
 import argparse
 import asyncio
 
@@ -90,6 +92,25 @@ def load_storage_config():
     return kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs
 
 
+def load_cached_embeddings(file_path: str):
+    """Load pre-computed embeddings from a binary file.
+
+    File format:
+      [num_embeddings: int32 LE][embed_dim: int32 LE][flat float32 LE array]
+
+    Returns (embeddings: list[list[float]], embed_dim: int).
+    """
+    with open(file_path, "rb") as f:
+        num = struct.unpack("<i", f.read(4))[0]
+        dim = struct.unpack("<i", f.read(4))[0]
+        data = f.read()
+    floats = struct.unpack(f"<{num * dim}f", data)
+    embeddings = []
+    for i in range(num):
+        embeddings.append(list(floats[i * dim : (i + 1) * dim]))
+    return embeddings, dim
+
+
 async def index_document(
     doc_id: str,
     user_id: str,
@@ -102,24 +123,84 @@ async def index_document(
     llm_api_base: str = "",
     llm_api_key: str = "",
     llm_model: str = "",
+    embeddings_file: str = "",
 ) -> dict:
     """Index chunk files into LightRAG.
 
     In 'basic' mode: chunk storage + embedding only (fast, no LLM needed).
     In 'graph' mode: also runs entity/relation extraction to build a knowledge graph.
+
+    When embeddings_file is provided, cached embeddings are used and no
+    embedding API calls are made.
     """
     working_dir = os.path.join("data", "rag", user_id)
     os.makedirs(working_dir, exist_ok=True)
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    def embedding_func(texts: list[str]):
-        return openai_embed(
-            texts,
-            model=embed_model,
-            base_url=embed_api_base,
-            api_key=embed_api_key,
-        )
+    # Load pre-computed embeddings when available
+    cached_embeddings = None
+    embedding_iter = None
+    if embeddings_file and os.path.exists(embeddings_file):
+        cached_embeddings, probed_dim = load_cached_embeddings(embeddings_file)
+        embed_dim = probed_dim
+        embedding_iter = iter(cached_embeddings)
+        print(f"Loaded {len(cached_embeddings)} cached embeddings dim={embed_dim} from {embeddings_file}", file=sys.stderr)
+
+    # Auto-probe embedding dimension if not already known
+    if (not embed_dim or embed_dim <= 0) and not cached_embeddings:
+        try:
+            probe_result = openai_embed(
+                ["dimension probe"],
+                model=embed_model,
+                base_url=embed_api_base,
+                api_key=embed_api_key,
+            )
+            if isinstance(probe_result, list) and len(probe_result) > 0:
+                if isinstance(probe_result[0], list):
+                    embed_dim = len(probe_result[0])
+                elif hasattr(probe_result[0], '__len__'):
+                    embed_dim = len(probe_result[0])
+            print(f"Probed embedding dimension: {embed_dim}", file=sys.stderr)
+        except Exception as e:
+            print(f"Embedding probe failed: {e}, falling back to heuristics", file=sys.stderr)
+            model_lower = embed_model.lower()
+            if any(x in model_lower for x in ("bge-m3", "bge-large", "gte-large", "e5-large", "text-embedding-3-large", "text-embedding-ada")):
+                embed_dim = 1536 if "bge-m3" in model_lower else 1024
+            elif "text-embedding-3-small" in model_lower:
+                embed_dim = 1536
+            elif "text-embedding-v4" in model_lower:
+                embed_dim = 1024
+            elif any(x in model_lower for x in ("mxbai", "nomic")):
+                embed_dim = 768
+            else:
+                embed_dim = 768
+
+    # embedding_func: use cached embeddings when available, otherwise call API
+    if embedding_iter is not None:
+
+        def embedding_func(texts: list[str], **kwargs):
+            result = []
+            for _ in texts:
+                emb = next(embedding_iter, None)
+                if emb is not None:
+                    result.append(emb)
+                else:
+                    result.append([0.0] * embed_dim)
+            return result
+    else:
+
+        def embedding_func(texts: list[str], **kwargs):
+            result = openai_embed(
+                texts,
+                model=embed_model,
+                base_url=embed_api_base,
+                api_key=embed_api_key,
+                **kwargs,
+            )
+            if isinstance(result, list) and len(result) > 0:
+                return [list(v) if hasattr(v, '__iter__') and not isinstance(v, list) else v for v in result]
+            return result
 
     entity_stats: dict = {}
 
@@ -143,18 +224,6 @@ async def index_document(
         async def llm_func(*args, **kwargs) -> str:
             return ""
 
-    embed_dim = args.embed_dim or 768
-
-    # Auto-detect dimension from embedding model name
-    if not args.embed_dim:
-        model_lower = embed_model.lower()
-        if any(x in model_lower for x in ("bge-m3", "bge-large", "gte-large", "e5-large", "text-embedding-3-large", "text-embedding-ada")):
-            embed_dim = 1536 if "large" in model_lower or "ada" in model_lower or "bge-m3" in model_lower else 1024
-        elif "text-embedding-3-small" in model_lower:
-            embed_dim = 1536
-        elif any(x in model_lower for x in ("mxbai", "nomic")):
-            embed_dim = 768
-
     rag = LightRAG(
         working_dir=working_dir,
         llm_model_func=llm_func,
@@ -162,11 +231,20 @@ async def index_document(
             embedding_dim=embed_dim,
             max_token_size=8192,
             func=embedding_func,
+            send_dimensions=True,
         ),
         kv_storage=kv_storage,
         vector_storage=vector_storage,
         graph_storage=graph_storage,
         doc_status_storage=doc_status_storage,
+        addon_params={
+            "entity_types": [
+                "Technology", "Framework", "Architecture", "Protocol",
+                "Pattern", "Concept", "Algorithm", "Component",
+                "Service", "Platform", "Module", "Interface",
+                "Strategy", "Mechanism", "Pipeline", "Workflow",
+            ],
+        },
         **storage_kwargs,
     )
 
@@ -220,6 +298,8 @@ def main() -> None:
     parser.add_argument("--user-id", required=True)
     parser.add_argument("--chunks-dir", required=True)
     parser.add_argument("--index-mode", choices=["basic", "graph"], default="basic")
+    parser.add_argument("--embeddings-file", default="",
+                        help="Path to pre-computed embeddings binary file (skips embedding API)")
     parser.add_argument("--embed-api-base", default="http://localhost:11434/v1")
     parser.add_argument("--embed-api-key", default="ollama")
     parser.add_argument("--embed-model", default="nomic-embed-text")
@@ -243,6 +323,7 @@ def main() -> None:
             llm_api_base=args.llm_api_base,
             llm_api_key=args.llm_api_key,
             llm_model=args.llm_model,
+            embeddings_file=args.embeddings_file,
         )
     )
     print(json.dumps(result))

@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from "react";
 import { Header } from "@/components/layout/header";
 import { TagBadge } from "@/components/library/tag-badge";
+import { ChunkContent } from "@/components/library/chunk-content";
 import type { DocumentMeta } from "@/types/documents";
 
 function topicColor(index: number): string {
@@ -149,12 +150,10 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
 
                             {isExpanded && chunk.content && (
                               <div className="mt-3 pt-3 border-t border-slate-200">
-                                <pre className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap font-sans max-h-[300px] overflow-y-auto">
-                                  {chunk.content.slice(0, 2000)}
-                                  {(chunk.content.length || 0) > 2000 && (
-                                    <span className="text-muted-foreground"> ... (truncated)</span>
-                                  )}
-                                </pre>
+                                <ChunkContent content={chunk.content.slice(0, 4000)} docId={id} />
+                                {(chunk.content.length || 0) > 4000 && (
+                                  <p className="text-xs text-muted-foreground mt-1">...(truncated, {chunk.content.length.toLocaleString()} chars total)</p>
+                                )}
                               </div>
                             )}
                           </div>
