@@ -30,6 +30,7 @@ export interface TopologyStats {
   /** Knowledge graph stats */
   totalEntities?: number;
   totalRelations?: number;
+  leafCount?: number;
 }
 
 export interface TopologyResponse {

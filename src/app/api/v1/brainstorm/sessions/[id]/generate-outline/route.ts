@@ -111,7 +111,7 @@ export async function POST(
       inputTokens,
       outputTokens,
       referenceId: id,
-    }).catch(() => {});
+    }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
     await db.message.create({
       data: { sessionId: id, role: "system", content: "Outline generated and ready for review." },

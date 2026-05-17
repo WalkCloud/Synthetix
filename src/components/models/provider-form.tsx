@@ -16,6 +16,7 @@ interface FormModelConfig {
   outputPrice: number | null;
   isDefaultFor: string | null;
   embeddingBatchSize: number | null;
+  embeddingDim: number | null;
 }
 
 interface ProviderFormProps {
@@ -36,6 +37,7 @@ const defaultModel: FormModelConfig = {
   outputPrice: null,
   isDefaultFor: null,
   embeddingBatchSize: 10,
+  embeddingDim: null,
 };
 
 function parseCapabilities(raw: string): string[] {
@@ -61,6 +63,7 @@ function toFormModel(m: ApiModelConfig): FormModelConfig {
     outputPrice: m.outputPrice,
     isDefaultFor: m.isDefaultFor,
     embeddingBatchSize: m.embeddingBatchSize ?? 10,
+    embeddingDim: m.embeddingDim ?? null,
   };
 }
 
@@ -105,6 +108,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         capabilities: caps,
         modelType: undefined,
         embeddingBatchSize: m.modelType === "embedding" ? m.embeddingBatchSize : undefined,
+        embeddingDim: m.modelType === "embedding" ? m.embeddingDim : undefined,
       };
       delete cleaned.modelType;
       for (const [k, v] of Object.entries(cleaned)) {
@@ -216,13 +220,22 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
                   <p className="text-xs text-blue-700">This model will be used by the <strong>Gen</strong> button in the writing panel to generate images from text prompts via the <code className="bg-blue-100 px-1 rounded">/v1/images/generations</code> API.</p>
                 </div>
               )}
-              {m.modelType === "embedding" && (
-                <div className="mt-3">
-                  <label className="block text-xs text-muted-foreground mb-1">Embedding Batch Size <span className="font-normal">(max texts per API call, default 10)</span></label>
-                  <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
-                    value={m.embeddingBatchSize ?? 10} onChange={(e) => updateModel(i, "embeddingBatchSize", parseInt(e.target.value, 10) || 10)} placeholder="10" />
-                </div>
-              )}
+               {m.modelType === "embedding" && (
+                <>
+                  <div className="mt-3">
+                    <label className="block text-xs text-muted-foreground mb-1">Embedding Batch Size <span className="font-normal">(max texts per API call, default 10)</span></label>
+                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                      value={m.embeddingBatchSize ?? 10} onChange={(e) => updateModel(i, "embeddingBatchSize", parseInt(e.target.value, 10) || 10)} placeholder="10" />
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-xs text-muted-foreground mb-1">
+                      Embedding Dimension <span className="font-normal">(auto-detected on test; fill manually if detection fails, must be &ge; 1536 for Knowledge Graph)</span>
+                    </label>
+                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                      value={m.embeddingDim ?? ""} onChange={(e) => updateModel(i, "embeddingDim", parseInt(e.target.value, 10) || null)} placeholder="e.g. 1536 (auto-detected if empty)" />
+                  </div>
+                </>
+               )}
               {models.length > 1 && (
                 <button type="button" onClick={() => removeModel(i)} className="text-xs text-red-500 hover:underline mt-2">Remove</button>
               )}

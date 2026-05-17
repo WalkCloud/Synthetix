@@ -59,7 +59,7 @@ export async function POST(
     const jwtPayload = {
       userId: user.id,
       username: user.username,
-      role: user.role,
+      role: user.role as "admin" | "user",
     };
     const [accessToken, refreshToken] = await Promise.all([
       signAccessToken(jwtPayload),
@@ -72,7 +72,7 @@ export async function POST(
       username: user.username,
       email: user.email,
       displayName: user.displayName,
-      role: user.role,
+      role: user.role as "admin" | "user",
     };
 
     const response = NextResponse.json({ success: true, data: authUser });

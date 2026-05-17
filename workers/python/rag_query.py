@@ -220,7 +220,7 @@ async def query_rag(
 
             output_chunks.append({
                 "chunk_id": chunk_id,
-                "content": content_text[:500],
+                "content": content_text[:4000],
                 "title": title,
                 "score": round(score, 4),
             })

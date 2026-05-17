@@ -2,12 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { generateSummary } from "@/lib/writing/summarizer";
+import { getErrorMessage } from "@/lib/api-helpers";
 import type { ApiResponse } from "@/types/api";
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
 
 async function generateSummaryBackground(sectionId: string, content: string, title: string) {
   try {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { exportSubgraph, buildConfig } from "@/lib/rag/client";
+import { manageRag, buildConfig } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 export async function GET(request: Request): Promise<NextResponse<ApiResponse>> {
@@ -15,6 +15,8 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
   const entityName = searchParams.get("entity") || "";
   const depth = parseInt(searchParams.get("depth") || "3", 10);
   const maxNodes = parseInt(searchParams.get("max_nodes") || "200", 10);
+  const mode = searchParams.get("mode") || "graph";
+  const minDegree = parseInt(searchParams.get("min_degree") || "2", 10);
 
   const [embedModel, llmModel] = await Promise.all([
     resolveModel("embedding"),
@@ -30,15 +32,17 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
 
   try {
     const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-    const result = await exportSubgraph(
-      user.id,
-      await buildConfig(embedModel),
-      await buildConfig(llmModel),
+    const result = await manageRag({
+      userId: user.id,
+      action: mode === "core" ? "core-graph" : "graph",
+      embedConfig: buildConfig(embedModel),
+      llmConfig: buildConfig(llmModel),
       embedDim,
-      entityName || undefined,
+      entityName: entityName || undefined,
       depth,
       maxNodes,
-    );
+      minDegree,
+    });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     return NextResponse.json(

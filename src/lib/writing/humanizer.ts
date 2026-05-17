@@ -1,5 +1,4 @@
-import { createLLMProvider } from "@/lib/llm/factory";
-import { resolveModel } from "@/lib/llm/resolve-model";
+import { getLLMClient } from "@/lib/llm/client";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ChatResponse } from "@/lib/llm/types";
 
@@ -117,8 +116,7 @@ export async function humanizeContent(
   sectionTitle: string,
   userId: string
 ): Promise<HumanizeResult> {
-  const writingModel = await findWritingModel();
-  const { provider, modelId, modelConfigId } = writingModel;
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
 
   // Pass 1: Audit — detect AI patterns
   const auditResponse = await provider.chat({
@@ -165,7 +163,7 @@ export async function humanizeContent(
     module: "writing",
     inputTokens: totalInput,
     outputTokens: totalOutput,
-  }).catch(() => {});
+  }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
   return {
     content: rewriteResponse.content,
@@ -175,19 +173,3 @@ export async function humanizeContent(
   };
 }
 
-async function findWritingModel() {
-  const writingModel = await resolveModel("writing");
-
-  if (writingModel?.provider) {
-    return {
-      provider: createLLMProvider({
-        apiBaseUrl: writingModel.provider.apiBaseUrl,
-        apiKey: writingModel.provider.apiKey,
-      }),
-      modelId: writingModel.modelId,
-      modelConfigId: writingModel.id,
-    };
-  }
-
-  throw new Error("No writing model configured for humanization.");
-}

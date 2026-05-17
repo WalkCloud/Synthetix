@@ -3,10 +3,7 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
+import { getErrorMessage } from "@/lib/api-helpers";
 
 const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
 const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];

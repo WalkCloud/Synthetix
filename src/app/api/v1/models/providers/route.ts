@@ -33,6 +33,7 @@ const modelConfigSchema = z.object({
   localOrCloud: z.enum(["local", "cloud"]).default("local"),
   isDefaultFor: z.string().optional(),
   embeddingBatchSize: z.number().int().min(1).max(1000).optional(),
+  embeddingDim: z.number().int().min(1).optional(),
 });
 
 const providerSchema = z.object({

@@ -4,7 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { deleteDocumentFromRag, buildConfig } from "@/lib/rag/client";
+import { manageRag, buildConfig } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 const storage = new LocalStorageAdapter();
@@ -57,7 +57,7 @@ export async function DELETE(
   await db.document.delete({ where: { id } });
 
   // Clean up LightRAG index (best-effort, non-blocking)
-  deleteLightRagData(id, user.id).catch(() => {});
+  deleteLightRagData(id, user.id).catch((err) => { console.warn("LightRAG cleanup failed:", err); });
 
   return NextResponse.json({ success: true, data: { deleted: id } });
 }
@@ -69,11 +69,12 @@ async function deleteLightRagData(docId: string, userId: string) {
   ]);
   if (!embedModel || !llmModel?.provider.apiKey) return;
   const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-  await deleteDocumentFromRag(
+  await manageRag({
     userId,
-    await buildConfig(embedModel),
-    await buildConfig(llmModel),
+    action: "delete-by-doc",
+    embedConfig: buildConfig(embedModel),
+    llmConfig: buildConfig(llmModel),
     embedDim,
     docId,
-  );
+  });
 }

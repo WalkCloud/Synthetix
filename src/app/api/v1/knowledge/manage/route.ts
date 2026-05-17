@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { createEntity, deleteEntity, mergeEntities, buildConfig } from "@/lib/rag/client";
+import { manageRag, buildConfig } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse>> {
@@ -31,8 +31,8 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
   }
 
   const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-  const embedCfg = await buildConfig(embedModel);
-  const llmCfg = await buildConfig(llmModel);
+  const embedCfg = buildConfig(embedModel);
+  const llmCfg = buildConfig(llmModel);
 
   try {
     let result: Record<string, unknown>;
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await createEntity(user.id, embedCfg, llmCfg, embedDim, entityName, entityType, description);
+        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, entityName, entityType, description });
         break;
       }
       case "delete-entity": {
@@ -57,7 +57,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await deleteEntity(user.id, embedCfg, llmCfg, embedDim, entityName);
+        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, entityName });
         break;
       }
       case "merge-entities": {
@@ -68,7 +68,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await mergeEntities(user.id, embedCfg, llmCfg, embedDim, sources, target);
+        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, sources: sources.join(","), target });
         break;
       }
       default:

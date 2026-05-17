@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 interface UserSettings {
   storageType?: string;
@@ -61,10 +62,12 @@ export function readSettings(userId: string): UserSettings {
 export function writeSettings(userId: string, updates: Partial<UserSettings>): void {
   const current = readSettings(userId);
   const merged = { ...current, ...updates };
-  // Remove undefined keys
   const cleaned: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(merged)) {
     if (v !== undefined) cleaned[k] = v;
   }
-  fs.writeFileSync(getSettingsPath(userId), JSON.stringify(cleaned, null, 2), "utf-8");
+  const filePath = getSettingsPath(userId);
+  const tmpPath = filePath + ".tmp." + crypto.randomBytes(4).toString("hex");
+  fs.writeFileSync(tmpPath, JSON.stringify(cleaned, null, 2), "utf-8");
+  fs.renameSync(tmpPath, filePath);
 }

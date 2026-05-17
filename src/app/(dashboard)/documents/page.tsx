@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { parseCapabilities } from "@/lib/llm/capabilities";
 import { toast } from "sonner";
 
 interface UploadItem {
@@ -19,6 +20,7 @@ interface ModelOption {
   id: string;
   modelName: string;
   providerName: string;
+  embeddingDim?: number | null;
 }
 
 function formatSize(bytes: number): string {
@@ -84,12 +86,11 @@ export default function DocumentsPage() {
         const embed: ModelOption[] = [];
         for (const p of data.data) {
           for (const m of p.models) {
-            let caps: string[] = [];
-            try { caps = JSON.parse(m.capabilities ?? "[]"); } catch { /* empty */ }
-            const entry = { id: m.id, modelName: m.modelName, providerName: p.name };
-            if (caps.some((c: string) => c === "embedding" || c === "embed")) {
+            const caps = parseCapabilities(m.capabilities);
+            const entry: ModelOption = { id: m.id, modelName: m.modelName, providerName: p.name, embeddingDim: m.embeddingDim };
+            if (caps.some((c) => c === "embedding" || c === "embed")) {
               embed.push(entry);
-            } else {
+            } else if (caps.includes("chat")) {
               llm.push(entry);
             }
           }
@@ -153,14 +154,15 @@ export default function DocumentsPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            options: {
-              llmModelId: llmModel || undefined,
-              embedModelId: embedModel || undefined,
-              contextUsage,
-              splitStrategy,
-              indexTarget,
-              autoSplit,
-            },
+              options: {
+                llmModelId: llmModel || undefined,
+                embedModelId: embedModel || undefined,
+                contextUsage,
+                splitStrategy,
+                indexTarget,
+                indexMode,
+                autoSplit,
+              },
           }),
         });
         const data = await res.json();
@@ -338,16 +340,40 @@ export default function DocumentsPage() {
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Knowledge Graph</label>
-                <Select value={indexMode} onValueChange={(v) => setIndexMode(v as "basic" | "graph")}>
-                  <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                    <SelectValue>{indexMode === "graph" ? "Entity extraction + knowledge graph" : "Chunk storage only (fast)"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="basic">Chunk storage only (fast)</SelectItem>
-                    <SelectItem value="graph">Entity extraction + knowledge graph (slower, richer)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[12px] text-muted-foreground mt-1">Graph mode extracts entities and relations for enhanced retrieval and topology.</p>
+                {(() => {
+                  const selectedEmbed = embedModels.find(m => m.id === embedModel);
+                  const probed = (selectedEmbed?.embeddingDim ?? 0) > 0;
+                  if (!selectedEmbed || !embedModel) {
+                    return (
+                      <Select value="basic" onValueChange={() => {}}>
+                        <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
+                          <SelectValue>Chunk storage only (fast)</SelectValue>
+                        </SelectTrigger>
+                      </Select>
+                    );
+                  }
+                  return (
+                    <>
+                      <Select value={indexMode} onValueChange={(v) => setIndexMode(v as "basic" | "graph")}>
+                        <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
+                          <SelectValue>{indexMode === "graph" ? "Entity extraction + knowledge graph" : "Chunk storage only (fast)"}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="basic">Chunk storage only (fast)</SelectItem>
+                          <SelectItem value="graph">Entity extraction + knowledge graph (slower, richer)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {!probed && (
+                        <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
+                          Embedding dimension not verified. Test Connection in Model Management first.
+                        </p>
+                      )}
+                      {probed && (
+                        <p className="text-[12px] text-muted-foreground mt-1">Graph mode extracts entities and relations for enhanced retrieval and topology.</p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div className="col-span-2">
                 <div className="flex items-center justify-between">

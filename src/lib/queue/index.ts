@@ -6,7 +6,7 @@ let queue: TaskQueue | null = null;
 
 export function getQueue(): TaskQueue {
   if (!queue) {
-    queue = new TaskQueue({ concurrency: 1, timeoutMs: 10 * 60 * 1000 });
+    queue = new TaskQueue({ concurrency: 1, timeoutMs: 30 * 60 * 1000 });
 
     queue.registerWorker("document_convert", async (
       payload: TaskPayload,

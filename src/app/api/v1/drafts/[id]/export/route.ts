@@ -5,16 +5,12 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { getAssetFilePath } from "@/lib/writing/diagram-generator";
+import { getErrorMessage } from "@/lib/api-helpers";
 import type { ApiResponse } from "@/types/api";
 
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
 const TMP_DIR = path.resolve("data/tmp");
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
 
 function sanitizeFilename(title: string): string {
   return title
