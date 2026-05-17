@@ -6,12 +6,8 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { compareSection } from "@/lib/writing/generator";
 import { semanticSearch } from "@/lib/search/semantic";
+import { getErrorMessage } from "@/lib/api-helpers";
 import type { ApiResponse } from "@/types/api";
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
 
 export async function POST(
   request: Request,
@@ -176,7 +172,7 @@ export async function POST(
         inputTokens: result.inputTokensA,
         outputTokens: result.outputTokensA,
         referenceId: sectionId,
-      }).catch(() => {}),
+      }).catch((err) => { console.warn("Failed to record token usage:", err); }),
       recordTokenUsage({
         userId: user.id,
         modelConfigId: modelBRecord.id,
@@ -184,7 +180,7 @@ export async function POST(
         inputTokens: result.inputTokensB,
         outputTokens: result.outputTokensB,
         referenceId: sectionId,
-      }).catch(() => {}),
+      }).catch((err) => { console.warn("Failed to record token usage:", err); }),
     ]);
 
     // Update section with comparison results

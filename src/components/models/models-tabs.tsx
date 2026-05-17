@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ProviderForm } from "./provider-form";
+import { parseCapabilities } from "@/lib/llm/capabilities";
 import type { Provider, UsageData } from "./types";
 
 type Tab = "llm" | "embedding" | "image" | "usage";
@@ -19,6 +20,14 @@ const MODEL_ICON_COLORS: IconColors[] = [
   { bg: "bg-orange-50", text: "text-orange-600" },
   { bg: "bg-primary-50", text: "text-primary-600" },
 ];
+
+const MODULE_LABELS: Record<string, string> = {
+  brainstorm: "Brainstorm",
+  outline: "Outline Gen",
+  writing: "Writing",
+  embedding: "Indexing",
+  comparison: "Comparison",
+};
 
 const TIME_RANGE_TO_DAYS: Record<TimeRange, number> = {
   today: 1,
@@ -243,6 +252,24 @@ export function ModelsTabs() {
             }),
           );
         }
+        if (data.data?.embeddingDims) {
+          const dims: Record<string, number> = data.data.embeddingDims;
+          setProviders((prev) =>
+            prev.map((p) => {
+              if (p.id !== id) return p;
+              return {
+                ...p,
+                models: p.models.map((m) => {
+                  const dim = dims[m.modelId];
+                  return dim !== undefined ? { ...m, embeddingDim: dim } : m;
+                }),
+              };
+            }),
+          );
+        }
+        if (data.data?.embedDimErrors?.length) {
+          setTestResult((prev) => prev ? { ...prev, embedDimErrors: data.data.embedDimErrors } : prev);
+        }
       }
     } catch {
       setTestResult({ id, connected: false, error: "Network error" });
@@ -273,12 +300,13 @@ export function ModelsTabs() {
   }
 
   function isEmbeddingModel(m: Provider["models"][number]): boolean {
-    try {
-      const caps = JSON.parse(m.capabilities ?? "[]");
-      return Array.isArray(caps) && caps.some((c: string) => c === "embedding" || c === "embed");
-    } catch {
-      return false;
-    }
+    const caps = parseCapabilities(m.capabilities);
+    return caps.some((c) => c === "embedding" || c === "embed");
+  }
+
+  function isImageModel(m: Provider["models"][number]): boolean {
+    const caps = parseCapabilities(m.capabilities);
+    return caps.includes("image_generation");
   }
 
   const llmModels = useMemo(() => {
@@ -286,6 +314,7 @@ export function ModelsTabs() {
     providers.forEach((p) => {
       p.models.forEach((m, idx) => {
         if (isEmbeddingModel(m)) return;
+        if (isImageModel(m)) return;
         const colorIdx = result.length % MODEL_ICON_COLORS.length;
         result.push({ provider: p, modelIndex: idx, iconColors: MODEL_ICON_COLORS[colorIdx] });
       });
@@ -309,10 +338,7 @@ export function ModelsTabs() {
     const result: Array<{ provider: Provider; modelIndex: number; iconColors: IconColors }> = [];
     providers.forEach((p) => {
       p.models.forEach((m, idx) => {
-        try {
-          const caps = JSON.parse(m.capabilities ?? "[]");
-          if (!Array.isArray(caps) || !caps.includes("image_generation")) return;
-        } catch { return; }
+        if (!isImageModel(m)) return;
         const colorIdx = result.length % MODEL_ICON_COLORS.length;
         result.push({ provider: p, modelIndex: idx, iconColors: MODEL_ICON_COLORS[colorIdx] });
       });
@@ -690,13 +716,6 @@ export function ModelsTabs() {
                     </thead>
                     <tbody>
                       {usageData.byModule.map((r) => {
-                        const MODULE_LABELS: Record<string, string> = {
-                          brainstorm: "Brainstorm",
-                          outline: "Outline Gen",
-                          writing: "Writing",
-                          embedding: "Indexing",
-                          comparison: "Comparison",
-                        };
                         return (
                           <tr key={r.module} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                             <td className="px-5 py-3.5 text-sm font-medium text-slate-700">{MODULE_LABELS[r.module] ?? r.module}</td>
@@ -733,13 +752,6 @@ export function ModelsTabs() {
                     </thead>
                     <tbody>
                       {usageData.entries.slice(0, 5).map((e) => {
-                        const MODULE_LABELS: Record<string, string> = {
-                          brainstorm: "Brainstorm",
-                          outline: "Outline Gen",
-                          writing: "Writing",
-                          embedding: "Indexing",
-                          comparison: "Comparison",
-                        };
                         return (
                           <tr key={e.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                             <td className="px-5 py-3.5 text-sm font-medium text-slate-700">

@@ -56,6 +56,43 @@ export async function syncFtsIndex(): Promise<void> {
   ftsIndexed = true;
 }
 
+export async function syncFtsIndexForDocument(docId: string): Promise<void> {
+  await ensureFtsTable();
+
+  const rowIds = await db.$queryRawUnsafe<{ rowid: number }[]>(
+    `SELECT rowid FROM document_chunks WHERE document_id = ?`,
+    docId,
+  );
+
+  if (rowIds.length > 0) {
+    const placeholders = rowIds.map(() => "?").join(",");
+    await db.$executeRawUnsafe(
+      `DELETE FROM document_fts WHERE rowid IN (${placeholders})`,
+      ...rowIds.map((r) => r.rowid),
+    );
+  }
+
+  const chunks = await db.$queryRawUnsafe<
+    { rowid: number; title: string; content: string }[]
+  >(
+    `SELECT rowid, title, content FROM document_chunks WHERE document_id = ?`,
+    docId,
+  );
+
+  if (chunks.length === 0) return;
+
+  await db.$executeRawUnsafe(
+    `INSERT INTO document_fts(rowid, title, content) VALUES ${chunks.map(() => "(?, ?, ?)").join(",")}`,
+    ...chunks.flatMap((chunk) => [
+      chunk.rowid,
+      chunk.title ? tokenizeChinese(chunk.title) : "",
+      chunk.content ? tokenizeChinese(chunk.content) : "",
+    ]),
+  );
+
+  ftsIndexed = true;
+}
+
 export async function searchByKeyword(
   query: string,
   limit = 20,

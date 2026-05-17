@@ -67,6 +67,17 @@ export default function LibraryPage() {
 
   useEffect(() => { if (tab === "documents") fetchDocs(page); }, [page, tab, fetchDocs]);
 
+  // Poll for status updates while any document is processing
+  useEffect(() => {
+    if (tab !== "documents") return;
+    const hasProcessing = documents.some((d) =>
+      ["uploading", "converting", "splitting", "embedding", "indexing"].includes(d.status)
+    );
+    if (!hasProcessing) return;
+    const interval = setInterval(() => fetchDocs(page), 5000);
+    return () => clearInterval(interval);
+  }, [tab, documents, page, fetchDocs]);
+
   async function handleDelete(docId: string) {
     if (!confirm("Delete this document and all its chunks?")) return;
     const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
@@ -277,7 +288,7 @@ export default function LibraryPage() {
                             {ready ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#DCFCE7] text-[#16A34A]">✓ Ready</span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#FEF3C7] text-[#D97706]">⟳ {doc.status}</span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#FEF3C7] text-[#D97706]"><span className="inline-block animate-spin">⟳</span> {doc.status}</span>
                             )}
                           </td>
                           <td className="px-4 py-3.5 text-sm text-muted-foreground">

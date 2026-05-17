@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import path from "path";
 import { db } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -6,11 +5,11 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
+import { spawnPythonJson } from "@/lib/python";
 import type { SearchResult } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
-const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
 
 interface RagChunkResult {
   chunk_id: string;
@@ -37,63 +36,30 @@ async function searchViaLightRAG(
   embedConfig: { apiBase: string; apiKey: string; model: string },
   llmConfig: { apiBase: string; apiKey: string; model: string },
 ): Promise<{ chunks: RagChunkResult[]; mode: string; entities?: unknown[]; relations?: unknown[] }> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      RAG_QUERY_SCRIPT,
-      "--user-id", userId,
-      "--query", query,
-      "--mode", mode,
-      "--limit", String(limit),
-      "--embed-api-base", embedConfig.apiBase,
-      "--embed-api-key", embedConfig.apiKey,
-      "--embed-model", embedConfig.model,
-      "--llm-api-base", llmConfig.apiBase,
-      "--llm-api-key", llmConfig.apiKey,
-      "--llm-model", llmConfig.model,
-    ];
-    if (embedDim > 0) {
-      args.push("--embed-dim", String(embedDim));
-    }
+  const args = [
+    "--user-id", userId,
+    "--query", query,
+    "--mode", mode,
+    "--limit", String(limit),
+    "--embed-api-base", embedConfig.apiBase,
+    "--embed-api-key", embedConfig.apiKey,
+    "--embed-model", embedConfig.model,
+    "--llm-api-base", llmConfig.apiBase,
+    "--llm-api-key", llmConfig.apiKey,
+    "--llm-model", llmConfig.model,
+  ];
+  if (embedDim > 0) args.push("--embed-dim", String(embedDim));
 
-    const proc = spawn(PYTHON_PATH, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 60_000,
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
-    proc.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-    proc.on("close", (code: number | null) => {
-      if (code !== 0) {
-        reject(new Error(`LightRAG query failed: ${stderr || stdout}`));
-        return;
-      }
-      const trimmed = stdout.trim();
-      if (!trimmed) { resolve({ chunks: [], mode, entities: [], relations: [] }); return; }
-      try {
-        const parsed: RagQueryOutput = JSON.parse(trimmed);
-        if (parsed.error) {
-          reject(new Error(parsed.error));
-        } else {
-          resolve({
-            chunks: parsed.chunks || [],
-            mode: parsed.mode || mode,
-            entities: parsed.entities,
-            relations: parsed.relations,
-          });
-        }
-      } catch {
-        resolve({ chunks: [], mode, entities: [], relations: [] });
-      }
-    });
-
-    proc.on("error", (err: Error) => {
-      reject(err);
-    });
-  });
+  const parsed: RagQueryOutput = await spawnPythonJson(RAG_QUERY_SCRIPT, args, { timeout: 60_000 });
+  if (parsed.error) {
+    throw new Error(parsed.error);
+  }
+  return {
+    chunks: parsed.chunks || [],
+    mode: parsed.mode || mode,
+    entities: parsed.entities,
+    relations: parsed.relations,
+  };
 }
 
 async function searchViaDirectEmbedding(
@@ -149,7 +115,7 @@ async function searchViaDirectEmbedding(
       documentId: r.chunk.document.id,
       documentName: r.chunk.document.originalName,
       title: r.chunk.title,
-      content: r.chunk.content.slice(0, 500),
+      content: r.chunk.content.slice(0, 4000),
       score: Math.round(normalized * 1000) / 1000,
     };
   });
@@ -174,7 +140,7 @@ export async function semanticSearch(
   // Try LightRAG first (requires LLM + embed configs)
   if (llmModel?.provider.apiKey && embedModel.provider.apiKey) {
     try {
-      const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
+      const embedDim = await resolveEmbeddingDim(embedModel).catch((err) => { console.warn("Failed to resolve embedding dim:", err); return 0; });
       const ragResults = await searchViaLightRAG(
         query,
         userId,
@@ -183,14 +149,14 @@ export async function semanticSearch(
         embedDim,
         {
           apiBase: embedModel.provider.apiBaseUrl
-            .replace(/\/embeddings?$/, "")
+            .replace(/\/embeddings(\/\w+)?$/, "")
             .replace(/\/chat\/completions$/, ""),
           apiKey: decrypt(embedModel.provider.apiKey),
           model: embedModel.modelId,
         },
         {
           apiBase: llmModel.provider.apiBaseUrl
-            .replace(/\/embeddings?$/, "")
+            .replace(/\/embeddings(\/\w+)?$/, "")
             .replace(/\/chat\/completions$/, ""),
           apiKey: decrypt(llmModel.provider.apiKey),
           model: llmModel.modelId,

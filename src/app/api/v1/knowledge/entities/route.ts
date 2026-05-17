@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { listEntities, buildConfig } from "@/lib/rag/client";
+import { manageRag, buildConfig } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 export async function GET(request: Request): Promise<NextResponse<ApiResponse>> {
@@ -29,14 +29,15 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
 
   try {
     const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-    const result = await listEntities(
-      user.id,
-      await buildConfig(embedModel),
-      await buildConfig(llmModel),
+    const result = await manageRag({
+      userId: user.id,
+      action: "entities",
+      embedConfig: buildConfig(embedModel),
+      llmConfig: buildConfig(llmModel),
       embedDim,
       keyword,
       limit,
-    );
+    });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     return NextResponse.json(

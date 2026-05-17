@@ -100,6 +100,7 @@ model TokenUsage {
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
 
+  @@index([userId, createdAt])
   @@map("token_usage")
 }
 
@@ -195,6 +196,7 @@ model Message {
 
   session BrainstormSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@index([sessionId])
   @@map("messages")
 }
 

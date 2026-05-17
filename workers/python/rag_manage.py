@@ -142,6 +142,84 @@ async def action_merge_entities(rag, sources: list[str], target: str) -> dict:
         return {"error": str(e)}
 
 
+async def action_graph_summary(rag) -> dict:
+    """Return graph statistics: total entities, relations, and top entities by degree."""
+    try:
+        labels = await rag.get_graph_labels()
+        if not labels:
+            return {"entities": [], "total_entities": 0, "total_relations": 0, "top": []}
+
+        # Count degrees from the subgraph of each major entity
+        top_entities = []
+        for label in labels[:30]:  # Check top 30 for degree counting
+            try:
+                kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
+                degree = len(kg.edges or [])
+                if degree > 0:
+                    top_entities.append({"name": label, "degree": degree})
+            except Exception:
+                pass
+
+        top_entities.sort(key=lambda x: -x["degree"])
+        return {
+            "total_entities": len(labels),
+            "top": top_entities[:20],
+        }
+    except Exception as e:
+        return {"error": str(e), "entities": [], "top": []}
+
+
+async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> dict:
+    """Return a clean core graph: only nodes with degree >= min_degree, hiding leaf nodes."""
+    labels = await rag.get_graph_labels()
+    if not labels:
+        return {"entity": "", "graph": {"nodes": [], "edges": []}}
+
+    # Pick the most central entity as root
+    best_label = labels[0]
+    best_degree = 0
+    for label in labels[:20]:
+        try:
+            kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
+            d = len(kg.edges or [])
+            if d > best_degree:
+                best_degree = d
+                best_label = label
+        except Exception:
+            pass
+
+    # Get subgraph from the central entity
+    kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
+
+    # Filter out leaf nodes (degree 1, only connected to the center)
+    edge_count = {}
+    for edge in (kg.edges or []):
+        edge_count[edge.source] = edge_count.get(edge.source, 0) + 1
+        edge_count[edge.target] = edge_count.get(edge.target, 0) + 1
+
+    core_node_ids = {n.id for n in (kg.nodes or []) if edge_count.get(n.id, 0) >= min_degree}
+    core_node_ids.add(best_label)  # Always keep center
+
+    filtered_nodes = [n for n in (kg.nodes or []) if n.id in core_node_ids]
+    filtered_edges = [
+        e for e in (kg.edges or [])
+        if e.source in core_node_ids and e.target in core_node_ids
+    ]
+
+    return {
+        "entity": best_label,
+        "graph": {
+            "nodes": [{"id": n.id, "label": (n.labels[0] if n.labels else n.id) or n.id, "type": getattr(n, 'entity_type', 'entity') or "entity",
+                       "description": getattr(n, 'description', '') or ""} for n in filtered_nodes],
+            "edges": [{"source": e.source, "target": e.target,
+                       "label": getattr(e, 'description', '') or "",
+                       "weight": getattr(e, 'weight', 1) or 1} for e in filtered_edges],
+        },
+        "total_entities": len(labels),
+        "leaf_count": len(labels) - len(filtered_nodes),
+    }
+
+
 async def action_delete_entity(rag, entity_name: str) -> dict:
     try:
         await rag.adelete_by_entity(entity_name)
@@ -195,24 +273,35 @@ async def main_async(args) -> None:
             eff_dim = 1024
         elif "text-embedding-3-small" in model_lower:
             eff_dim = 1536
+        elif "text-embedding-v4" in model_lower:
+            eff_dim = 1536
         elif any(x in model_lower for x in ("mxbai", "nomic")):
             eff_dim = 768
         else:
             eff_dim = 768
 
     rag = LightRAG(
-        working_dir=working_dir,
-        llm_model_func=llm_func,
-        embedding_func=EmbeddingFunc(
-            embedding_dim=eff_dim,
-            max_token_size=8192,
-            func=embedding_func,
-        ),
-        kv_storage=kv_storage,
-        vector_storage=vector_storage,
-        graph_storage=graph_storage,
-        doc_status_storage=doc_status_storage,
-        **storage_kwargs,
+    working_dir=working_dir,
+    llm_model_func=llm_func,
+    embedding_func=EmbeddingFunc(
+        embedding_dim=eff_dim,
+        max_token_size=8192,
+        func=embedding_func,
+        send_dimensions=True,
+    ),
+    kv_storage=kv_storage,
+    vector_storage=vector_storage,
+    graph_storage=graph_storage,
+    doc_status_storage=doc_status_storage,
+    addon_params={
+        "entity_types": [
+            "Technology", "Framework", "Architecture", "Protocol",
+            "Pattern", "Concept", "Algorithm", "Component",
+            "Service", "Platform", "Module", "Interface",
+            "Strategy", "Mechanism", "Pipeline", "Workflow",
+        ],
+    },
+    **storage_kwargs,
     )
 
     await rag.initialize_storages()
@@ -221,10 +310,19 @@ async def main_async(args) -> None:
 
     if action == "entities":
         result = await action_list_entities(rag, args.keyword or "", args.limit)
+    elif action == "graph-summary":
+        result = await action_graph_summary(rag)
+    elif action == "core-graph":
+        result = await action_core_graph(rag, args.max_nodes or 50, args.min_degree or 2)
     elif action == "entity-detail":
         result = await action_entity_detail(rag, args.entity_name, args.depth, args.max_nodes)
     elif action == "graph":
-        result = await action_entity_detail(rag, args.entity_name or "", args.depth, args.max_nodes)
+        entity = args.entity_name
+        if not entity:
+            # Pick the first available entity as default
+            all_entities = await action_list_entities(rag, "", 1)
+            entity = (all_entities.get("entities") or [None])[0] or ""
+        result = await action_entity_detail(rag, entity, args.depth, args.max_nodes)
     elif action == "delete-by-doc":
         result = await action_delete_by_doc(rag, args.doc_id)
     elif action == "create-entity":
@@ -246,7 +344,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="LightRAG knowledge graph management")
     parser.add_argument("--user-id", required=True)
     parser.add_argument("--action", required=True,
-                        choices=["entities", "entity-detail", "graph", "delete-by-doc",
+                        choices=["entities", "entity-detail", "graph", "core-graph", "graph-summary", "delete-by-doc",
                                  "create-entity", "edit-entity", "merge-entities", "delete-entity"])
     parser.add_argument("--keyword", default="")
     parser.add_argument("--entity-name", default="")
@@ -259,6 +357,7 @@ def main() -> None:
     parser.add_argument("--doc-id", default="")
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--max-nodes", type=int, default=100)
+    parser.add_argument("--min-degree", type=int, default=2)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--embed-api-base", default="http://localhost:11434/v1")
     parser.add_argument("--embed-api-key", default="ollama")

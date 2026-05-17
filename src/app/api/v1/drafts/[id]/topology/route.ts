@@ -2,17 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
+import { getErrorMessage } from "@/lib/api-helpers";
 import type {
   TopologyResponse,
   TopologyNode,
   TopologyEdge,
   TopologyStats,
 } from "@/types/topology";
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
 
 interface ReferenceGroup {
   documentName: string;
@@ -62,15 +58,13 @@ export async function GET(
       orderBy: { index: "asc" },
     });
 
-    // Group references by document
+    // Group references by document NAME (deduplicate re-uploads of same file)
     const groupMap = new Map<string, ReferenceGroup>();
 
     for (const section of sections) {
       for (const ref of section.references) {
-        const groupKey =
-          ref.documentId && ref.documentId.trim() !== ""
-            ? ref.documentId
-            : `name:${ref.documentName}`;
+        // Use documentName as key to deduplicate same file uploaded multiple times
+        const groupKey = ref.documentName || `id:${ref.documentId || "unknown"}`;
 
         const existing = groupMap.get(groupKey);
         if (existing) {

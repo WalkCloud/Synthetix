@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { renderAIContent } from "@/components/shared/markdown-renderer";
+import { deepClone, getByPath, updateByPath, removeByPath, addChildAtPath, renumberSections, numForPath } from "@/lib/outline-tree";
+import type { OutlineSection } from "@/lib/outline-tree";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
@@ -25,14 +28,6 @@ interface Message {
   role: "user" | "ai" | "system";
   content: string;
   createdAt: string;
-}
-
-interface OutlineSection {
-  num: string;
-  title: string;
-  keyPoints?: string[];
-  estimatedWords?: number;
-  children?: OutlineSection[];
 }
 
 interface Outline {
@@ -258,100 +253,9 @@ export default function BrainstormPage() {
     return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
 
-  function renderAIContent(content: string): React.ReactNode {
-    const text = content.replace(/OUTLINE_REQUESTED/g, "").trim();
-    if (!text) return null;
-
-    const lines = text.split("\n");
-    return lines.map((line, i) => {
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      const renderedLine = parts.map((part, j) => {
-        if (part.startsWith("**") && part.endsWith("**")) {
-          return <strong key={j} className="text-indigo-900 font-semibold">{part.slice(2, -2)}</strong>;
-        }
-        return part;
-      });
-
-      const isList = /^[-*]\s|^[0-9]+[.．]\s/.test(line.trim());
-      if (isList) {
-        return (
-          <div key={i} className="pl-4 relative my-1 text-slate-700">
-            <span className="absolute left-0 top-[8px] w-1.5 h-1.5 bg-indigo-400 rounded-full"></span>
-            {renderedLine}
-          </div>
-        );
-      }
-      return <span key={i} className="block mb-2 text-slate-700 leading-relaxed">{renderedLine}</span>;
-    });
-  }
-
   const activeSession = sessions.find((s) => s.id === activeId);
   const activeMessageCount = activeSession?._count?.messages ?? messages.length;
   const displayStatus = outline ? "Outline Ready" : status === "Complete" ? "Complete" : "Deepening Phase";
-
-  function deepClone(sections: OutlineSection[]): OutlineSection[] {
-    return sections.map(s => ({ ...s, children: s.children ? deepClone(s.children) : undefined }));
-  }
-
-  function getByPath(sections: OutlineSection[], path: number[]): OutlineSection | undefined {
-    if (path.length === 0) return undefined;
-    const [head, ...rest] = path;
-    const node = sections[head];
-    if (!node) return undefined;
-    if (rest.length === 0) return node;
-    return getByPath(node.children || [], rest);
-  }
-
-  function updateByPath(sections: OutlineSection[], path: number[], updater: (s: OutlineSection) => OutlineSection): OutlineSection[] {
-    if (path.length === 0) return sections;
-    const [head, ...rest] = path;
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      if (rest.length === 0) return updater(s);
-      return { ...s, children: updateByPath(s.children || [], rest, updater) };
-    });
-  }
-
-  function removeByPath(sections: OutlineSection[], path: number[]): OutlineSection[] {
-    if (path.length === 0) return sections;
-    const [head, ...rest] = path;
-    if (rest.length === 0) return sections.filter((_, i) => i !== head);
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      return { ...s, children: removeByPath(s.children || [], rest) };
-    });
-  }
-
-  function addChildAtPath(sections: OutlineSection[], path: number[], defaults: { num: string; title: string; estimatedWords: number }): OutlineSection[] {
-    if (path.length === 0) {
-      return [...sections, defaults];
-    }
-    const [head, ...rest] = path;
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      if (rest.length === 0) {
-        const children = [...(s.children || []), defaults];
-        return { ...s, children };
-      }
-      return { ...s, children: addChildAtPath(s.children || [], rest, defaults) };
-    });
-  }
-
-  function renumberSections(sections: OutlineSection[], prefix = ""): OutlineSection[] {
-    return sections.map((s, i) => {
-      const num = prefix ? `${prefix}.${i + 1}` : String(i + 1);
-      return { ...s, num, children: s.children ? renumberSections(s.children, num) : undefined };
-    });
-  }
-
-  function numForPath(sections: OutlineSection[], path: number[]): string {
-    if (path.length === 0) return "";
-    const [head, ...rest] = path;
-    if (rest.length === 0) return String(head + 1);
-    const parentNum = String(head + 1);
-    const childNum = numForPath(sections[head]?.children || [], rest.map(r => r));
-    return `${parentNum}.${childNum}`;
-  }
 
   function startEditing() {
     if (!outline) return;

@@ -20,6 +20,7 @@ export async function POST(
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
 
+  // Load original processing options from the last successful task
   let options: ProcessingOptions = {};
   try {
     const body = await request.json().catch(() => ({}));
@@ -27,6 +28,7 @@ export async function POST(
   } catch { /* ignore parse errors */ }
 
   await db.document.update({ where: { id }, data: { status: "uploading" } });
+  await db.documentChunk.deleteMany({ where: { documentId: id } }).catch(() => {});
 
   const queue = getQueue();
   const taskId = await queue.submit("document_convert", { docId: doc.id, options }, user.id);

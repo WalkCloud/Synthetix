@@ -22,6 +22,15 @@ function buildHeaders(apiKey?: string): Record<string, string> {
   return headers;
 }
 
+// Default fetch timeout to prevent indefinite hangs
+const FETCH_TIMEOUT_MS = 300_000;
+
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
 export class OpenAICompatibleAdapter implements LLMProvider {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
@@ -32,7 +41,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   private get baseApiUrl(): string {
-    return this.baseUrl.replace(/\/v1\/(chat\/completions|embeddings?)$/, "").replace(/\/v1$/, "");
+    return this.baseUrl.replace(/\/v\d+\/(chat\/completions|embeddings)(\/\w+)?$/, "").replace(/\/v\d+$/, "");
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
@@ -49,7 +58,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       body.max_tokens = params.maxTokens;
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: buildHeaders(this.apiKey),
       body: JSON.stringify(body),
@@ -93,7 +102,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       body.max_tokens = params.maxTokens;
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: buildHeaders(this.apiKey),
       body: JSON.stringify(body),
@@ -157,7 +166,8 @@ export class OpenAICompatibleAdapter implements LLMProvider {
             }
             yield chunk;
           } catch {
-            // Skip malformed JSON lines
+            // Malformed JSON line in SSE stream — skip it
+            console.warn("Skipped malformed SSE JSON line:", line.slice(0, 200));
           }
         }
       }
@@ -168,13 +178,14 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     yield { content: "", done: true };
   }
 
-  async embed(texts: string[], model?: string): Promise<EmbedResponse> {
+  async embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse> {
     const url = `${this.baseApiUrl}/v1/embeddings`;
-    const requestBody = JSON.stringify({ input: texts, model: model || "text-embedding" });
-    const response = await fetch(url, {
+    const body: Record<string, unknown> = { input: texts, model: model || "text-embedding" };
+    if (dimensions) body.dimensions = dimensions;
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: buildHeaders(this.apiKey),
-      body: requestBody,
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -199,12 +210,12 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     const headers = buildHeaders(this.apiKey);
     for (const path of ["/v1/models", "/models"]) {
       try {
-        const response = await fetch(`${this.baseApiUrl}${path}`, { method: "GET", headers });
+        const response = await fetchWithTimeout(`${this.baseApiUrl}${path}`, { method: "GET", headers });
         if (response.ok) return true;
       } catch { /* continue */ }
     }
     try {
-      const response = await fetch(`${this.baseApiUrl}/v1/embeddings`, {
+      const response = await fetchWithTimeout(`${this.baseApiUrl}/v1/embeddings`, {
         method: "POST",
         headers,
         body: JSON.stringify({ input: "test", model: "test" }),
@@ -216,7 +227,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
   async getModels(): Promise<ModelInfo[]> {
     const url = `${this.baseApiUrl}/v1/models`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "GET",
       headers: buildHeaders(this.apiKey),
     });

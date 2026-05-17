@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
+import { CardSelector } from "@/components/shared/card-selector";
 
 interface UserProfile {
   id: string;
@@ -458,30 +459,20 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setAuthMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${authMode === "local" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${authMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Local Authentication</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">Username and password stored locally. Best for offline deployment.</div>
-                  </button>
-                  <button onClick={() => setAuthMode("appwrite")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${authMode === "appwrite" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${authMode === "appwrite" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${authMode === "appwrite" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Appwrite Cloud Auth</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">OAuth, social login, MFA via Appwrite. Best for team collaboration.</div>
-                  </button>
+                  <CardSelector
+                    selected={authMode === "local"}
+                    onSelect={() => setAuthMode("local")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>}
+                    title="Local Authentication"
+                    description="Username and password stored locally. Best for offline deployment."
+                  />
+                  <CardSelector
+                    selected={authMode === "appwrite"}
+                    onSelect={() => setAuthMode("appwrite")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
+                    title="Appwrite Cloud Auth"
+                    description="OAuth, social login, MFA via Appwrite. Best for team collaboration."
+                  />
                 </div>
               </div>
             </div>
@@ -580,30 +571,20 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setStorageMode("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${storageMode === "local" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${storageMode === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Local Storage</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">Store documents on your local file system. Best for offline deployment.</div>
-                  </button>
-                  <button onClick={() => setStorageMode("s3")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${storageMode === "s3" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${storageMode === "s3" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${storageMode === "s3" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">S3 Object Storage</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">S3-compatible storage (AWS S3, MinIO). Best for cloud deployment.</div>
-                  </button>
+                  <CardSelector
+                    selected={storageMode === "local"}
+                    onSelect={() => setStorageMode("local")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
+                    title="Local Storage"
+                    description="Store documents on your local file system. Best for offline deployment."
+                  />
+                  <CardSelector
+                    selected={storageMode === "s3"}
+                    onSelect={() => setStorageMode("s3")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
+                    title="S3 Object Storage"
+                    description="S3-compatible storage (AWS S3, MinIO). Best for cloud deployment."
+                  />
                 </div>
               </div>
             </div>
@@ -860,54 +841,34 @@ export default function SettingsPage() {
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => setRagVectorDb("local")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "local" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "local" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "local" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Local (NanoVectorDB)</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">Default local vector storage. Zero configuration, works offline.</div>
-                  </button>
-                  <button onClick={() => setRagVectorDb("pgvector")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "pgvector" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "pgvector" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "pgvector" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">pgvector (PostgreSQL)</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">Production-grade vector search using PostgreSQL + pgvector extension.</div>
-                  </button>
-                  <button onClick={() => setRagVectorDb("milvus")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "milvus" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "milvus" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "milvus" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Milvus</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">High-performance vector database for billion-scale similarity search.</div>
-                  </button>
-                  <button onClick={() => setRagVectorDb("qdrant")} className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${ragVectorDb === "qdrant" ? "border-primary bg-primary-50" : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"}`}>
-                    <div className={`absolute top-3 right-3 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${ragVectorDb === "qdrant" ? "bg-primary border-primary" : "border-border"}`}>
-                      <svg className={`w-3 h-3 text-white ${ragVectorDb === "qdrant" ? "opacity-100" : "opacity-0"} transition-opacity`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="w-10 h-10 rounded-lg bg-[#F0FDF4] text-[#16A34A] flex items-center justify-center">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      </div>
-                      <div className="text-[15px] font-semibold">Qdrant</div>
-                    </div>
-                    <div className="text-[13px] text-muted-foreground leading-relaxed">Rust-based vector search engine with rich filtering and quantization.</div>
-                  </button>
+                  <CardSelector
+                    selected={ragVectorDb === "local"}
+                    onSelect={() => setRagVectorDb("local")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
+                    title="Local (NanoVectorDB)"
+                    description="Default local vector storage. Zero configuration, works offline."
+                  />
+                  <CardSelector
+                    selected={ragVectorDb === "pgvector"}
+                    onSelect={() => setRagVectorDb("pgvector")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg></div>}
+                    title="pgvector (PostgreSQL)"
+                    description="Production-grade vector search using PostgreSQL + pgvector extension."
+                  />
+                  <CardSelector
+                    selected={ragVectorDb === "milvus"}
+                    onSelect={() => setRagVectorDb("milvus")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
+                    title="Milvus"
+                    description="High-performance vector database for billion-scale similarity search."
+                  />
+                  <CardSelector
+                    selected={ragVectorDb === "qdrant"}
+                    onSelect={() => setRagVectorDb("qdrant")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#F0FDF4] text-[#16A34A] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>}
+                    title="Qdrant"
+                    description="Rust-based vector search engine with rich filtering and quantization."
+                  />
                 </div>
               </div>
             </div>
