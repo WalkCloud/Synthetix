@@ -5,25 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatFileSize } from "@/lib/text/format-file-size";
+import { getFileIconClass } from "@/lib/text/file-utils";
 import type { DocumentMeta, SearchResult } from "@/types/documents";
 
 type TabId = "documents" | "semantic";
-
-function formatSize(bytes: number): string {
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
-
-function fileIconClass(format: string): string {
-  const m: Record<string, string> = {
-    pdf: "doc-icon-pdf bg-[#FEE2E2] text-[#DC2626]",
-    docx: "doc-icon-docx bg-[#EFF6FF] text-[#2563EB]",
-    md: "doc-icon-md bg-[#DCFCE7] text-[#16A34A]",
-    pptx: "doc-icon-pptx bg-[#FFF7ED] text-[#EA580C]",
-    xlsx: "bg-[#DCFCE7] text-[#16A34A]",
-  };
-  return m[format] || "bg-[#F4F2EF] text-[#6B6560]";
-}
 
 const tagColors: Record<string, string> = {
   Architecture: "bg-primary-100 text-primary",
@@ -259,7 +245,7 @@ export default function LibraryPage() {
                         <tr key={doc.id} className="border-b border-[#F4F2EF] last:border-b-0 hover:bg-[#F3F1FC] transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0 ${fileIconClass(fmt)}`}>
+                              <div className={`w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0 ${getFileIconClass(fmt)}`}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px]"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                               </div>
                               <div>
@@ -283,7 +269,7 @@ export default function LibraryPage() {
                               <span className="text-xs text-muted-foreground">{chunkCount}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3.5 text-sm text-foreground">{formatSize(doc.originalSize)}</td>
+                          <td className="px-4 py-3.5 text-sm text-foreground">{formatFileSize(doc.originalSize)}</td>
                           <td className="px-4 py-3.5">
                             {ready ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#DCFCE7] text-[#16A34A]">✓ Ready</span>
@@ -408,8 +394,17 @@ export default function LibraryPage() {
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#F4F2EF] text-[#6B6560]">Keyword match</span>
                     )}
                   </div>
-                  <div className="text-sm text-muted-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: r.content.slice(0, 300).replace(/\b(search|document|test|content)\b/gi, "<mark class='bg-[#F3F1FC] text-primary px-1 py-px rounded-sm'>" + "$&" + "</mark>") }} />
+                  <div className="text-sm text-muted-foreground leading-relaxed">
+                    {(() => {
+                      const text = r.content.slice(0, 300);
+                      const parts = text.split(/(\b(?:search|document|test|content)\b)/gi);
+                      return parts.map((part, i) =>
+                        /^(search|document|test|content)$/i.test(part)
+                          ? <mark key={i} className="bg-[#F3F1FC] text-primary px-1 py-px rounded-sm">{part}</mark>
+                          : part
+                      );
+                    })()}
+                  </div>
                   <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg> {r.chunkId}</span>
                     {r.title && <span>{r.title}</span>}

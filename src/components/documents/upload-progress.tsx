@@ -1,5 +1,7 @@
 "use client";
 
+import { formatFileSize } from "@/lib/text/format-file-size";
+
 interface UploadItem {
   name: string;
   size: number;
@@ -7,12 +9,6 @@ interface UploadItem {
   progress: number;
   error?: string;
   docId?: string;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / 1048576).toFixed(1)}MB`;
 }
 
 const statusLabels: Record<UploadItem["status"], string> = {
@@ -58,7 +54,7 @@ export function UploadProgress({ items }: { items: UploadItem[] }) {
                   style={{ width: `${item.progress}%` }}
                 />
               </div>
-              <span className="text-xs text-muted-foreground shrink-0">{formatSize(item.size)}</span>
+              <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(item.size)}</span>
             </div>
             {item.error && <p className="text-xs text-[#DC2626] mt-1">{item.error}</p>}
           </div>

@@ -5,6 +5,7 @@ import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
 import { semanticSplit } from "@/lib/documents/semantic-splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
@@ -312,9 +313,7 @@ export async function processDocument(taskId: string): Promise<void> {
       const ragChunksDir = storage.getDocumentDir(docId, userId);
       const ragEmbedConfig = embedModel.provider.apiKey
         ? {
-            apiBase: embedModel.provider.apiBaseUrl
-              .replace(/\/embeddings(\/\w+)?$/, "")
-              .replace(/\/chat\/completions$/, ""),
+            apiBase: normalizeProviderBaseUrl(embedModel.provider.apiBaseUrl),
             apiKey: decrypt(embedModel.provider.apiKey),
             model: embedModel.modelId,
           }
@@ -322,9 +321,7 @@ export async function processDocument(taskId: string): Promise<void> {
 
       const ragLlmConfig = writingModel?.provider.apiKey
         ? {
-            apiBase: writingModel.provider.apiBaseUrl
-              .replace(/\/embeddings(\/\w+)?$/, "")
-              .replace(/\/chat\/completions$/, ""),
+            apiBase: normalizeProviderBaseUrl(writingModel.provider.apiBaseUrl),
             apiKey: decrypt(writingModel.provider.apiKey),
             model: writingModel.modelId,
           }
