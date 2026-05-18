@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { LoadingState } from "@/components/shared/loading-state";
 import { draftStatusLabels, draftStatusColors } from "@/lib/text/status-labels";
 import type { DraftMeta } from "@/types/writing";
 
@@ -65,7 +66,7 @@ export default function WritingListPage() {
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-slate-500">Loading...</div>
+          <LoadingState />
         ) : drafts.length === 0 ? (
           <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl shadow-soft">
             <p className="text-lg font-semibold text-slate-700 mb-1">No drafts yet</p>

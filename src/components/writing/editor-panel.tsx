@@ -7,6 +7,7 @@ import { StatePills } from "./state-pills";
 import { ConstraintsBar } from "./constraints-bar";
 import { ComparisonView } from "./comparison-view";
 import { ContentRenderer } from "./content-renderer";
+import { Spinner } from "@/components/shared/spinner";
 
 interface SectionConstraints {
   wordLimit: number;
@@ -236,10 +237,7 @@ export function EditorPanel({
           <div className="px-5 pt-5 pb-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="relative w-9 h-9 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9 animate-spin" style={{ animationDuration: "2s" }}>
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" className="text-slate-200" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-primary-600" />
-                </svg>
+                <Spinner size="lg" className="text-primary-600" style={{ animationDuration: "2s" }} />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">
@@ -364,10 +362,7 @@ export function EditorPanel({
           <div className="px-5 pt-5 pb-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="relative w-9 h-9 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9 animate-spin" style={{ animationDuration: "2s" }}>
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" className="text-slate-200" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-primary-600" />
-                </svg>
+                <Spinner size="lg" className="text-primary-600" style={{ animationDuration: "2s" }} />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">
