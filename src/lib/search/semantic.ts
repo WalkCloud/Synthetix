@@ -81,7 +81,11 @@ async function searchViaDirectEmbedding(
       embedding: { not: null },
       document: { userId },
     },
-    include: { document: { select: { id: true, originalName: true } } },
+    select: {
+      id: true,
+      embedding: true,
+      document: { select: { id: true, originalName: true } },
+    },
     take: 500,
   });
 
@@ -100,6 +104,13 @@ async function searchViaDirectEmbedding(
 
   if (scored.length === 0) return [];
 
+  const topChunkIds = scored.map((r) => r.chunk.id);
+  const topChunks = await db.documentChunk.findMany({
+    where: { id: { in: topChunkIds } },
+    select: { id: true, content: true, title: true },
+  });
+  const contentMap = new Map(topChunks.map((c) => [c.id, c]));
+
   const minRaw = scored[scored.length - 1].raw;
   const maxRaw = scored[0].raw;
   const range = maxRaw - minRaw || 1;
@@ -112,8 +123,8 @@ async function searchViaDirectEmbedding(
       chunkId: r.chunk.id,
       documentId: r.chunk.document.id,
       documentName: r.chunk.document.originalName,
-      title: r.chunk.title,
-      content: r.chunk.content.slice(0, 4000),
+      title: contentMap.get(r.chunk.id)?.title || null,
+      content: contentMap.get(r.chunk.id)?.content?.slice(0, 4000) || "",
       score: Math.round(normalized * 1000) / 1000,
     };
   });
