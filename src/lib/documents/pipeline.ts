@@ -17,6 +17,21 @@ import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/cl
 import fs from "fs";
 import path from "path";
 
+async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, concurrency: number): Promise<void> {
+  let idx = 0;
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < Math.min(concurrency, items.length); w++) {
+    workers.push((async () => {
+      while (idx < items.length) {
+        const i = idx++;
+        if (i >= items.length) break;
+        await fn(items[i]);
+      }
+    })());
+  }
+  await Promise.all(workers);
+}
+
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
 const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.5");
@@ -175,10 +190,10 @@ export async function splitAndPersistChunks(
       })),
     });
 
-    await Promise.all(
-      chunks.map((chunk) =>
-        storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
-      ),
+    await boundedAll(
+      chunks,
+      (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
+      8,
     );
   } else if (options.indexTarget !== "chunks") {
     await db.documentChunk.deleteMany({ where: { documentId: docId } });
@@ -247,16 +262,36 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
       totalEmbedTokens += embedResult.inputTokens;
       const start = offsets[ri];
 
-      for (let ei = 0; ei < embedResult.embeddings.length; ei++) {
-        await db.documentChunk.update({
-          where: { id: validChunks[start + ei].id },
-          data: {
-            embedding: float32ToBuffer(new Float32Array(embedResult.embeddings[ei])),
-            embedModel: embedModel.modelId,
-          },
-        });
-      }
+      const updates = embedResult.embeddings.map((emb, ei) => ({
+        chunkId: validChunks[start + ei].id,
+        embedding: float32ToBuffer(new Float32Array(emb)),
+      }));
+      await boundedAll(updates, (u) =>
+        db.documentChunk.update({
+          where: { id: u.chunkId },
+          data: { embedding: u.embedding, embedModel: embedModel.modelId },
+        }),
+        5,
+      );
     }
+  }
+
+  const embeddingsBinPath = path.join(ctx.outputDir, "embeddings.bin");
+  const entries: Buffer[] = [];
+  for (const chunk of validChunks) {
+    const updated = await db.documentChunk.findUnique({ where: { id: chunk.id }, select: { embedding: true } });
+    if (updated?.embedding) {
+      const idBuf = Buffer.from(chunk.id, "utf-8");
+      const idLenBuf = Buffer.alloc(4);
+      idLenBuf.writeUInt32BE(idBuf.length);
+      const embBuf = Buffer.from(updated.embedding);
+      const embLenBuf = Buffer.alloc(4);
+      embLenBuf.writeUInt32BE(embBuf.length);
+      entries.push(idLenBuf, idBuf, embLenBuf, embBuf);
+    }
+  }
+  if (entries.length > 0) {
+    fs.writeFileSync(embeddingsBinPath, Buffer.concat(entries));
   }
 
   await recordTokenUsage({
