@@ -5,10 +5,12 @@ import crypto from "crypto";
 interface UserSettings {
   storageType?: string;
   localPath?: string;
+  cachePath?: string;
   s3Bucket?: string;
   s3Region?: string;
   s3Endpoint?: string;
   s3AccessKey?: string;
+  s3SecretKey?: string;
   minioEndpoint?: string;
   minioBucket?: string;
   minioAccessKey?: string;

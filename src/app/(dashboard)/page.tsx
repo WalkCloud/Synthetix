@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
+import { getDashboardDocumentStatusDisplay } from "@/lib/dashboard/document-status";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -18,15 +19,6 @@ interface DocumentSummary {
   originalName: string;
   status: string;
   createdAt: string;
-}
-
-interface TaskItem {
-  id: string;
-  type: string;
-  status: string;
-  progress: number;
-  createdAt: string;
-  error: string | null;
 }
 
 interface DashboardStats {
@@ -46,14 +38,6 @@ const statusColors: Record<string, string> = {
   drafting: "bg-orange-50 text-orange-600",
   assembling: "bg-blue-50 text-blue-600",
   completed: "bg-green-50 text-green-600",
-};
-
-const docStatusColors: Record<string, { bg: string; text: string; border: string; dot: string; label: string }> = {
-  uploaded: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-100", dot: "bg-orange-500", label: "Uploaded" },
-  converting: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-100", dot: "bg-blue-500", label: "Converting" },
-  converted: { bg: "bg-green-50", text: "text-green-700", border: "border-green-100", dot: "bg-green-500", label: "Converted" },
-  indexed: { bg: "bg-green-50", text: "text-green-700", border: "border-green-100", dot: "bg-green-500", label: "Indexed" },
-  failed: { bg: "bg-red-50", text: "text-red-700", border: "border-red-100", dot: "bg-red-500", label: "Failed" },
 };
 
 function formatTimeAgo(dateStr: string): string {
@@ -263,7 +247,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 recentDocs.map((doc, i) => {
-                  const sc = docStatusColors[doc.status] ?? docStatusColors.uploaded;
+                  const sc = getDashboardDocumentStatusDisplay(doc.status);
                   return (
                     <div
                       key={doc.id}

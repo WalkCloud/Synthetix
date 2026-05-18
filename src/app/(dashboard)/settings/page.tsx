@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { CardSelector } from "@/components/shared/card-selector";
 
@@ -9,6 +9,9 @@ interface UserProfile {
   username: string;
   email: string | null;
   displayName: string;
+  avatarUrl?: string | null;
+  role?: string;
+  createdAt?: string;
 }
 
 type Tab = "profile" | "auth" | "storage" | "database" | "rag";
@@ -95,11 +98,15 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [authMode, setAuthMode] = useState<AuthMode>("local");
   const [storageMode, setStorageMode] = useState<StorageMode>("local");
   const [storageLocalPath, setStorageLocalPath] = useState("./data/documents");
+  const [storageCachePath, setStorageCachePath] = useState("./data/cache");
   const [s3Endpoint, setS3Endpoint] = useState("");
   const [s3Region, setS3Region] = useState("us-east-1");
   const [s3Bucket, setS3Bucket] = useState("");
@@ -147,10 +154,12 @@ export default function SettingsPage() {
             const s = data.data;
             setStorageMode(s.storageType === "s3" ? "s3" : "local");
             setStorageLocalPath(s.localPath || "./data/documents");
+            setStorageCachePath(s.cachePath || "./data/cache");
             setS3Endpoint(s.s3Endpoint || "");
             setS3Region(s.s3Region || "us-east-1");
             setS3Bucket(s.s3Bucket || "");
             setS3AccessKey(s.s3AccessKey || "");
+            setS3SecretKey(s.s3SecretKey || "");
           }
         })
         .catch(() => {});
@@ -214,12 +223,14 @@ export default function SettingsPage() {
       const body: Record<string, unknown> = {
         storageType: storageMode,
         localPath: storageLocalPath || undefined,
+        cachePath: storageCachePath || undefined,
       };
       if (storageMode === "s3") {
         body.s3Endpoint = s3Endpoint || undefined;
         body.s3Region = s3Region || undefined;
         body.s3Bucket = s3Bucket || undefined;
         body.s3AccessKey = s3AccessKey || undefined;
+        body.s3SecretKey = s3SecretKey || undefined;
       }
       const res = await fetch("/api/v1/settings/storage", {
         method: "PUT",
@@ -290,6 +301,7 @@ export default function SettingsPage() {
           setProfile(data.data);
           setDisplayName(data.data.displayName);
           setEmail(data.data.email || "");
+          setAvatarUrl(data.data.avatarUrl || null);
         }
       });
   }, []);
@@ -322,6 +334,49 @@ export default function SettingsPage() {
       setMessage({ type: "success", text: "Password updated" });
     } else {
       setMessage({ type: "error", text: data.error || "Update failed" });
+    }
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: "error", text: "File too large. Maximum size is 5MB." });
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      setMessage({ type: "error", text: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const res = await fetch("/api/v1/users/avatar", {
+        method: "PUT",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setAvatarUrl(data.data.avatarUrl);
+        setMessage({ type: "success", text: "Avatar updated successfully." });
+      } else {
+        setMessage({ type: "error", text: data.error || "Upload failed." });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to upload avatar." });
+    } finally {
+      setUploadingAvatar(false);
+      // Reset file input so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -373,14 +428,38 @@ export default function SettingsPage() {
             <div className="bg-white border rounded-[16px]">
               <div className="p-6 text-center">
                 <div className="relative w-[120px] h-[120px] mx-auto mb-5 group">
-                  <div className="w-full h-full rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-bold text-[36px] tracking-tight">
-                    {initials}
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt="Avatar"
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-bold text-[36px] tracking-tight">
+                      {initials}
+                    </div>
+                  )}
+                  <div
+                    className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploadingAvatar ? (
+                      <svg className="w-6 h-6 text-white animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="8" />
+                      </svg>
+                    ) : (
+                      <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
+                      </svg>
+                    )}
                   </div>
-                  <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                    <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
-                    </svg>
-                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                  />
                 </div>
                 <div className="text-xl font-bold mb-1">{displayName || profile?.username || "User"}</div>
                 <div className="text-sm text-muted-foreground mb-3">{email || "No email set"}</div>
@@ -390,13 +469,13 @@ export default function SettingsPage() {
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                     </svg>
-                    Member since Jan 15, 2026
+                    Member since {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                  <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-                    Change Avatar
+                    {uploadingAvatar ? "Uploading..." : "Change Avatar"}
                   </button>
                   <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
@@ -527,7 +606,7 @@ export default function SettingsPage() {
                     <h3 className="text-base font-semibold">Appwrite Configuration</h3>
                   </div>
                 </div>
-                <div className="p-6 opacity-50 pointer-events-auto">
+                <div className="p-6">
                   <div className="space-y-5">
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Appwrite Endpoint</label>
@@ -542,15 +621,12 @@ export default function SettingsPage() {
                       <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter API Key" />
                     </div>
                     <div className="flex gap-3">
-                      <button type="button" className="flex items-center gap-2 px-5 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                         Test Connection
                       </button>
                       <button type="button" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Save Configuration</button>
                     </div>
-                  </div>
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="bg-white/80 px-4 py-2 rounded-lg text-[13px] text-muted-foreground font-medium">Enable Appwrite Auth to configure</div>
                   </div>
                 </div>
               </div>
@@ -595,31 +671,18 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between px-6 py-5 border-b">
                   <div className="flex items-center gap-2.5">
                     <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-                    <h3 className="text-base font-semibold">Local Storage Path</h3>
+                    <h3 className="text-base font-semibold">Local Storage Configuration</h3>
                   </div>
                 </div>
                 <div className="p-6 space-y-5">
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Document Root Directory</label>
-                    <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
-                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-                        Browse
-                      </button>
-                    </div>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
                     <span className="text-xs text-muted-foreground mt-1 block">All converted Markdown documents and assets will be stored here.</span>
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Cache Directory</label>
-                    <div className="flex gap-2.5">
-                      <input className="flex-1 px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
-                    <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache.</span>
-                      <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shrink-0">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-                        Browse
-                      </button>
-                    </div>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageCachePath} onChange={(e) => setStorageCachePath(e.target.value)} />
                     <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache. Can be safely deleted.</span>
                   </div>
                   {/* Storage Usage */}
@@ -687,7 +750,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Secret Access Key</label>
-                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter secret access key" />
+                      <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter secret access key" value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)} />
                     </div>
                   </div>
                   <div>
@@ -714,56 +777,64 @@ export default function SettingsPage() {
 
         {/* Database Settings Tab */}
         {tab === "database" && (
-          <div className="space-y-5">
-            {/* Current Connection */}
+          <div className="space-y-6">
+            {/* Database Type Selection */}
             <div className="bg-white border rounded-[16px]">
               <div className="flex items-center justify-between px-6 py-5 border-b">
                 <div className="flex items-center gap-2.5">
                   <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                  <h3 className="text-base font-semibold">Current Database</h3>
+                  <h3 className="text-base font-semibold">Database Type</h3>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] text-[#16A34A] rounded-full text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+                  {dbType === "postgresql" ? "PostgreSQL" : "SQLite"}
                 </div>
               </div>
               <div className="p-6">
-                <div className="p-4 bg-primary-50 border border-primary/10 rounded-[16px] flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary-100 text-primary flex items-center justify-center shrink-0">
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold">{dbType === "postgresql" ? "PostgreSQL" : "SQLite (Local File)"}</div>
-                    <div className="text-[13px] text-muted-foreground font-mono mt-0.5">{dbConnectionUrl}</div>
-                    <div className="text-[12px] text-muted-foreground mt-1">
-                      {dbType === "postgresql"
-                        ? "Connected to PostgreSQL. Update settings below to reconfigure the database connection."
-                        : "Synthetix uses SQLite for local/single-user deployment. To switch to PostgreSQL, fill in the PostgreSQL fields below and restart the server."}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] text-[#16A34A] rounded-full text-xs font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
-                    Active
-                  </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <CardSelector
+                    selected={dbType === "sqlite"}
+                    onSelect={() => setDbType("sqlite")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
+                    title="SQLite (Local)"
+                    description="Embedded file-based database. Zero configuration, works offline. Best for single-user deployment."
+                  />
+                  <CardSelector
+                    selected={dbType === "postgresql"}
+                    onSelect={() => setDbType("postgresql")}
+                    icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg></div>}
+                    title="PostgreSQL"
+                    description="Production-grade relational database. Best for team collaboration and cloud deployment."
+                  />
+                </div>
+                <div className="mt-4 p-3 bg-[#F4F2EF] rounded-[12px] flex items-center gap-3">
+                  <svg className="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                  <span className="text-[13px] text-muted-foreground">
+                    Current connection: <span className="font-mono text-foreground">{dbConnectionUrl}</span>
+                    {dbType === "postgresql"
+                      ? " — Changes require a server restart to take effect."
+                      : " — To switch to PostgreSQL, fill in the fields below and restart the server."}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* PostgreSQL Config */}
+            {/* Database Configuration */}
             <div className="bg-white border rounded-[16px]">
               <div className="flex items-center justify-between px-6 py-5 border-b">
                 <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15v2m-6 4h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2zm10-10V7a4 4 0 0 0-8 0v4h8z" /></svg>
                   <h3 className="text-base font-semibold">Database Configuration</h3>
                 </div>
               </div>
-              <div className="p-6 space-y-4">
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="dbType" checked={dbType === "sqlite"} onChange={() => setDbType("sqlite")} className="accent-primary" />
-                    <span className="text-sm">SQLite</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="dbType" checked={dbType === "postgresql"} onChange={() => setDbType("postgresql")} className="accent-primary" />
-                    <span className="text-sm">PostgreSQL</span>
-                  </label>
-                </div>
+              <div className="p-6 space-y-5">
+                {dbType === "sqlite" && (
+                  <div>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">SQLite File Path</label>
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={dbConnectionUrl.replace("file:", "")} disabled />
+                    <span className="text-xs text-muted-foreground mt-1 block">SQLite database file location. The database is stored locally and requires no additional configuration.</span>
+                  </div>
+                )}
                 {dbType === "postgresql" && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -994,21 +1065,31 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Save button */}
-            <div className="flex gap-3">
-              <button type="button" onClick={saveRag} disabled={savingRag} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
-                {savingRag ? "Saving..." : (
-                  <>
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                    Save Vector DB Settings
-                  </>
-                )}
-              </button>
-              {ragMsg && (
-                <div className={`flex items-center text-sm ${ragMsg.type === "success" ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                  {ragMsg.text}
+            {/* Save */}
+            <div className="bg-white border rounded-[16px]">
+              <div className="flex items-center justify-between px-6 py-5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                  <h3 className="text-base font-semibold">Save Configuration</h3>
                 </div>
-              )}
+              </div>
+              <div className="p-6">
+                <div className="flex gap-3">
+                  <button type="button" onClick={saveRag} disabled={savingRag} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
+                    {savingRag ? "Saving..." : (
+                      <>
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                        Save Vector DB Settings
+                      </>
+                    )}
+                  </button>
+                  {ragMsg && (
+                    <div className={`flex items-center text-sm ${ragMsg.type === "success" ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                      {ragMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
