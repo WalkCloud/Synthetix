@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { parseCapabilities } from "@/lib/llm/capabilities";
 import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./types";
 
 interface FormModelConfig {
@@ -39,14 +40,6 @@ const defaultModel: FormModelConfig = {
   embeddingBatchSize: 10,
   embeddingDim: null,
 };
-
-function parseCapabilities(raw: string): string[] {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
 
 function toFormModel(m: ApiModelConfig): FormModelConfig {
   const caps = parseCapabilities(m.capabilities);
