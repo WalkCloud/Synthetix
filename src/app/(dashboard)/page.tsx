@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
+import { LoadingState } from "@/components/shared/loading-state";
+import { EmptyState } from "@/components/shared/empty-state";
 import { getDashboardDocumentStatusDisplay } from "@/lib/dashboard/document-status";
 import { draftStatusLabels as statusLabels, draftStatusColors as statusColors } from "@/lib/text/status-labels";
 import Link from "next/link";
@@ -229,11 +231,9 @@ export default function DashboardPage() {
             </div>
             <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
-                <div className="py-12 text-center text-muted-foreground text-sm">Loading...</div>
+                <LoadingState />
               ) : recentDocs.length === 0 ? (
-                <div className="py-12 text-center text-muted-foreground text-sm">
-                  No documents yet. Upload your first document to get started.
-                </div>
+                <EmptyState title="No documents yet" description="Upload your first document to get started." />
               ) : (
                 recentDocs.map((doc, i) => {
                   const sc = getDashboardDocumentStatusDisplay(doc.status);
@@ -276,11 +276,9 @@ export default function DashboardPage() {
             </div>
             <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
-                <div className="py-12 text-center text-muted-foreground text-sm">Loading...</div>
+                <LoadingState />
               ) : recentDrafts.length === 0 ? (
-                <div className="py-12 text-center text-muted-foreground text-sm">
-                  No drafts yet. Start by brainstorming an outline.
-                </div>
+                <EmptyState title="No drafts yet" description="Start by brainstorming an outline." />
               ) : (
                 recentDrafts.map((draft, i) => {
                   const progress = draft.progress ?? { completed: 0, total: 0 };

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import { Header } from "@/components/layout/header";
+import { LoadingState } from "@/components/shared/loading-state";
 import { TagBadge } from "@/components/library/tag-badge";
 import { ChunkContent } from "@/components/library/chunk-content";
 import type { DocumentMeta } from "@/types/documents";
@@ -61,7 +62,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     if (data.success) setDoc(data.data);
   }
 
-  if (loading) return <div><Header title="Loading..." /><div className="p-8">Loading...</div></div>;
+  if (loading) return <div><Header title="Loading..." /><LoadingState /></div>;
   if (!doc) return <div><Header title="Not Found" /><div className="p-8">Document not found.</div></div>;
 
   const chunks = doc.chunks || [];
