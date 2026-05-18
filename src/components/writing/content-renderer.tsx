@@ -18,7 +18,7 @@ export function ContentRenderer({
   renderVer?: number;
 }) {
   const segments = segmentContent(content);
-  const v = renderVer ?? Date.now();
+  const v = renderVer ?? 1;
 
   return (
     <>

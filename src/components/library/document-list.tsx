@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { TagBadge } from "./tag-badge";
+import { formatFileSize } from "@/lib/text/format-file-size";
+import { docStatusLabels as statusLabels, docStatusColors as statusColors } from "@/lib/text/status-labels";
 import type { DocumentMeta } from "@/types/documents";
 
 interface DocumentListProps {
@@ -10,29 +12,6 @@ interface DocumentListProps {
   page: number;
   limit: number;
   onPageChange: (page: number) => void;
-}
-
-const statusLabels: Record<string, string> = {
-  uploading: "Uploading",
-  converting: "Converting",
-  splitting: "Splitting",
-  embedding: "Embedding",
-  ready: "Ready",
-  failed: "Failed",
-};
-
-const statusColors: Record<string, string> = {
-  uploading: "bg-[#EFF6FF] text-[#2563EB]",
-  converting: "bg-[#FFF7ED] text-[#D97706]",
-  splitting: "bg-[#FFF7ED] text-[#D97706]",
-  embedding: "bg-[#EFF6FF] text-[#2563EB]",
-  ready: "bg-[#DCFCE7] text-[#16A34A]",
-  failed: "bg-[#FEE2E2] text-[#DC2626]",
-};
-
-function formatSize(bytes: number): string {
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)}KB`;
-  return `${(bytes / 1048576).toFixed(1)}MB`;
 }
 
 export function DocumentList({ documents, total, page, limit, onPageChange }: DocumentListProps) {
@@ -67,7 +46,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground uppercase">{doc.originalFormat}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{formatSize(doc.originalSize)}</td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{formatFileSize(doc.originalSize)}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[doc.status] || ""}`}>
                       {statusLabels[doc.status] || doc.status}

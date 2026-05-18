@@ -1,6 +1,7 @@
 import path from "path";
 import { decrypt } from "@/lib/crypto";
 import { spawnPythonJson } from "@/lib/python";
+import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 
 const RAG_MANAGE_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_manage.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
@@ -36,11 +37,8 @@ export function buildConfig(model: {
   provider: { apiBaseUrl: string; apiKey: string | null };
   modelId: string;
 }): EmbedConfig {
-  const base = model.provider.apiBaseUrl
-    .replace(/\/embeddings(\/\w+)?$/, "")
-    .replace(/\/chat\/completions$/, "");
   return {
-    apiBase: base,
+    apiBase: normalizeProviderBaseUrl(model.provider.apiBaseUrl),
     apiKey: decrypt(model.provider.apiKey || ""),
     model: model.modelId,
   };
