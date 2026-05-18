@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
-import { resolveModel } from "@/lib/llm/resolve-model";
-import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { manageRag, buildConfig } from "@/lib/rag/client";
+import { createRagContext } from "@/lib/rag/context";
+import { manageRag } from "@/lib/rag/client";
 import type { ApiResponse } from "@/types/api";
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse>> {
@@ -18,21 +17,18 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     return NextResponse.json({ success: false, error: "action required" }, { status: 400 });
   }
 
-  const [embedModel, llmModel] = await Promise.all([
-    resolveModel("embedding"),
-    resolveModel("writing"),
-  ]);
-
-  if (!embedModel || !llmModel) {
-    return NextResponse.json(
-      { success: false, error: "Configure embedding and LLM models first" },
-      { status: 400 },
-    );
+  let ctx: Awaited<ReturnType<typeof createRagContext>>;
+  try {
+    ctx = await createRagContext(user.id, { requireLlm: true });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("model configured")) {
+      return NextResponse.json(
+        { success: false, error: "Configure embedding and LLM models first" },
+        { status: 400 },
+      );
+    }
+    throw error;
   }
-
-  const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-  const embedCfg = buildConfig(embedModel);
-  const llmCfg = buildConfig(llmModel);
 
   try {
     let result: Record<string, unknown>;
@@ -46,7 +42,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, entityName, entityType, description });
+        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, entityName, entityType, description });
         break;
       }
       case "delete-entity": {
@@ -57,7 +53,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, entityName });
+        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, entityName });
         break;
       }
       case "merge-entities": {
@@ -68,7 +64,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
             { status: 400 },
           );
         }
-        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: embedCfg, llmConfig: llmCfg, embedDim, sources: sources.join(","), target });
+        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, sources: sources.join(","), target });
         break;
       }
       default:
