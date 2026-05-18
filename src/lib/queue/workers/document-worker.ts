@@ -1,15 +1,14 @@
 import { db } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
 import { semanticSplit } from "@/lib/documents/semantic-splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim, isLightRAGCompatible } from "@/lib/rag/dimension";
+import { buildEmbedConfig } from "@/lib/rag/context";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
 import type { ProcessingOptions } from "@/lib/queue/types";
@@ -312,19 +311,11 @@ export async function processDocument(taskId: string): Promise<void> {
 
       const ragChunksDir = storage.getDocumentDir(docId, userId);
       const ragEmbedConfig = embedModel.provider.apiKey
-        ? {
-            apiBase: normalizeProviderBaseUrl(embedModel.provider.apiBaseUrl),
-            apiKey: decrypt(embedModel.provider.apiKey),
-            model: embedModel.modelId,
-          }
+        ? buildEmbedConfig(embedModel)
         : undefined;
 
       const ragLlmConfig = writingModel?.provider.apiKey
-        ? {
-            apiBase: normalizeProviderBaseUrl(writingModel.provider.apiBaseUrl),
-            apiKey: decrypt(writingModel.provider.apiKey),
-            model: writingModel.modelId,
-          }
+        ? buildEmbedConfig(writingModel)
         : undefined;
 
       if (indexMode === "graph") {
