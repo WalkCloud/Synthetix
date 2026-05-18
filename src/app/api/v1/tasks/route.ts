@@ -1,13 +1,10 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
@@ -33,9 +30,8 @@ export async function GET(request: Request) {
     },
   });
 
-  return NextResponse.json({
-    success: true,
-    data: tasks.map((t) => ({
+  return successResponse(
+    tasks.map((t) => ({
       id: t.id,
       type: t.type,
       status: t.status,
@@ -44,5 +40,5 @@ export async function GET(request: Request) {
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     })),
-  });
+  );
 }

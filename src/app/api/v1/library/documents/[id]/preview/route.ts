@@ -1,15 +1,14 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
@@ -20,34 +19,29 @@ export async function GET(
   });
 
   if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    return errorResponse("Not found", 404);
   }
 
   if (!doc.markdownPath) {
-    return NextResponse.json({ success: false, error: "Document not yet converted" }, { status: 400 });
+    return errorResponse("Document not yet converted", 400);
   }
 
   const fs = await import("fs");
   if (!fs.existsSync(doc.markdownPath)) {
-    return NextResponse.json({ success: false, error: "Markdown file not found" }, { status: 404 });
+    return errorResponse("Markdown file not found", 404);
   }
 
   const markdown = fs.readFileSync(doc.markdownPath, "utf-8");
 
-  // Rewrite relative image paths to absolute API paths
   const rewritten = markdown.replace(
     /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
     `![$1](/api/v1/documents/${id}/images/$2)`
   );
 
-  // Return raw markdown — frontend renders with a markdown library
-  return NextResponse.json({
-    success: true,
-    data: {
-      id: doc.id,
-      name: doc.originalName,
-      status: doc.status,
-      markdown: rewritten,
-    },
+  return successResponse({
+    id: doc.id,
+    name: doc.originalName,
+    status: doc.status,
+    markdown: rewritten,
   });
 }

@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { parseDiagramRequests } from "@/lib/writing/diagram";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 interface UpdateSectionBody {
   content?: string;
@@ -16,13 +19,10 @@ interface UpdateSectionBody {
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -33,10 +33,7 @@ export async function GET(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const section = await db.section.findFirst({
@@ -44,31 +41,22 @@ export async function GET(
       include: { versions: { orderBy: { version: "desc" } } },
     });
     if (!section) {
-      return NextResponse.json(
-        { success: false, error: "Section not found" },
-        { status: 404 }
-      );
+      return errorResponse("Section not found", 404);
     }
 
-    return NextResponse.json({ success: true, data: section });
+    return successResponse(section);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -77,10 +65,7 @@ export async function PUT(
   try {
     body = (await request.json()) as UpdateSectionBody;
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return errorResponse("Invalid JSON body", 400);
   }
 
   try {
@@ -89,35 +74,25 @@ export async function PUT(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const section = await db.section.findFirst({
       where: { id: sectionId, draftId },
     });
     if (!section) {
-      return NextResponse.json(
-        { success: false, error: "Section not found" },
-        { status: 404 }
-      );
+      return errorResponse("Section not found", 404);
     }
 
     const updateData: Record<string, unknown> = {};
 
-    // Handle source selection from comparison
     if (body.selectedSource === "a" || body.selectedSource === "b") {
       const sourceContent =
         body.selectedSource === "a" ? section.contentA : section.contentB;
       if (!sourceContent) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Content ${body.selectedSource.toUpperCase()} is not available for selection`,
-          },
-          { status: 400 }
+        return errorResponse(
+          `Content ${body.selectedSource.toUpperCase()} is not available for selection`,
+          400
         );
       }
       updateData.content = sourceContent;
@@ -151,11 +126,8 @@ export async function PUT(
       data: updateData,
     });
 
-    return NextResponse.json({ success: true, data: updatedSection });
+    return successResponse(updatedSection);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

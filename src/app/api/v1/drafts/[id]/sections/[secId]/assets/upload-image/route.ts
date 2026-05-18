@@ -1,19 +1,22 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import path from "node:path";
 import fs from "node:fs/promises";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -23,7 +26,7 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    return errorResponse("Draft not found", 404);
   }
 
   const section = await db.section.findFirst({
@@ -31,7 +34,7 @@ export async function POST(
     select: { id: true },
   });
   if (!section) {
-    return NextResponse.json({ success: false, error: "Section not found" }, { status: 404 });
+    return errorResponse("Section not found", 404);
   }
 
   const formData = await request.formData();
@@ -39,13 +42,13 @@ export async function POST(
   const replaceAssetId = formData.get("replaceAssetId") as string | null;
 
   if (!file || !(file instanceof File)) {
-    return NextResponse.json({ success: false, error: "No file provided" }, { status: 400 });
+    return errorResponse("No file provided", 400);
   }
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const allowedExts = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
   if (!allowedExts.includes(ext)) {
-    return NextResponse.json({ success: false, error: `Unsupported format: .${ext}` }, { status: 400 });
+    return errorResponse(`Unsupported format: .${ext}`, 400);
   }
 
   const mimeType = file.type || `image/${ext === "jpg" ? "jpeg" : ext}`;
@@ -67,7 +70,7 @@ export async function POST(
       where: { id: replaceAssetId, draftId, sectionId },
     });
     if (!existing) {
-      return NextResponse.json({ success: false, error: "Target asset not found" }, { status: 404 });
+      return errorResponse("Target asset not found", 404);
     }
 
     if (existing.path) {
@@ -118,8 +121,5 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({
-    success: true,
-    data: { assetId, path: relativePath, status: "ready", mode: replaceAssetId ? "replaced" : "created" },
-  });
+  return successResponse({ assetId, path: relativePath, status: "ready", mode: replaceAssetId ? "replaced" : "created" });
 }

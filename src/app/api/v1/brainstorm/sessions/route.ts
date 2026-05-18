@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
-export async function GET(): Promise<NextResponse<ApiResponse>> {
+export async function GET() {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const sessions = await db.brainstormSession.findMany({
     where: { userId: user.id },
@@ -13,16 +12,16 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
     include: { _count: { select: { messages: true } } },
   });
 
-  return NextResponse.json({ success: true, data: sessions });
+  return successResponse(sessions);
 }
 
-export async function POST(request: Request): Promise<NextResponse<ApiResponse>> {
+export async function POST(request: Request) {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const { title } = await request.json();
   if (!title || typeof title !== "string") {
-    return NextResponse.json({ success: false, error: "Title required" }, { status: 400 });
+    return errorResponse("Title required", 400);
   }
 
   const session = await db.brainstormSession.create({
@@ -33,5 +32,5 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     data: { sessionId: session.id, role: "system", content: "A new brainstorming session has been created. Please describe your document writing needs." },
   });
 
-  return NextResponse.json({ success: true, data: session }, { status: 201 });
+  return successResponse(session, 201);
 }

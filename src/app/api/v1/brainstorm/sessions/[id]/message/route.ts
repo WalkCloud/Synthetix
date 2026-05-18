@@ -1,10 +1,9 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 const FACILITATOR_PROMPT = `You are a top-tier Document Architect. Your goal is to help the user build a high-quality document outline.
 
@@ -24,7 +23,7 @@ If the user uploaded a document, extract this information directly from the docu
 ### Phase 2: Generate Outline
 Once you fully understand the requirements, provide an initial outline suggestion.
 - Use Markdown lists for chapter titles and brief descriptions.
-- At the end, ask: “Is this structure direction right? Do you want to add or remove any chapters, or should I generate the final outline?”
+- At the end, ask: "Is this structure direction right? Do you want to add or remove any chapters, or should I generate the final outline?"
 
 ### Phase 3: Iterative Revision
 The user will suggest modifications to your outline. Adjust based on their feedback and show the complete revised version again.
@@ -42,18 +41,17 @@ If the user confirms the current outline, reply directly: OUTLINE_REQUESTED
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
-  if (!session) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (!session) return errorResponse("Not found", 404);
 
   const { content } = await request.json();
-  if (!content) return NextResponse.json({ success: false, error: "Message required" }, { status: 400 });
+  if (!content) return errorResponse("Message required", 400);
 
-  // Save user message
   await db.message.create({
     data: { sessionId: id, role: "user", content },
   });
@@ -61,10 +59,9 @@ export async function POST(
   const chatModel = await resolveModel("chat");
 
   if (!chatModel) {
-    return NextResponse.json({ success: false, error: "No chat model configured" }, { status: 400 });
+    return errorResponse("No chat model configured", 400);
   }
 
-  // Get conversation history
   const history = await db.message.findMany({
     where: { sessionId: id },
     orderBy: { createdAt: "asc" },
@@ -100,8 +97,6 @@ export async function POST(
       data: { sessionId: id, role: "ai", content: aiContent },
     });
 
-    // Intentionally removed auto-rename. Session title will be updated when the outline is generated.
-
     await recordTokenUsage({
       userId: user.id,
       modelConfigId: chatModel.id,
@@ -111,17 +106,10 @@ export async function POST(
       referenceId: id,
     }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
-    // Check if outline was requested
     const outlineRequested = aiContent.includes("OUTLINE_REQUESTED");
 
-    return NextResponse.json({
-      success: true,
-      data: { message: msg, outlineRequested },
-    });
+    return successResponse({ message: msg, outlineRequested });
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : "AI response failed",
-    }, { status: 500 });
+    return errorResponse(error);
   }
 }

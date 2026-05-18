@@ -1,16 +1,19 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { auditSection } from "@/lib/writing/auditor";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -20,18 +23,18 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    return errorResponse("Draft not found", 404);
   }
 
   const section = await db.section.findFirst({
     where: { id: sectionId, draftId },
   });
   if (!section) {
-    return NextResponse.json({ success: false, error: "Section not found" }, { status: 404 });
+    return errorResponse("Section not found", 404);
   }
 
   if (!section.content) {
-    return NextResponse.json({ success: false, error: "Section has no content to audit" }, { status: 400 });
+    return errorResponse("Section has no content to audit", 400);
   }
 
   const result = await auditSection(section.title, section.content, section.keyPoints);
@@ -46,5 +49,5 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ success: true, data: result });
+  return successResponse(result);
 }
