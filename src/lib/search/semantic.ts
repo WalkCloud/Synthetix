@@ -1,10 +1,7 @@
 import path from "path";
 import { db } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
-import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
-import { resolveEmbeddingDim } from "@/lib/rag/dimension";
+import { createRagContext } from "@/lib/rag/context";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
 import type { SearchResult } from "@/types/documents";
@@ -128,36 +125,23 @@ export async function semanticSearch(
   limit = 20,
   mode: QueryMode = "hybrid",
 ): Promise<SearchResult[]> {
-  // Resolve embed and LLM configs from DB
-  const [embedModel, llmModel] = await Promise.all([
-    resolveModel("embedding"),
-    resolveModel("writing"),
-  ]);
-
-  if (!embedModel) {
-    throw new Error("No embedding model configured. Add one in Model Management.");
+  let ctx: Awaited<ReturnType<typeof createRagContext>>;
+  try {
+    ctx = await createRagContext(userId);
+  } catch {
+    return [];
   }
 
-  // Try LightRAG first (requires LLM + embed configs)
-  if (llmModel?.provider.apiKey && embedModel.provider.apiKey) {
+  if (ctx.llmConfig) {
     try {
-      const embedDim = await resolveEmbeddingDim(embedModel).catch((err) => { console.warn("Failed to resolve embedding dim:", err); return 0; });
       const ragResults = await searchViaLightRAG(
         query,
         userId,
         limit,
         mode,
-        embedDim,
-        {
-          apiBase: normalizeProviderBaseUrl(embedModel.provider.apiBaseUrl),
-          apiKey: decrypt(embedModel.provider.apiKey),
-          model: embedModel.modelId,
-        },
-        {
-          apiBase: normalizeProviderBaseUrl(llmModel.provider.apiBaseUrl),
-          apiKey: decrypt(llmModel.provider.apiKey),
-          model: llmModel.modelId,
-        },
+        ctx.embedDim,
+        ctx.embedConfig,
+        ctx.llmConfig,
       );
 
       if (ragResults.chunks.length > 0) {
@@ -189,5 +173,5 @@ export async function semanticSearch(
   }
 
   // Fallback: direct embedding cosine similarity
-  return searchViaDirectEmbedding(query, userId, limit, embedModel.id);
+  return searchViaDirectEmbedding(query, userId, limit, ctx.embedModel.id);
 }
