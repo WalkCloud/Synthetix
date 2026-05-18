@@ -7,6 +7,9 @@ import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatFileSize } from "@/lib/text/format-file-size";
 import { getFileIconClass } from "@/lib/text/file-utils";
+import { Spinner } from "@/components/shared/spinner";
+import { LoadingState } from "@/components/shared/loading-state";
+import { EmptyState } from "@/components/shared/empty-state";
 import type { DocumentMeta, SearchResult } from "@/types/documents";
 
 type TabId = "documents" | "semantic";
@@ -144,7 +147,7 @@ export default function LibraryPage() {
             </div>
             <button onClick={handleSearch} disabled={isSearching} className="btn m-1.5 px-6 py-3 bg-primary text-white font-semibold rounded-[12px] hover:bg-primary-light transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[90px]">
               {isSearching ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <Spinner size="sm" className="text-white" />
               ) : (
                 "Search"
               )}
@@ -218,14 +221,14 @@ export default function LibraryPage() {
             {/* Table */}
             <div className="bg-white border border-[#E8E6E1] rounded-[16px] overflow-hidden">
               {loading ? (
-                <div className="p-12 text-center text-muted-foreground">Loading...</div>
+                <LoadingState />
               ) : documents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16 text-muted-foreground mb-4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">No documents found</h3>
-                  <p className="text-sm text-muted-foreground max-w-[400px] mb-6">Upload documents to get started with your knowledge base.</p>
-                  <Link href="/documents" className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors text-sm">Upload Documents</Link>
-                </div>
+                <EmptyState
+                  icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+                  title="No documents found"
+                  description="Upload documents to get started with your knowledge base."
+                  action={<Link href="/documents" className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors text-sm">Upload Documents</Link>}
+                />
               ) : (
                 <table className="w-full border-collapse">
                   <thead>
@@ -374,11 +377,11 @@ export default function LibraryPage() {
                 </div>
               </div>
             ) : searchResults.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16 text-muted-foreground mb-4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <h3 className="text-lg font-semibold text-foreground mb-2">No search results</h3>
-                <p className="text-sm text-muted-foreground">Try a different query or switch to keyword search.</p>
-              </div>
+              <EmptyState
+                icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>}
+                title="No search results"
+                description="Try a different query or switch to keyword search."
+              />
             ) : (
               searchResults.map((r, i) => (
                 <div key={i} className="bg-white border border-[#E8E6E1] rounded-[16px] p-5 hover:border-[#D4D4D8] transition-colors">
