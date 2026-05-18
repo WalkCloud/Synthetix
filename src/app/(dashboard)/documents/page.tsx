@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { parseCapabilities } from "@/lib/llm/capabilities";
+import { formatFileSize } from "@/lib/text/format-file-size";
+import { getFileExt, getFileIconClass } from "@/lib/text/file-utils";
 import { toast } from "sonner";
 
 interface UploadItem {
@@ -23,11 +25,6 @@ interface ModelOption {
   embeddingDim?: number | null;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
-
 function modelLabel(models: ModelOption[], id: string): string {
   const m = models.find((x) => x.id === id);
   return m ? `${m.modelName} (${m.providerName})` : "Select...";
@@ -44,24 +41,6 @@ const INDEX_LABELS: Record<string, string> = {
   original: "Original Markdown only",
   chunks: "Chunks only",
 };
-
-function getFileExt(name: string): string {
-  return name.split(".").pop()?.toLowerCase() || "";
-}
-
-function getFileIconClass(ext: string): string {
-  const m: Record<string, string> = {
-    pdf: "bg-[#FEE2E2] text-[#DC2626]",
-    docx: "bg-[#EFF6FF] text-[#2563EB]",
-    xlsx: "bg-[#DCFCE7] text-[#16A34A]",
-    pptx: "bg-[#FFF7ED] text-[#EA580C]",
-    md: "bg-[#DCFCE7] text-[#16A34A]",
-    html: "bg-[#FFF7ED] text-[#EA580C]",
-    epub: "bg-[#EFF6FF] text-[#2563EB]",
-    txt: "bg-[#F4F2EF] text-[#6B6560]",
-  };
-  return m[ext] || "bg-[#F4F2EF] text-[#6B6560]";
-}
 
 export default function DocumentsPage() {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
@@ -225,7 +204,7 @@ export default function DocumentsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[14px] font-semibold text-foreground mb-1">{item.name}</div>
-                      <div className="text-[12px] text-muted-foreground">{formatSize(item.size)}</div>
+                      <div className="text-[12px] text-muted-foreground">{formatFileSize(item.size)}</div>
                       {item.status === "converting" && (
                         <div className="mt-2 w-full h-1.5 bg-[#F4F2EF] rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${item.progress}%` }} />

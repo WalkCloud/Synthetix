@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { SectionMeta, GenerationMode } from "@/types/writing";
+import { countWords } from "@/lib/text/count-words";
 import { StatePills } from "./state-pills";
 import { ConstraintsBar } from "./constraints-bar";
 import { ComparisonView } from "./comparison-view";
@@ -122,12 +123,6 @@ export function EditorPanel({
   const handleEdit = useCallback((content: string, _source: "a" | "b") => {
     setEditingContent(content);
   }, []);
-
-  function countWords(text: string): number {
-    const latin = text.match(/[a-zA-Z0-9]+/g) || [];
-    const cjk = text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]/g) || [];
-    return latin.length + cjk.length;
-  }
 
   if (!section) {
     return (

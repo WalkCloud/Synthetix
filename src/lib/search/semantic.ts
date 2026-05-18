@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
@@ -148,16 +149,12 @@ export async function semanticSearch(
         mode,
         embedDim,
         {
-          apiBase: embedModel.provider.apiBaseUrl
-            .replace(/\/embeddings(\/\w+)?$/, "")
-            .replace(/\/chat\/completions$/, ""),
+          apiBase: normalizeProviderBaseUrl(embedModel.provider.apiBaseUrl),
           apiKey: decrypt(embedModel.provider.apiKey),
           model: embedModel.modelId,
         },
         {
-          apiBase: llmModel.provider.apiBaseUrl
-            .replace(/\/embeddings(\/\w+)?$/, "")
-            .replace(/\/chat\/completions$/, ""),
+          apiBase: normalizeProviderBaseUrl(llmModel.provider.apiBaseUrl),
           apiKey: decrypt(llmModel.provider.apiKey),
           model: llmModel.modelId,
         },

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
 import { getDashboardDocumentStatusDisplay } from "@/lib/dashboard/document-status";
+import { draftStatusLabels as statusLabels, draftStatusColors as statusColors } from "@/lib/text/status-labels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -27,18 +28,6 @@ interface DashboardStats {
   totalTokens: number;
   activeTasks: number;
 }
-
-const statusLabels: Record<string, string> = {
-  drafting: "In Progress",
-  assembling: "Assembling",
-  completed: "Completed",
-};
-
-const statusColors: Record<string, string> = {
-  drafting: "bg-orange-50 text-orange-600",
-  assembling: "bg-blue-50 text-blue-600",
-  completed: "bg-green-50 text-green-600",
-};
 
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();

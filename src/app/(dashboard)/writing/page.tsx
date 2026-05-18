@@ -4,18 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { draftStatusLabels, draftStatusColors } from "@/lib/text/status-labels";
 import type { DraftMeta } from "@/types/writing";
 
-const statusLabels: Record<string, string> = {
-  drafting: "In Progress",
-  assembling: "Assembling",
-  completed: "Completed",
-};
-
+const statusLabels = draftStatusLabels;
 const statusColors: Record<string, string> = {
-  drafting: "bg-orange-50 text-orange-600 border border-orange-200",
-  assembling: "bg-blue-50 text-blue-600 border border-blue-200",
-  completed: "bg-green-50 text-green-600 border border-green-200",
+  drafting: `${draftStatusColors.drafting} border border-orange-200`,
+  assembling: `${draftStatusColors.assembling} border border-blue-200`,
+  completed: `${draftStatusColors.completed} border border-green-200`,
 };
 
 export default function WritingListPage() {

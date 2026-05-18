@@ -1,9 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { JWTPayload } from "@/types/auth";
 
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET || "default-secret-change-me"
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error(
+    "FATAL: JWT_SECRET environment variable is required. " +
+    "Set it before starting the server."
+  );
+}
+
+const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 const accessExpires = process.env.JWT_ACCESS_EXPIRES || "15m";
 const refreshExpires = process.env.JWT_REFRESH_EXPIRES || "7d";
 
