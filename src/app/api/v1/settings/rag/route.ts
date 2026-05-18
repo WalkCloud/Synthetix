@@ -1,44 +1,36 @@
-import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
-export async function GET(): Promise<NextResponse<ApiResponse>> {
+export async function GET() {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const settings = readSettings(user.id);
-  return NextResponse.json({
-    success: true,
-    data: {
-      ragVectorDb: settings.ragVectorDb ?? "local",
-      ragPgUrl: settings.ragPgUrl ?? "",
-      ragPgHost: settings.ragPgHost ?? "",
-      ragPgPort: settings.ragPgPort ?? 5432,
-      ragPgDatabase: settings.ragPgDatabase ?? "",
-      ragPgUser: settings.ragPgUser ?? "",
-      ragPgPassword: settings.ragPgPassword ?? "",
-      ragNeo4jUri: settings.ragNeo4jUri ?? "",
-      ragNeo4jUser: settings.ragNeo4jUser ?? "",
-      ragNeo4jPassword: settings.ragNeo4jPassword ?? "",
-      ragMilvusUri: settings.ragMilvusUri ?? "",
-      ragMilvusToken: settings.ragMilvusToken ?? "",
-      ragMilvusUser: settings.ragMilvusUser ?? "",
-      ragMilvusPassword: settings.ragMilvusPassword ?? "",
-      ragMilvusDbName: settings.ragMilvusDbName ?? "",
-      ragQdrantUrl: settings.ragQdrantUrl ?? "",
-      ragQdrantApiKey: settings.ragQdrantApiKey ?? "",
-    },
+  return successResponse({
+    ragVectorDb: settings.ragVectorDb ?? "local",
+    ragPgUrl: settings.ragPgUrl ?? "",
+    ragPgHost: settings.ragPgHost ?? "",
+    ragPgPort: settings.ragPgPort ?? 5432,
+    ragPgDatabase: settings.ragPgDatabase ?? "",
+    ragPgUser: settings.ragPgUser ?? "",
+    ragPgPassword: settings.ragPgPassword ?? "",
+    ragNeo4jUri: settings.ragNeo4jUri ?? "",
+    ragNeo4jUser: settings.ragNeo4jUser ?? "",
+    ragNeo4jPassword: settings.ragNeo4jPassword ?? "",
+    ragMilvusUri: settings.ragMilvusUri ?? "",
+    ragMilvusToken: settings.ragMilvusToken ?? "",
+    ragMilvusUser: settings.ragMilvusUser ?? "",
+    ragMilvusPassword: settings.ragMilvusPassword ?? "",
+    ragMilvusDbName: settings.ragMilvusDbName ?? "",
+    ragQdrantUrl: settings.ragQdrantUrl ?? "",
+    ragQdrantApiKey: settings.ragQdrantApiKey ?? "",
   });
 }
 
-export async function PUT(request: Request): Promise<NextResponse<ApiResponse>> {
+export async function PUT(request: Request) {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const body = await request.json();
   writeSettings(user.id, {
@@ -61,5 +53,5 @@ export async function PUT(request: Request): Promise<NextResponse<ApiResponse>> 
     ragQdrantApiKey: body.ragQdrantApiKey,
   });
 
-  return NextResponse.json({ success: true, data: { saved: true } });
+  return successResponse({ saved: true });
 }

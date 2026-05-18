@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse } from "@/lib/api-helpers";
 import type { DocumentListParams } from "@/types/documents";
 
-export async function GET(request: Request): Promise<NextResponse<ApiResponse>> {
+export async function GET(request: Request) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { searchParams } = new URL(request.url);

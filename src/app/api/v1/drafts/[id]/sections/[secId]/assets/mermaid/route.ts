@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { buildSpecFromStructuredJson, buildSpecFromRawPrompt } from "@/lib/writing/diagram-spec";
 import { renderDiagramSvg } from "@/lib/writing/diagram-renderer";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
 
@@ -55,10 +58,10 @@ function parseMermaidBasic(code: string): { nodes: any[]; edges: any[] } {
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -70,7 +73,7 @@ export async function POST(
   };
 
   if (!code || !code.trim()) {
-    return NextResponse.json({ success: false, error: "Diagram code is required" }, { status: 400 });
+    return errorResponse("Diagram code is required", 400);
   }
 
   const draft = await db.draft.findFirst({
@@ -78,7 +81,7 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    return errorResponse("Draft not found", 404);
   }
 
   try {
@@ -92,14 +95,14 @@ export async function POST(
     if (jsonInput) {
       const spec = buildSpecFromStructuredJson(JSON.parse(trimmedCode));
       if (spec.nodes.length === 0) {
-        return NextResponse.json({ success: false, error: "No nodes found in diagram JSON" }, { status: 400 });
+        return errorResponse("No nodes found in diagram JSON", 400);
       }
       svg = renderDiagramSvg(spec);
     } else {
       const { nodes, edges } = parseMermaidBasic(trimmedCode);
       console.log("[mermaid] mermaidBasic parsed:", nodes.length, "nodes,", edges.length, "edges");
       if (nodes.length === 0) {
-        return NextResponse.json({ success: false, error: "Could not parse any nodes from code" }, { status: 400 });
+        return errorResponse("Could not parse any nodes from code", 400);
       }
       const spec = buildSpecFromRawPrompt(
         [
@@ -133,7 +136,7 @@ export async function POST(
         where: { id: replaceAssetId, draftId, sectionId },
       });
       if (!existing) {
-        return NextResponse.json({ success: false, error: "Target asset not found" }, { status: 404 });
+        return errorResponse("Target asset not found", 404);
       }
       await db.sectionAsset.update({
         where: { id: replaceAssetId },
@@ -179,13 +182,9 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      data: { assetId, path: relativePath, status: "ready", mode: replaceAssetId ? "replaced" : "created" },
-    });
+    return successResponse({ assetId, path: relativePath, status: "ready", mode: replaceAssetId ? "replaced" : "created" });
   } catch (error) {
     console.error("[mermaid] render error:", error);
-    const message = error instanceof Error ? error.message : "Diagram rendering failed";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return errorResponse(error);
   }
 }

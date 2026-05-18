@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
-import { getErrorMessage } from "@/lib/api-helpers";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 import type {
   TopologyResponse,
   TopologyNode,
@@ -28,13 +31,10 @@ function inferFormatFromExtension(documentName: string): string {
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse<TopologyResponse>>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId } = await params;
@@ -46,10 +46,7 @@ export async function GET(
     });
 
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const sections = await db.section.findMany({
@@ -58,12 +55,10 @@ export async function GET(
       orderBy: { index: "asc" },
     });
 
-    // Group references by document NAME (deduplicate re-uploads of same file)
     const groupMap = new Map<string, ReferenceGroup>();
 
     for (const section of sections) {
       for (const ref of section.references) {
-        // Use documentName as key to deduplicate same file uploaded multiple times
         const groupKey = ref.documentName || `id:${ref.documentId || "unknown"}`;
 
         const existing = groupMap.get(groupKey);
@@ -89,7 +84,6 @@ export async function GET(
       }
     }
 
-    // Build nodes
     const draftNode: TopologyNode = {
       id: draftId,
       type: "draft",
@@ -130,7 +124,6 @@ export async function GET(
 
     const nodes = [draftNode, ...referenceNodes];
 
-    // Build stats
     const totalReferences = sections.reduce(
       (sum, section) => sum + section.references.length,
       0
@@ -159,19 +152,13 @@ export async function GET(
       coverage: `${sectionsWithReferences}/${totalSections} sections have references`,
     };
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        draft: { id: draft.id, title: draft.title, status: draft.status },
-        nodes,
-        edges,
-        stats,
-      },
+    return successResponse({
+      draft: { id: draft.id, title: draft.title, status: draft.status },
+      nodes,
+      edges,
+      stats,
     });
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

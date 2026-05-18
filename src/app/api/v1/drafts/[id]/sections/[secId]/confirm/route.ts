@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { generateSummary } from "@/lib/writing/summarizer";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 async function generateSummaryBackground(sectionId: string, content: string, title: string) {
   try {
@@ -24,13 +27,10 @@ async function generateSummaryBackground(sectionId: string, content: string, tit
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -41,10 +41,7 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const section = await db.section.findFirst({
@@ -52,26 +49,17 @@ export async function POST(
       include: { versions: true },
     });
     if (!section) {
-      return NextResponse.json(
-        { success: false, error: "Section not found" },
-        { status: 404 }
-      );
+      return errorResponse("Section not found", 404);
     }
 
     if (!section.content) {
       if (section.contentA || section.contentB) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Please select a source (A or B) before confirming",
-          },
-          { status: 400 }
+        return errorResponse(
+          "Please select a source (A or B) before confirming",
+          400
         );
       }
-      return NextResponse.json(
-        { success: false, error: "Section has no content to confirm" },
-        { status: 400 }
-      );
+      return errorResponse("Section has no content to confirm", 400);
     }
 
     const wordCount = section.content.split(/\s+/).filter(Boolean).length;
@@ -99,11 +87,8 @@ export async function POST(
 
     generateSummaryBackground(sectionId, section.content, section.title);
 
-    return NextResponse.json({ success: true, data: locked });
+    return successResponse(locked);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse, PaginatedResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
+import type { PaginatedResponse } from "@/types/api";
 import type { OutlineData } from "@/types/writing";
 
 interface CreateDraftBody {
@@ -173,32 +177,23 @@ async function createDraftWithSections(
 
 export async function POST(
   request: Request
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   let body: CreateDraftBody;
   try {
     body = (await request.json()) as CreateDraftBody;
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return errorResponse("Invalid JSON body", 400);
   }
 
   if (!body.sessionId && !body.outline) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Either sessionId or outline must be provided",
-      },
-      { status: 400 }
+    return errorResponse(
+      "Either sessionId or outline must be provided",
+      400
     );
   }
 
@@ -209,10 +204,7 @@ export async function POST(
   );
 
   if ("error" in result) {
-    return NextResponse.json(
-      { success: false, error: result.error },
-      { status: result.status }
-    );
+    return errorResponse(result.error, result.status);
   }
 
   try {
@@ -222,33 +214,18 @@ export async function POST(
       result.resolvedSessionId
     );
 
-    return NextResponse.json(
-      { success: true, data: draftWithSections },
-      { status: 201 }
-    );
+    return successResponse(draftWithSections, 201);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
 
 export async function GET(
   request: Request
-): Promise<NextResponse<PaginatedResponse<unknown>>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Unauthorized",
-        total: 0,
-        page: 1,
-        limit: 20,
-      },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const url = new URL(request.url);
@@ -318,23 +295,14 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({
+    return successResponse({
       success: true,
       data: draftsWithProgress,
       total,
       page,
       limit,
-    });
+    } as PaginatedResponse<unknown>);
   } catch (error: unknown) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: getErrorMessage(error),
-        total: 0,
-        page,
-        limit,
-      },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

@@ -1,26 +1,25 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    return errorResponse("Not found", 404);
   }
 
   const { name } = await request.json();
   if (!name || typeof name !== "string") {
-    return NextResponse.json({ success: false, error: "Tag name required" }, { status: 400 });
+    return errorResponse("Tag name required", 400);
   }
 
   const tag = await db.tag.upsert({
@@ -35,5 +34,5 @@ export async function POST(
     create: { documentId: id, tagId: tag.id },
   });
 
-  return NextResponse.json({ success: true, data: tag });
+  return successResponse(tag);
 }

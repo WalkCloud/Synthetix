@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 import type { LLMProvider } from "@/lib/llm/types";
 
 const DIAGRAM_TYPES = `architecture, data-flow, flowchart, sequence, agent, memory, comparison, timeline, mind-map, class, use-case, state-machine, er-diagram, network-topology`;
@@ -127,10 +130,10 @@ async function translateLabels(
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId } = await params;
@@ -138,7 +141,7 @@ export async function POST(
   const { prompt, existingCode } = body as { prompt?: string; existingCode?: string };
 
   if (!prompt || !prompt.trim()) {
-    return NextResponse.json({ success: false, error: "Prompt is required" }, { status: 400 });
+    return errorResponse("Prompt is required", 400);
   }
 
   const draft = await (await import("@/lib/db")).db.draft.findFirst({
@@ -146,13 +149,13 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    return errorResponse("Draft not found", 404);
   }
 
   try {
     const writingModel = await resolveModel("writing");
     if (!writingModel?.provider) {
-      return NextResponse.json({ success: false, error: "No LLM model configured" }, { status: 400 });
+      return errorResponse("No LLM model configured", 400);
     }
 
     const provider = createLLMProvider({
@@ -185,28 +188,22 @@ export async function POST(
     let code = response.content.trim();
     code = code.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
 
-    // Try to fix truncated JSON by adding missing closing brackets
     try {
       JSON.parse(code);
     } catch {
-      // Try to extract JSON from the response
       const jsonMatch = code.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
           JSON.parse(jsonMatch[0]);
           code = jsonMatch[0];
         } catch {
-          // JSON might be truncated - try to fix it
           let fixed = jsonMatch[0];
-          // Count open/close brackets
           const openBrackets = (fixed.match(/\[/g) || []).length;
           const closeBrackets = (fixed.match(/\]/g) || []).length;
           const openBraces = (fixed.match(/\{/g) || []).length;
           const closeBraces = (fixed.match(/\}/g) || []).length;
-          // Add missing closing brackets
           for (let i = 0; i < openBrackets - closeBrackets; i++) fixed += "]";
           for (let i = 0; i < openBraces - closeBraces; i++) fixed += "}";
-          // Try to close any unclosed string
           if (fixed.match(/"[^"]*$/)) fixed += '"';
           try {
             JSON.parse(fixed);
@@ -226,10 +223,9 @@ export async function POST(
       console.log("[mermaid-gen] after translation:", code.slice(0, 200));
     }
 
-    return NextResponse.json({ success: true, data: { code } });
+    return successResponse({ code });
   } catch (error) {
     console.error("[mermaid-gen] error:", error);
-    const message = error instanceof Error ? error.message : "Diagram generation failed";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return errorResponse(error);
   }
 }

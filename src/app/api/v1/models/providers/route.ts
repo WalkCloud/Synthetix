@@ -1,16 +1,12 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET() {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const providers = await db.modelProvider.findMany({
     where: { userId: user.id },
@@ -18,7 +14,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ success: true, data: providers });
+  return successResponse(providers);
 }
 
 const modelConfigSchema = z.object({
@@ -51,19 +47,12 @@ const providerSchema = z.object({
 
 export async function POST(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const body = await request.json();
   const parsed = providerSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return errorResponse(parsed.error.flatten(), 400);
   }
 
   const { name, providerType, apiBaseUrl, apiKey, models } = parsed.data;
@@ -94,8 +83,5 @@ export async function POST(request: Request) {
     include: { models: true },
   });
 
-  return NextResponse.json(
-    { success: true, data: provider },
-    { status: 201 },
-  );
+  return successResponse(provider, 201);
 }
