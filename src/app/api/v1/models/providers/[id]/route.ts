@@ -1,18 +1,14 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const provider = await db.modelProvider.findFirst({
@@ -21,12 +17,9 @@ export async function GET(
   });
 
   if (!provider) {
-    return NextResponse.json(
-      { success: false, error: "Provider not found" },
-      { status: 404 },
-    );
+    return errorResponse("Provider not found", 404);
   }
-  return NextResponse.json({ success: true, data: provider });
+  return successResponse(provider);
 }
 
 export async function PUT(
@@ -34,11 +27,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const body = await request.json();
@@ -48,10 +37,7 @@ export async function PUT(
     where: { id, userId: user.id },
   });
   if (!existing) {
-    return NextResponse.json(
-      { success: false, error: "Provider not found" },
-      { status: 404 },
-    );
+    return errorResponse("Provider not found", 404);
   }
 
   const updateData: Record<string, unknown> = {};
@@ -85,7 +71,7 @@ export async function PUT(
     include: { models: true },
   });
 
-  return NextResponse.json({ success: true, data: provider });
+  return successResponse(provider);
 }
 
 export async function DELETE(
@@ -93,23 +79,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const existing = await db.modelProvider.findFirst({
     where: { id, userId: user.id },
   });
   if (!existing) {
-    return NextResponse.json(
-      { success: false, error: "Provider not found" },
-      { status: 404 },
-    );
+    return errorResponse("Provider not found", 404);
   }
 
   await db.modelProvider.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  return successResponse({ success: true });
 }

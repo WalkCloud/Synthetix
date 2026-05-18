@@ -1,21 +1,17 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 const AVATAR_DIR = join(process.cwd(), "data", "avatars");
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export async function PUT(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+  if (!user) return authErrorResponse();
 
   let buffer: Buffer;
   let contentType: string;
@@ -25,50 +21,29 @@ export async function PUT(request: Request) {
     const formData = await request.formData();
     const file = formData.get("avatar") as File | null;
     if (!file)
-      return NextResponse.json(
-        { success: false, error: "No file provided" },
-        { status: 400 }
-      );
+      return errorResponse("No file provided", 400);
     if (file.size > MAX_FILE_SIZE)
-      return NextResponse.json(
-        { success: false, error: "File too large (max 5MB)" },
-        { status: 400 }
-      );
+      return errorResponse("File too large (max 5MB)", 400);
     if (!ALLOWED_TYPES.includes(file.type))
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid file type: ${file.type}. Allowed: JPEG, PNG, WebP, GIF`,
-        },
-        { status: 400 }
-      );
+      return errorResponse(`Invalid file type: ${file.type}. Allowed: JPEG, PNG, WebP, GIF`, 400);
     buffer = Buffer.from(await file.arrayBuffer());
     contentType = file.type;
   } else {
-    // Accept raw binary upload with Content-Type header
     if (!ct.startsWith("image/"))
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Use multipart/form-data with 'avatar' field, or send raw image binary with Content-Type header",
-        },
-        { status: 400 }
+      return errorResponse(
+        "Use multipart/form-data with 'avatar' field, or send raw image binary with Content-Type header",
+        400,
       );
     const len = parseInt(
       request.headers.get("content-length") || "0",
-      10
+      10,
     );
     if (len > MAX_FILE_SIZE)
-      return NextResponse.json(
-        { success: false, error: "File too large (max 5MB)" },
-        { status: 400 }
-      );
+      return errorResponse("File too large (max 5MB)", 400);
     buffer = Buffer.from(await request.arrayBuffer());
     contentType = ct;
   }
 
-  // Ensure avatar directory exists
   if (!existsSync(AVATAR_DIR))
     await mkdir(AVATAR_DIR, { recursive: true });
 
@@ -87,7 +62,6 @@ export async function PUT(request: Request) {
 
   await writeFile(filepath, buffer);
 
-  // Construct URL relative to server
   const avatarUrl = `/api/v1/users/avatar/${filename}`;
 
   await db.user.update({
@@ -95,20 +69,12 @@ export async function PUT(request: Request) {
     data: { avatarUrl },
   });
 
-  return NextResponse.json({
-    success: true,
-    data: { avatarUrl },
-  });
+  return successResponse({ avatarUrl });
 }
 
-// Serve avatar image
 export async function GET() {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+  if (!user) return authErrorResponse();
 
   const dbUser = await db.user.findUnique({
     where: { id: user.id },
@@ -116,13 +82,7 @@ export async function GET() {
   });
 
   if (!dbUser?.avatarUrl)
-    return NextResponse.json(
-      { success: false, error: "No avatar set" },
-      { status: 404 }
-    );
+    return errorResponse("No avatar set", 404);
 
-  return NextResponse.json({
-    success: true,
-    data: { avatarUrl: dbUser.avatarUrl },
-  });
+  return successResponse({ avatarUrl: dbUser.avatarUrl });
 }

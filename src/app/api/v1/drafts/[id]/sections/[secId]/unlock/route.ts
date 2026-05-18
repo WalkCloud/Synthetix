@@ -1,15 +1,18 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -20,18 +23,18 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+      return errorResponse("Draft not found", 404);
     }
 
     const section = await db.section.findFirst({
       where: { id: sectionId, draftId },
     });
     if (!section) {
-      return NextResponse.json({ success: false, error: "Section not found" }, { status: 404 });
+      return errorResponse("Section not found", 404);
     }
 
     if (!section.content) {
-      return NextResponse.json({ success: false, error: "Section has no content" }, { status: 400 });
+      return errorResponse("Section has no content", 400);
     }
 
     const updated = await db.section.update({
@@ -39,9 +42,8 @@ export async function POST(
       data: { status: "reviewing" },
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return successResponse(updated);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unexpected error";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return errorResponse(error);
   }
 }

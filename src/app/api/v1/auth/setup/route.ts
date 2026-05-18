@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { signAccessToken, signRefreshToken } from "@/lib/auth/jwt";
 import { setAuthCookies } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { errorResponse, successResponse } from "@/lib/api-helpers";
 import type { AuthUser } from "@/types/auth";
 
 const setupSchema = z.object({
@@ -15,34 +15,22 @@ const setupSchema = z.object({
 
 export async function POST(
   request: Request
-): Promise<NextResponse<ApiResponse<AuthUser>>> {
+) {
   try {
-    // Check if any user already exists
     const userCount = await db.user.count();
     if (userCount > 0) {
-      return NextResponse.json(
-        { success: false, error: "System is already initialized" },
-        { status: 400 }
-      );
+      return errorResponse("System is already initialized", 400);
     }
 
-    // Parse and validate request body
     const body = await request.json();
     const parsed = setupSchema.safeParse(body);
     if (!parsed.success) {
       const firstError = parsed.error.issues[0];
-      return NextResponse.json(
-        {
-          success: false,
-          error: firstError?.message ?? "Invalid input",
-        },
-        { status: 400 }
-      );
+      return errorResponse(firstError?.message ?? "Invalid input", 400);
     }
 
     const { username, password, displayName } = parsed.data;
 
-    // Hash password and create user
     const passwordHash = await hashPassword(password);
     const user = await db.user.create({
       data: {
@@ -53,7 +41,6 @@ export async function POST(
       },
     });
 
-    // Sign JWT tokens
     const jwtPayload = {
       userId: user.id,
       username: user.username,
@@ -64,7 +51,6 @@ export async function POST(
       signRefreshToken(jwtPayload),
     ]);
 
-    // Build response with user data
     const authUser: AuthUser = {
       id: user.id,
       username: user.username,
@@ -73,21 +59,12 @@ export async function POST(
       role: user.role as "admin" | "user",
     };
 
-    const response = NextResponse.json(
-      { success: true, data: authUser },
-      { status: 201 }
-    );
+    const response = successResponse(authUser, 201);
 
-    // Set auth cookies
     await setAuthCookies(response, accessToken, refreshToken);
 
     return response;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Setup failed";
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

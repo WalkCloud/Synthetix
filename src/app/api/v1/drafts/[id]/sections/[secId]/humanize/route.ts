@@ -1,20 +1,20 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { humanizeContent } from "@/lib/writing/humanizer";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -25,30 +25,21 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const section = await db.section.findFirst({
       where: { id: sectionId, draftId },
     });
     if (!section) {
-      return NextResponse.json(
-        { success: false, error: "Section not found" },
-        { status: 404 }
-      );
+      return errorResponse("Section not found", 404);
     }
 
     const hasContent = section.content?.trim();
     const hasComparison = section.contentA?.trim() || section.contentB?.trim();
 
     if (!hasContent && !hasComparison) {
-      return NextResponse.json(
-        { success: false, error: "No content to humanize" },
-        { status: 400 }
-      );
+      return errorResponse("No content to humanize", 400);
     }
 
     let updatedSection;
@@ -104,17 +95,11 @@ export async function POST(
       auditNotes = result.auditNotes;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        section: updatedSection,
-        auditNotes,
-      },
+    return successResponse({
+      section: updatedSection,
+      auditNotes,
     });
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

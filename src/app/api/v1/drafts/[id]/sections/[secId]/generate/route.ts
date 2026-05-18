@@ -6,6 +6,7 @@ import { generateSectionStream } from "@/lib/writing/generator";
 import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
+import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
   request: Request,
@@ -13,7 +14,7 @@ export async function POST(
 ): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -28,12 +29,12 @@ export async function POST(
   const draft = await db.draft.findFirst({
     where: { id: draftId, userId: user.id },
   });
-  if (!draft) return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+  if (!draft) return errorResponse("Draft not found", 404);
 
   const section = await db.section.findFirst({
     where: { id: sectionId, draftId },
   });
-  if (!section) return NextResponse.json({ success: false, error: "Section not found" }, { status: 404 });
+  if (!section) return errorResponse("Section not found", 404);
 
   const constraints = body.constraints
     ? {
@@ -183,7 +184,6 @@ export async function POST(
                 orderBy: { createdAt: "asc" },
               });
 
-              // Build position-aware content: replace diagram/image requests in-place
               const segments = segmentContent(fullContent);
               const diagramAssets = readyAssets.filter((a) => a.type === "diagram" || a.type === "svg");
               const imageAssets = readyAssets.filter((a) => a.type === "image");

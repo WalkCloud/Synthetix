@@ -1,26 +1,24 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { getQueue } from "@/lib/queue";
 import type { ProcessingOptions } from "@/lib/queue/types";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    return errorResponse("Not found", 404);
   }
 
-  // Load original processing options from the last successful task
   let options: ProcessingOptions = {};
   try {
     const body = await request.json().catch(() => ({}));
@@ -33,8 +31,5 @@ export async function POST(
   const queue = getQueue();
   const taskId = await queue.submit("document_convert", { docId: doc.id, options }, user.id);
 
-  return NextResponse.json({
-    success: true,
-    data: { documentId: id, taskId },
-  });
+  return successResponse({ documentId: id, taskId });
 }

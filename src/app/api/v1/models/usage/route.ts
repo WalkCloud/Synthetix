@@ -1,14 +1,10 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
   const module = searchParams.get("module");
@@ -132,18 +128,15 @@ export async function GET(request: Request) {
 
   const modelsUsed = distinctModels.filter((d) => d.modelConfigId !== null).length;
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      entries,
-      byModel,
-      byModule,
-      summary: {
-        totalInputTokens: summaryRaw._sum.inputTokens ?? 0,
-        totalOutputTokens: summaryRaw._sum.outputTokens ?? 0,
-        totalCalls: summaryRaw._count,
-        modelsUsed,
-      },
+  return successResponse({
+    entries,
+    byModel,
+    byModule,
+    summary: {
+      totalInputTokens: summaryRaw._sum.inputTokens ?? 0,
+      totalOutputTokens: summaryRaw._sum.outputTokens ?? 0,
+      totalCalls: summaryRaw._count,
+      modelsUsed,
     },
   });
 }

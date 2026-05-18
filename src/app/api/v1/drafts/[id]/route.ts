@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
-
-import { getErrorMessage } from "@/lib/api-helpers";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
 const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];
@@ -11,13 +13,10 @@ const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id } = await params;
@@ -33,10 +32,7 @@ export async function GET(
     });
 
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const now = Date.now();
@@ -60,25 +56,19 @@ export async function GET(
       if (refreshed) draft = refreshed;
     }
 
-    return NextResponse.json({ success: true, data: draft });
+    return successResponse(draft);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id } = await params;
@@ -90,21 +80,13 @@ export async function DELETE(
     });
 
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
-    // Cascade delete: SectionVersion -> Section -> Draft
-    // Prisma onDelete: Cascade handles SectionVersion and Section automatically
     await db.draft.delete({ where: { id: draft.id } });
 
-    return NextResponse.json({ success: true });
+    return successResponse(null);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

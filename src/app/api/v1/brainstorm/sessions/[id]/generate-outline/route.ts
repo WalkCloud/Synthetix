@@ -1,10 +1,9 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 const OUTLINE_PROMPT = `Based on the conversation above, generate a complete document outline.
 
@@ -48,20 +47,20 @@ Ensure the outline comprehensively covers all topics discussed in the conversati
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const session = await db.brainstormSession.findFirst({
     where: { id, userId: user.id },
     include: { messages: { orderBy: { createdAt: "asc" } } },
   });
-  if (!session) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (!session) return errorResponse("Not found", 404);
 
   const chatModel = await resolveModel("chat");
 
-  if (!chatModel) return NextResponse.json({ success: false, error: "No chat model configured" }, { status: 400 });
+  if (!chatModel) return errorResponse("No chat model configured", 400);
 
   const conversation = session.messages
     .filter((m) => m.role !== "system")
@@ -89,7 +88,6 @@ export async function POST(
     }
 
     const raw = chunks.join("");
-    // Extract JSON from response
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     const outline = jsonMatch ? JSON.parse(jsonMatch[0]) : {
       title: session.title,
@@ -117,11 +115,8 @@ export async function POST(
       data: { sessionId: id, role: "system", content: "Outline generated and ready for review." },
     });
 
-    return NextResponse.json({ success: true, data: outline });
+    return successResponse(outline);
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Outline generation failed",
-    }, { status: 500 });
+    return errorResponse(error);
   }
 }

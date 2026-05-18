@@ -5,8 +5,11 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { getAssetFilePath } from "@/lib/writing/diagram-generator";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
@@ -75,13 +78,10 @@ async function buildMarkdown(draftId: string, userId: string): Promise<string> {
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
-): Promise<NextResponse<ApiResponse> | Response> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId } = await params;
@@ -108,7 +108,6 @@ export async function POST(
 
     const svgInlinedMarkdown = await inlineAssetImages(markdown);
 
-    // Write temp markdown for Python converter
     if (!fs.existsSync(TMP_DIR)) {
       fs.mkdirSync(TMP_DIR, { recursive: true });
     }
@@ -120,16 +119,11 @@ export async function POST(
       await runExport(tmpMd, tmpPdf, "pdf");
 
       if (!fs.existsSync(tmpPdf)) {
-        return NextResponse.json(
-          { success: false, error: "PDF generation failed — ensure 'pip install markdown' is run" },
-          { status: 500 },
-        );
+        return errorResponse("PDF generation failed — ensure 'pip install markdown' is run");
       }
 
       const pdfContent = fs.readFileSync(tmpPdf, "utf-8");
-      // Clean up temp files
       fs.unlinkSync(tmpMd);
-      // Keep HTML for download (user opens in browser and prints to PDF)
 
       return new Response(pdfContent, {
         headers: {
@@ -144,10 +138,7 @@ export async function POST(
       await runExport(tmpMd, tmpDocx, "docx");
 
       if (!fs.existsSync(tmpDocx)) {
-        return NextResponse.json(
-          { success: false, error: "DOCX generation failed — ensure 'pip install python-docx' is run" },
-          { status: 500 },
-        );
+        return errorResponse("DOCX generation failed — ensure 'pip install python-docx' is run");
       }
 
       const docxContent = fs.readFileSync(tmpDocx);
@@ -162,15 +153,9 @@ export async function POST(
       });
     }
 
-    return NextResponse.json(
-      { success: false, error: `Unsupported format: ${format}` },
-      { status: 400 },
-    );
+    return errorResponse(`Unsupported format: ${format}`, 400);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 },
-    );
+    return errorResponse(error);
   }
 }
 

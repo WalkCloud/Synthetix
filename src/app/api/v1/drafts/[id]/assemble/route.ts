@@ -1,19 +1,19 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { getErrorMessage } from "@/lib/api-helpers";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+  getErrorMessage,
+} from "@/lib/api-helpers";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId } = await params;
@@ -23,10 +23,7 @@ export async function POST(
       where: { id: draftId, userId: user.id },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse("Draft not found", 404);
     }
 
     const sections = await db.section.findMany({
@@ -38,27 +35,17 @@ export async function POST(
     });
 
     if (sections.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No confirmed sections available to assemble" },
-        { status: 400 }
-      );
+      return errorResponse("No confirmed sections available to assemble", 400);
     }
 
-    // Build assembled markdown
     const titleHeader = `# ${draft.title}\n\n`;
     const sectionParts = sections.map(
       (section) => `## ${section.title}\n\n${section.content ?? ""}\n\n`
     );
     const markdown = titleHeader + sectionParts.join("");
 
-    return NextResponse.json({
-      success: true,
-      data: { markdown, sectionCount: sections.length },
-    });
+    return successResponse({ markdown, sectionCount: sections.length });
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
