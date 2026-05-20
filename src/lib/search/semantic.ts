@@ -8,6 +8,9 @@ import type { SearchResult } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
+const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
+
+let lightRagDisabledUntil = 0;
 
 interface RagChunkResult {
   chunk_id: string;
@@ -143,7 +146,7 @@ export async function semanticSearch(
     return [];
   }
 
-  if (ctx.llmConfig) {
+  if (ctx.llmConfig && lightRagDisabledUntil <= Date.now()) {
     try {
       const ragResults = await searchViaLightRAG(
         query,
@@ -179,7 +182,13 @@ export async function semanticSearch(
         });
       }
     } catch (err) {
-      console.error("[semantic] LightRAG failed:", err instanceof Error ? err.stack : err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("404")) {
+        lightRagDisabledUntil = Date.now() + LIGHTRAG_404_COOLDOWN_MS;
+        console.warn("[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.");
+      } else {
+        console.error("[semantic] LightRAG failed:", err instanceof Error ? err.stack : err);
+      }
     }
   }
 

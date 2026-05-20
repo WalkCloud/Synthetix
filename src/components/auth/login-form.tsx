@@ -64,8 +64,11 @@ const FEATURES = [
 
 export function LoginForm() {
   const router = useRouter();
+  const [initialized, setInitialized] = useState<boolean | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -74,25 +77,48 @@ export function LoginForm() {
     fetch("/api/v1/system/status")
       .then((r) => r.json())
       .then((data) => {
-        if (!data.data?.initialized) router.push("/setup");
+        setInitialized(Boolean(data.data?.initialized));
+      })
+      .catch(() => {
+        setError("Unable to check system status");
+        setInitialized(true);
       });
-  }, [router]);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (initialized === false) {
+      if (password !== confirmPassword) {
+        setError("Passwords do not match");
+        return;
+      }
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters");
+        return;
+      }
+    }
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/auth/login", {
+      const endpoint =
+        initialized === false ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+      const body =
+        initialized === false
+          ? { username, password, displayName }
+          : { username, password };
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
         router.push("/");
       } else {
-        setError(data.error || "Login failed");
+        setError(
+          data.error ||
+            (initialized === false ? "Account creation failed" : "Login failed")
+        );
       }
     } catch {
       setError("Network error, please try again");
@@ -188,10 +214,18 @@ export function LoginForm() {
       <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-12 bg-gradient-to-b from-white to-[#FAFAF8]">
         <div className="w-full max-w-[400px]">
           <h2 className="text-2xl font-extrabold font-display mb-2 tracking-tight animate-fade-in-up-2">
-            Welcome back
+            {initialized === null
+              ? "Checking workspace"
+              : initialized === false
+                ? "Create admin account"
+                : "Welcome back"}
           </h2>
           <p className="text-sm text-muted-foreground mb-8 animate-fade-in-up-3">
-            Sign in to your Synthetix account to continue.
+            {initialized === null
+              ? "Loading local authentication status..."
+              : initialized === false
+                ? "Set up the first local administrator for this workspace."
+                : "Sign in to your Synthetix account to continue."}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -199,9 +233,9 @@ export function LoginForm() {
             <div className="animate-fade-in-up-4">
               <label
                 className="block text-[13px] font-medium text-muted-foreground mb-1.5"
-                htmlFor="email"
+                htmlFor="username"
               >
-                Email
+                Username
               </label>
               <div className="relative">
                 <svg
@@ -217,7 +251,7 @@ export function LoginForm() {
                   <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                 </svg>
                 <input
-                  id="email"
+                  id="username"
                   type="text"
                   className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="admin"
@@ -225,9 +259,45 @@ export function LoginForm() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
+                  minLength={initialized === false ? 3 : undefined}
                 />
               </div>
             </div>
+
+            {initialized === false && (
+              <div className="animate-fade-in-up-5">
+                <label
+                  className="block text-[13px] font-medium text-muted-foreground mb-1.5"
+                  htmlFor="displayName"
+                >
+                  Display Name
+                </label>
+                <div className="relative">
+                  <svg
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-muted-foreground pointer-events-none"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <input
+                    id="displayName"
+                    type="text"
+                    className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    placeholder="Your name"
+                    autoComplete="name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Password field */}
             <div className="animate-fade-in-up-5">
@@ -255,30 +325,71 @@ export function LoginForm() {
                   type="password"
                   className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   placeholder="Enter your password"
-                  autoComplete="current-password"
+                  autoComplete={
+                    initialized === false ? "new-password" : "current-password"
+                  }
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  minLength={initialized === false ? 6 : undefined}
                 />
               </div>
             </div>
 
+            {initialized === false && (
+              <div className="animate-fade-in-up-6">
+                <label
+                  className="block text-[13px] font-medium text-muted-foreground mb-1.5"
+                  htmlFor="confirmPassword"
+                >
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <svg
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-muted-foreground pointer-events-none"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    placeholder="Enter password again"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Remember me */}
-            <div className="flex items-center gap-2 animate-fade-in-up-6">
-              <input
-                type="checkbox"
-                id="remember"
-                className="w-4 h-4 accent-primary cursor-pointer"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              <label
-                htmlFor="remember"
-                className="text-[13px] text-muted-foreground cursor-pointer"
-              >
-                Remember me
-              </label>
-            </div>
+            {initialized !== false && (
+              <div className="flex items-center gap-2 animate-fade-in-up-6">
+                <input
+                  type="checkbox"
+                  id="remember"
+                  className="w-4 h-4 accent-primary cursor-pointer"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                <label
+                  htmlFor="remember"
+                  className="text-[13px] text-muted-foreground cursor-pointer"
+                >
+                  Remember me
+                </label>
+              </div>
+            )}
 
             {/* Error message */}
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -286,11 +397,19 @@ export function LoginForm() {
             {/* Login button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || initialized === null}
               className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 transition-all disabled:opacity-40 animate-fade-in-up"
               style={{ animationDelay: "0.35s" }}
             >
-              {loading ? "Signing in..." : "Login"}
+              {initialized === null
+                ? "Checking..."
+                : loading
+                ? initialized === false
+                  ? "Creating..."
+                  : "Signing in..."
+                : initialized === false
+                  ? "Create Admin"
+                  : "Login"}
             </button>
           </form>
         </div>

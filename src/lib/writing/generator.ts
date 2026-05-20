@@ -15,10 +15,78 @@ interface RagConfig {
   documentIds: string[];
 }
 
+interface HiddenSectionConstraints {
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
+}
+
+function parseHiddenConstraints(value?: string | null): HiddenSectionConstraints {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const obj = parsed as Record<string, unknown>;
+    return {
+      writingRequirements:
+        typeof obj.writingRequirements === "string"
+          ? obj.writingRequirements
+          : undefined,
+      retrievalQuery:
+        typeof obj.retrievalQuery === "string"
+          ? obj.retrievalQuery
+          : undefined,
+      referenceHints: Array.isArray(obj.referenceHints)
+        ? obj.referenceHints.filter((item): item is string => typeof item === "string")
+        : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function parseKeyPoints(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [value];
+  } catch {
+    return [value];
+  }
+}
+
+function buildEffectiveConstraints(
+  sectionConstraints?: string | null,
+  requestConstraints?: ContextInput["constraints"],
+): ContextInput["constraints"] {
+  const hidden = parseHiddenConstraints(sectionConstraints);
+  const hasHidden =
+    Boolean(hidden.writingRequirements) ||
+    Boolean(hidden.retrievalQuery) ||
+    Boolean(hidden.referenceHints?.length);
+  if (!requestConstraints && !hasHidden) {
+    return undefined;
+  }
+
+  const additionalRequirements = [
+    hidden.writingRequirements,
+    requestConstraints?.additionalRequirements,
+  ].filter(Boolean).join("\n");
+
+  return {
+    ...requestConstraints,
+    additionalRequirements: additionalRequirements || requestConstraints?.additionalRequirements,
+    retrievalQuery: hidden.retrievalQuery,
+    referenceHints: hidden.referenceHints,
+    writingRequirements: hidden.writingRequirements,
+  };
+}
+
 async function fetchRagReferences(
   draftTitle: string,
-  sectionTitle: string,
-  sectionDescription: string | null | undefined,
+  section: ContextInput["section"] & { constraints?: string | null },
   userId: string,
   ragConfig?: RagConfig
 ): Promise<ContextInput["ragReferences"]> {
@@ -26,10 +94,17 @@ async function fetchRagReferences(
     return [];
   }
 
-  const queryParts = [draftTitle, sectionTitle];
-  if (sectionDescription) {
-    queryParts.push(sectionDescription);
-  }
+  const hidden = parseHiddenConstraints(section.constraints);
+  const keyPoints = parseKeyPoints(section.keyPoints);
+  const queryParts = [
+    hidden.retrievalQuery,
+    section.title,
+    section.description,
+    ...keyPoints,
+    hidden.writingRequirements,
+    ...(hidden.referenceHints ?? []),
+    draftTitle,
+  ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
   const query = queryParts.join(" ");
 
   try {
@@ -64,6 +139,11 @@ export interface GenerationResult {
   outputTokens: number;
 }
 
+export interface FullGenerationResult extends GenerationResult {
+  modelConfigId: string;
+  ragReferences: ContextInput["ragReferences"];
+}
+
 function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | null }): RagConfig {
   const mode = (section.ragMode || "auto") as RagConfig["mode"];
   let documentIds: string[] = [];
@@ -75,19 +155,70 @@ function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | n
 
 export async function generateSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   constraints?: ContextInput["constraints"]
 ): Promise<GenerationResult> {
-  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
+  const result = await generateSectionFull(
+    draft,
+    section,
+    completedSections,
+    userId,
+    constraints,
+  );
+
+  return {
+    content: result.content,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+  };
+}
+
+export async function generateSectionFull(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string,
+): Promise<FullGenerationResult> {
+  let provider: ReturnType<typeof createLLMProvider>;
+  let modelId: string;
+  let modelConfigId: string;
+
+  if (customModelConfigId) {
+    const { db } = await import("@/lib/db");
+    const modelConfig = await db.modelConfig.findUnique({
+      where: { id: customModelConfigId },
+      include: { provider: true },
+    });
+    if (!modelConfig?.provider) {
+      throw new Error(`Model config ${customModelConfigId} not found`);
+    }
+    provider = createLLMProvider({
+      apiBaseUrl: modelConfig.provider.apiBaseUrl,
+      apiKey: modelConfig.provider.apiKey,
+    });
+    modelId = modelConfig.modelId;
+    modelConfigId = modelConfig.id;
+  } else {
+    const resolved = await getLLMClient("writing");
+    provider = resolved.provider;
+    modelId = resolved.modelId;
+    modelConfigId = resolved.modelConfigId;
+  }
 
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
+    section,
     userId,
     parseRagConfig(section)
+  );
+
+  const effectiveConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
   );
 
   const messages = assembleContext({
@@ -95,7 +226,7 @@ export async function generateSection(
     section,
     completedSections,
     ragReferences,
-    constraints,
+    constraints: effectiveConstraints,
   });
 
   try {
@@ -123,6 +254,8 @@ export async function generateSection(
       content: response.content,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
+      modelConfigId,
+      ragReferences,
     };
   } catch (error: unknown) {
     const message =
@@ -133,7 +266,7 @@ export async function generateSection(
 
 export async function generateSectionStream(
   draft: ContextInput["draft"],
-  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   constraints?: ContextInput["constraints"],
@@ -169,10 +302,14 @@ export async function generateSectionStream(
 
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
+    section,
     userId,
     parseRagConfig(section)
+  );
+
+  const effectiveConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
   );
 
   const messages = assembleContext({
@@ -180,7 +317,7 @@ export async function generateSectionStream(
     section,
     completedSections,
     ragReferences,
-    constraints,
+    constraints: effectiveConstraints,
   });
 
   const stream = provider.chatStream({
@@ -206,7 +343,7 @@ export interface ComparisonResult {
 
 export async function compareSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"] & { ragMode?: string; ragDocumentIds?: string | null },
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
@@ -222,10 +359,14 @@ export async function compareSection(
 
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
+    section,
     userId,
     parseRagConfig(section)
+  );
+
+  const effectiveConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
   );
 
   const messages = assembleContext({
@@ -233,7 +374,7 @@ export async function compareSection(
     section,
     completedSections,
     ragReferences,
-    constraints,
+    constraints: effectiveConstraints,
   });
 
   const chatParams = {

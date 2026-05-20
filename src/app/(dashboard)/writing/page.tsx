@@ -8,6 +8,23 @@ import { LoadingState } from "@/components/shared/loading-state";
 import { draftStatusLabels, draftStatusColors } from "@/lib/text/status-labels";
 import type { DraftMeta } from "@/types/writing";
 
+interface DraftGenerationTask {
+  id: string;
+  type: string;
+  status: string;
+  progress: number;
+  draftId: string | null;
+  result?: {
+    draftId?: string;
+    generated?: number;
+    total?: number;
+    currentSectionTitle?: string | null;
+    skipped?: number;
+  } | null;
+  error?: string | null;
+  updatedAt: string;
+}
+
 const statusLabels = draftStatusLabels;
 const statusColors: Record<string, string> = {
   drafting: `${draftStatusColors.drafting} border border-orange-200`,
@@ -15,32 +32,97 @@ const statusColors: Record<string, string> = {
   completed: `${draftStatusColors.completed} border border-green-200`,
 };
 
+function taskLabel(task?: DraftGenerationTask) {
+  if (!task) return "Idle";
+  if (task.status === "pending") return "Queued";
+  if (task.status === "running") return "Generating";
+  if (task.status === "completed") return "Completed";
+  if (task.status === "failed") return "Failed";
+  if (task.status === "cancelled") return "Stopped";
+  return task.status;
+}
+
+function taskColor(task?: DraftGenerationTask) {
+  if (!task) return "text-slate-400";
+  if (task.status === "pending" || task.status === "running") return "text-primary-600";
+  if (task.status === "completed") return "text-green-600";
+  if (task.status === "failed") return "text-red-600";
+  if (task.status === "cancelled") return "text-slate-500";
+  return "text-slate-500";
+}
+
 export default function WritingListPage() {
   const [drafts, setDrafts] = useState<DraftMeta[]>([]);
+  const [tasks, setTasks] = useState<DraftGenerationTask[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null);
   const router = useRouter();
 
-  const fetchDrafts = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/v1/drafts");
-    const data = await res.json();
-    if (data.success) {
-      setDrafts(data.data);
-      setTotal(data.total);
+  const fetchPageData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    const [draftRes, taskRes] = await Promise.all([
+      fetch("/api/v1/drafts"),
+      fetch("/api/v1/tasks?limit=100"),
+    ]);
+    const draftData = await draftRes.json();
+    const taskData = await taskRes.json();
+    if (draftData.success && Array.isArray(draftData.data)) {
+      setDrafts(draftData.data);
+      setTotal(draftData.total ?? 0);
     }
-    setLoading(false);
+    if (taskData.success && Array.isArray(taskData.data)) {
+      setTasks(
+        taskData.data.filter(
+          (task: DraftGenerationTask) =>
+            task.type === "draft_generate_all" && task.draftId,
+        ),
+      );
+    }
+    if (showLoading) setLoading(false);
   }, []);
 
-  useEffect(() => { fetchDrafts(); }, [fetchDrafts]);
+  useEffect(() => { fetchPageData(true); }, [fetchPageData]);
+
+  const activeTasks = tasks.filter((task) =>
+    task.status === "pending" || task.status === "running"
+  );
+
+  useEffect(() => {
+    if (activeTasks.length === 0) return;
+    const interval = setInterval(() => fetchPageData(false), 3000);
+    return () => clearInterval(interval);
+  }, [activeTasks.length, fetchPageData]);
 
   const handleDelete = useCallback(
     async (id: string) => {
       const res = await fetch(`/api/v1/drafts/${id}`, { method: "DELETE" });
-      if (res.ok) fetchDrafts();
+      if (res.ok) fetchPageData(false);
     },
-    [fetchDrafts]
+    [fetchPageData]
   );
+
+  const handleStopTask = useCallback(async (taskId: string) => {
+    setStoppingTaskId(taskId);
+    try {
+      await fetch(`/api/v1/tasks/${taskId}`, { method: "POST" });
+      await fetchPageData(false);
+    } finally {
+      setStoppingTaskId(null);
+    }
+  }, [fetchPageData]);
+
+  const activeDraftIds = new Set(
+    activeTasks
+      .map((task) => task.draftId)
+      .filter((draftId): draftId is string => Boolean(draftId)),
+  );
+  const taskByDraftId = new Map<string, DraftGenerationTask>();
+  tasks.forEach((task) => {
+    if (task.draftId && !taskByDraftId.has(task.draftId)) {
+      taskByDraftId.set(task.draftId, task);
+    }
+  });
 
   return (
     <div>
@@ -95,6 +177,9 @@ export default function WritingListPage() {
                     Sections
                   </th>
                   <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                    Generation
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
                     Last Updated
                   </th>
                   <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
@@ -107,6 +192,9 @@ export default function WritingListPage() {
                   const progress = draft.progress || { completed: 0, total: 0 };
                   const completed = progress.completed;
                   const totalSections = progress.total;
+                  const task = taskByDraftId.get(draft.id);
+                  const taskResult = task?.result || {};
+                  const isTaskActive = activeDraftIds.has(draft.id);
 
                   return (
                     <tr key={draft.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
@@ -128,18 +216,59 @@ export default function WritingListPage() {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-sm font-medium text-slate-600">
-                        {completed}/{totalSections} done
+                        <div>{completed}/{totalSections} done</div>
+                        <div className="mt-1 h-1.5 max-w-[180px] overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-primary-600 transition-all duration-500"
+                            style={{
+                              width: `${totalSections > 0 ? Math.round((completed / totalSections) * 100) : 0}%`,
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className={`text-xs font-semibold ${taskColor(task)}`}>
+                          {taskLabel(task)}
+                          {isTaskActive ? ` · ${task?.progress ?? 0}%` : ""}
+                        </div>
+                        <div className="mt-1 max-w-[240px] truncate text-xs text-slate-500">
+                          {task?.status === "failed" && task.error
+                            ? task.error
+                            : taskResult.currentSectionTitle
+                              ? `Current: ${taskResult.currentSectionTitle}`
+                              : taskResult.total
+                                ? `${taskResult.generated ?? 0}/${taskResult.total} generated`
+                                : "Open the draft to review generated sections"}
+                        </div>
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-500">
                         {new Date(draft.updatedAt).toLocaleDateString()}
                       </td>
                       <td className="px-5 py-4">
-                        <button
-                          onClick={() => handleDelete(draft.id)}
-                          className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                        >
-                          Delete
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => router.push(`/writing/${draft.id}`)}
+                            className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                          >
+                            View
+                          </button>
+                          {task && isTaskActive && (
+                            <button
+                              onClick={() => handleStopTask(task.id)}
+                              disabled={stoppingTaskId === task.id}
+                              className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {stoppingTaskId === task.id ? "Stopping..." : "Stop"}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(draft.id)}
+                            disabled={isTaskActive}
+                            className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

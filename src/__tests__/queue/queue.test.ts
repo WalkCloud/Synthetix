@@ -126,6 +126,34 @@ describe("TaskQueue", () => {
     expect(info!.error).toBe("Conversion failed: corrupted file");
   });
 
+  it("should honor task-specific timeout overrides", async () => {
+    const longTaskQueue = new TaskQueue({
+      timeoutMs: 50,
+      taskTimeoutMs: { draft_generate_all: 1000 },
+    });
+    longTaskQueue.registerWorker("draft_generate_all", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { generated: true };
+    });
+
+    const taskId = await longTaskQueue.submit(
+      "draft_generate_all",
+      {},
+      TEST_USER_ID,
+    );
+
+    await vi.waitFor(
+      async () => {
+        const info = await longTaskQueue.getStatus(taskId);
+        expect(info?.status).toBe("completed");
+      },
+      { timeout: 1500 },
+    );
+
+    const info = await longTaskQueue.getStatus(taskId);
+    expect(info!.result).toEqual({ generated: true });
+  });
+
   it("should cancel a pending task", async () => {
     // Use a single queue with concurrency=1 and a blocking worker
     let resolveWorker: (value: unknown) => void;

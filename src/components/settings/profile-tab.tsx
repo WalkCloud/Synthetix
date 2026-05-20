@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { CardSelector } from "@/components/shared/card-selector";
 
 interface UserProfile {
   id: string;
@@ -14,7 +13,6 @@ interface UserProfile {
 }
 
 type Tab = "profile" | "auth" | "storage" | "database" | "rag";
-type AuthMode = "local" | "appwrite";
 
 export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -28,7 +26,6 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("local");
 
   useEffect(() => {
     fetch("/api/v1/users/profile")
@@ -58,6 +55,10 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: "error", text: "Passwords do not match" });
+      return;
+    }
     const res = await fetch("/api/v1/users/password", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -237,102 +238,53 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             <div className="flex items-center justify-between px-6 py-5 border-b">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                <h3 className="text-base font-semibold">Authentication Mode</h3>
+                <h3 className="text-base font-semibold">Local Authentication</h3>
               </div>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <CardSelector
-                  selected={authMode === "local"}
-                  onSelect={() => setAuthMode("local")}
-                  icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>}
-                  title="Local Authentication"
-                  description="Username and password stored locally. Best for offline deployment."
-                />
-                <CardSelector
-                  selected={authMode === "appwrite"}
-                  onSelect={() => setAuthMode("appwrite")}
-                  icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
-                  title="Appwrite Cloud Auth"
-                  description="OAuth, social login, MFA via Appwrite. Best for team collaboration."
-                />
-              </div>
+              <p className="text-[13px] text-muted-foreground">
+                Synthetix uses local username and password authentication for this self-hosted workspace.
+              </p>
             </div>
           </div>
 
-          {authMode === "local" && (
-            <div className="bg-white border rounded-[16px]">
-              <div className="flex items-center justify-between px-6 py-5 border-b">
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                  <h3 className="text-base font-semibold">Password Settings</h3>
-                </div>
+          <div className="bg-white border rounded-[16px]">
+            <div className="flex items-center justify-between px-6 py-5 border-b">
+              <div className="flex items-center gap-2.5">
+                <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                <h3 className="text-base font-semibold">Password Settings</h3>
               </div>
-              <div className="p-6">
-                <form onSubmit={handlePasswordChange} className="space-y-5">
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Current Password</label>
-                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" required />
-                  </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">New Password</label>
-                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" required />
-                    {newPassword && (
-                      <div className="mt-3">
-                        <div className="flex gap-1 mb-1.5">
-                          {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-[#F4F2EF]"}`} />
-                          ))}
-                        </div>
-                        <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-[#DC2626]" : strength.label === "Medium" ? "text-[#D97706]" : "text-[#16A34A]"}`}>{strength.label}</span>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handlePasswordChange} className="space-y-5">
+                <div>
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Current Password</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" required />
+                </div>
+                <div>
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">New Password</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" required />
+                  {newPassword && (
+                    <div className="mt-3">
+                      <div className="flex gap-1 mb-1.5">
+                        {[1, 2, 3, 4].map((i) => (
+                          <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-[#F4F2EF]"}`} />
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Confirm Password</label>
-                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" required />
-                  </div>
-                  <div className="flex gap-3 mt-2">
-                    <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Update Password</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {authMode === "appwrite" && (
-            <div className="bg-white border rounded-[16px]">
-              <div className="flex items-center justify-between px-6 py-5 border-b">
-                <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                  <h3 className="text-base font-semibold">Appwrite Configuration</h3>
+                      <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-[#DC2626]" : strength.label === "Medium" ? "text-[#D97706]" : "text-[#16A34A]"}`}>{strength.label}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="p-6">
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Appwrite Endpoint</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="https://cloud.appwrite.io/v1" />
-                  </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Project ID</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter Project ID" />
-                  </div>
-                  <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Key</label>
-                    <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter API Key" />
-                  </div>
-                  <div className="flex gap-3">
-                    <button type="button" className="flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                      Test Connection
-                    </button>
-                    <button type="button" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Save Configuration</button>
-                  </div>
+                <div>
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Confirm Password</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" required />
                 </div>
-              </div>
+                <div className="flex gap-3 mt-2">
+                  <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Update Password</button>
+                </div>
+              </form>
             </div>
-          )}
+          </div>
         </div>
       )}
     </>

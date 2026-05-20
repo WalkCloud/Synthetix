@@ -1,27 +1,29 @@
 "use client";
 
 import { segmentContent } from "@/lib/writing/diagram";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
-
-const DIAGRAM_MARKER_RE = /\[DIAGRAM:([a-f0-9-]+)\]/g;
-const IMAGE_MARKER_RE = /\[IMAGE:([a-f0-9-]+)\]/g;
+import { MarkdownBlock } from "./markdown-renderer";
 
 export function ContentRenderer({
   content,
   draftId,
   sectionId,
+  sectionTitle,
   renderVer,
 }: {
   content: string;
   draftId: string;
   sectionId: string;
+  sectionTitle?: string | null;
   renderVer?: number;
 }) {
-  const segments = segmentContent(content);
+  const displayContent = stripLeadingSectionTitle(content, sectionTitle);
+  const segments = segmentContent(displayContent);
   const v = renderVer ?? 1;
 
   return (
-    <>
+    <div className="doc-content">
       {segments.map((seg, i) => {
         if (seg.kind === "diagram") {
           return <DiagramPlaceholder key={`dg-${i}`} diagram={seg.diagram} />;
@@ -54,13 +56,7 @@ export function ContentRenderer({
         }
 
         if (parts.length === 0) {
-          return seg.content
-            .split("\n\n")
-            .map((p, j) => (
-              <p key={`t-${i}-${j}`} className="mb-3">
-                {p}
-              </p>
-            ));
+          return <MarkdownBlock key={`mb-${i}`} text={seg.content} />;
         }
 
         return (
@@ -77,18 +73,12 @@ export function ContentRenderer({
                   serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${part.assetId}/serve?v=${v}`}
                 />
               ) : (
-                part.content
-                  .split("\n\n")
-                  .map((p, k) => (
-                    <p key={`t-${i}-${j}-${k}`} className="mb-3">
-                      {p}
-                    </p>
-                  ))
+                <MarkdownBlock key={`mb-${i}-${j}`} text={part.content} />
               )
             )}
           </span>
         );
       })}
-    </>
+    </div>
   );
 }

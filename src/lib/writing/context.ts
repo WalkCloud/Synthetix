@@ -29,6 +29,9 @@ export interface ContextInput {
     referenceSections?: string[];
     wordLimit?: number;
     additionalRequirements?: string;
+    writingRequirements?: string;
+    retrievalQuery?: string;
+    referenceHints?: string[];
   } | null;
 }
 
@@ -45,7 +48,7 @@ function buildSystemMessage(): ChatMessage {
       "- Produce polished, reader-facing document content, not notes, commentary, or an explanation of how you used references.",
       "- Match the target section title, key points, estimated word count, and additional user requirements.",
       "- Maintain logical continuity with previously completed sections.",
-      "- Use Markdown headings and paragraphs where they improve structure.",
+      "- Use paragraphs and concise local sub-headings only when they improve readability.",
       "- Prefer clear, specific, direct writing over generic summaries.",
       "- Keep the same language as the draft, section title, or user requirements.",
       "",
@@ -91,13 +94,18 @@ function buildSystemMessage(): ChatMessage {
       "",
       "Structure rules:",
       "- Follow the target section scope. Do not write content for other chapters.",
+      "- Do not repeat the target section title at the beginning of the output.",
+      "- Do not output chapter numbers such as \"1\", \"1.2\", \"1.2.1\", or numbered Markdown headings.",
+      "- Do not invent, rebuild, or renumber the document outline.",
+      "- If local sub-headings are useful, write short unnumbered sub-headings that are not the target section title.",
       "- If the section is a parent or overview section, write a concise overview and avoid duplicating details that belong in child sections.",
       "- If the section is a leaf section, write the complete substantive content for that section.",
-      "- Use headings only when they help the final document. Do not force a fixed template.",
+      "- Do not force a fixed template.",
       "- Preserve consistency with previous section summaries, but do not repeat them.",
       "",
       "Output rules:",
       "- Output only the final section content.",
+      "- Start directly with the first paragraph of the section body.",
       "- Do not mention prompts, references, retrieval, RAG, context, source chunks, or model limitations.",
       "- Do not include analysis notes or explanations of writing choices.",
       "- Do not include a bibliography, citation list, or reference list unless the user explicitly requests one.",
@@ -120,7 +128,10 @@ function buildSystemMessage(): ChatMessage {
   };
 }
 
-function buildOutlineSummary(draft: ContextInput["draft"]): string {
+function buildOutlineSummary(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"]
+): string {
   const outlineEntries: string[] = [];
 
   outlineEntries.push(`Document: "${draft.title}"`);
@@ -132,16 +143,29 @@ function buildOutlineSummary(draft: ContextInput["draft"]): string {
     const parsed = JSON.parse(draft.outline) as unknown;
 
     if (typeof parsed === "object" && parsed !== null && "sections" in parsed) {
-      const outlineData = parsed as { sections: { num: string; title: string; children?: { num: string; title: string }[] }[] };
-      const lines: string[] = ["Outline (hierarchy - parent sections marked with ▶):"];
-      for (const section of outlineData.sections) {
-        const hasChildren = section.children && section.children.length > 0;
-        lines.push(`  ${hasChildren ? "▶" : " "} ${section.num} ${section.title}${hasChildren ? " (parent - do NOT write child section content)" : ""}`);
-        if (section.children) {
-          for (const child of section.children) {
-            lines.push(`      ${child.num} ${child.title} (separate section - do NOT include under parent)`);
-          }
+      const outlineData = parsed as { sections: OutlineNode[] };
+      const current = findOutlineNodeWithContext(
+        outlineData.sections,
+        section.title.replace(/^\d+(\.\d+)*\s*/, "").trim(),
+      );
+      const lines: string[] = ["Relevant Outline Context:"];
+      if (current) {
+        lines.push(`Current path: ${current.path.map((node) => `${node.num} ${node.title}`).join(" > ")}`);
+        if (current.parent) {
+          lines.push(`Parent section: ${current.parent.num} ${current.parent.title}`);
         }
+        if (current.siblings.length > 0) {
+          lines.push(
+            `Sibling sections: ${current.siblings.map((node) => `${node.num} ${node.title}`).join("; ")}`
+          );
+        }
+        if (current.node.children?.length) {
+          lines.push(
+            `Direct child sections to avoid duplicating: ${current.node.children.map((node) => `${node.num} ${node.title}`).join("; ")}`
+          );
+        }
+      } else {
+        lines.push(`Current section: ${section.title}`);
       }
       outlineEntries.push(lines.join("\n"));
     } else if (Array.isArray(parsed)) {
@@ -164,11 +188,66 @@ function buildOutlineSummary(draft: ContextInput["draft"]): string {
   return outlineEntries.join("\n");
 }
 
+interface OutlineNode {
+  num: string;
+  title: string;
+  children?: OutlineNode[];
+}
+
+interface OutlineNodeContext {
+  node: OutlineNode;
+  parent: OutlineNode | null;
+  siblings: OutlineNode[];
+  path: OutlineNode[];
+}
+
+function findOutlineNode(sections: OutlineNode[], cleanTitle: string): OutlineNode | null {
+  for (const section of sections) {
+    const currentTitle = section.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
+    if (currentTitle === cleanTitle) return section;
+    if (section.children) {
+      const found = findOutlineNode(section.children, cleanTitle);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findOutlineNodeWithContext(
+  sections: OutlineNode[],
+  cleanTitle: string,
+  parent: OutlineNode | null = null,
+  path: OutlineNode[] = [],
+): OutlineNodeContext | null {
+  for (const section of sections) {
+    const currentTitle = section.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
+    const currentPath = [...path, section];
+    if (currentTitle === cleanTitle) {
+      return {
+        node: section,
+        parent,
+        siblings: sections.filter((item) => item !== section),
+        path: currentPath,
+      };
+    }
+    if (section.children) {
+      const found = findOutlineNodeWithContext(
+        section.children,
+        cleanTitle,
+        section,
+        currentPath,
+      );
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function buildCompletedSectionsSummary(
   completedSections: ContextInput["completedSections"]
 ): string {
   const completed = completedSections.filter(
-    (s) => s.status === "completed" && s.summary
+    (s) => ["completed", "locked", "summarized", "reviewing"].includes(s.status) && s.summary
   );
 
   if (completed.length === 0) {
@@ -203,7 +282,7 @@ function buildRagReferencesSection(
   return ["## Reference Material", "", ...entries].join("\n");
 }
 
-function buildTargetSectionBlock(section: ContextInput["section"]): string {
+function buildTargetSectionBlock(section: ContextInput["section"], effectiveWordCount?: number | null): string {
   const parts: string[] = [
     "## Target Section to Write",
     "",
@@ -218,8 +297,9 @@ function buildTargetSectionBlock(section: ContextInput["section"]): string {
     parts.push(`Key Points to Cover:\n${section.keyPoints}`);
   }
 
-  if (section.estimatedWords) {
-    parts.push(`Target Word Count: approximately ${section.estimatedWords} words`);
+  const wordCount = effectiveWordCount ?? section.estimatedWords;
+  if (wordCount) {
+    parts.push(`Target Word Count: approximately ${wordCount} words`);
   }
 
   return parts.join("\n");
@@ -229,10 +309,6 @@ function buildConstraintsBlock(
   constraints: NonNullable<ContextInput["constraints"]>
 ): string {
   const parts: string[] = ["## Additional Constraints"];
-
-  if (constraints.wordLimit) {
-    parts.push(`Word Limit: Do not exceed ${constraints.wordLimit} words.`);
-  }
 
   if (constraints.referenceSections && constraints.referenceSections.length > 0) {
     parts.push(
@@ -283,7 +359,7 @@ function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
 export function assembleContext(input: ContextInput): ChatMessage[] {
   const userParts: string[] = [];
 
-  userParts.push(buildOutlineSummary(input.draft));
+  userParts.push(buildOutlineSummary(input.draft, input.section));
 
   const completedSummary = buildCompletedSectionsSummary(
     input.completedSections
@@ -298,24 +374,9 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   try {
     const parsed = JSON.parse(input.draft.outline) as unknown;
     if (typeof parsed === "object" && parsed !== null && "sections" in parsed) {
-      const outlineData = parsed as { sections: { num: string; title: string; children?: { num: string; title: string }[] }[] };
+      const outlineData = parsed as { sections: OutlineNode[] };
       const cleanTitle = input.section.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
-      for (const s of outlineData.sections) {
-        const cleanS = s.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
-        if (cleanS === cleanTitle && s.children && s.children.length > 0) {
-          isParent = true;
-          break;
-        }
-        if (s.children) {
-          for (const c of s.children) {
-            const cleanC = c.title.replace(/^\d+(\.\d+)*\s*/, "").trim();
-            if (cleanC === cleanTitle) {
-              isParent = false;
-              break;
-            }
-          }
-        }
-      }
+      isParent = Boolean(findOutlineNode(outlineData.sections, cleanTitle)?.children?.length);
     }
   } catch {}
 
@@ -326,7 +387,7 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   }
 
   userParts.push("");
-  userParts.push(buildTargetSectionBlock(input.section));
+  userParts.push(buildTargetSectionBlock(input.section, input.constraints?.wordLimit ?? input.section.estimatedWords));
 
   if (input.constraints) {
     userParts.push("");
@@ -341,7 +402,7 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   } else {
     userParts.push("");
     userParts.push(
-      "Write the final reader-facing content for the target section now. Use the reference material only as background support, and do not mention the reference material itself. You may use ## sub-headings to structure the content within this section if appropriate."
+      "Write the final reader-facing content for the target section now. Use the reference material only as background support, and do not mention the reference material itself. Do not repeat the target section title or section number."
     );
   }
 

@@ -4,7 +4,8 @@ export type TaskType =
   | "rag_index"
   | "chapter_generate"
   | "chapter_summarize"
-  | "outline_generate";
+  | "outline_generate"
+  | "draft_generate_all";
 
 export type TaskStatus =
   | "pending"

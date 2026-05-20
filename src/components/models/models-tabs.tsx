@@ -7,6 +7,7 @@ import type { Provider, UsageData } from "./types";
 
 type Tab = "llm" | "embedding" | "image" | "usage";
 type TimeRange = "today" | "week" | "month";
+type DefaultSlot = "llm" | "embedding" | "image";
 
 interface IconColors {
   bg: string;
@@ -46,6 +47,22 @@ function parseContextWindow(n: number | null): string {
   return String(n);
 }
 
+function isDefaultForSlot(
+  model: Provider["models"][number],
+  slot: DefaultSlot,
+): boolean {
+  if (model.isDefaultFor === slot) return true;
+  if (model.isDefaultFor !== "default") return false;
+  const caps = parseCapabilities(model.capabilities);
+  if (slot === "embedding") {
+    return caps.some((c) => c === "embedding" || c === "embed");
+  }
+  if (slot === "image") {
+    return caps.includes("image_generation");
+  }
+  return !caps.some((c) => c === "embedding" || c === "embed" || c === "image_generation");
+}
+
 // --- Shared compact model card ---
 
 function ModelCard({
@@ -57,11 +74,13 @@ function ModelCard({
   testResult,
   isDeleting,
   iconColors,
+  isDefault,
   onTest,
   onEdit,
   onDelete,
   onDeleteConfirm,
   onDeleteCancel,
+  onToggleDefault,
 }: {
   name: string;
   providerName: string;
@@ -71,11 +90,13 @@ function ModelCard({
   testResult: { connected: boolean; contextWindows?: Record<string, number>; error?: string } | null;
   isDeleting: boolean;
   iconColors: IconColors;
+  isDefault: boolean;
   onTest: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
+  onToggleDefault: () => void;
 }) {
   return (
     <div
@@ -95,7 +116,17 @@ function ModelCard({
             </svg>
           </div>
           <div>
-            <div className="text-base font-semibold text-foreground">{name}</div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-semibold text-foreground">{name}</span>
+              {isDefault && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                    <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" />
+                  </svg>
+                  Default
+                </span>
+              )}
+            </div>
             <div className="text-sm text-muted-foreground mt-0.5">
               {providerName}{contextWindow > 0 && (<><span className="text-slate-300 mx-1.5">|</span>{parseContextWindow(contextWindow)} tokens</>)}
             </div>
@@ -136,6 +167,12 @@ function ModelCard({
             </>
           ) : (
             <>
+              <button onClick={onToggleDefault} title={isDefault ? "Remove default" : "Set as default model"}
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${isDefault ? "text-amber-500 hover:bg-amber-50" : "text-slate-300 hover:text-amber-400 hover:bg-slate-50"}`}>
+                <svg viewBox="0 0 24 24" fill={isDefault ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+                  <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" transform="translate(4,3) scale(0.85)" />
+                </svg>
+              </button>
               <button onClick={onTest} disabled={isTesting}
                 className="px-4 py-1.5 text-sm font-medium border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 hover:text-primary-600 hover:border-primary-200 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm">
                 {isTesting ? (
@@ -288,6 +325,24 @@ export function ModelsTabs() {
     fetchProviders();
   }
 
+  async function handleToggleDefault(
+    modelConfigId: string,
+    defaultFor: DefaultSlot,
+    isCurrentlyDefault: boolean,
+  ) {
+    try {
+      await fetch(`/api/v1/models/configs/${modelConfigId}/default`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setDefault: !isCurrentlyDefault,
+          defaultFor,
+        }),
+      });
+    } catch {}
+    fetchProviders();
+  }
+
   function handleEdit(provider: Provider) {
     setEditingProvider(provider);
     setShowForm(true);
@@ -410,11 +465,13 @@ export function ModelsTabs() {
                     testResult={testResult?.id === provider.id ? testResult : null}
                     isDeleting={deletingId === provider.id}
                     iconColors={iconColors}
+                    isDefault={isDefaultForSlot(model, "llm")}
                     onTest={() => handleTest(provider.id)}
                     onEdit={() => handleEdit(provider)}
                     onDelete={() => setDeletingId(provider.id)}
                     onDeleteConfirm={() => handleDelete(provider.id)}
                     onDeleteCancel={() => setDeletingId(null)}
+                    onToggleDefault={() => handleToggleDefault(model.id, "llm", isDefaultForSlot(model, "llm"))}
                   />
                 );
               })}
@@ -441,24 +498,26 @@ export function ModelsTabs() {
           </p>
           <div className="space-y-4">
             {embeddingModels.map(({ provider, modelIndex, iconColors }) => {
-              const model = provider.models[modelIndex];
-              return (
-                <ModelCard
-                  key={`${provider.id}-${model.id}`}
-                  name={model.modelName}
-                  providerName={provider.name}
-                  contextWindow={model.contextWindow}
-                  isActive={provider.isActive}
-                  isTesting={testingId === provider.id}
-                  testResult={testResult?.id === provider.id ? testResult : null}
-                  isDeleting={deletingId === provider.id}
-                  iconColors={iconColors}
-                  onTest={() => handleTest(provider.id)}
-                  onEdit={() => handleEdit(provider)}
-                  onDelete={() => setDeletingId(provider.id)}
-                  onDeleteConfirm={() => handleDelete(provider.id)}
-                  onDeleteCancel={() => setDeletingId(null)}
-                />
+                const model = provider.models[modelIndex];
+                return (
+                  <ModelCard
+                    key={`${provider.id}-${model.id}`}
+                    name={model.modelName}
+                    providerName={provider.name}
+                    contextWindow={model.contextWindow}
+                    isActive={provider.isActive}
+                    isTesting={testingId === provider.id}
+                    testResult={testResult?.id === provider.id ? testResult : null}
+                    isDeleting={deletingId === provider.id}
+                    iconColors={iconColors}
+                    isDefault={isDefaultForSlot(model, "embedding")}
+                    onTest={() => handleTest(provider.id)}
+                    onEdit={() => handleEdit(provider)}
+                    onDelete={() => setDeletingId(provider.id)}
+                    onDeleteConfirm={() => handleDelete(provider.id)}
+                    onDeleteCancel={() => setDeletingId(null)}
+                    onToggleDefault={() => handleToggleDefault(model.id, "embedding", isDefaultForSlot(model, "embedding"))}
+                  />
               );
             })}
             {embeddingModels.length === 0 && (
@@ -498,11 +557,13 @@ export function ModelsTabs() {
                     testResult={testResult?.id === provider.id ? testResult : null}
                     isDeleting={deletingId === provider.id}
                     iconColors={iconColors}
+                    isDefault={isDefaultForSlot(model, "image")}
                     onTest={() => handleTest(provider.id)}
                     onEdit={() => handleEdit(provider)}
                     onDelete={() => setDeletingId(provider.id)}
                     onDeleteConfirm={() => handleDelete(provider.id)}
                     onDeleteCancel={() => setDeletingId(null)}
+                    onToggleDefault={() => handleToggleDefault(model.id, "image", isDefaultForSlot(model, "image"))}
                   />
                 );
               })}

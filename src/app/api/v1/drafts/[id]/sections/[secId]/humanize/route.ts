@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { humanizeContent } from "@/lib/writing/humanizer";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import {
   authErrorResponse,
   errorResponse,
@@ -66,7 +67,7 @@ export async function POST(
       let lastNotes = "";
 
       for (const r of results) {
-        updateData[r.contentField] = r.content;
+        updateData[r.contentField] = stripLeadingSectionTitle(r.content, section.title);
         lastNotes = r.notes;
       }
 
@@ -85,11 +86,13 @@ export async function POST(
         user.id
       );
 
+      const cleanedContent = stripLeadingSectionTitle(result.content, section.title);
+
       updatedSection = await db.section.update({
         where: { id: sectionId },
         data: {
-          content: result.content,
-          wordCount: result.content.split(/\s+/).filter(Boolean).length,
+          content: cleanedContent,
+          wordCount: cleanedContent.split(/\s+/).filter(Boolean).length,
         },
       });
       auditNotes = result.auditNotes;

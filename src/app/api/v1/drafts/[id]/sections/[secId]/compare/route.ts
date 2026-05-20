@@ -5,6 +5,7 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { compareSection } from "@/lib/writing/generator";
 import { semanticSearch } from "@/lib/search/semantic";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import {
   authErrorResponse,
   errorResponse,
@@ -165,8 +166,8 @@ export async function POST(
     const updatedSection = await db.section.update({
       where: { id: sectionId },
       data: {
-        contentA: result.contentA,
-        contentB: result.contentB,
+        contentA: stripLeadingSectionTitle(result.contentA, section.title),
+        contentB: stripLeadingSectionTitle(result.contentB, section.title),
         modelA: result.modelA,
         modelB: result.modelB,
         status: "comparing",
