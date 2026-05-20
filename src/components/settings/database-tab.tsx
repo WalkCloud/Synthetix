@@ -12,6 +12,7 @@ export function DatabaseTab() {
   const [pgUser, setPgUser] = useState("");
   const [dbConnectionUrl, setDbConnectionUrl] = useState("file:./dev.db");
   const [savingDb, setSavingDb] = useState(false);
+  const [dbConfigured, setDbConfigured] = useState(true);
   const [dbMsg, setDbMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function DatabaseTab() {
           setPgDatabase(s.pgDatabase || "");
           setPgUser(s.pgUser || "");
           setDbConnectionUrl(s.connectionUrl || "file:./dev.db");
+          setDbConfigured(s.dbType === "sqlite" || !!s.pgHost);
         }
       })
       .catch(() => {});
@@ -62,23 +64,23 @@ export function DatabaseTab() {
             <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
             <h3 className="text-base font-semibold">Database Type</h3>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] text-[#16A34A] rounded-full text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
-            {dbType === "postgresql" ? "PostgreSQL" : "SQLite"}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${dbConfigured ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
+            <span className={`w-2 h-2 rounded-full ${dbConfigured ? "bg-[#16A34A]" : "bg-[#D97706]"}`} />
+            {dbConfigured ? (dbType === "postgresql" ? "PostgreSQL" : "SQLite") : "Not Configured"}
           </div>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-2 gap-4">
             <CardSelector
               selected={dbType === "sqlite"}
-              onSelect={() => setDbType("sqlite")}
+              onSelect={() => { setDbType("sqlite"); setDbConfigured(true); }}
               icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
               title="SQLite (Local)"
               description="Embedded file-based database. Zero configuration, works offline. Best for single-user deployment."
             />
             <CardSelector
               selected={dbType === "postgresql"}
-              onSelect={() => setDbType("postgresql")}
+              onSelect={() => { setDbType("postgresql"); setDbConfigured(!!pgHost); }}
               icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg></div>}
               title="PostgreSQL"
               description="Production-grade relational database. Best for team collaboration and cloud deployment."
@@ -96,6 +98,7 @@ export function DatabaseTab() {
         </div>
       </div>
 
+      {dbType !== "sqlite" && (
       <div className="bg-white border rounded-[16px]">
         <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
@@ -104,13 +107,6 @@ export function DatabaseTab() {
           </div>
         </div>
         <div className="p-6 space-y-5">
-          {dbType === "sqlite" && (
-            <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">SQLite File Path</label>
-              <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={dbConnectionUrl.replace("file:", "")} disabled />
-              <span className="text-xs text-muted-foreground mt-1 block">SQLite database file location. The database is stored locally and requires no additional configuration.</span>
-            </div>
-          )}
           {dbType === "postgresql" && (
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -148,6 +144,7 @@ export function DatabaseTab() {
           </div>
         </div>
       </div>
+      )}
 
       <MigrationsTab />
     </div>

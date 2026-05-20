@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { parseDiagramRequests } from "@/lib/writing/diagram";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import {
   authErrorResponse,
   errorResponse,
@@ -14,6 +15,7 @@ interface UpdateSectionBody {
   constraints?: string;
   ragMode?: "auto" | "manual" | "off";
   ragDocumentIds?: string[];
+  estimatedWords?: number;
 }
 
 export async function GET(
@@ -95,10 +97,11 @@ export async function PUT(
           400
         );
       }
-      updateData.content = sourceContent;
+      const cleanedSource = stripLeadingSectionTitle(sourceContent, section.title);
+      updateData.content = cleanedSource;
       updateData.selectedModel =
         body.selectedSource === "a" ? section.modelA : section.modelB;
-      updateData.wordCount = sourceContent.split(/\s+/).filter(Boolean).length;
+      updateData.wordCount = cleanedSource.split(/\s+/).filter(Boolean).length;
       updateData.status = "reviewing";
     } else if (body.content !== undefined) {
       const { cleaned, diagrams, images } = parseDiagramRequests(body.content);
@@ -119,6 +122,10 @@ export async function PUT(
 
     if (body.ragDocumentIds !== undefined) {
       updateData.ragDocumentIds = JSON.stringify(body.ragDocumentIds);
+    }
+
+    if (body.estimatedWords !== undefined) {
+      updateData.estimatedWords = body.estimatedWords;
     }
 
     const updatedSection = await db.section.update({

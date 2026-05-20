@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
 
 interface TaskData {
@@ -17,13 +18,18 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const user = await getAuthUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   const task = await db.asyncTask.findUnique({
     where: { id },
   });
 
-  if (!task) {
+  if (!task || task.userId !== user.id) {
     const response: ApiResponse = {
       success: false,
       error: "Task not found",
@@ -53,13 +59,18 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const user = await getAuthUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   const task = await db.asyncTask.findUnique({
     where: { id },
   });
 
-  if (!task) {
+  if (!task || task.userId !== user.id) {
     const response: ApiResponse = {
       success: false,
       error: "Task not found",

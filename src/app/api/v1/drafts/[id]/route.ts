@@ -10,6 +10,8 @@ import {
 const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
 const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -56,7 +58,17 @@ export async function GET(
       if (refreshed) draft = refreshed;
     }
 
-    return successResponse(draft);
+    const totalSections = draft.sections.length;
+    const doneSections = draft.sections.filter(
+      (s) => s.status === "locked" || s.status === "summarized" || s.status === "accepted",
+    ).length;
+    const derivedStatus = draft.status === "completed"
+      ? "completed"
+      : doneSections >= totalSections && totalSections > 0
+        ? "completed"
+        : draft.status;
+
+    return successResponse({ ...draft, status: derivedStatus });
   } catch (error: unknown) {
     return errorResponse(error);
   }

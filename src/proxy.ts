@@ -13,7 +13,6 @@ const isProduction = process.env.NODE_ENV === "production";
 
 const PUBLIC_PATHS = [
   "/login",
-  "/setup",
   "/api/v1/auth",
   "/api/v1/system",
 ];

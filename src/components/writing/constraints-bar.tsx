@@ -19,6 +19,7 @@ interface ConstraintsBarProps {
   onModelBChange: (val: string) => void;
   onGenerate: () => void;
   isGenerating: boolean;
+  onSaveWordLimit?: (limit: number) => void;
 }
 
 export function ConstraintsBar({
@@ -37,6 +38,7 @@ export function ConstraintsBar({
   onModelBChange,
   onGenerate,
   isGenerating,
+  onSaveWordLimit,
 }: ConstraintsBarProps) {
   return (
     <div className="mb-5 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -72,6 +74,7 @@ export function ConstraintsBar({
             value={wordLimit}
             placeholder={estimatedWords ? `Recommended ${estimatedWords}` : "500"}
             onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
+            onBlur={() => onSaveWordLimit?.(wordLimit)}
           />
         </div>
 

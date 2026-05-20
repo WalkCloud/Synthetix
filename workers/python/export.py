@@ -320,6 +320,23 @@ def _add_image_placeholder(doc, caption: str):
     _apply_run_font(run)
 
 
+def _svg_bytes_to_png_temp(svg_bytes: bytes) -> str | None:
+    try:
+        import fitz
+        import tempfile
+
+        svg_doc = fitz.open(stream=svg_bytes, filetype="svg")
+        page = svg_doc[0]
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb")
+        tmp.write(pix.tobytes("png"))
+        tmp.close()
+        svg_doc.close()
+        return tmp.name
+    except Exception:
+        return None
+
+
 def add_md_table(doc, rows: list[str]):
     if len(rows) < 2:
         return
@@ -453,14 +470,18 @@ def _write_markdown(doc, md_content: str, base_dir: str = "."):
                 image_ref = line[caption_end + 2:url_end]
 
                 image_path = None
+                remove_after_insert = False
                 if image_ref.startswith("data:image/svg+xml;base64,"):
                     b64_data = image_ref[len("data:image/svg+xml;base64,"):]
                     try:
                         svg_bytes = base64.b64decode(b64_data)
-                        tmp = tempfile.NamedTemporaryFile(suffix=".svg", delete=False, mode="wb")
-                        tmp.write(svg_bytes)
-                        tmp.close()
-                        image_path = tmp.name
+                        image_path = _svg_bytes_to_png_temp(svg_bytes)
+                        if image_path is None:
+                            tmp = tempfile.NamedTemporaryFile(suffix=".svg", delete=False, mode="wb")
+                            tmp.write(svg_bytes)
+                            tmp.close()
+                            image_path = tmp.name
+                        remove_after_insert = True
                     except Exception:
                         pass
                 elif image_ref.startswith("data:image/png;base64,"):
@@ -471,6 +492,18 @@ def _write_markdown(doc, md_content: str, base_dir: str = "."):
                         tmp.write(png_bytes)
                         tmp.close()
                         image_path = tmp.name
+                        remove_after_insert = True
+                    except Exception:
+                        pass
+                elif image_ref.startswith("data:image/jpeg;base64,"):
+                    b64_data = image_ref[len("data:image/jpeg;base64,"):]
+                    try:
+                        jpg_bytes = base64.b64decode(b64_data)
+                        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False, mode="wb")
+                        tmp.write(jpg_bytes)
+                        tmp.close()
+                        image_path = tmp.name
+                        remove_after_insert = True
                     except Exception:
                         pass
                 else:
@@ -482,7 +515,7 @@ def _write_markdown(doc, md_content: str, base_dir: str = "."):
 
                 if image_path and os.path.exists(image_path):
                     _add_picture_cn(doc, image_path, alt_text)
-                    if image_ref.startswith("data:"):
+                    if remove_after_insert:
                         try:
                             os.unlink(image_path)
                         except OSError:

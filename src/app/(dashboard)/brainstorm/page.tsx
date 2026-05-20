@@ -42,10 +42,10 @@ export default function BrainstormPage() {
   const [outline, setOutline] = useState<Outline | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [status, setStatus] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [editSections, setEditSections] = useState<OutlineSection[]>([]);
   const [editTitle, setEditTitle] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -191,6 +191,7 @@ export default function BrainstormPage() {
   async function generateOutline() {
     if (!activeId) return;
     setLoading(true);
+    setIsGeneratingOutline(true);
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST" });
       const d = await res.json();
@@ -200,6 +201,7 @@ export default function BrainstormPage() {
         setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, title: d.data.title || "New Brainstorming Session" } : s));
       }
     } finally {
+      setIsGeneratingOutline(false);
       setLoading(false);
     }
   }
@@ -317,47 +319,6 @@ export default function BrainstormPage() {
     ]);
   }
 
-  function insertSectionAfter(index: number) {
-    if (!outline) return;
-    const section: OutlineSection = { num: "", title: "", estimatedWords: 500 };
-    const updated = [...outline.sections.slice(0, index + 1), section, ...outline.sections.slice(index + 1)];
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function updateNodeTitle(path: number[], title: string) {
-    if (!outline) return;
-    const updated = updateByPath(outline.sections, path, (s) => ({ ...s, title }));
-    setOutline({ ...outline, sections: updated });
-  }
-
-  function removeNode(path: number[]) {
-    if (!outline) return;
-    const updated = removeByPath(outline.sections, path);
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function insertChildAfter(parentPath: number[], childIndex: number) {
-    if (!outline) return;
-    const updated = addChildAtPath(outline.sections, [...parentPath, childIndex], { num: "", title: "", estimatedWords: 200 });
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function reorderSections(from: number, to: number) {
-    if (!outline || from === to) return;
-    const updated = [...outline.sections];
-    const [moved] = updated.splice(from, 1);
-    updated.splice(to, 0, moved);
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
   function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth }: {
     section: OutlineSection;
     path: number[];
@@ -452,50 +413,33 @@ export default function BrainstormPage() {
     );
   }
 
-  function DisplayOutlineNode({ section, path, depth, isDraggable, dragIndex, setDragIndex, onReorder, onUpdateTitle, onRemove, onInsertChild, onAddChild, onInsertAfter }: {
+  function DisplayOutlineNode({ section, path, depth }: {
     section: OutlineSection;
     path: number[];
     depth: number;
-    isDraggable: boolean;
-    dragIndex: number | null;
-    setDragIndex: (i: number | null) => void;
-    onReorder: (from: number, to: number) => void;
-    onUpdateTitle: (path: number[], title: string) => void;
-    onRemove: (path: number[]) => void;
-    onInsertChild: (parentPath: number[], childIndex: number) => void;
-    onAddChild: (parentPath: number[]) => void;
-    onInsertAfter: (path: number[]) => void;
+    isDraggable?: boolean;
+    dragIndex?: number | null;
+    setDragIndex?: (i: number | null) => void;
+    onReorder?: (from: number, to: number) => void;
+    onUpdateTitle?: (path: number[], title: string) => void;
+    onRemove?: (path: number[]) => void;
+    onInsertChild?: (parentPath: number[], childIndex: number) => void;
+    onAddChild?: (parentPath: number[]) => void;
+    onInsertAfter?: (path: number[]) => void;
   }) {
     const isTop = depth === 0;
 
     if (isTop) {
       return (
         <li
-          draggable={isDraggable}
-          onDragStart={() => isDraggable && setDragIndex(path[0])}
-          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary-50/30"); }}
-          onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); }}
-          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); if (dragIndex !== null && isDraggable) onReorder(dragIndex, path[0]); setDragIndex(null); }}
-          onDragEnd={() => setDragIndex(null)}
-          className={`group/section rounded-[12px] border bg-white shadow-sm transition ${dragIndex === path[0] ? "opacity-40" : ""}`}
+          className="rounded-[12px] border bg-white shadow-sm"
         >
           <div className="flex items-center gap-2 px-3 py-2.5">
-            {isDraggable && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/30 transition group-hover/section:text-muted-foreground" />}
             <span className="min-w-5 shrink-0 text-sm font-bold text-primary">{section.num}.</span>
-            <input
-              value={section.title}
-              onChange={(e) => onUpdateTitle(path, e.target.value)}
-              placeholder="Enter chapter title..."
-              className="min-w-0 flex-1 bg-transparent text-sm font-semibold leading-5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-            />
+            <span className="min-w-0 flex-1 text-sm font-semibold leading-5 text-foreground">
+              {section.title}
+            </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">~{section.estimatedWords || 500}w</span>
-            <button
-              onClick={() => onRemove(path)}
-              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/30 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/section:opacity-100"
-              title="Delete"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
           </div>
           {section.children && section.children.length > 0 && (
             <ul className="border-t bg-slate-50/50 px-3 py-2">
@@ -505,110 +449,41 @@ export default function BrainstormPage() {
                   section={child}
                   path={[...path, ci]}
                   depth={depth + 1}
-                  isDraggable={false}
-                  dragIndex={dragIndex}
-                  setDragIndex={setDragIndex}
-                  onReorder={onReorder}
-                  onUpdateTitle={onUpdateTitle}
-                  onRemove={onRemove}
-                  onInsertChild={onInsertChild}
-                  onAddChild={onAddChild}
-                  onInsertAfter={onInsertAfter}
                 />
               ))}
-              <li className="py-1">
-                <button
-                  onClick={() => onAddChild(path)}
-                  className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
-                >
-                  <Plus className="h-3 w-3" /> Add sub-section
-                </button>
-              </li>
             </ul>
-          )}
-          {(!section.children || section.children.length === 0) && (
-            <div className="border-t bg-slate-50/50 px-3 py-1.5">
-              <button
-                onClick={() => onAddChild(path)}
-                className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
-              >
-                <Plus className="h-3 w-3" /> Add sub-section
-              </button>
-            </div>
           )}
         </li>
       );
     }
 
     return (
-      <>
-        <li
-          className="group/child relative flex items-center gap-2 rounded-lg py-1.5 pl-4"
+      <li className="rounded-lg">
+        <div
+          className="flex items-start gap-2 py-1.5 pr-1"
+          style={{ paddingLeft: `${Math.min(depth * 14, 42)}px` }}
         >
-          <span className={`shrink-0 text-xs font-semibold ${depth === 1 ? "text-primary/70" : "text-primary/50"}`}>
+          <span className={`w-10 shrink-0 text-xs font-semibold tabular-nums ${depth === 1 ? "text-primary/70" : "text-primary/50"}`}>
             {section.num}
           </span>
-          <input
-            value={section.title}
-            onChange={(e) => onUpdateTitle(path, e.target.value)}
-            placeholder="Enter title..."
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-          />
+          <span className="min-w-0 flex-1 break-words text-[13px] leading-5 text-foreground">
+            {section.title}
+          </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">~{section.estimatedWords || 300}w</span>
-          <button
-            onClick={() => onInsertAfter(path)}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-primary/0 transition hover:bg-primary-50 hover:text-primary group-hover/child:text-primary/40"
-            title="Insert after"
-          >
-            <Plus className="h-2.5 w-2.5" />
-          </button>
-          <button
-            onClick={() => onRemove(path)}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/0 transition hover:bg-red-50 hover:text-red-500 group-hover/child:text-muted-foreground/30"
-          >
-            <Trash2 className="h-2.5 w-2.5" />
-          </button>
-        </li>
+        </div>
         {section.children && section.children.length > 0 && (
-          <ul className="pl-4">
+          <ul className="space-y-0.5">
             {section.children.map((child, ci) => (
               <DisplayOutlineNode
                 key={ci}
                 section={child}
                 path={[...path, ci]}
                 depth={depth + 1}
-                isDraggable={false}
-                dragIndex={dragIndex}
-                setDragIndex={setDragIndex}
-                onReorder={onReorder}
-                onUpdateTitle={onUpdateTitle}
-                onRemove={onRemove}
-                onInsertChild={onInsertChild}
-                onAddChild={onAddChild}
-                onInsertAfter={onInsertAfter}
               />
             ))}
-            <li className="py-0.5">
-              <button
-                onClick={() => onAddChild(path)}
-                className="flex cursor-pointer items-center gap-1 pl-4 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
-              >
-                <Plus className="h-2.5 w-2.5" /> Add sub-section
-              </button>
-            </li>
           </ul>
         )}
-        {!section.children?.length && (
-          <div className="pl-8 py-0.5 opacity-0 transition-opacity group-hover/child:opacity-100">
-            <button
-              onClick={() => onAddChild(path)}
-              className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
-            >
-              <Plus className="h-2.5 w-2.5" /> Add sub-section
-            </button>
-          </div>
-        )}
-      </>
+      </li>
     );
   }
 
@@ -889,42 +764,56 @@ export default function BrainstormPage() {
                             section={s}
                             path={[i]}
                             depth={0}
-                            isDraggable={true}
-                            dragIndex={dragIndex}
-                            setDragIndex={setDragIndex}
-                            onReorder={reorderSections}
-                            onUpdateTitle={updateNodeTitle}
-                            onRemove={removeNode}
-                            onInsertChild={insertChildAfter}
-                            onAddChild={(parentPath) => {
-                              if (!outline) return;
-                              const updated = addChildAtPath(outline.sections, parentPath, { num: "", title: "", estimatedWords: 200 });
-                              const newOutline = { ...outline, sections: renumberSections(updated) };
-                              setOutline(newOutline);
-                              persistOutline(newOutline);
-                            }}
-                            onInsertAfter={(path) => {
-                              if (!outline) return;
-                              const parentPath = path.slice(0, -1);
-                              const myIndex = path[path.length - 1];
-                              const updated = addChildAtPath(outline.sections, [...parentPath, myIndex], { num: "", title: "", estimatedWords: 200 });
-                              const newOutline = { ...outline, sections: renumberSections(updated) };
-                              setOutline(newOutline);
-                              persistOutline(newOutline);
-                            }}
                           />
                         ))}
                       </ul>
-                      <button
-                        onClick={() => insertSectionAfter(outline.sections.length - 1)}
-                        className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1 rounded-[12px] border border-dashed border-primary/20 py-2 text-xs font-medium text-primary/60 transition hover:border-primary/40 hover:bg-primary-50/50 hover:text-primary"
-                      >
-                        <Plus className="h-3 w-3" /> Add Chapter
-                      </button>
                       </>
                     )}
                   </div>
                 </>
+              ) : isGeneratingOutline ? (
+                <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-b from-primary-50/70 to-white p-5">
+                  <div className="mb-5 flex items-center gap-3">
+                    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-primary shadow-sm ring-1 ring-primary-100">
+                      <Sparkles className="h-5 w-5 animate-pulse" />
+                      <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground">Generating outline</h4>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Structuring chapters, drafting hidden writing requirements, and preparing retrieval cues.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      "Reading confirmed requirements",
+                      "Arranging chapter hierarchy",
+                      "Writing section-level instructions",
+                      "Preparing knowledge-base search cues",
+                    ].map((item, idx) => (
+                      <div key={item} className="rounded-xl border border-white/80 bg-white/80 p-3 shadow-sm">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-100 text-[11px] font-bold text-primary">
+                            {idx + 1}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-700">{item}</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full w-1/2 rounded-full bg-primary-500 animate-loading-bar"
+                            style={{ animationDelay: `${idx * 0.18}s` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto rounded-xl border border-primary-100 bg-white/70 p-3 text-xs leading-5 text-muted-foreground">
+                    This step may take longer because each section receives drafting guidance that will be used later for full-document generation.
+                  </div>
+                </div>
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center bg-slate-50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary">

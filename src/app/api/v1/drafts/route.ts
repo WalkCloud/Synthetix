@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import {
@@ -6,7 +7,6 @@ import {
   successResponse,
   getErrorMessage,
 } from "@/lib/api-helpers";
-import type { PaginatedResponse } from "@/types/api";
 import type { OutlineData } from "@/types/writing";
 
 interface CreateDraftBody {
@@ -85,15 +85,41 @@ interface FlatSectionInput {
   description: string | null;
   keyPoints: string | null;
   estimatedWords: number | null;
+  constraints: string | null;
   depth: number;
   path: number[];
 }
 
 interface OutlineSectionLike {
+  num?: string;
   title: string;
+  description?: string;
   keyPoints?: string[];
   estimatedWords?: number;
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
   children?: OutlineSectionLike[];
+}
+
+function buildHiddenConstraints(section: OutlineSectionLike): string | null {
+  const constraints: Record<string, unknown> = {};
+  if (section.num) {
+    constraints.outlineNumber = section.num;
+  }
+  if (section.writingRequirements) {
+    constraints.writingRequirements = section.writingRequirements;
+  }
+  if (section.retrievalQuery) {
+    constraints.retrievalQuery = section.retrievalQuery;
+  }
+  if (section.referenceHints && section.referenceHints.length > 0) {
+    constraints.referenceHints = section.referenceHints;
+  }
+
+  return Object.keys(constraints).length > 0
+    ? JSON.stringify(constraints)
+    : null;
 }
 
 function flattenRecursive(
@@ -109,9 +135,10 @@ function flattenRecursive(
       parentId: null,
       index: i,
       title: section.title,
-      description: null,
+      description: section.description ?? null,
       keyPoints: section.keyPoints ? JSON.stringify(section.keyPoints) : null,
       estimatedWords: section.estimatedWords ?? null,
+      constraints: buildHiddenConstraints(section),
       depth,
       path: currentPath,
     });
@@ -158,6 +185,7 @@ async function createDraftWithSections(
         description: section.description,
         keyPoints: section.keyPoints,
         estimatedWords: section.estimatedWords,
+        constraints: section.constraints,
         status: "pending",
       },
     });
@@ -220,6 +248,8 @@ export async function POST(
   }
 }
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   request: Request
 ): Promise<Response> {
@@ -279,11 +309,18 @@ export async function GET(
         0
       );
 
+      const derivedStatus = draft.status === "completed"
+        ? "completed"
+        : completedCount >= sectionCount && sectionCount > 0
+          ? "completed"
+          : draft.status;
+
       const { sections: _removed, _count, ...draftData } = draft;
       void _removed;
 
       return {
         ...draftData,
+        status: derivedStatus,
         sectionCount,
         progress: {
           accepted: acceptedCount,
@@ -295,13 +332,13 @@ export async function GET(
       };
     });
 
-    return successResponse({
+    return NextResponse.json({
       success: true,
       data: draftsWithProgress,
       total,
       page,
       limit,
-    } as PaginatedResponse<unknown>);
+    });
   } catch (error: unknown) {
     return errorResponse(error);
   }

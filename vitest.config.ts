@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
+    exclude: ["**/node_modules/**", "**/.git/**", "**/_archive/**"],
     env: {
       DATABASE_URL: "file:./dev.db",
       JWT_SECRET: "test-jwt-secret-for-vitest",

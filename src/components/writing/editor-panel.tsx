@@ -15,9 +15,63 @@ interface SectionConstraints {
   generationMode: GenerationMode;
 }
 
+interface OutlineNode {
+  num: string;
+  title: string;
+  children?: OutlineNode[];
+}
+
+function normalizeTitle(title: string): string {
+  return title.replace(/^\d+(\.\d+)*\.?\s*/, "").trim();
+}
+
+function flattenOutlineNumbers(
+  nodes: OutlineNode[] | undefined,
+  result = new Map<string, string>(),
+): Map<string, string> {
+  if (!nodes) return result;
+  for (const node of nodes) {
+    const key = normalizeTitle(node.title);
+    if (key && node.num) {
+      result.set(key, node.num);
+    }
+    flattenOutlineNumbers(node.children, result);
+  }
+  return result;
+}
+
+function parseOutlineNumbers(outline?: string | null): Map<string, string> {
+  if (!outline) return new Map();
+  try {
+    const parsed = JSON.parse(outline) as { sections?: OutlineNode[] };
+    return flattenOutlineNumbers(parsed.sections);
+  } catch {
+    return new Map();
+  }
+}
+
+function getOutlineNumber(
+  section: SectionMeta,
+  draftOutline?: string | null,
+): string {
+  const fallback = parseOutlineNumbers(draftOutline).get(normalizeTitle(section.title))
+    ?? String(section.index + 1);
+  const constraints = section.constraints;
+  if (!constraints) return String(fallback);
+  try {
+    const parsed = JSON.parse(constraints) as { outlineNumber?: unknown };
+    return typeof parsed.outlineNumber === "string" && parsed.outlineNumber.trim()
+      ? parsed.outlineNumber
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 interface EditorPanelProps {
   section: SectionMeta | null;
   allSections: SectionMeta[];
+  draftOutline?: string | null;
   models: any[];
   selectedModelA: string;
   selectedModelB: string;
@@ -30,6 +84,7 @@ interface EditorPanelProps {
   onHumanize: () => void;
   onUnlock: () => void;
   onSaveEdit?: (content: string) => void;
+  onSaveEstimatedWords?: (words: number) => void;
   isGenerating: boolean;
   isThinking: boolean;
   isHumanizing: boolean;
@@ -42,6 +97,7 @@ interface EditorPanelProps {
 export function EditorPanel({
   section,
   allSections,
+  draftOutline,
   models,
   selectedModelA,
   selectedModelB,
@@ -54,6 +110,7 @@ export function EditorPanel({
   onHumanize,
   onUnlock,
   onSaveEdit,
+  onSaveEstimatedWords,
   isGenerating,
   isThinking,
   isHumanizing,
@@ -118,8 +175,9 @@ export function EditorPanel({
   }, [isGenerating, streamingContent]);
 
   const handleGenerate = useCallback(() => {
+    onSaveEstimatedWords?.(wordLimit);
     onGenerate(generationMode, { wordLimit, additionalRequirements, generationMode });
-  }, [generationMode, wordLimit, additionalRequirements, onGenerate]);
+  }, [generationMode, wordLimit, additionalRequirements, onGenerate, onSaveEstimatedWords]);
 
   const handleEdit = useCallback((content: string, _source: "a" | "b") => {
     setEditingContent(content);
@@ -151,7 +209,7 @@ export function EditorPanel({
       {/* Section Header */}
       <div className="mb-5">
         <h2 className="text-[22px] font-bold text-slate-900 mb-1">
-          {section.index + 1}. {section.title}
+          {getOutlineNumber(section, draftOutline)}. {section.title}
         </h2>
         <span className="text-[13px] text-slate-500 font-medium">
           {section.estimatedWords ? `Estimated ~${section.estimatedWords} words` : "No word estimate"}
@@ -189,6 +247,7 @@ export function EditorPanel({
           onModelBChange={onModelBChange}
           onGenerate={handleGenerate}
           isGenerating={isGenerating}
+          onSaveWordLimit={onSaveEstimatedWords}
         />
       )}
 
@@ -200,6 +259,7 @@ export function EditorPanel({
                   content={section.content}
                   draftId={section.draftId}
                   sectionId={section.id}
+                  sectionTitle={section.title}
                   renderVer={assetRenderVer}
                 />
               </div>
@@ -300,6 +360,7 @@ export function EditorPanel({
           onEdit={handleEdit}
           draftId={section.draftId}
           sectionId={section.id}
+          sectionTitle={section.title}
           mode={isComparing && section.contentB ? "compare" : "single"}
         />
       )}
