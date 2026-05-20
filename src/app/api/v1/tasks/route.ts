@@ -24,6 +24,8 @@ export async function GET(request: Request) {
       type: true,
       status: true,
       progress: true,
+      inputData: true,
+      resultData: true,
       errorMessage: true,
       createdAt: true,
       updatedAt: true,
@@ -31,14 +33,27 @@ export async function GET(request: Request) {
   });
 
   return successResponse(
-    tasks.map((t) => ({
-      id: t.id,
-      type: t.type,
-      status: t.status,
-      progress: t.progress,
-      error: t.errorMessage,
-      createdAt: t.createdAt.toISOString(),
-      updatedAt: t.updatedAt.toISOString(),
-    })),
+    tasks.map((t) => {
+      let input: Record<string, unknown> | null = null;
+      let result: unknown = null;
+      try {
+        input = t.inputData ? JSON.parse(t.inputData) as Record<string, unknown> : null;
+      } catch {}
+      try {
+        result = t.resultData ? JSON.parse(t.resultData) : null;
+      } catch {}
+
+      return {
+        id: t.id,
+        type: t.type,
+        status: t.status,
+        progress: t.progress,
+        draftId: typeof input?.draftId === "string" ? input.draftId : null,
+        result,
+        error: t.errorMessage,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+      };
+    }),
   );
 }

@@ -13,18 +13,21 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 interface QueueOptions {
   concurrency?: number;
-  timeoutMs?: number;
+  timeoutMs?: number | null;
+  taskTimeoutMs?: Partial<Record<TaskType, number | null>>;
 }
 
 export class TaskQueue {
   private readonly workers: Map<TaskType, WorkerFn> = new Map();
   private activeCount = 0;
   private readonly concurrency: number;
-  private readonly timeoutMs: number;
+  private readonly timeoutMs: number | null;
+  private readonly taskTimeoutMs: Partial<Record<TaskType, number | null>>;
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.taskTimeoutMs = options.taskTimeoutMs ?? {};
   }
 
   registerWorker(type: TaskType, workerFn: WorkerFn): void {
@@ -128,6 +131,13 @@ export class TaskQueue {
     }
   }
 
+  private getTimeoutMs(taskType: TaskType): number | null {
+    if (Object.prototype.hasOwnProperty.call(this.taskTimeoutMs, taskType)) {
+      return this.taskTimeoutMs[taskType] ?? null;
+    }
+    return this.timeoutMs;
+  }
+
   private async executeTask(
     taskId: string,
     taskType: TaskType,
@@ -181,17 +191,18 @@ export class TaskQueue {
 
     try {
       const resultPromise = workerFn(payload, onProgress);
+      const timeoutMs = this.getTimeoutMs(taskType);
 
-      const timeoutPromise = new Promise<never>((_resolve, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Task timed out after ${this.timeoutMs}ms`));
-        }, this.timeoutMs);
-      });
-
-      const result = (await Promise.race([
-        resultPromise,
-        timeoutPromise,
-      ])) as TaskResult;
+      const result = timeoutMs === null
+        ? await resultPromise
+        : await Promise.race([
+            resultPromise,
+            new Promise<never>((_resolve, reject) => {
+              setTimeout(() => {
+                reject(new Error(`Task timed out after ${timeoutMs}ms`));
+              }, timeoutMs);
+            }),
+          ]);
 
       // Check cancellation after completion
       const finalTask = await db.asyncTask.findUnique({

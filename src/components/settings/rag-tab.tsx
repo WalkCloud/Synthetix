@@ -23,6 +23,7 @@ export function RagTab() {
   const [ragQdrantUrl, setRagQdrantUrl] = useState("");
   const [ragQdrantApiKey, setRagQdrantApiKey] = useState("");
   const [savingRag, setSavingRag] = useState(false);
+  const [ragConfigured, setRagConfigured] = useState(true);
   const [ragMsg, setRagMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -47,6 +48,13 @@ export function RagTab() {
           setRagMilvusDbName(s.ragMilvusDbName || "");
           setRagQdrantUrl(s.ragQdrantUrl || "");
           setRagQdrantApiKey(s.ragQdrantApiKey || "");
+          const vdb = s.ragVectorDb || "local";
+          setRagConfigured(
+            vdb === "local"
+            || (vdb === "pgvector" && !!s.ragPgHost)
+            || (vdb === "milvus" && !!s.ragMilvusUri)
+            || (vdb === "qdrant" && !!s.ragQdrantUrl),
+          );
         }
       })
       .catch(() => {});
@@ -79,38 +87,44 @@ export function RagTab() {
   return (
     <div className="space-y-6">
       <div className="bg-white border rounded-[16px]">
-        <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
             <h3 className="text-base font-semibold">Vector Database Provider</h3>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${ragConfigured ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
+            <span className={`w-2 h-2 rounded-full ${ragConfigured ? "bg-[#16A34A]" : "bg-[#D97706]"}`} />
+            {ragConfigured
+              ? (ragVectorDb === "pgvector" ? "pgvector (PostgreSQL)" : ragVectorDb === "milvus" ? "Milvus" : ragVectorDb === "qdrant" ? "Qdrant" : "Local (NanoVectorDB)")
+              : "Not Configured"}
           </div>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-2 gap-4">
             <CardSelector
               selected={ragVectorDb === "local"}
-              onSelect={() => setRagVectorDb("local")}
+              onSelect={() => { setRagVectorDb("local"); setRagConfigured(true); }}
               icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
               title="Local (NanoVectorDB)"
               description="Default local vector storage. Zero configuration, works offline."
             />
             <CardSelector
               selected={ragVectorDb === "pgvector"}
-              onSelect={() => setRagVectorDb("pgvector")}
+              onSelect={() => { setRagVectorDb("pgvector"); setRagConfigured(!!ragPgHost); }}
               icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg></div>}
               title="pgvector (PostgreSQL)"
               description="Production-grade vector search using PostgreSQL + pgvector extension."
             />
             <CardSelector
               selected={ragVectorDb === "milvus"}
-              onSelect={() => setRagVectorDb("milvus")}
+              onSelect={() => { setRagVectorDb("milvus"); setRagConfigured(!!ragMilvusUri); }}
               icon={<div className="w-10 h-10 rounded-lg bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
               title="Milvus"
               description="High-performance vector database for billion-scale similarity search."
             />
             <CardSelector
               selected={ragVectorDb === "qdrant"}
-              onSelect={() => setRagVectorDb("qdrant")}
+              onSelect={() => { setRagVectorDb("qdrant"); setRagConfigured(!!ragQdrantUrl); }}
               icon={<div className="w-10 h-10 rounded-lg bg-[#F0FDF4] text-[#16A34A] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>}
               title="Qdrant"
               description="Rust-based vector search engine with rich filtering and quantization."
@@ -236,6 +250,7 @@ export function RagTab() {
         </div>
       )}
 
+      {ragVectorDb !== "local" && (
       <div className="bg-white border rounded-[16px]">
         <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
@@ -261,6 +276,7 @@ export function RagTab() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

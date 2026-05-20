@@ -27,7 +27,7 @@ export default function TopologyPage() {
     fetch("/api/v1/drafts?limit=100")
       .then((r) => r.json())
       .then((d) => {
-        if (d.success && d.data.length > 0) {
+        if (d.success && Array.isArray(d.data) && d.data.length > 0) {
           const opts = d.data.map((draft: { id: string; title: string }) => ({
             id: draft.id,
             title: draft.title,

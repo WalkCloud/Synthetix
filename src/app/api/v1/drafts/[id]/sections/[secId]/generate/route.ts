@@ -6,6 +6,7 @@ import { generateSectionStream } from "@/lib/writing/generator";
 import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
@@ -116,7 +117,7 @@ export async function POST(
 
         const { diagrams, images, cleaned } = parseDiagramRequests(fullContent);
 
-        let finalContent = cleaned;
+        let finalContent = stripLeadingSectionTitle(cleaned, section.title);
         let assetCount = 0;
 
         console.log(`[generate] section="${section.title}" diagrams=${diagrams.length} images=${images.length}`);
@@ -199,7 +200,10 @@ export async function POST(
                 }
               }
 
-              const markedContent = positionedParts.join("");
+              const markedContent = stripLeadingSectionTitle(
+                positionedParts.join(""),
+                section.title,
+              );
               assetCount = readyAssets.length;
 
               await db.section.update({

@@ -4,6 +4,8 @@ import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return authErrorResponse();

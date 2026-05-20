@@ -1,0 +1,1524 @@
+$ next dev
+[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.
+[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.
+[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  [90m3 |[0m [36mimport[0m { segmentContent } [36mfrom[0m [32m"@/lib/writing/diagram"[0m;
+  [90m4 |[0m [36mimport[0m { [33mDiagramPlaceholder[0m, [33mDiagramView[0m } [36mfrom[0m [32m"./diagram-placeholder"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mMarkdownBlock[0m } [36mfrom[0m [32m"./markdown-renderer"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36mfunction[0m [33mContentRenderer[0m({
+  [90m8 |[0m   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[browser] Uncaught Error: ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/components/writing/content-renderer.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/components/writing/content-renderer.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/components/writing/content-renderer.tsx:5:1
+Module not found: Can't resolve './markdown-renderer'
+  3 | import { segmentContent } from "@/lib/writing/diagram";
+  4 | import { DiagramPlaceholder, DiagramView } from "./diagram-placeholder";
+> 5 | import { MarkdownBlock } from "./markdown-renderer";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |
+  7 | export function ContentRenderer({
+  8 |   content,
+
+Import traces:
+  Client Component Browser:
+    ./src/components/writing/content-renderer.tsx [Client Component Browser]
+    ./src/components/writing/editor-panel.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component Browser]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/writing/content-renderer.tsx [Client Component SSR]
+    ./src/components/writing/editor-panel.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Client Component SSR]
+    ./src/app/(dashboard)/writing/[id]/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found 
+[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] Uncaught TypeError: Cannot read properties of undefined (reading 'length')
+    at ModelCard (src/components/models/models-tabs.tsx:162:43)
+    at <unknown> (src/components/models/models-tabs.tsx:457:19)
+    at Array.map (<anonymous>)
+    at ModelsTabs (src/components/models/models-tabs.tsx:454:26)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  160 |             </button>
+  161 |           )}
+> 162 |           {!isDefaultFor && availableCaps.length > 0 && (
+      |                                           ^
+  163 |             <select
+  164 |               className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200...
+  165 |               defaultValue=""
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] Uncaught TypeError: Cannot read properties of undefined (reading 'length')
+    at ModelCard (src/components/models/models-tabs.tsx:162:43)
+    at <unknown> (src/components/models/models-tabs.tsx:468:19)
+    at Array.map (<anonymous>)
+    at ModelsTabs (src/components/models/models-tabs.tsx:465:26)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  160 |             </button>
+  161 |           )}
+> 162 |           {!isDefaultFor && availableCaps.length > 0 && (
+      |                                           ^
+  163 |             <select
+  164 |               className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200...
+  165 |               defaultValue=""
+[browser] Uncaught TypeError: Cannot read properties of undefined (reading 'length')
+    at ModelCard (src/components/models/models-tabs.tsx:162:43)
+    at <unknown> (src/components/models/models-tabs.tsx:468:19)
+    at Array.map (<anonymous>)
+    at ModelsTabs (src/components/models/models-tabs.tsx:465:26)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  160 |             </button>
+  161 |           )}
+> 162 |           {!isDefaultFor && availableCaps.length > 0 && (
+      |                                           ^
+  163 |             <select
+  164 |               className="text-xs font-medium px-2 py-1 rounded-md border border-slate-200...
+  165 |               defaultValue=""
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5905:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5905:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5905:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5905:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0p.2-na._.js:1386:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0p.2-na._.js:1483:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0p.2-na._.js:1957:25)
+    at async generateSectionStream (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0p.2-na._.js:2096:27)
+    at async Object.start (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0p.2-na._.js:4275:32)
+[browser] Uncaught ReferenceError: InfraBadge is not defined
+    at ModelsTabs (src/components/models/models-tabs.tsx:456:12)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  454 |       {infra && (
+  455 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+> 456 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+      |            ^
+  457 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  458 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  459 |         </div>
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[semantic] LightRAG failed: Error: Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+    at searchViaLightRAG (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3006:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async semanticSearch (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3103:32)
+    at async fetchRagReferences (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3577:25)
+    at async generateSectionFull (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:3646:27)
+    at async generateDraftAll (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:5962:28)
+    at async TaskQueue.executeTask (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:818:71)
+    at async TaskQueue.processNext (E:\project01\.next\dev\server\chunks\[root-of-the-server]__0nlmi99._.js:754:13)
+[browser] Uncaught ReferenceError: InfraBadge is not defined
+    at ModelsTabs (src/components/models/models-tabs.tsx:456:12)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  454 |       {infra && (
+  455 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+> 456 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+      |            ^
+  457 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  458 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  459 |         </div>
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: infra is not defined
+    at ModelsTabs (src\components\models\models-tabs.tsx:449:8)
+  447 |       </div>
+  448 |
+> 449 |       {infra && (
+      |        ^
+  450 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+  451 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  452 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ... {
+  digest: '1592546561'
+}
+[browser] Uncaught ReferenceError: infra is not defined
+    at ModelsTabs (src/components/models/models-tabs.tsx:449:8)
+    at Set.forEach (<anonymous>)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  447 |       </div>
+  448 |
+> 449 |       {infra && (
+      |        ^
+  450 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+  451 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  452 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+[browser] Uncaught ReferenceError: infra is not defined
+    at ModelsTabs (src/components/models/models-tabs.tsx:449:8)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  447 |       </div>
+  448 |
+> 449 |       {infra && (
+      |        ^
+  450 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+  451 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  452 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: infra is not defined
+    at ModelsTabs (src\components\models\models-tabs.tsx:445:8)
+  443 |       </div>
+  444 |
+> 445 |       {infra && (
+      |        ^
+  446 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+  447 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  448 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ... {
+  digest: '1592546561'
+}
+[browser] Uncaught ReferenceError: infra is not defined
+    at ModelsTabs (src/components/models/models-tabs.tsx:445:8)
+    at ModelsPage (src\app\(dashboard)\models\page.tsx:9:9)
+  443 |       </div>
+  444 |
+> 445 |       {infra && (
+      |        ^
+  446 |         <div className="flex items-center gap-3 mb-6 flex-wrap">
+  447 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+  448 |           <InfraBadge icon={<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" ...
+⚠ Fast Refresh had to perform a full reload due to a runtime error.

@@ -20,6 +20,9 @@ export interface SectionConstraints {
   wordLimit: number;
   additionalRequirements: string;
   generationMode: GenerationMode;
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
 }
 
 export interface DraftProgress {
@@ -82,18 +85,19 @@ export interface SectionVersionMeta {
   createdAt: string;
 }
 
+export interface OutlineSectionData {
+  num: string;
+  title: string;
+  description?: string;
+  keyPoints?: string[];
+  estimatedWords?: number;
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
+  children?: OutlineSectionData[];
+}
+
 export interface OutlineData {
   title: string;
-  sections: {
-    num: string;
-    title: string;
-    keyPoints?: string[];
-    estimatedWords?: number;
-    children?: {
-      num: string;
-      title: string;
-      keyPoints?: string[];
-      estimatedWords?: number;
-    }[];
-  }[];
+  sections: OutlineSectionData[];
 }

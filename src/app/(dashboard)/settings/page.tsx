@@ -11,7 +11,7 @@ type Tab = "profile" | "auth" | "storage" | "database" | "rag";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
-  { id: "auth", label: "Authentication Settings" },
+  { id: "auth", label: "Password Settings" },
   { id: "storage", label: "Storage Settings" },
   { id: "database", label: "Database Settings" },
   { id: "rag", label: "Vector Database" },

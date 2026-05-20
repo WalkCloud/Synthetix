@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import {
   authErrorResponse,
   errorResponse,
@@ -40,7 +41,8 @@ export async function POST(
 
     const titleHeader = `# ${draft.title}\n\n`;
     const sectionParts = sections.map(
-      (section) => `## ${section.title}\n\n${section.content ?? ""}\n\n`
+      (section) =>
+        `## ${section.title}\n\n${stripLeadingSectionTitle(section.content ?? "", section.title)}\n\n`
     );
     const markdown = titleHeader + sectionParts.join("");
 

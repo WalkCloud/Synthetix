@@ -15,6 +15,7 @@ export function StorageTab() {
   const [s3AccessKey, setS3AccessKey] = useState("");
   const [s3SecretKey, setS3SecretKey] = useState("");
   const [savingStorage, setSavingStorage] = useState(false);
+  const [storageConfigured, setStorageConfigured] = useState(true);
   const [storageMsg, setStorageMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -31,6 +32,7 @@ export function StorageTab() {
           setS3Bucket(s.s3Bucket || "");
           setS3AccessKey(s.s3AccessKey || "");
           setS3SecretKey(s.s3SecretKey || "");
+          setStorageConfigured(s.storageType !== "s3" || !!s.s3Bucket);
         }
       })
       .catch(() => {});
@@ -69,24 +71,28 @@ export function StorageTab() {
   return (
     <div className="space-y-6">
       <div className="bg-white border rounded-[16px]">
-        <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
             <h3 className="text-base font-semibold">Document Storage Mode</h3>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${storageConfigured ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
+            <span className={`w-2 h-2 rounded-full ${storageConfigured ? "bg-[#16A34A]" : "bg-[#D97706]"}`} />
+            {storageConfigured ? (storageMode === "s3" ? "S3 Object Storage" : "Local Storage") : "Not Configured"}
           </div>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-2 gap-4">
             <CardSelector
               selected={storageMode === "local"}
-              onSelect={() => setStorageMode("local")}
+              onSelect={() => { setStorageMode("local"); setStorageConfigured(true); }}
               icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
               title="Local Storage"
               description="Store documents on your local file system. Best for offline deployment."
             />
             <CardSelector
               selected={storageMode === "s3"}
-              onSelect={() => setStorageMode("s3")}
+              onSelect={() => { setStorageMode("s3"); setStorageConfigured(!!s3Bucket); }}
               icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
               title="S3 Object Storage"
               description="S3-compatible storage (AWS S3, MinIO). Best for cloud deployment."

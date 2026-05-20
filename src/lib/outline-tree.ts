@@ -1,8 +1,12 @@
 interface OutlineSection {
   num: string;
   title: string;
+  description?: string;
   keyPoints?: string[];
   estimatedWords?: number;
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
   children?: OutlineSection[];
 }
 
