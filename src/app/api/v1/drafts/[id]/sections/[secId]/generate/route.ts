@@ -7,6 +7,8 @@ import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { auditSection } from "@/lib/writing/auditor";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { persistSectionReferences } from "@/lib/writing/persist-references";
+import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
@@ -76,20 +78,7 @@ export async function POST(
 
         modelConfigId = result.modelConfigId;
 
-        await db.sectionReference.deleteMany({ where: { sectionId } });
-        if (result.ragReferences.length > 0) {
-          await db.sectionReference.createMany({
-            data: result.ragReferences.map((ref) => ({
-              sectionId,
-              documentId: ref.documentId || null,
-              chunkId: ref.chunkId || null,
-              documentName: ref.documentName,
-              relevanceScore: ref.score,
-              sourceAnchor: ref.title || null,
-              content: ref.content || null,
-            })),
-          });
-        }
+        await persistSectionReferences(sectionId, result.ragReferences);
 
         await db.section.update({
           where: { id: sectionId },
@@ -97,20 +86,16 @@ export async function POST(
         });
 
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "references", references: result.ragReferences })}\n\n`)
+          encoder.encode(sseEvent("references", { references: result.ragReferences }))
         );
 
         for await (const chunk of result.stream) {
           if (chunk.content) {
             fullContent += chunk.content;
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: chunk.content })}\n\n`)
-            );
+            controller.enqueue(encoder.encode(sseEvent("chunk", { content: chunk.content })));
           }
           if (chunk.reasoning) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "reasoning", content: chunk.reasoning })}\n\n`)
-            );
+            controller.enqueue(encoder.encode(sseEvent("reasoning", { content: chunk.reasoning })));
           }
           if (chunk.inputTokens) inTokens = chunk.inputTokens;
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
@@ -219,9 +204,7 @@ export async function POST(
         }
 
         if (assetCount > 0) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "assets", count: assetCount })}\n\n`)
-          );
+          controller.enqueue(encoder.encode(sseEvent("assets", { count: assetCount })));
         }
 
         await recordTokenUsage({
@@ -246,7 +229,7 @@ export async function POST(
           }
         })();
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
+        controller.enqueue(encoder.encode(sseDone()));
         controller.close();
       } catch (error) {
         await db.section.update({
@@ -255,9 +238,7 @@ export async function POST(
         }).catch((err) => { console.warn("Failed to update section status:", err); });
         const message = error instanceof Error ? error.message : "Stream failed";
         try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`)
-          );
+          controller.enqueue(encoder.encode(sseError(message)));
         } catch {}
         try { controller.close(); } catch {}
       }
