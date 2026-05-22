@@ -34,6 +34,17 @@ export class TaskQueue {
     this.workers.set(type, workerFn);
   }
 
+  async drain(): Promise<void> {
+    await db.asyncTask.updateMany({
+      where: { status: "running" },
+      data: { status: "pending", updatedAt: new Date() },
+    });
+
+    for (let i = 0; i < this.concurrency; i++) {
+      void this.processNext();
+    }
+  }
+
   async submit(
     type: TaskType,
     payload: TaskPayload,
