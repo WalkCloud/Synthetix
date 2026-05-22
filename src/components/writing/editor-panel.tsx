@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { SectionMeta, GenerationMode } from "@/types/writing";
+import type { SectionMeta, GenerationMode, ModelOption } from "@/types/writing";
 import { isSectionDone } from "@/types/writing";
+import { getOutlineNumber } from "@/lib/writing/outline-utils";
 import { countWords } from "@/lib/text/count-words";
 import { StatePills } from "./state-pills";
 import { ConstraintsBar } from "./constraints-bar";
@@ -14,84 +15,6 @@ interface SectionConstraints {
   wordLimit: number;
   additionalRequirements: string;
   generationMode: GenerationMode;
-}
-
-interface OutlineNode {
-  num: string;
-  title: string;
-  children?: OutlineNode[];
-}
-
-function normalizeTitle(title: string): string {
-  return title.replace(/^\d+(\.\d+)*\.?\s*/, "").trim();
-}
-
-function flattenOutlineNumbers(
-  nodes: OutlineNode[] | undefined,
-  result = new Map<string, string>(),
-): Map<string, string> {
-  if (!nodes) return result;
-  for (const node of nodes) {
-    const key = normalizeTitle(node.title);
-    if (key && node.num) {
-      result.set(key, node.num);
-    }
-    flattenOutlineNumbers(node.children, result);
-  }
-  return result;
-}
-
-function parseOutlineNumbers(outline?: string | null): Map<string, string> {
-  if (!outline) return new Map();
-  try {
-    const parsed = JSON.parse(outline) as { sections?: OutlineNode[] };
-    return flattenOutlineNumbers(parsed.sections);
-  } catch {
-    return new Map();
-  }
-}
-
-function getOutlineNumber(
-  section: SectionMeta,
-  draftOutline?: string | null,
-): string {
-  const fallback = parseOutlineNumbers(draftOutline).get(normalizeTitle(section.title))
-    ?? String(section.index + 1);
-  const constraints = section.constraints;
-  if (!constraints) return String(fallback);
-  try {
-    const parsed = JSON.parse(constraints) as { outlineNumber?: unknown };
-    return typeof parsed.outlineNumber === "string" && parsed.outlineNumber.trim()
-      ? parsed.outlineNumber
-      : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-interface EditorPanelProps {
-  section: SectionMeta | null;
-  allSections: SectionMeta[];
-  draftOutline?: string | null;
-  models: any[];
-  selectedModelA: string;
-  selectedModelB: string;
-  onModelAChange: (val: string) => void;
-  onModelBChange: (val: string) => void;
-  onGenerate: (mode: GenerationMode, constraints: SectionConstraints) => void;
-  onSelectModel: (source: "a" | "b") => void;
-  onConfirm: () => void;
-  onHumanize: () => void;
-  onUnlock: (targetStatus?: "reviewing" | "pending") => void;
-  onSaveEdit?: (content: string) => void;
-  onSaveEstimatedWords?: (words: number) => void;
-  isGenerating: boolean;
-  isThinking: boolean;
-  isHumanizing: boolean;
-  isConfirming: boolean;
-  streamingContent?: string;
-  assetCount?: number;
-  assetRenderVer?: number;
 }
 
 export function EditorPanel({

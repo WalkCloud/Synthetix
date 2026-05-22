@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { OutlinePanel } from "@/components/writing/outline-panel";
 import { EditorPanel } from "@/components/writing/editor-panel";
 import { ReferencePanel } from "@/components/writing/reference-panel";
 import { parseCapabilities } from "@/lib/llm/capabilities";
-import type { DraftMeta, SectionMeta, GenerationMode } from "@/types/writing";
+import type { DraftMeta, SectionMeta, GenerationMode, ModelOption } from "@/types/writing";
 import { isSectionDone } from "@/types/writing";
 
 interface DraftDetail extends DraftMeta {
@@ -76,7 +77,7 @@ export default function WritingPage({
   const [isCancellingGenerateAll, setIsCancellingGenerateAll] = useState(false);
   
   // Model selection states
-  const [models, setModels] = useState<any[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [selectedModelA, setSelectedModelA] = useState<string>("");
   const [selectedModelB, setSelectedModelB] = useState<string>("");
 
@@ -215,8 +216,8 @@ export default function WritingPage({
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          const allModels = data.data.flatMap((p: any) => p.models || []);
-          const chatModels = allModels.filter((m: any) => {
+          const allModels = data.data.flatMap((p: { models?: ModelOption[] }) => p.models || []);
+          const chatModels = allModels.filter((m: ModelOption) => {
             return parseCapabilities(m.capabilities).includes("chat");
           });
           setModels(chatModels);
@@ -290,7 +291,7 @@ export default function WritingPage({
                     contentBuf += data.content;
                     setStreamingContent(contentBuf);
                   } else if (data.type === "error") {
-                    alert(data.error);
+                    toast.error(data.error);
                   }
                 } catch (e) {}
               }
@@ -302,7 +303,7 @@ export default function WritingPage({
           const data = await res.json();
           
           if (!data.success) {
-            alert(data.error || "Generation failed");
+            toast.error(data.error || "Generation failed");
           } else if (data.data && data.data.references) {
             setReferences(data.data.references);
           }
@@ -310,7 +311,7 @@ export default function WritingPage({
         }
       } catch (err) {
         console.error("Generation failed:", err);
-        alert(err instanceof Error ? err.message : "Generation failed");
+        toast.error(err instanceof Error ? err.message : "Generation failed");
       } finally {
         setIsGenerating(false);
         setGeneratingSectionId(null);
@@ -333,7 +334,7 @@ export default function WritingPage({
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.error || "Failed to start full draft generation");
+        toast.error(data.error || "Failed to start full draft generation");
         return;
       }
       setGenerateAllTaskId(data.data.taskId);
@@ -345,7 +346,7 @@ export default function WritingPage({
       });
       await loadDraft();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to start full draft generation");
+      toast.error(error instanceof Error ? error.message : "Failed to start full draft generation");
     } finally {
       setIsStartingGenerateAll(false);
     }
@@ -360,7 +361,7 @@ export default function WritingPage({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.success === false) {
-        alert(data?.error || "Failed to stop full draft generation");
+        toast.error(data?.error || "Failed to stop full draft generation");
         return;
       }
       setGenerateAllTask((prev) =>
@@ -368,7 +369,7 @@ export default function WritingPage({
       );
       await loadDraft();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to stop full draft generation");
+      toast.error(error instanceof Error ? error.message : "Failed to stop full draft generation");
     } finally {
       setIsCancellingGenerateAll(false);
     }
@@ -448,7 +449,7 @@ export default function WritingPage({
       );
       const data = await res.json();
       if (!data.success) {
-        alert(data.error || "Humanize failed");
+        toast.error(data.error || "Humanize failed");
       }
       await loadDraft();
     } catch (err) {
@@ -475,7 +476,7 @@ export default function WritingPage({
       URL.revokeObjectURL(url);
     } else {
       const data = await res.json();
-      alert(data.error || "Export failed");
+      toast.error(data.error || "Export failed");
     }
   }, [id, draft, exportFormat]);
 

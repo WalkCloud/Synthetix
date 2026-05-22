@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { toast } from "sonner";
 
 interface Reference {
   documentName: string;
@@ -171,10 +172,10 @@ export function ReferencePanel({
       if (data.success) {
         onAssetChanged();
       } else {
-        alert(data.error || "Upload failed");
+        toast.error(data.error || "Upload failed");
       }
     } catch {
-      alert("Upload request failed");
+      toast.error("Upload request failed");
     } finally {
       setImportLoading(false);
       if (importInputRef.current) importInputRef.current.value = "";
@@ -202,10 +203,10 @@ export function ReferencePanel({
         closeDialog();
         onAssetChanged();
       } else {
-        alert(data.error || "Image generation failed");
+        toast.error(data.error || "Image generation failed");
       }
     } catch {
-      alert("Image generation request failed");
+      toast.error("Image generation request failed");
     } finally {
       setGenLoading(false);
     }
@@ -229,7 +230,7 @@ export function ReferencePanel({
       console.log("[Mermaid] code gen response:", codeData);
       if (!codeData.success || !codeData.data?.code) {
         console.error("[Mermaid] code gen failed:", codeData.error);
-        alert(codeData.error || "Mermaid code generation failed");
+        toast.error(codeData.error || "Mermaid code generation failed");
         return;
       }
 
@@ -252,11 +253,11 @@ export function ReferencePanel({
         onAssetChanged();
       } else {
         console.error("[Mermaid] render failed:", renderData.error);
-        alert(renderData.error || "Mermaid rendering failed");
+        toast.error(renderData.error || "Mermaid rendering failed");
       }
     } catch (err) {
       console.error("[Mermaid] generation failed:", err);
-      alert("Mermaid generation failed");
+      toast.error("Mermaid generation failed");
     } finally {
       setMermaidLoading(false);
     }

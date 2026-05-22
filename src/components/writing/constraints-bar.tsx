@@ -1,6 +1,6 @@
 "use client";
 
-import type { GenerationMode, SectionMeta } from "@/types/writing";
+import type { GenerationMode, SectionMeta, ModelOption } from "@/types/writing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ConstraintsBarProps {
@@ -9,7 +9,7 @@ interface ConstraintsBarProps {
   wordLimit: number;
   additionalRequirements: string;
   estimatedWords?: number | null;
-  models: any[];
+  models: ModelOption[];
   selectedModelA: string;
   selectedModelB: string;
   onGenerationModeChange: (mode: GenerationMode) => void;

@@ -28,14 +28,13 @@ describe("docStatusColors", () => {
 describe("draftStatusLabels", () => {
   it("has labels for all draft statuses", () => {
     expect(draftStatusLabels.drafting).toBe("In Progress");
-    expect(draftStatusLabels.assembling).toBe("Assembling");
     expect(draftStatusLabels.completed).toBe("Completed");
   });
 });
 
 describe("draftStatusColors", () => {
   it("has color classes for all draft statuses", () => {
-    const statuses = ["drafting", "assembling", "completed"];
+    const statuses = ["drafting", "completed"];
     for (const s of statuses) {
       expect(draftStatusColors[s]).toBeDefined();
       expect(draftStatusColors[s]).toContain("bg-");
