@@ -76,6 +76,8 @@ screenshots/
 
 # temp/test files
 tmp-*.txt
+tmp/
+tmp-chrome-profile/
 test_*.ts
 test_out.txt
 
