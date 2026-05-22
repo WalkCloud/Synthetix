@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
+import { toProviderDto } from "@/lib/models/provider-dto";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  return successResponse(providers);
+  return successResponse(providers.map(toProviderDto));
 }
 
 const modelConfigSchema = z.object({
@@ -79,11 +80,12 @@ export async function POST(request: Request) {
           localOrCloud: m.localOrCloud,
           isDefaultFor: m.isDefaultFor,
           embeddingBatchSize: m.embeddingBatchSize,
+          embeddingDim: m.embeddingDim,
         })),
       },
     },
     include: { models: true },
   });
 
-  return successResponse(provider, 201);
+  return successResponse(toProviderDto(provider), 201);
 }

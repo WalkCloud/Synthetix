@@ -19,7 +19,7 @@ export interface Provider {
   name: string;
   providerType: string;
   apiBaseUrl: string;
-  apiKey?: string | null;
+  hasApiKey?: boolean | null;
   isActive: boolean;
   models: ModelConfig[];
 }
