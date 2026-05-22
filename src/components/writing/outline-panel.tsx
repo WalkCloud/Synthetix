@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { SectionMeta } from "@/types/writing";
 import { isSectionDone } from "@/types/writing";
+import { parseOutlineNumbers, normalizeTitle, getOutlineNumber } from "@/lib/writing/outline-utils";
 import { Edit3, Check, X, Plus, Trash2, GripVertical } from "lucide-react";
 
 interface OutlinePanelProps {
@@ -30,53 +31,6 @@ function getSectionStatus(status: string): "done" | "current" | "pending" {
   return "pending";
 }
 
-function getOutlineNumber(section: SectionMeta, fallback: string): string {
-  if (!section.constraints) return fallback;
-  try {
-    const parsed = JSON.parse(section.constraints) as { outlineNumber?: unknown };
-    return typeof parsed.outlineNumber === "string" && parsed.outlineNumber.trim()
-      ? parsed.outlineNumber
-      : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-interface OutlineNodeMap {
-  num: string;
-  title: string;
-  children?: OutlineNodeMap[];
-}
-
-function flattenOutlineNumbers(
-  nodes: OutlineNodeMap[] | undefined,
-  result = new Map<string, string>(),
-): Map<string, string> {
-  if (!nodes) return result;
-  for (const node of nodes) {
-    const key = normalizeTitle(node.title);
-    if (key && node.num) {
-      result.set(key, node.num);
-    }
-    flattenOutlineNumbers(node.children, result);
-  }
-  return result;
-}
-
-function parseOutlineNumbers(outline?: string | null): Map<string, string> {
-  if (!outline) return new Map();
-  try {
-    const parsed = JSON.parse(outline) as { sections?: OutlineNodeMap[] };
-    return flattenOutlineNumbers(parsed.sections);
-  } catch {
-    return new Map();
-  }
-}
-
-function normalizeTitle(title: string): string {
-  return title.replace(/^\d+(\.\d+)*\.?\s*/, "").trim();
-}
-
 function SectionNode({
   section,
   sections,
@@ -101,6 +55,7 @@ function SectionNode({
     .sort((a, b) => a.index - b.index);
   const outlineNumber = getOutlineNumber(
     section,
+    undefined,
     outlineNumbers.get(normalizeTitle(section.title)) ?? fallbackNumber,
   );
 
