@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
+import { toProviderDto } from "@/lib/models/provider-dto";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
@@ -19,7 +20,7 @@ export async function GET(
   if (!provider) {
     return errorResponse("Provider not found", 404);
   }
-  return successResponse(provider);
+  return successResponse(toProviderDto(provider));
 }
 
 export async function PUT(
@@ -61,6 +62,7 @@ export async function PUT(
         localOrCloud: (m.localOrCloud as string) || "local",
         isDefaultFor: (m.isDefaultFor as string | null) ?? null,
         embeddingBatchSize: (m.embeddingBatchSize as number | null) ?? null,
+        embeddingDim: (m.embeddingDim as number | null) ?? null,
       })),
     };
   }
@@ -71,7 +73,7 @@ export async function PUT(
     include: { models: true },
   });
 
-  return successResponse(provider);
+  return successResponse(toProviderDto(provider));
 }
 
 export async function DELETE(

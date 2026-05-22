@@ -65,7 +65,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
   const [name, setName] = useState(provider?.name || "");
   const [providerType, setProviderType] = useState(provider?.providerType || "ollama");
   const [apiBaseUrl, setApiBaseUrl] = useState(provider?.apiBaseUrl || "");
-  const [apiKey, setApiKey] = useState(provider?.apiKey || "");
+  const [apiKey, setApiKey] = useState("");
   const isLocal = providerType === "ollama" || providerType === "custom";
   const resolvedModelType = tab === "embedding" ? "embedding" : tab === "image" ? "image" : "llm" as const;
   const [models, setModels] = useState<FormModelConfig[]>(
