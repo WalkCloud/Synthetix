@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SectionMeta } from "@/types/writing";
+import { isSectionDone } from "@/types/writing";
 import { Edit3, Check, X, Plus, Trash2, GripVertical } from "lucide-react";
 
 interface OutlinePanelProps {
@@ -24,7 +25,7 @@ interface EditableSection {
 }
 
 function getSectionStatus(status: string): "done" | "current" | "pending" {
-  if (["summarized", "locked", "accepted"].includes(status)) return "done";
+  if (isSectionDone(status)) return "done";
   if (["generating", "comparing", "reviewing", "retrieving"].includes(status)) return "current";
   return "pending";
 }
@@ -222,9 +223,7 @@ export function OutlinePanel({
     .filter((s) => !s.parentId)
     .sort((a, b) => a.index - b.index);
   const outlineNumbers = parseOutlineNumbers(draftOutline);
-  const completedCount = sections.filter(
-    (s) => s.status === "summarized" || s.status === "locked" || s.status === "accepted"
-  ).length;
+  const completedCount = sections.filter((s) => isSectionDone(s.status)).length;
   const totalCount = sections.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 

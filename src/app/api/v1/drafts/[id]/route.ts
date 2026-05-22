@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { deriveDraftStatus, isSectionDone } from "@/types/writing";
 import {
   authErrorResponse,
   errorResponse,
@@ -87,14 +88,7 @@ export async function GET(
     }
 
     const totalSections = draft.sections.length;
-    const doneSections = draft.sections.filter(
-      (s) => s.status === "locked" || s.status === "summarized" || s.status === "accepted",
-    ).length;
-    const derivedStatus = draft.status === "completed"
-      ? "completed"
-      : doneSections >= totalSections && totalSections > 0
-        ? "completed"
-        : draft.status;
+    const derivedStatus = deriveDraftStatus(draft.sections);
 
     return successResponse({ ...draft, status: derivedStatus });
   } catch (error: unknown) {

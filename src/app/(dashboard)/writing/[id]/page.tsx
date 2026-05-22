@@ -7,6 +7,7 @@ import { EditorPanel } from "@/components/writing/editor-panel";
 import { ReferencePanel } from "@/components/writing/reference-panel";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import type { DraftMeta, SectionMeta, GenerationMode } from "@/types/writing";
+import { isSectionDone } from "@/types/writing";
 
 interface DraftDetail extends DraftMeta {
   sections: SectionMeta[];
@@ -43,9 +44,6 @@ interface GenerateAllTask {
   error?: string | null;
 }
 
-function isSectionCompleted(section: SectionMeta): boolean {
-  return section.status === "locked" || section.status === "summarized" || section.status === "accepted";
-}
 
 export default function WritingPage({
   params,
@@ -135,7 +133,7 @@ export default function WritingPage({
         if (prev) return prev;
         if (data.data.sections.length > 0) {
           const firstPending = data.data.sections.find(
-            (s: SectionMeta) => !isSectionCompleted(s)
+            (s: SectionMeta) => !isSectionDone(s.status)
           );
           return firstPending?.id || data.data.sections[0].id;
         }
@@ -425,18 +423,16 @@ export default function WritingPage({
     }
   }, [activeSectionId, id]);
 
-  const handleRegenerate = useCallback(() => {
-    setStreamingContent("");
-    setIsThinking(false);
-    handleGenerate("single");
-  }, [handleGenerate]);
-
-  const handleUnlock = useCallback(async () => {
+  const handleUnlock = useCallback(async (targetStatus?: "reviewing" | "pending") => {
     if (!activeSectionId) return;
     try {
       const res = await fetch(
         `/api/v1/drafts/${id}/sections/${activeSectionId}/unlock`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetStatus: targetStatus || "reviewing" }),
+        }
       );
       if (res.ok) await loadDraft();
     } catch {}
@@ -566,7 +562,7 @@ export default function WritingPage({
   }
 
   const sections = draft.sections || [];
-  const completedSections = sections.filter(isSectionCompleted).length;
+  const completedSections = sections.filter((s) => isSectionDone(s.status)).length;
   const totalSections = sections.length;
   const draftProgressPercent = totalSections > 0
     ? Math.round((completedSections / totalSections) * 100)
@@ -807,7 +803,6 @@ export default function WritingPage({
             onGenerate={handleGenerate}
             onSelectModel={handleSelectModel}
             onConfirm={handleConfirm}
-            onRegenerate={handleRegenerate}
             onHumanize={handleHumanize}
             onUnlock={handleUnlock}
             onSaveEdit={handleSaveEdit}
