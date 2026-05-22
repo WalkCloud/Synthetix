@@ -384,21 +384,10 @@ export async function generateDraftAll(
         data: { status: "failed" },
       });
       if (stopOnError) {
-        if (generated > 0) {
-          await db.draft.update({
-            where: { id: draftId },
-            data: { status: "drafting" },
-          });
-        }
         throw new Error(`Section "${section.title}" failed: ${message}`);
       }
     }
   }
-
-  await db.draft.update({
-    where: { id: draftId },
-    data: { status: "completed" },
-  });
 
   return {
     draftId,

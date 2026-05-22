@@ -17,7 +17,7 @@ export const runtime = "nodejs";
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
 const TMP_DIR = path.resolve("data/tmp");
-const CONFIRMED_SECTION_STATUSES = ["locked", "summarized", "accepted"];
+const CONFIRMED_SECTION_STATUSES = ["locked", "summarized"];
 const ASSET_MARKER_RE = /\[(DIAGRAM|IMAGE):([a-f0-9-]+)\]/g;
 
 type ExportFormat = "markdown" | "pdf" | "docx";

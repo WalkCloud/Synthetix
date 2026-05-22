@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { SectionMeta, GenerationMode } from "@/types/writing";
+import { isSectionDone } from "@/types/writing";
 import { countWords } from "@/lib/text/count-words";
 import { StatePills } from "./state-pills";
 import { ConstraintsBar } from "./constraints-bar";
@@ -80,9 +81,8 @@ interface EditorPanelProps {
   onGenerate: (mode: GenerationMode, constraints: SectionConstraints) => void;
   onSelectModel: (source: "a" | "b") => void;
   onConfirm: () => void;
-  onRegenerate: () => void;
   onHumanize: () => void;
-  onUnlock: () => void;
+  onUnlock: (targetStatus?: "reviewing" | "pending") => void;
   onSaveEdit?: (content: string) => void;
   onSaveEstimatedWords?: (words: number) => void;
   isGenerating: boolean;
@@ -106,7 +106,6 @@ export function EditorPanel({
   onGenerate,
   onSelectModel,
   onConfirm,
-  onRegenerate,
   onHumanize,
   onUnlock,
   onSaveEdit,
@@ -198,7 +197,7 @@ export function EditorPanel({
   const isReviewing = section.status === "reviewing";
   const canGenerate = section.status === "pending" || section.status === "failed";
   const canConfirm = isReviewing || section.status === "comparing";
-  const isLocked = section.status === "locked" || section.status === "summarized" || section.status === "accepted";
+  const isLocked = isSectionDone(section.status);
   const isServerGenerating = !isGenerating && (section.status === "generating" || section.status === "retrieving");
 
   const modelAName = section.modelA || "Model A";
@@ -278,7 +277,7 @@ export function EditorPanel({
                     Edit
                   </button>
                   <button
-                    onClick={() => { onUnlock(); setTimeout(onRegenerate, 300); }}
+                    onClick={() => onUnlock("pending")}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 border border-primary-200 text-primary-600 rounded-lg text-xs font-semibold hover:bg-primary-50 transition-colors cursor-pointer"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
@@ -369,7 +368,7 @@ export function EditorPanel({
       {canConfirm && editingContent === null && !isGenerating && (
         <div className="flex items-center justify-end gap-3 mt-5">
           <button
-            onClick={onRegenerate}
+            onClick={() => onUnlock("pending")}
             disabled={isConfirming}
             className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
