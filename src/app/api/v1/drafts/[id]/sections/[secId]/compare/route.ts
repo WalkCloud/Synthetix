@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { compareSection } from "@/lib/writing/generator";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { persistSectionReferences } from "@/lib/writing/persist-references";
+import { resolveModelOrFallback, resolveSecondModel } from "@/lib/writing/resolve-models";
 import {
   authErrorResponse,
   errorResponse,
@@ -49,33 +50,8 @@ export async function POST(
       return errorResponse("Section not found", 404);
     }
 
-    let modelARecord = null;
-    if (body.modelAConfigId) {
-      modelARecord = await db.modelConfig.findUnique({ where: { id: body.modelAConfigId }, include: { provider: true } });
-    }
-    if (!modelARecord) {
-      modelARecord = await resolveModel("writing");
-    }
-    if (!modelARecord?.provider) {
-      return errorResponse("No default writing model configured. Set a default writing model in settings.", 400);
-    }
-
-    let modelBRecord = null;
-    if (body.modelBConfigId) {
-      modelBRecord = await db.modelConfig.findUnique({ where: { id: body.modelBConfigId }, include: { provider: true } });
-    }
-    if (!modelBRecord) {
-      modelBRecord = await db.modelConfig.findFirst({
-        where: {
-          id: { not: modelARecord.id },
-          capabilities: { contains: "chat" },
-        },
-        include: { provider: true },
-      });
-    }
-    if (!modelBRecord?.provider) {
-      return errorResponse("No second model available for comparison. Add another chat-capable model in settings.", 400);
-    }
+    const modelARecord = await resolveModelOrFallback(body.modelAConfigId, "writing");
+    const modelBRecord = await resolveSecondModel(modelARecord.id);
 
     await db.section.update({
       where: { id: sectionId },
@@ -145,20 +121,7 @@ export async function POST(
       }).catch((err) => { console.warn("Failed to record token usage:", err); }),
     ]);
 
-    await db.sectionReference.deleteMany({ where: { sectionId } });
-    if (result.ragReferences.length > 0) {
-      await db.sectionReference.createMany({
-        data: result.ragReferences.map((ref) => ({
-          sectionId,
-          documentId: ref.documentId || null,
-          chunkId: ref.chunkId || null,
-          documentName: ref.documentName,
-          relevanceScore: ref.score,
-          sourceAnchor: ref.title || null,
-          content: ref.content || null,
-        })),
-      });
-    }
+    await persistSectionReferences(sectionId, result.ragReferences);
 
     const updatedSection = await db.section.update({
       where: { id: sectionId },
