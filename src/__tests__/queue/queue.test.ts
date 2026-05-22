@@ -217,4 +217,62 @@ describe("TaskQueue", () => {
     const info = await queue.getStatus(taskId);
     expect(info!.error).toContain("No worker registered");
   });
+
+  it("should drain pending tasks on startup", async () => {
+    const drainQueue = new TaskQueue({ concurrency: 2, timeoutMs: 5000 });
+    let completedCount = 0;
+    drainQueue.registerWorker("document_convert", async () => {
+      completedCount++;
+      return { ok: true };
+    });
+
+    const id1 = await drainQueue.submit("document_convert", { file: "a" }, TEST_USER_ID);
+    const id2 = await drainQueue.submit("document_convert", { file: "b" }, TEST_USER_ID);
+
+    await vi.waitFor(
+      async () => {
+        const s1 = await drainQueue.getStatus(id1);
+        const s2 = await drainQueue.getStatus(id2);
+        expect(s1?.status).toBe("completed");
+        expect(s2?.status).toBe("completed");
+      },
+      { timeout: 3000 },
+    );
+
+    expect(completedCount).toBe(2);
+  });
+
+  it("should recover orphaned running tasks via drain", async () => {
+    const rescueQueue = new TaskQueue({ concurrency: 1, timeoutMs: 5000 });
+
+    await db.asyncTask.create({
+      data: {
+        id: "orphan-running-1",
+        userId: TEST_USER_ID,
+        type: "document_convert",
+        status: "running",
+        progress: 50,
+        inputData: "{}",
+      },
+    });
+
+    let workerCalled = false;
+    rescueQueue.registerWorker("document_convert", async () => {
+      workerCalled = true;
+      return { recovered: true };
+    });
+
+    await rescueQueue.drain();
+
+    await vi.waitFor(
+      async () => {
+        const info = await rescueQueue.getStatus("orphan-running-1");
+        expect(info?.status).toBe("completed");
+      },
+      { timeout: 3000 },
+    );
+
+    expect(workerCalled).toBe(true);
+    await db.asyncTask.deleteMany({ where: { id: "orphan-running-1" } });
+  });
 });
