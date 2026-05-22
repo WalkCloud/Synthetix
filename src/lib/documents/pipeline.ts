@@ -35,6 +35,7 @@ async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, conc
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
 const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.5");
+const DEFAULT_CHUNK_TARGET_TOKENS = parseInt(process.env.CHUNK_TARGET_TOKENS || "800", 10);
 const RAG_INDEX_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_index.py");
 
 export interface ProcessingContext {
@@ -114,7 +115,7 @@ export async function resolveProcessingModels(ctx: ProcessingContext): Promise<v
   const splitThreshold = Math.floor(contextWindow * splitRatio);
 
   const embedContext = embedModel?.contextWindow || 8192;
-  const chunkMaxTokens = Math.min(splitThreshold, Math.floor(embedContext * 0.75));
+  const chunkMaxTokens = Math.min(DEFAULT_CHUNK_TARGET_TOKENS, Math.floor(embedContext * 0.75));
 
   ctx.writingModel = writingModel;
   ctx.embedModel = embedModel;
@@ -143,7 +144,7 @@ export async function splitAndPersistChunks(
   const { docId, options, chunkMaxTokens, writingModel } = ctx;
 
   if (plan.shouldSplit) {
-    let chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens });
+    let chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });
 
     const splitStrategy = options.splitStrategy || "structure-llm";
     if (splitStrategy !== "heading-only" && writingModel && chunks.length > 1) {
@@ -277,21 +278,21 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   }
 
   const embeddingsBinPath = path.join(ctx.outputDir, "embeddings.bin");
-  const entries: Buffer[] = [];
+  const validEmbeddings: Buffer[] = [];
+  let embedDim = 0;
   for (const chunk of validChunks) {
     const updated = await db.documentChunk.findUnique({ where: { id: chunk.id }, select: { embedding: true } });
     if (updated?.embedding) {
-      const idBuf = Buffer.from(chunk.id, "utf-8");
-      const idLenBuf = Buffer.alloc(4);
-      idLenBuf.writeUInt32BE(idBuf.length);
       const embBuf = Buffer.from(updated.embedding);
-      const embLenBuf = Buffer.alloc(4);
-      embLenBuf.writeUInt32BE(embBuf.length);
-      entries.push(idLenBuf, idBuf, embLenBuf, embBuf);
+      if (embedDim === 0) embedDim = embBuf.length / 4;
+      validEmbeddings.push(embBuf);
     }
   }
-  if (entries.length > 0) {
-    fs.writeFileSync(embeddingsBinPath, Buffer.concat(entries));
+  if (validEmbeddings.length > 0 && embedDim > 0) {
+    const header = Buffer.alloc(8);
+    header.writeInt32LE(validEmbeddings.length, 0);
+    header.writeInt32LE(embedDim, 4);
+    fs.writeFileSync(embeddingsBinPath, Buffer.concat([header, ...validEmbeddings]));
   }
 
   await recordTokenUsage({

@@ -47,6 +47,14 @@ export interface DraftMeta {
   progress?: DraftProgress;
 }
 
+export interface SectionReferenceMeta {
+  documentName: string;
+  relevanceScore: number;
+  sourceAnchor: string | null;
+  documentId: string | null;
+  content: string | null;
+}
+
 export interface SectionMeta {
   id: string;
   draftId: string;
@@ -72,6 +80,7 @@ export interface SectionMeta {
   updatedAt: string;
   children?: SectionMeta[];
   versions?: SectionVersionMeta[];
+  references?: SectionReferenceMeta[];
 }
 
 export interface SectionVersionMeta {

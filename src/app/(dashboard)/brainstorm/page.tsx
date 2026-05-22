@@ -35,6 +35,8 @@ interface Outline {
   sections: OutlineSection[];
 }
 
+type Phase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready";
+
 export default function BrainstormPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export default function BrainstormPage() {
   const [outline, setOutline] = useState<Outline | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [status, setStatus] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -50,8 +53,14 @@ export default function BrainstormPage() {
   const [editTitle, setEditTitle] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [phase, setPhase] = useState<Phase>("gathering");
+  const [sectionNotes, setSectionNotes] = useState<{ num: string; title: string; notes: string }[]>([]);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  function newClientMessageId(prefix: string): string {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
 
   useEffect(() => {
     fetch("/api/v1/brainstorm/sessions")
@@ -65,8 +74,16 @@ export default function BrainstormPage() {
     const d = await res.json();
     if (d.success) {
       setMessages(d.data.messages || []);
-      setOutline(d.data.outline ? JSON.parse(d.data.outline) : null);
+      const parsedOutline = d.data.outline ? JSON.parse(d.data.outline) : null;
+      setOutline(parsedOutline);
       setStatus(d.data.status === "active" ? "Active" : "Complete");
+      if (parsedOutline) {
+        setPhase("ready");
+      } else {
+        const userMsgCount = (d.data.messages || []).filter((m: Message) => m.role === "user").length;
+        setPhase(userMsgCount <= 1 ? "gathering" : "gathering");
+      }
+      setSectionNotes([]);
     }
     setLoading(false);
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -115,15 +132,85 @@ export default function BrainstormPage() {
         setMessages([]);
         setOutline(null);
         setStatus("");
+        setPhase("gathering");
       }
     }
+  }
+
+  function handleMarker(marker: string | null) {
+    if (!marker) { setLoading(false); return; }
+    switch (marker) {
+      case "NEEDS_GATHERED":
+        setPhase("direction");
+        setLoading(false);
+        break;
+      case "DIRECTION_CONFIRMED":
+        setPhase("mode_select");
+        setLoading(false);
+        break;
+      case "GENERATE_DIRECT":
+        setPhase("ready");
+        generateOutline();
+        break;
+      case "SECTION_BY_SECTION":
+        setPhase("section_refine");
+        setLoading(false);
+        break;
+      case "ALL_SECTIONS_CONFIRMED":
+        setPhase("ready");
+        generateOutline();
+        break;
+    }
+  }
+
+  async function sendQuickMessage(content: string) {
+    if (!activeId || isSending) return;
+    setInput(""); setLoading(true); setIsSending(true);
+    const optimisticId = newClientMessageId("opt-q");
+    const optMsg: Message = { id: optimisticId, sessionId: activeId, role: "user", content, createdAt: new Date().toISOString() };
+    setMessages((prev) => [...prev, optMsg]);
+    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    try {
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setMessages((prev) => [
+          ...prev.map((m) => m.id === optimisticId ? d.data.userMessage : m),
+          d.data.message,
+        ]);
+        const marker = d.data.marker;
+        const triggeredGeneration = marker === "GENERATE_DIRECT" || marker === "ALL_SECTIONS_CONFIRMED";
+        setIsSending(false);
+        if (triggeredGeneration) {
+          handleMarker(marker);
+        } else {
+          setLoading(false);
+          if (marker) handleMarker(marker);
+        }
+        fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
+      } else {
+        setMessages((prev) => [...prev, { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: `Error: ${d.error || "Unknown error"}`, createdAt: new Date().toISOString() }]);
+        setIsSending(false);
+        setLoading(false);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: "Network error, please try again.", createdAt: new Date().toISOString() }]);
+      setIsSending(false);
+      setLoading(false);
+    }
+    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }
 
   async function handleFileUpload(file: File) {
     if (!activeId || loading) return;
     setLoading(true);
 
-    const optSystem: Message = { id: "opt-sys", sessionId: activeId, role: "system", content: `Uploading document "${file.name}" and extracting content...`, createdAt: new Date().toISOString() };
+    const optimisticId = newClientMessageId("opt-sys");
+    const optSystem: Message = { id: optimisticId, sessionId: activeId, role: "system", content: `Uploading document "${file.name}" and extracting content...`, createdAt: new Date().toISOString() };
     setMessages((prev) => [...prev, optSystem]);
 
     const formData = new FormData();
@@ -145,44 +232,60 @@ export default function BrainstormPage() {
         const aiData = await aiRes.json();
         if (aiData.success) {
           await loadSession(activeId);
-          if (aiData.data.outlineRequested) {
-            await generateOutline();
+          if (aiData.data.marker) {
+            handleMarker(aiData.data.marker);
           }
         }
         fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
       } else {
-        setMessages((prev) => [...prev.filter((m) => m.id !== "opt-sys"), { id: "err", sessionId: activeId, role: "system", content: `Upload failed: ${d.error}`, createdAt: new Date().toISOString() }]);
+        setMessages((prev) => [...prev.filter((m) => m.id !== optimisticId), { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: `Upload failed: ${d.error}`, createdAt: new Date().toISOString() }]);
         setLoading(false);
       }
     } catch {
-      setMessages((prev) => [...prev.filter((m) => m.id !== "opt-sys"), { id: "err", sessionId: activeId, role: "system", content: "Upload failed, please try again.", createdAt: new Date().toISOString() }]);
+      setMessages((prev) => [...prev.filter((m) => m.id !== optimisticId), { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: "Upload failed, please try again.", createdAt: new Date().toISOString() }]);
       setLoading(false);
     }
   }
 
   async function sendMessage() {
-    if (!input.trim() || !activeId || loading) return;
-    const content = input; setInput(""); setLoading(true);
+    if (!input.trim() || !activeId || isSending) return;
+    const content = input; setInput(""); setLoading(true); setIsSending(true);
 
-    const optMsg: Message = { id: "opt", sessionId: activeId, role: "user", content, createdAt: new Date().toISOString() };
+    const optimisticId = newClientMessageId("opt");
+    const optMsg: Message = { id: optimisticId, sessionId: activeId, role: "user", content, createdAt: new Date().toISOString() };
     setMessages((prev) => [...prev, optMsg]);
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
-    const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    const d = await res.json();
-    if (d.success) {
-      setMessages((prev) => [...prev.filter((m) => m.id !== "opt"), d.data.message]);
-      if (d.data.outlineRequested) {
-        await generateOutline();
+    try {
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setMessages((prev) => [
+          ...prev.map((m) => m.id === optimisticId ? d.data.userMessage : m),
+          d.data.message,
+        ]);
+        const marker = d.data.marker;
+        const triggeredGeneration = marker === "GENERATE_DIRECT" || marker === "ALL_SECTIONS_CONFIRMED";
+        setIsSending(false);
+        if (triggeredGeneration) {
+          handleMarker(marker);
+        } else {
+          setLoading(false);
+          if (marker) handleMarker(marker);
+        }
+        fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
       } else {
+        setMessages((prev) => [...prev, { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: `Error: ${d.error || "Unknown error"}`, createdAt: new Date().toISOString() }]);
+        setIsSending(false);
         setLoading(false);
       }
-      fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
-    } else {
+    } catch {
+      setMessages((prev) => [...prev, { id: newClientMessageId("err"), sessionId: activeId, role: "system", content: "Network error, please try again.", createdAt: new Date().toISOString() }]);
+      setIsSending(false);
       setLoading(false);
     }
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -198,6 +301,7 @@ export default function BrainstormPage() {
       if (d.success) { 
         setOutline(d.data); 
         setStatus("Complete"); 
+        setPhase("ready");
         setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, title: d.data.title || "New Brainstorming Session" } : s));
       }
     } finally {
@@ -216,7 +320,7 @@ export default function BrainstormPage() {
         body: JSON.stringify({ action: "clearOutline" }),
       });
       const d = await res.json();
-      if (d.success) { setOutline(null); setStatus("Active"); }
+      if (d.success) { setOutline(null); setStatus("Active"); setPhase("gathering"); setSectionNotes([]); }
     } finally {
       setLoading(false);
     }
@@ -257,7 +361,18 @@ export default function BrainstormPage() {
 
   const activeSession = sessions.find((s) => s.id === activeId);
   const activeMessageCount = activeSession?._count?.messages ?? messages.length;
-  const displayStatus = outline ? "Outline Ready" : status === "Complete" ? "Complete" : "Deepening Phase";
+  const phaseLabels: Record<Phase, string> = {
+    gathering: "需求深挖中",
+    direction: "选择大纲方向",
+    mode_select: "选择生成模式",
+    section_refine: "逐章精炼中",
+    ready: "大纲已就绪",
+  };
+  const displayStatus = outline
+    ? "Outline Ready"
+    : phase === "gathering"
+      ? "Deepening Phase"
+      : phaseLabels[phase];
 
   function startEditing() {
     if (!outline) return;
@@ -610,7 +725,7 @@ export default function BrainstormPage() {
                     </div>
                     <div>
                       <div className="rounded-[16px] rounded-tl bg-white px-4.5 py-3.5 text-sm leading-6 text-foreground shadow-sm ring-1 ring-border">
-                        Tell me what kind of document you want to write. I will ask focused questions and turn the discussion into an outline.
+                        Tell me what kind of document you want to write. I will ask focused questions step by step, then help you build a structured outline.
                       </div>
                     </div>
                   </div>
@@ -650,7 +765,7 @@ export default function BrainstormPage() {
                 );
               })}
 
-              {loading && messages[messages.length - 1]?.role === "user" && (
+              {isSending && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex max-w-[85%] self-start">
                   <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary">
                     <Bot className="h-5 w-5" />
@@ -662,13 +777,38 @@ export default function BrainstormPage() {
                   </div>
                 </div>
               )}
+
+              {phase === "mode_select" && !isSending && (
+                <div className="flex max-w-[85%] self-start gap-3 ml-12">
+                  <button
+                    onClick={() => sendQuickMessage("A，请直接生成完整大纲，可以直接开始写作。")}
+                    className="flex-1 rounded-2xl border-2 border-primary-200 bg-white p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer"
+                  >
+                    <div className="text-sm font-bold text-foreground">A) 直接生成</div>
+                    <div className="mt-1 text-xs text-muted-foreground">一次性生成完整大纲，直接进入写作</div>
+                  </button>
+                  <button
+                    onClick={() => sendQuickMessage("B，我想逐章讨论，确保每个章节都精准覆盖想要的内容。")}
+                    className="flex-1 rounded-2xl border-2 border-primary-200 bg-white p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer"
+                  >
+                    <div className="text-sm font-bold text-foreground">B) 逐章精炼</div>
+                    <div className="mt-1 text-xs text-muted-foreground">逐个讨论每章内容后再生成大纲</div>
+                  </button>
+                </div>
+              )}
+
+              {phase === "section_refine" && !loading && !outline && (
+                <div className="self-center rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-center text-xs text-primary font-semibold">
+                  逐章精炼模式 · 请逐一回答 AI 关于每个章节的问题
+                </div>
+              )}
               <div ref={messagesEnd} />
             </div>
 
             <div className="bg-slate-50/50 px-6 pb-6 pt-3 shrink-0">
               <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10">
                 <label
-                  className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${!activeSession || loading ? "pointer-events-none opacity-40" : ""}`}
+                    className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${!activeId || isSending ? "pointer-events-none opacity-40" : ""}`}
                   title="Upload Document"
                 >
                   <Paperclip className="h-4.5 w-4.5" />
@@ -676,7 +816,7 @@ export default function BrainstormPage() {
                     type="file"
                     accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md"
                     className="absolute inset-0 cursor-pointer opacity-0"
-                    disabled={!activeSession || loading}
+                    disabled={!activeId || isSending}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) handleFileUpload(file);
@@ -690,12 +830,12 @@ export default function BrainstormPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  disabled={!activeSession}
+                  disabled={!activeId}
                   className="min-h-9 max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <button
                   onClick={sendMessage}
-                  disabled={loading || !input.trim() || !activeSession}
+                  disabled={isSending || !input.trim() || !activeId}
                   className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                   title="Send"
                 >

@@ -10,6 +10,11 @@ interface Reference {
   sourceInfo?: string;
 }
 
+interface GroupedReferences {
+  documentName: string;
+  refs: (Reference & { _originalIndex: number })[];
+}
+
 interface SectionAsset {
   id: string;
   type: string;
@@ -263,6 +268,16 @@ export function ReferencePanel({
     { value: "off", label: "Off" },
   ];
 
+  const groupedReferences: GroupedReferences[] = (() => {
+    const map = new Map<string, (Reference & { _originalIndex: number })[]>();
+    references.forEach((ref, i) => {
+      const key = ref.documentName || "Unknown";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push({ ...ref, _originalIndex: i });
+    });
+    return Array.from(map.entries()).map(([documentName, refs]) => ({ documentName, refs }));
+  })();
+
   return (
     <div className="bg-white border-l border-slate-200 p-5 overflow-y-auto h-full">
       {/* References */}
@@ -328,7 +343,7 @@ export function ReferencePanel({
           </div>
         )}
 
-        {/* Auto mode: show references in fixed scrollable list */}
+        {/* Auto mode: grouped references */}
         {sectionRagMode === "auto" && (
           references.length === 0 ? (
             <div className="text-xs text-slate-400 py-4 text-center">
@@ -337,29 +352,47 @@ export function ReferencePanel({
           ) : (
             <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
               <div className="max-h-[calc(100vh-420px)] min-h-[80px] overflow-y-auto">
-                <div className="p-2 space-y-2">
-                  {references.map((ref, i) => (
-                    <div
-                      key={i}
-                      className="p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:border-primary-400 transition-colors bg-white"
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-semibold text-slate-800 truncate max-w-[70%]">{ref.documentName}</span>
-                        <span className="text-[10px] text-primary-600 font-bold flex-shrink-0">{Math.round(ref.score * 100)}%</span>
+                {groupedReferences.map((group, gi) => (
+                  <div key={gi} className={gi > 0 ? "border-t border-slate-200/60" : ""}>
+                    {groupedReferences.length > 1 && (
+                      <div className="px-2.5 pt-2 pb-1 flex items-center gap-1.5">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 text-slate-400 flex-shrink-0">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="text-[10px] font-semibold text-slate-500 truncate">{group.documentName}</span>
+                        <span className="text-[9px] text-slate-400 flex-shrink-0">({group.refs.length})</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 leading-relaxed mt-1 line-clamp-2">
-                        {ref.content.slice(0, 160)}
-                      </p>
-                      {ref.sourceInfo && (
-                        <div className="text-[10px] text-slate-400 mt-1 truncate">{ref.sourceInfo}</div>
-                      )}
+                    )}
+                    <div className="px-2 pb-2 space-y-1.5">
+                      {group.refs.map((ref) => (
+                        <div
+                          key={ref._originalIndex}
+                          className="p-2 border border-slate-200 rounded-lg cursor-pointer hover:border-primary-400 transition-colors bg-white"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-semibold text-slate-800 truncate max-w-[70%]">
+                              {ref.title || ref.sourceInfo || ref.documentName}
+                            </span>
+                            <span className="text-[10px] text-primary-600 font-bold flex-shrink-0">{Math.round(ref.score * 100)}%</span>
+                          </div>
+                          {ref.content && (
+                            <p className="text-[11px] text-slate-500 leading-relaxed mt-1 line-clamp-2">
+                              {ref.content.slice(0, 160)}
+                            </p>
+                          )}
+                          {groupedReferences.length <= 1 && ref.sourceInfo && (
+                            <div className="text-[10px] text-slate-400 mt-1 truncate">{ref.sourceInfo}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
               {references.length > 3 && (
                 <div className="px-3 py-1.5 border-t border-slate-200 bg-slate-50 text-center">
-                  <span className="text-[10px] text-slate-400">{references.length} references</span>
+                  <span className="text-[10px] text-slate-400">{references.length} references from {groupedReferences.length} document{groupedReferences.length > 1 ? 's' : ''}</span>
                 </div>
               )}
             </div>

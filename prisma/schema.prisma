@@ -277,6 +277,7 @@ model SectionReference {
   documentName    String   @map("document_name")
   relevanceScore  Float    @map("relevance_score")
   sourceAnchor    String?  @map("source_anchor")
+  content         String?  @map("content")
   createdAt       DateTime @default(now()) @map("created_at")
 
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)

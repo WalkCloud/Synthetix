@@ -67,10 +67,9 @@ Rules:
       });
 
       const text = resp.content.trim();
-      const startIdx = text.indexOf("[");
-      const endIdx = text.lastIndexOf("]");
-      if (startIdx !== -1 && endIdx !== -1) {
-        const parsed = JSON.parse(text.slice(startIdx, endIdx + 1));
+      const jsonStr = extractFirstJsonArray(text);
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
         if (Array.isArray(parsed)) {
           allDecisions.push(...(parsed as MergeDecision[]));
         }
@@ -161,4 +160,27 @@ function extractPreview(content: string, maxLen = 600): string {
   return content
     .replace(/!\[.*?\]\(data:image\/[^)]+\)/g, "[image]")
     .slice(0, maxLen);
+}
+
+function extractFirstJsonArray(text: string): string | null {
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "[") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === "]") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const candidate = text.slice(start, i + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          start = -1;
+        }
+      }
+    }
+  }
+  return null;
 }
