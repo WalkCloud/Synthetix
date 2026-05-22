@@ -28,18 +28,34 @@ interface DraftGenerationTask {
 const statusLabels = draftStatusLabels;
 const statusColors: Record<string, string> = {
   drafting: `${draftStatusColors.drafting} border border-orange-200`,
-  assembling: `${draftStatusColors.assembling} border border-blue-200`,
   completed: `${draftStatusColors.completed} border border-green-200`,
 };
 
-function taskLabel(task?: DraftGenerationTask) {
-  if (!task) return "Idle";
-  if (task.status === "pending") return "Queued";
-  if (task.status === "running") return "Generating";
-  if (task.status === "completed") return "Completed";
-  if (task.status === "failed") return "Failed";
-  if (task.status === "cancelled") return "Stopped";
-  return task.status;
+function generationLabel(
+  task: DraftGenerationTask | undefined,
+  completed: number,
+  total: number,
+) {
+  if (task?.status === "pending") return "Queued";
+  if (task?.status === "running") return "Generating";
+  if (total > 0 && completed < total) return "In Progress";
+  if (total > 0 && completed >= total) return "Completed";
+  if (task?.status === "failed") return "Failed";
+  if (task?.status === "cancelled") return "Stopped";
+  return "Idle";
+}
+
+function generationColor(
+  task: DraftGenerationTask | undefined,
+  completed: number,
+  total: number,
+) {
+  if (task?.status === "pending" || task?.status === "running") return "text-primary-600";
+  if (total > 0 && completed < total) return "text-orange-600";
+  if (total > 0 && completed >= total) return "text-green-600";
+  if (task?.status === "failed") return "text-red-600";
+  if (task?.status === "cancelled") return "text-slate-500";
+  return "text-slate-400";
 }
 
 function taskColor(task?: DraftGenerationTask) {
@@ -227,8 +243,8 @@ export default function WritingListPage() {
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <div className={`text-xs font-semibold ${taskColor(task)}`}>
-                          {taskLabel(task)}
+                        <div className={`text-xs font-semibold ${generationColor(task, completed, totalSections)}`}>
+                          {generationLabel(task, completed, totalSections)}
                           {isTaskActive ? ` · ${task?.progress ?? 0}%` : ""}
                         </div>
                         <div className="mt-1 max-w-[240px] truncate text-xs text-slate-500">

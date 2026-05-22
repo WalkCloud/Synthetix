@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { isSectionDone, deriveDraftStatus, CONFIRMED_SECTION_STATUSES } from "@/types/writing";
 import {
   authErrorResponse,
   errorResponse,
@@ -291,14 +292,9 @@ export async function GET(
 
     const draftsWithProgress = drafts.map((draft) => {
       const sectionCount = draft._count.sections;
+      const doneCount = draft.sections.filter((s) => isSectionDone(s.status)).length;
       const acceptedCount = draft.sections.filter(
-        (s) => s.status === "accepted" || s.status === "locked"
-      ).length;
-      const completedCount = draft.sections.filter(
-        (s) =>
-          s.status === "accepted" ||
-          s.status === "locked" ||
-          s.status === "summarized"
+        (s) => s.status === "locked"
       ).length;
       const wordsWritten = draft.sections.reduce(
         (sum, s) => sum + (s.wordCount ?? 0),
@@ -309,11 +305,7 @@ export async function GET(
         0
       );
 
-      const derivedStatus = draft.status === "completed"
-        ? "completed"
-        : completedCount >= sectionCount && sectionCount > 0
-          ? "completed"
-          : draft.status;
+      const derivedStatus = deriveDraftStatus(draft.sections);
 
       const { sections: _removed, _count, ...draftData } = draft;
       void _removed;
@@ -324,7 +316,7 @@ export async function GET(
         sectionCount,
         progress: {
           accepted: acceptedCount,
-          completed: completedCount,
+          completed: doneCount,
           total: sectionCount,
           wordsWritten,
           wordsEstimated,

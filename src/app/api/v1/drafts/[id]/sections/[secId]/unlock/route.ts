@@ -7,7 +7,7 @@ import {
 } from "@/lib/api-helpers";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
 ): Promise<Response> {
   const user = await getAuthUser();
@@ -16,6 +16,14 @@ export async function POST(
   }
 
   const { id: draftId, secId: sectionId } = await params;
+
+  let targetStatus: "reviewing" | "pending" = "reviewing";
+  try {
+    const body = await request.json();
+    if (body.targetStatus === "pending") {
+      targetStatus = "pending";
+    }
+  } catch {}
 
   try {
     const draft = await db.draft.findFirst({
@@ -39,7 +47,7 @@ export async function POST(
 
     const updated = await db.section.update({
       where: { id: sectionId },
-      data: { status: "reviewing" },
+      data: { status: targetStatus },
     });
 
     return successResponse(updated);
