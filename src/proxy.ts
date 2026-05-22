@@ -53,8 +53,8 @@ export async function proxy(request: NextRequest) {
     const payload = await verifyToken<TokenPayload>(refreshToken);
     if (payload) {
       const [newAccessToken, newRefreshToken] = await Promise.all([
-        signToken(payload as Record<string, unknown>, ACCESS_EXPIRES),
-        signToken(payload as Record<string, unknown>, REFRESH_EXPIRES),
+        signToken(payload as unknown as Record<string, unknown>, ACCESS_EXPIRES),
+        signToken(payload as unknown as Record<string, unknown>, REFRESH_EXPIRES),
       ]);
 
       const response = NextResponse.next();

@@ -1,4 +1,4 @@
-import type { ModelProvider, ModelConfig } from "@prisma/client";
+import type { ModelProvider, ModelConfig } from "@/generated/prisma/client";
 
 type ProviderWithModels = ModelProvider & { models: ModelConfig[] };
 

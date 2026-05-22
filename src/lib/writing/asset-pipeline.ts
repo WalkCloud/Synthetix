@@ -3,6 +3,8 @@ import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
 import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 
+import type { DiagramRequest, ImageRequest } from "./diagram";
+
 interface ParsedAssetRequest {
   type: "diagram" | "image";
   title: string;
@@ -15,6 +17,14 @@ interface ParsedAssetRequest {
   flows?: unknown;
 }
 
+function normalizeDiagrams(diagrams: DiagramRequest[]): ParsedAssetRequest[] {
+  return diagrams.map((d) => ({ type: "diagram" as const, title: d.title, purpose: d.purpose, raw: d.raw, diagramType: d.type, placement: d.placement, nodes: d.nodes, flows: d.flows }));
+}
+
+function normalizeImages(images: ImageRequest[]): ParsedAssetRequest[] {
+  return images.map((i) => ({ type: "image" as const, title: i.title, raw: i.raw, prompt: i.prompt }));
+}
+
 export async function createAssetRequests(
   draftId: string,
   sectionId: string,
@@ -22,7 +32,7 @@ export async function createAssetRequests(
 ): Promise<{ diagrams: ParsedAssetRequest[]; images: ParsedAssetRequest[] }> {
   const { diagrams, images } = parseDiagramRequests(rawContent);
   if (diagrams.length === 0 && images.length === 0) {
-    return { diagrams, images };
+    return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images) };
   }
 
   await db.sectionAsset.deleteMany({ where: { sectionId } });
@@ -63,7 +73,7 @@ export async function createAssetRequests(
     });
   }
 
-  return { diagrams, images };
+  return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images) };
 }
 
 export async function generateAndPlaceAssetMarkers(
