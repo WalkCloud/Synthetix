@@ -102,8 +102,9 @@ async def query_rag(
         return
 
     from lightrag import LightRAG, QueryParam
-    from lightrag.llm.openai import openai_complete_if_cache, openai_embed
+    from lightrag.llm.openai import openai_embed
     from lightrag.utils import EmbeddingFunc
+    from openai import AsyncOpenAI
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
@@ -115,21 +116,64 @@ async def query_rag(
             api_key=embed_api_key,
         )
 
+    _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
+    _llm_response_format_keys = {"response_format", "keyword_extraction"}
+
     async def llm_func(
         prompt: str,
         system_prompt: str | None = None,
         history_messages: list = [],
         **kwargs,
     ) -> str:
-        return await openai_complete_if_cache(
-            model=llm_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            base_url=llm_api_base,
-            api_key=llm_api_key,
-            **kwargs,
-        )
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        for msg in history_messages:
+            messages.append(msg)
+        messages.append({"role": "user", "content": prompt})
+
+        clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+        response_format = clean_kwargs.pop("response_format", None)
+        clean_kwargs.pop("keyword_extraction", None)
+        clean_kwargs.pop("stream", None)
+        clean_kwargs.pop("timeout", None)
+
+        import asyncio
+        client = AsyncOpenAI(base_url=llm_api_base, api_key=llm_api_key)
+        use_structured = response_format is not None
+
+        for attempt in range(3):
+            try:
+                if use_structured and attempt == 0:
+                    try:
+                        response = await client.beta.chat.completions.parse(
+                            model=llm_model,
+                            messages=messages,
+                            response_format=response_format,
+                        )
+                        parsed = getattr(response.choices[0].message, "parsed", None)
+                        if parsed is not None:
+                            return parsed.model_dump_json()
+                        return response.choices[0].message.content or ""
+                    except Exception:
+                        use_structured = False
+
+                response = await client.chat.completions.create(
+                    model=llm_model,
+                    messages=messages,
+                    **clean_kwargs,
+                )
+                content = response.choices[0].message.content or ""
+                if not content.strip():
+                    raise ValueError("Empty response from LLM")
+                return content
+            except Exception:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+        await client.close()
+        return ""
 
     # Resolve effective embedding dimension
     eff_dim = embed_dim

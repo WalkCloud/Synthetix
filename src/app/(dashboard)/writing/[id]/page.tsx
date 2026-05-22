@@ -106,6 +106,26 @@ export default function WritingPage({
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
 
+  useEffect(() => {
+    if (!draft || !activeSectionId) {
+      setReferences([]);
+      return;
+    }
+    const section = draft.sections?.find((s) => s.id === activeSectionId);
+    if (section?.references?.length) {
+      setReferences(
+        section.references.map((ref) => ({
+          documentName: ref.documentName,
+          content: ref.content || "",
+          score: ref.relevanceScore,
+          title: ref.sourceAnchor,
+        }))
+      );
+    } else {
+      setReferences([]);
+    }
+  }, [activeSectionId, draft]);
+
   const loadDraft = useCallback(async () => {
     const res = await fetch(`/api/v1/drafts/${id}`);
     const data = await res.json();

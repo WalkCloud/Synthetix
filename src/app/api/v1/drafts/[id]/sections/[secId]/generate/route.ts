@@ -86,6 +86,7 @@ export async function POST(
               documentName: ref.documentName,
               relevanceScore: ref.score,
               sourceAnchor: ref.title || null,
+              content: ref.content || null,
             })),
           });
         }

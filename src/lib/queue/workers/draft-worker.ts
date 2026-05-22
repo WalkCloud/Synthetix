@@ -318,6 +318,7 @@ export async function generateDraftAll(
             documentName: ref.documentName,
             relevanceScore: ref.score,
             sourceAnchor: ref.title || null,
+            content: ref.content || null,
           })),
         });
       }

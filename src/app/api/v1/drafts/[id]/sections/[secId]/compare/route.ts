@@ -4,7 +4,6 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { compareSection } from "@/lib/writing/generator";
-import { semanticSearch } from "@/lib/search/semantic";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import {
   authErrorResponse,
@@ -83,23 +82,6 @@ export async function POST(
       data: { status: "retrieving" },
     });
 
-    const searchQuery = [section.title, section.description].filter(Boolean).join(" ");
-    const references = await semanticSearch(searchQuery, user.id, 5);
-
-    await db.sectionReference.deleteMany({ where: { sectionId } });
-    if (references.length > 0) {
-      await db.sectionReference.createMany({
-        data: references.map((ref) => ({
-          sectionId,
-          documentId: ref.documentId || null,
-          chunkId: ref.chunkId || null,
-          documentName: ref.documentName,
-          relevanceScore: ref.score,
-          sourceAnchor: ref.title || null,
-        })),
-      });
-    }
-
     await db.section.update({
       where: { id: sectionId },
       data: { status: "comparing" },
@@ -163,6 +145,21 @@ export async function POST(
       }).catch((err) => { console.warn("Failed to record token usage:", err); }),
     ]);
 
+    await db.sectionReference.deleteMany({ where: { sectionId } });
+    if (result.ragReferences.length > 0) {
+      await db.sectionReference.createMany({
+        data: result.ragReferences.map((ref) => ({
+          sectionId,
+          documentId: ref.documentId || null,
+          chunkId: ref.chunkId || null,
+          documentName: ref.documentName,
+          relevanceScore: ref.score,
+          sourceAnchor: ref.title || null,
+          content: ref.content || null,
+        })),
+      });
+    }
+
     const updatedSection = await db.section.update({
       where: { id: sectionId },
       data: {
@@ -174,7 +171,7 @@ export async function POST(
       },
     });
 
-    return successResponse({ section: updatedSection, references });
+    return successResponse({ section: updatedSection, references: result.ragReferences });
   } catch (error: unknown) {
     try {
       await db.section.update({
