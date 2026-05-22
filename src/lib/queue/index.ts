@@ -7,6 +7,8 @@ let queue: TaskQueue | null = null;
 
 const LONG_DRAFT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+let draining = false;
+
 export function getQueue(): TaskQueue {
   if (!queue) {
     queue = new TaskQueue({
@@ -47,6 +49,11 @@ export function getQueue(): TaskQueue {
         onProgress,
       );
     });
+
+    if (!draining) {
+      draining = true;
+      void queue.drain();
+    }
   }
   return queue;
 }
