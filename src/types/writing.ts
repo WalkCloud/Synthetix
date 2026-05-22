@@ -28,6 +28,12 @@ export function deriveDraftStatus(sections: { status: string }[]): DraftStatus {
 
 export type GenerationMode = "single" | "compare";
 
+export interface ModelOption {
+  id: string;
+  modelName: string;
+  capabilities: string;
+}
+
 export type VersionSource = "generated_a" | "generated_b" | "edited" | "merged";
 
 export interface SectionConstraints {
