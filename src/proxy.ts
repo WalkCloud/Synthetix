@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify, SignJWT } from "jose";
-
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET || "default-secret-change-me"
-);
+import { signToken, verifyToken, ACCESS_EXPIRES, REFRESH_EXPIRES, ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "@/lib/auth/token-core";
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
-const ACCESS_MAX_AGE = 60 * 15;
-const REFRESH_MAX_AGE = 60 * 60 * 24 * 7;
 const isProduction = process.env.NODE_ENV === "production";
 
 const PUBLIC_PATHS = [
@@ -24,65 +18,19 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
-async function verifyAccessToken(
-  token: string
-): Promise<{ userId: string; username: string; role: string } | null> {
-  try {
-    const { payload } = await jwtVerify(token, secret);
-    return {
-      userId: payload.userId as string,
-      username: payload.username as string,
-      role: payload.role as string,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function verifyRefreshToken(
-  token: string
-): Promise<{ userId: string; username: string; role: string } | null> {
-  try {
-    const { payload } = await jwtVerify(token, secret);
-    return {
-      userId: payload.userId as string,
-      username: payload.username as string,
-      role: payload.role as string,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function signNewAccessToken(
-  payload: { userId: string; username: string; role: string }
-): Promise<string> {
-  return new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("15m")
-    .setIssuedAt()
-    .sign(secret);
-}
-
-async function signNewRefreshToken(
-  payload: { userId: string; username: string; role: string }
-): Promise<string> {
-  return new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
-    .setIssuedAt()
-    .sign(secret);
+interface TokenPayload {
+  userId: string;
+  username: string;
+  role: string;
 }
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths without authentication
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  // Skip static assets and Next.js internals
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -94,22 +42,19 @@ export async function proxy(request: NextRequest) {
   const accessToken = request.cookies.get(ACCESS_TOKEN_KEY)?.value;
   const refreshToken = request.cookies.get(REFRESH_TOKEN_KEY)?.value;
 
-  // Try access token first
   if (accessToken) {
-    const payload = await verifyAccessToken(accessToken);
+    const payload = await verifyToken<TokenPayload>(accessToken);
     if (payload) {
       return NextResponse.next();
     }
   }
 
-  // Access token expired or missing — try refresh token
   if (refreshToken) {
-    const payload = await verifyRefreshToken(refreshToken);
+    const payload = await verifyToken<TokenPayload>(refreshToken);
     if (payload) {
-      // Sign new tokens directly in proxy (avoid circular API call)
       const [newAccessToken, newRefreshToken] = await Promise.all([
-        signNewAccessToken(payload),
-        signNewRefreshToken(payload),
+        signToken(payload as Record<string, unknown>, ACCESS_EXPIRES),
+        signToken(payload as Record<string, unknown>, REFRESH_EXPIRES),
       ]);
 
       const response = NextResponse.next();
@@ -131,8 +76,6 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // No valid tokens
-  // For API routes, return JSON 401 instead of redirecting
   if (pathname.startsWith("/api/")) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
@@ -140,7 +83,6 @@ export async function proxy(request: NextRequest) {
     );
   }
 
-  // For page routes, redirect to login
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = "/login";
   return NextResponse.redirect(loginUrl);
