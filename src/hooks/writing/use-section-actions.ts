@@ -11,6 +11,15 @@ interface SectionAssetItem {
   prompt?: string | null;
 }
 
+interface AssetApiResponse {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  mimeType?: string | null;
+  prompt?: string | null;
+}
+
 export function useSectionActions(
   id: string,
   activeSectionId: string | null,
@@ -25,7 +34,7 @@ export function useSectionActions(
       const data = await res.json();
       if (data.success) {
         setSectionAssets(
-          (data.data || []).map((a: any) => ({
+          (data.data || []).map((a: AssetApiResponse) => ({
             id: a.id,
             type: a.type,
             title: a.title,
