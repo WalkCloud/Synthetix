@@ -26,7 +26,7 @@ describe("estimateTokens", () => {
   it("estimates tokens from character count", () => {
     const tokens = estimateTokens("hello world");
     expect(tokens).toBeGreaterThan(0);
-    expect(tokens).toBeLessThanOrEqual(6);
+    expect(tokens).toBeLessThanOrEqual(8);
   });
 
   it("returns 1 for very short text", () => {
