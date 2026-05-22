@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import type { TopologyNode, TopologyEdge } from "@/types/topology";
 import { TopologyDetailPanel } from "./topology-detail-panel";
 
@@ -24,6 +24,13 @@ const BGS: Record<string, string> = {
 function clr(f: string) { return COLORS[f.toLowerCase()] ?? "#7C3AED"; }
 function bgc(f: string) { return BGS[f.toLowerCase()] ?? "#F3F1FC"; }
 
+function applyRotation(wrapper: HTMLDivElement | null, angle: number) {
+  if (!wrapper) return;
+  const deg = angle * (180 / Math.PI);
+  wrapper.style.transform = `rotate(${deg}deg)`;
+  wrapper.style.setProperty("--rotation-deg", `${deg}deg`);
+}
+
 export function TopologyCanvas({
   nodes,
   edges,
@@ -33,17 +40,19 @@ export function TopologyCanvas({
   graphMode = "documents",
 }: TopologyCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const angleRef = useRef(0);
   const rotating = useRef(false);
   const lastX = useRef(0);
   const autoRef = useRef(true);
   const autoTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [tick, setTick] = useState(0);
+  const [dragTick, setDragTick] = useState(0);
 
   const dragCardId = useRef<string | null>(null);
   const dragStartMouse = useRef({ x: 0, y: 0 });
   const dragHasMoved = useRef(false);
+  const dragAngle = useRef(0);
   const cardOffsets = useRef<Record<string, { dx: number; dy: number }>>({});
 
   const draftNode = useMemo(() => nodes.find((n) => n.type === "draft"), [nodes]);
@@ -63,6 +72,7 @@ export function TopologyCanvas({
     return m;
   }, [edges]);
   const isKnowledge = graphMode === "knowledge";
+  const rotMul = isKnowledge ? 0.5 : 1;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -85,6 +95,7 @@ export function TopologyCanvas({
         dragCardId.current = cardId;
         dragStartMouse.current = { x: e.clientX, y: e.clientY };
         dragHasMoved.current = false;
+        dragAngle.current = angleRef.current * rotMul;
         e.stopPropagation();
       } else {
         rotating.current = true;
@@ -98,17 +109,23 @@ export function TopologyCanvas({
         const dx = e.clientX - dragStartMouse.current.x;
         const dy = e.clientY - dragStartMouse.current.y;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragHasMoved.current = true;
+        const a = dragAngle.current;
+        const cosA = Math.cos(a);
+        const sinA = Math.sin(a);
+        const localDx = e.movementX * cosA + e.movementY * sinA;
+        const localDy = -e.movementX * sinA + e.movementY * cosA;
         const prev = cardOffsets.current[dragCardId.current] ?? { dx: 0, dy: 0 };
         cardOffsets.current[dragCardId.current] = {
-          dx: prev.dx + e.movementX,
-          dy: prev.dy + e.movementY,
+          dx: prev.dx + localDx,
+          dy: prev.dy + localDy,
         };
         dragStartMouse.current = { x: e.clientX, y: e.clientY };
-        setTick((t) => t + 1);
+        setDragTick((t) => t + 1);
       } else if (rotating.current) {
-        angleRef.current += (e.clientX - lastX.current) * 0.005;
+        const delta = (e.clientX - lastX.current) * 0.005;
+        angleRef.current += delta;
         lastX.current = e.clientX;
-        setTick((t) => t + 1);
+        applyRotation(wrapperRef.current, angleRef.current * rotMul);
       }
     };
     const onUp = () => {
@@ -118,9 +135,7 @@ export function TopologyCanvas({
       dragHasMoved.current = false;
       rotating.current = false;
       autoTimer.current = setTimeout(() => { autoRef.current = true; }, 4000);
-      if (wasCardDrag && moved) {
-        setTick((t) => t + 1);
-      }
+      if (wasCardDrag && moved) setDragTick((t) => t + 1);
     };
     el.addEventListener("mousedown", onDown);
     window.addEventListener("mousemove", onMove);
@@ -131,20 +146,24 @@ export function TopologyCanvas({
       window.removeEventListener("mouseup", onUp);
       clearTimeout(autoTimer.current);
     };
-  }, []);
+  }, [rotMul]);
 
   useEffect(() => {
     let last = performance.now();
+    let raf: number;
     function frame(now: number) {
       if (now - last >= 16) {
         last = now;
-        if (autoRef.current) angleRef.current += 0.003;
-        setTick((t) => t + 1);
+        if (autoRef.current) {
+          angleRef.current += 0.003;
+          applyRotation(wrapperRef.current, angleRef.current * rotMul);
+        }
       }
-      requestAnimationFrame(frame);
+      raf = requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
-  }, []);
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [rotMul]);
 
   const cx = size.w / 2;
   const cy = size.h / 2;
@@ -157,25 +176,23 @@ export function TopologyCanvas({
     }[] = [];
     const n = refNodes.length;
     for (let i = 0; i < n; i++) {
-      const angle = isKnowledge
-        ? (2 * Math.PI * i) / Math.max(n, 1) + angleRef.current * 0.5
-        : (2 * Math.PI * i) / Math.max(n, 1) + angleRef.current;
+      const baseAngle = (2 * Math.PI * i) / Math.max(n, 1);
       const r = isKnowledge ? radius * (0.6 + 0.4 * (i % 3) / 3) : radius;
       const edge = (edgesByTarget.get(refNodes[i].id) ?? [])[0];
       const off = cardOffsets.current[refNodes[i].id] ?? { dx: 0, dy: 0 };
       result.push({
         id: refNodes[i].id,
-        label: refNodes[i].label || refNodes[i].entityType || "Entity",
+        label: refNodes[i].label || (refNodes[i] as any).entityType || "Entity",
         format: refNodes[i].format || "entity",
         weight: edge?.weight ?? 1,
         color: clr(refNodes[i].format || "entity"),
         bg: bgc(refNodes[i].format || "entity"),
-        x: cx + Math.cos(angle) * r + off.dx,
-        y: cy + Math.sin(angle) * r + off.dy,
+        x: cx + Math.cos(baseAngle) * r + off.dx,
+        y: cy + Math.sin(baseAngle) * r + off.dy,
       });
     }
     return result;
-  }, [refNodes, edges, edgesByTarget, cx, cy, radius, tick, isKnowledge, zoom]);
+  }, [refNodes, edgesByTarget, cx, cy, radius, dragTick, isKnowledge, zoom]);
 
   const itemById = useMemo(() => {
     const m = new Map<string, { x: number; y: number; color: string }>();
@@ -187,73 +204,82 @@ export function TopologyCanvas({
   const selectedEdge = selectedNodeId
     ? edges.find((e) => e.source === selectedNodeId || e.target === selectedNodeId) ?? null : null;
 
+  const wrapperStyle: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    transformOrigin: `${cx}px ${cy}px`,
+    willChange: "transform",
+  };
+
   return (
-      <div
-        ref={containerRef}
-        className="relative bg-[#FAFAF8] border border-[#E8E6E1] rounded-2xl overflow-hidden select-none"
-        style={{ minHeight: 560, cursor: dragCardId.current ? "default" : rotating.current ? "grabbing" : "grab" }}
-      >
+    <div
+      ref={containerRef}
+      className="relative bg-[#FAFAF8] border border-[#E8E6E1] rounded-2xl overflow-hidden select-none"
+      style={{ minHeight: 560, cursor: dragCardId.current ? "default" : rotating.current ? "grabbing" : "grab" }}
+    >
       <div className="absolute inset-0 opacity-30" style={{
         backgroundImage: "radial-gradient(circle, #D4D0C8 1px, transparent 1px)",
         backgroundSize: "24px 24px",
       }} />
 
-      <svg className="absolute inset-0 w-full h-full pointer-events-none">
+      <div ref={wrapperRef} style={wrapperStyle}>
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          {items.map((it) => {
+            const sel = it.id === selectedNodeId;
+            if (isKnowledge) {
+              const connectedEdges = edgesByTarget.get(it.id) ?? [];
+              return connectedEdges.map((edge, j) => {
+                const sourceItem = itemById.get(edge.source);
+                if (!sourceItem) return null;
+                return (
+                  <line key={`${it.id}-${j}`} x1={sourceItem.x} y1={sourceItem.y} x2={it.x} y2={it.y}
+                    stroke={it.color} strokeWidth={1} opacity={0.25} />
+                );
+              });
+            }
+            return (
+              <line key={it.id} x1={cx} y1={cy} x2={it.x} y2={it.y}
+                stroke={it.color} strokeWidth={sel ? 2.5 : 1.5} opacity={sel ? 0.7 : 0.35} />
+            );
+          })}
+        </svg>
+
         {items.map((it) => {
           const sel = it.id === selectedNodeId;
-          if (isKnowledge) {
-            // Draw edges between connected entity pairs
-            const connectedEdges = edgesByTarget.get(it.id) ?? [];
-            return connectedEdges.map((edge, j) => {
-              const sourceItem = itemById.get(edge.source);
-              if (!sourceItem) return null;
-              return (
-                <line key={`${it.id}-${j}`} x1={sourceItem.x} y1={sourceItem.y} x2={it.x} y2={it.y}
-                  stroke={it.color} strokeWidth={1} opacity={0.25} />
-              );
-            });
-          }
+          const isDragging = dragCardId.current === it.id;
           return (
-            <line key={it.id} x1={cx} y1={cy} x2={it.x} y2={it.y}
-              stroke={it.color} strokeWidth={sel ? 2.5 : 1.5} opacity={sel ? 0.7 : 0.35} />
+            <div key={it.id}
+              data-card-id={it.id}
+              className="absolute bg-white rounded-xl flex items-center gap-2 px-2.5"
+              style={{
+                left: it.x - 70, top: it.y - 26, width: 140, height: 52,
+                borderWidth: 1.5, borderStyle: "solid",
+                borderColor: sel ? it.color : "#E0DDD8",
+                backgroundColor: sel ? it.bg : "white",
+                boxShadow: sel ? `0 4px 16px ${it.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
+                zIndex: isDragging ? 30 : sel ? 25 : 15,
+                cursor: isDragging ? "grabbing" : "grab",
+                transition: isDragging ? "none" : "box-shadow 0.15s, border-color 0.15s",
+                transform: "rotate(calc(-1 * var(--rotation-deg, 0deg)))",
+              }}
+              onClick={() => { if (!dragHasMoved.current) onNodeClick(it.id); }}
+            >
+              <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: it.bg }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={it.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[10px] font-semibold leading-tight line-clamp-1 text-[#1E1B18]">{it.label}</span>
+                <span className="text-[8px] font-medium mt-px" style={{ color: it.color }}>
+                  {it.format.toUpperCase()} · {it.weight} ref{it.weight !== 1 ? "s" : ""}
+                </span>
+              </div>
+            </div>
           );
         })}
-      </svg>
-
-      {items.map((it) => {
-        const sel = it.id === selectedNodeId;
-        const isDragging = dragCardId.current === it.id;
-        return (
-          <div key={it.id}
-            data-card-id={it.id}
-            className="absolute bg-white rounded-xl flex items-center gap-2 px-2.5"
-            style={{
-              left: it.x - 70, top: it.y - 26, width: 140, height: 52,
-              borderWidth: 1.5, borderStyle: "solid",
-              borderColor: sel ? it.color : "#E0DDD8",
-              backgroundColor: sel ? it.bg : "white",
-              boxShadow: sel ? `0 4px 16px ${it.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
-              zIndex: isDragging ? 30 : sel ? 25 : 15,
-              cursor: isDragging ? "grabbing" : "grab",
-              transition: isDragging ? "none" : "box-shadow 0.15s, border-color 0.15s",
-            }}
-            onClick={() => { if (!dragHasMoved.current) onNodeClick(it.id); }}
-          >
-            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: it.bg }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={it.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-            </div>
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[10px] font-semibold leading-tight line-clamp-1 text-[#1E1B18]">{it.label}</span>
-              <span className="text-[8px] font-medium mt-px" style={{ color: it.color }}>
-                {it.format.toUpperCase()} · {it.weight} ref{it.weight !== 1 ? "s" : ""}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+      </div>
 
       {draftNode && (
         <div
