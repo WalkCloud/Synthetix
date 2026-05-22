@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TaskQueue } from "@/lib/queue/queue";
-import type { WorkerFn } from "@/lib/queue/types";
+import type { WorkerFn, TaskResult } from "@/lib/queue/types";
 import { db } from "@/lib/db";
 
 const TEST_USER_ID = "test-queue-user";
@@ -48,7 +48,7 @@ describe("TaskQueue", () => {
   });
 
   it("should execute a task and mark it completed", async () => {
-    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+    const workerFn = vi.fn<WorkerFn>(
       async () => ({ converted: true }),
     );
     queue.registerWorker("document_convert", workerFn);
@@ -75,7 +75,7 @@ describe("TaskQueue", () => {
   });
 
   it("should track progress updates", async () => {
-    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+    const workerFn = vi.fn<WorkerFn>(
       async (_payload, onProgress) => {
         onProgress(25);
         onProgress(50);
@@ -101,7 +101,7 @@ describe("TaskQueue", () => {
   });
 
   it("should handle worker errors and mark task failed", async () => {
-    const workerFn = vi.fn<Parameters<WorkerFn>, ReturnType<WorkerFn>>(
+    const workerFn = vi.fn<WorkerFn>(
       async () => {
         throw new Error("Conversion failed: corrupted file");
       },
@@ -162,7 +162,7 @@ describe("TaskQueue", () => {
     });
 
     const cancelQueue = new TaskQueue({ concurrency: 1, timeoutMs: 5000 });
-    cancelQueue.registerWorker("chapter_summarize", async () => workerPromise);
+    cancelQueue.registerWorker("chapter_summarize", async () => workerPromise as Promise<TaskResult>);
 
     // First task fills the concurrency slot (it blocks)
     await cancelQueue.submit("chapter_summarize", {}, TEST_USER_ID);

@@ -4,11 +4,11 @@ import type { JWTPayload } from "@/types/auth";
 export { ACCESS_EXPIRES, REFRESH_EXPIRES } from "./token-core";
 
 export async function signAccessToken(payload: JWTPayload): Promise<string> {
-  return signToken(payload as Record<string, unknown>, ACCESS_EXPIRES);
+  return signToken(payload as unknown as Record<string, unknown>, ACCESS_EXPIRES);
 }
 
 export async function signRefreshToken(payload: JWTPayload): Promise<string> {
-  return signToken(payload as Record<string, unknown>, REFRESH_EXPIRES);
+  return signToken(payload as unknown as Record<string, unknown>, REFRESH_EXPIRES);
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {

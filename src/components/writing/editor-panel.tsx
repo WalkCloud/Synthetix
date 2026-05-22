@@ -17,6 +17,31 @@ interface SectionConstraints {
   generationMode: GenerationMode;
 }
 
+interface EditorPanelProps {
+  section: SectionMeta | null;
+  allSections: SectionMeta[];
+  draftOutline: string;
+  models: ModelOption[];
+  selectedModelA: string;
+  selectedModelB: string;
+  onModelAChange: (id: string) => void;
+  onModelBChange: (id: string) => void;
+  onGenerate: (mode: GenerationMode, constraints: { wordLimit: number; additionalRequirements: string; generationMode: GenerationMode }) => Promise<void>;
+  onSelectModel: (source: "a" | "b") => Promise<void>;
+  onConfirm: () => void;
+  onHumanize: () => void;
+  onUnlock: (status?: "reviewing" | "pending") => Promise<void>;
+  onSaveEdit: (content: string) => void;
+  onSaveEstimatedWords?: (words: number) => void;
+  isGenerating: boolean;
+  isThinking: boolean;
+  isHumanizing: boolean;
+  isConfirming: boolean;
+  streamingContent?: string;
+  assetCount?: number;
+  assetRenderVer: number;
+}
+
 export function EditorPanel({
   section,
   allSections,
