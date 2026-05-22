@@ -9,10 +9,11 @@ export interface SplitChunk {
 export interface SplitOptions {
   maxTokens: number;
   minTokens?: number;
+  overlapTokens?: number;
 }
 
 export function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 2));
+  return Math.max(1, Math.ceil(text.length / 1.5));
 }
 
 export function splitMarkdown(
@@ -30,7 +31,7 @@ export function splitMarkdown(
   // Step 1: Try markdown headings (# prefix)
   const sections = splitByHeadings(markdown);
   if (sections.length > 1) {
-    return assembleChunks(sections, maxTokens, options.minTokens || 256);
+    return assembleChunks(sections, maxTokens, options.minTokens || 256, options.overlapTokens);
   }
 
   // Step 2: Extract plain-text section titles from document structure
@@ -361,29 +362,49 @@ function assembleChunks(
   sections: Section[],
   maxTokens: number,
   minTokens: number,
+  overlapTokens: number = 0,
 ): SplitChunk[] {
   const chunks: SplitChunk[] = [];
   let currentChunk = "";
   let currentTokens = 0;
   let headingStack: string[] = [];
+  let overlapPrefix = "";
+
+  function flushChunk(content: string, tokens: number, hStack: string[]): string {
+    chunks.push(buildChunkFromHeadingStack(chunks.length, content, tokens, hStack));
+    if (overlapTokens > 0) {
+      const chars = Math.floor(overlapTokens * 1.5);
+      return content.length > chars ? content.slice(-chars) : content;
+    }
+    return "";
+  }
 
   for (const section of sections) {
     const sectionTokens = estimateTokens(section.content);
 
     if (sectionTokens > maxTokens) {
       if (currentChunk.trim()) {
-        chunks.push(buildChunkFromHeadingStack(chunks.length, currentChunk.trim(), currentTokens, headingStack));
+        overlapPrefix = flushChunk(currentChunk.trim(), currentTokens, headingStack);
         currentChunk = "";
         currentTokens = 0;
       }
       const subSections = splitByLines(section.content, maxTokens, minTokens);
-      for (const sub of subSections) {
+      for (let si = 0; si < subSections.length; si++) {
+        const sub = subSections[si];
+        const content = si === 0 && overlapPrefix ? overlapPrefix + "\n\n" + sub.content : sub.content;
+        const tokens = estimateTokens(content);
         chunks.push({
           ...sub,
           index: chunks.length,
           headingPath: section.heading || sub.title,
           title: section.heading || sub.title,
+          content,
+          tokenCount: tokens,
         });
+        if (overlapTokens > 0) {
+          const chars = Math.floor(overlapTokens * 1.5);
+          overlapPrefix = content.length > chars ? content.slice(-chars) : content;
+        }
       }
       if (section.heading) {
         headingStack = updateHeadingStack(headingStack, section.level, section.heading);
@@ -392,9 +413,9 @@ function assembleChunks(
     }
 
     if (currentTokens + sectionTokens > maxTokens && currentTokens >= minTokens) {
-      chunks.push(buildChunkFromHeadingStack(chunks.length, currentChunk.trim(), currentTokens, headingStack));
-      currentChunk = "";
-      currentTokens = 0;
+      overlapPrefix = flushChunk(currentChunk.trim(), currentTokens, headingStack);
+      currentChunk = overlapPrefix ? overlapPrefix + "\n\n" : "";
+      currentTokens = estimateTokens(currentChunk);
     }
 
     if (section.heading) {

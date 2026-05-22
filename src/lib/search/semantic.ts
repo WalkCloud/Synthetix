@@ -4,11 +4,13 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { createRagContext } from "@/lib/rag/context";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
+import { searchByKeyword } from "@/lib/search/fts";
 import type { SearchResult } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
 const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
+const MIN_COSINE_THRESHOLD = 0.4;
 
 let lightRagDisabledUntil = 0;
 
@@ -103,6 +105,7 @@ async function searchViaDirectEmbedding(
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .sort((a, b) => b.raw - a.raw)
+    .filter((r) => r.raw >= MIN_COSINE_THRESHOLD)
     .slice(0, limit);
 
   if (scored.length === 0) return [];
@@ -114,23 +117,14 @@ async function searchViaDirectEmbedding(
   });
   const contentMap = new Map(topChunks.map((c) => [c.id, c]));
 
-  const minRaw = scored[scored.length - 1].raw;
-  const maxRaw = scored[0].raw;
-  const range = maxRaw - minRaw || 1;
-
-  return scored.map((r, i) => {
-    const normalized = range > 0.01
-      ? 0.7 + 0.3 * ((r.raw - minRaw) / range)
-      : 0.7 + 0.3 * (1 - i / Math.max(scored.length - 1, 1));
-    return {
-      chunkId: r.chunk.id,
-      documentId: r.chunk.document.id,
-      documentName: r.chunk.document.originalName,
-      title: contentMap.get(r.chunk.id)?.title || null,
-      content: contentMap.get(r.chunk.id)?.content?.slice(0, 4000) || "",
-      score: Math.round(normalized * 1000) / 1000,
-    };
-  });
+  return scored.map((r) => ({
+    chunkId: r.chunk.id,
+    documentId: r.chunk.document.id,
+    documentName: r.chunk.document.originalName,
+    title: contentMap.get(r.chunk.id)?.title || null,
+    content: contentMap.get(r.chunk.id)?.content?.slice(0, 4000) || "",
+    score: Math.round(r.raw * 1000) / 1000,
+  }));
 }
 
 export async function semanticSearch(
@@ -146,12 +140,14 @@ export async function semanticSearch(
     return [];
   }
 
+  let semanticResults: SearchResult[] = [];
+
   if (ctx.llmConfig && lightRagDisabledUntil <= Date.now()) {
     try {
       const ragResults = await searchViaLightRAG(
         query,
         userId,
-        limit,
+        limit * 2,
         mode,
         ctx.embedDim,
         ctx.embedConfig,
@@ -168,18 +164,31 @@ export async function semanticSearch(
         });
         const docMap = new Map(docs.map((d) => [d.id, { docId: d.id, docName: d.originalName }]));
 
-        return ragResults.chunks.map((r) => {
-          const docId = r.chunk_id.split("/")[0] || "";
-          const docInfo = docMap.get(docId);
-          return {
-            chunkId: r.chunk_id,
-            documentId: docInfo?.docId || docId,
-            documentName: docInfo?.docName || "",
-            title: r.title || null,
-            content: r.content,
-            score: r.score,
-          };
-        });
+        const missingContent = ragResults.chunks.filter((r) => !r.content);
+        let contentFallback = new Map<string, string>();
+        if (missingContent.length > 0) {
+          const fallbackChunks = await db.documentChunk.findMany({
+            where: { id: { in: missingContent.map((r) => r.chunk_id) } },
+            select: { id: true, content: true },
+          });
+          contentFallback = new Map(fallbackChunks.map((c) => [c.id, c.content || ""]));
+        }
+
+        semanticResults = ragResults.chunks
+          .filter((r) => r.score >= MIN_COSINE_THRESHOLD)
+          .map((r) => {
+            const docId = r.chunk_id.split("/")[0] || "";
+            const docInfo = docMap.get(docId);
+            const resolvedContent = r.content || contentFallback.get(r.chunk_id) || "";
+            return {
+              chunkId: r.chunk_id,
+              documentId: docInfo?.docId || docId,
+              documentName: docInfo?.docName || "",
+              title: r.title || null,
+              content: resolvedContent.slice(0, 4000),
+              score: Math.round(r.score * 1000) / 1000,
+            };
+          });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -192,6 +201,68 @@ export async function semanticSearch(
     }
   }
 
-  // Fallback: direct embedding cosine similarity
-  return searchViaDirectEmbedding(query, userId, limit, ctx.embedModel.id);
+  if (semanticResults.length === 0) {
+    semanticResults = await searchViaDirectEmbedding(query, userId, limit * 2, ctx.embedModel.id);
+  }
+
+  let keywordResults = await searchByKeyword(query, limit * 2).catch(() => [] as SearchResult[]);
+
+  if (keywordResults.length > 0) {
+    const ids = keywordResults.map((r) => r.chunkId);
+    const chunks = await db.documentChunk.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, content: true },
+    });
+    const contentMap = new Map(chunks.map((c) => [c.id, c.content || ""]));
+    keywordResults = keywordResults.map((r) => ({
+      ...r,
+      content: (contentMap.get(r.chunkId) || r.content || "").slice(0, 4000),
+    }));
+  }
+
+  return rrfFuse(semanticResults, keywordResults, limit);
+}
+
+function rrfFuse(
+  semantic: SearchResult[],
+  keyword: SearchResult[],
+  limit: number,
+): SearchResult[] {
+  const K = 60;
+  const chunkScore = new Map<string, { result: SearchResult; score: number }>();
+
+  semantic.forEach((r, i) => {
+    const key = r.chunkId;
+    const existing = chunkScore.get(key);
+    const rrf = 1 / (K + i + 1);
+    if (existing) {
+      existing.score += rrf;
+      if (rrf > existing.score * 0.5) existing.result = r;
+    } else {
+      chunkScore.set(key, { result: r, score: rrf });
+    }
+  });
+
+  keyword.forEach((r, i) => {
+    const key = r.chunkId;
+    const existing = chunkScore.get(key);
+    const rrf = 1 / (K + i + 1);
+    if (existing) {
+      existing.score += rrf;
+    } else {
+      chunkScore.set(key, { result: r, score: rrf });
+    }
+  });
+
+  return Array.from(chunkScore.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry, _i, arr) => {
+      const maxScore = arr[0].score;
+      const normalizedScore = maxScore > 0 ? entry.score / maxScore : 0;
+      return {
+        ...entry.result,
+        score: Math.round(normalizedScore * 1000) / 1000,
+      };
+    });
 }

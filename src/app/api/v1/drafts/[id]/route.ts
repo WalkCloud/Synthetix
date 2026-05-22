@@ -29,6 +29,18 @@ export async function GET(
       include: {
         sections: {
           orderBy: { index: "asc" },
+          include: {
+            references: {
+              orderBy: { relevanceScore: "desc" },
+              select: {
+                documentName: true,
+                relevanceScore: true,
+                sourceAnchor: true,
+                documentId: true,
+                content: true,
+              },
+            },
+          },
         },
       },
     });
@@ -53,7 +65,23 @@ export async function GET(
       });
       const refreshed = await db.draft.findFirst({
         where: { id, userId: user.id },
-        include: { sections: { orderBy: { index: "asc" } } },
+        include: {
+          sections: {
+            orderBy: { index: "asc" },
+            include: {
+              references: {
+                orderBy: { relevanceScore: "desc" },
+                select: {
+                  documentName: true,
+                  relevanceScore: true,
+                  sourceAnchor: true,
+                  documentId: true,
+                  content: true,
+                },
+              },
+            },
+          },
+        },
       });
       if (refreshed) draft = refreshed;
     }

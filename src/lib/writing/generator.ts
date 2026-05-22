@@ -7,7 +7,8 @@ import {
   type ContextInput,
 } from "@/lib/writing/context";
 
-const RAG_REFERENCE_LIMIT = 20;
+const RAG_REFERENCE_LIMIT = 8;
+const MIN_COSINE_THRESHOLD = 0.4;
 const GENERATION_TEMPERATURE = 0.7;
 
 interface RagConfig {
@@ -96,27 +97,34 @@ async function fetchRagReferences(
 
   const hidden = parseHiddenConstraints(section.constraints);
   const keyPoints = parseKeyPoints(section.keyPoints);
-  const queryParts = [
-    hidden.retrievalQuery,
-    section.title,
-    section.description,
-    ...keyPoints,
-    hidden.writingRequirements,
-    ...(hidden.referenceHints ?? []),
-    draftTitle,
-  ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
-  const query = queryParts.join(" ");
+  const queryParts: string[] = [];
+
+  if (hidden.retrievalQuery?.trim()) {
+    queryParts.push(hidden.retrievalQuery.trim(), hidden.retrievalQuery.trim(), hidden.retrievalQuery.trim());
+  }
+  if (section.title) queryParts.push(section.title);
+  if (section.description) queryParts.push(section.description);
+  queryParts.push(...keyPoints);
+  if (hidden.referenceHints?.length) {
+    queryParts.push(...hidden.referenceHints);
+  }
+
+  const query = queryParts
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join(" ");
 
   try {
     const results = await semanticSearch(query, userId, RAG_REFERENCE_LIMIT);
-    let mapped = results.map((result) => ({
-      documentId: result.documentId,
-      chunkId: result.chunkId,
-      documentName: result.documentName,
-      title: result.title,
-      content: result.content,
-      score: result.score,
-    }));
+    let mapped = results
+      .filter((result) => result.score >= MIN_COSINE_THRESHOLD)
+      .map((result) => ({
+        documentId: result.documentId,
+        chunkId: result.chunkId,
+        documentName: result.documentName,
+        title: result.title,
+        content: result.content,
+        score: result.score,
+      }));
 
     if (ragConfig?.mode === "manual" && ragConfig.documentIds.length > 0) {
       const allowed = new Set(ragConfig.documentIds);
@@ -339,6 +347,7 @@ export interface ComparisonResult {
   outputTokensA: number;
   inputTokensB: number;
   outputTokensB: number;
+  ragReferences: ContextInput["ragReferences"];
 }
 
 export async function compareSection(
@@ -408,6 +417,7 @@ export async function compareSection(
       outputTokensA: responseA.outputTokens,
       inputTokensB: responseB.inputTokens,
       outputTokensB: responseB.outputTokens,
+      ragReferences,
     };
   } catch (error: unknown) {
     const message =
