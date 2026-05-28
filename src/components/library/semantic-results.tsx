@@ -17,19 +17,19 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
         <div className="flex flex-col items-center justify-center py-10">
           <div className="w-full max-w-2xl space-y-4 mb-8">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-white border border-[#E8E6E1] rounded-[16px] p-5 animate-pulse">
+              <div key={i} className="bg-card border border-border rounded-[16px] p-5 animate-pulse">
                 <div className="flex justify-between items-center mb-3">
-                  <div className="h-5 bg-[#F4F2EF] rounded-lg w-48" />
+                  <div className="h-5 bg-muted rounded-lg w-48" />
                   <div className="h-6 w-20 bg-primary-100 rounded-full" />
                 </div>
                 <div className="space-y-2">
-                  <div className="h-3.5 bg-[#F4F2EF] rounded w-full" />
-                  <div className="h-3.5 bg-[#F4F2EF] rounded w-5/6" />
-                  <div className="h-3.5 bg-[#F4F2EF] rounded w-4/6" />
+                  <div className="h-3.5 bg-muted rounded w-full" />
+                  <div className="h-3.5 bg-muted rounded w-5/6" />
+                  <div className="h-3.5 bg-muted rounded w-4/6" />
                 </div>
                 <div className="flex gap-4 mt-3">
-                  <div className="h-3 bg-[#F4F2EF] rounded w-24" />
-                  <div className="h-3 bg-[#F4F2EF] rounded w-32" />
+                  <div className="h-3 bg-muted rounded w-24" />
+                  <div className="h-3 bg-muted rounded w-32" />
                 </div>
               </div>
             ))}
@@ -56,7 +56,7 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
                 {[0, 1, 2, 3].map((s) => (
                   <div
                     key={s}
-                    className={`h-1.5 rounded-full transition-all duration-500 ${s <= searchStage ? "bg-primary w-8" : "bg-[#E8E6E1] w-4"}`}
+                    className={`h-1.5 rounded-full transition-all duration-500 ${s <= searchStage ? "bg-primary w-8" : "bg-muted w-4"}`}
                   />
                 ))}
               </div>
@@ -78,12 +78,12 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
         results.map((r, i) => (
           <div
             key={i}
-            className="bg-white border border-[#E8E6E1] rounded-[16px] p-5 hover:border-[#D4D4D8] transition-colors"
+            className="bg-card border border-border rounded-[16px] p-5 hover:border-border transition-colors"
           >
             <div className="flex justify-between items-center mb-2.5">
               <span className="font-semibold text-[15px] text-foreground">{r.documentName}</span>
               {typeof r.score === "number" && r.score >= 0.85 ? (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#DCFCE7] text-[#16A34A]">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300">
                   {Math.round(r.score * 100)}% match
                 </span>
               ) : typeof r.score === "number" && r.score >= 0.75 ? (
@@ -91,11 +91,11 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
                   {Math.round(r.score * 100)}% match
                 </span>
               ) : typeof r.score === "number" ? (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706]">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
                   {Math.round(r.score * 100)}% match
                 </span>
               ) : (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#F4F2EF] text-[#6B6560]">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
                   Keyword match
                 </span>
               )}
@@ -106,7 +106,7 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
                 const parts = text.split(/(\b(?:search|document|test|content)\b)/gi);
                 return parts.map((part, pi) =>
                   /^(search|document|test|content)$/i.test(part) ? (
-                    <mark key={pi} className="bg-[#F3F1FC] text-primary px-1 py-px rounded-sm">
+                    <mark key={pi} className="bg-violet-100 dark:bg-violet-950/20 text-primary px-1 py-px rounded-sm">
                       {part}
                     </mark>
                   ) : (

@@ -12,7 +12,17 @@ export type NodeShape =
   | "user_avatar"
   | "bot"
   | "icon_box"
-  | "dashed_container";
+  | "dashed_container"
+  | "message_bus";
+
+export type ComponentType =
+  | "frontend"
+  | "backend"
+  | "database"
+  | "cloud"
+  | "security"
+  | "messaging"
+  | "external";
 
 export type ArrowFlow =
   | "control"
@@ -57,6 +67,8 @@ export interface DiagramNode {
   typeLabel?: string;
   sublabel?: string;
   tags?: { label: string; fill?: string; stroke?: string; textFill?: string }[];
+  componentType?: ComponentType;
+  icon?: string;
 }
 
 export interface DiagramArrow {
@@ -73,6 +85,10 @@ export interface DiagramContainer {
   subtitle?: string;
   sideLabel?: string;
   nodeIds: string[];
+  containerType?: "default" | "security_group" | "region";
+  portLabel?: string;
+  headerPrefix?: string;
+  titleBlock?: { title: string; subtitle: string };
 }
 
 export interface DiagramLegend {
@@ -147,6 +163,23 @@ const SHAPE_HINTS: Record<string, NodeShape> = {
   message: "speech",
   notification: "speech",
   alert: "speech",
+  frontend: "rect",
+  web: "rect",
+  ui: "rect",
+  server: "rect",
+  app: "rect",
+  proxy: "rect",
+  loadbalancer: "rect",
+  "load balancer": "rect",
+  person: "user_avatar",
+  consumer: "user_avatar",
+  memory: "dashed_container",
+  stream: "message_bus",
+  queue: "message_bus",
+  kafka: "message_bus",
+  rabbitmq: "message_bus",
+  "event bus": "message_bus",
+  "message bus": "message_bus",
 };
 
 function inferShape(label: string): NodeShape | undefined {
@@ -157,32 +190,32 @@ function inferShape(label: string): NodeShape | undefined {
   return undefined;
 }
 
+export const STYLE_ALIASES: Record<string, DiagramStyle> = {
+  "flat-icon": "flat-icon",
+  flat: "flat-icon",
+  "dark-terminal": "dark-terminal",
+  dark: "dark-terminal",
+  terminal: "dark-terminal",
+  blueprint: "blueprint",
+  "notion-clean": "notion-clean",
+  notion: "notion-clean",
+  glassmorphism: "glassmorphism",
+  glass: "glassmorphism",
+  claude: "claude",
+  openai: "openai",
+};
+
 export function buildSpecFromStructuredJson(json: {
   type?: string;
   title?: string;
   subtitle?: string;
   style?: string;
-  nodes?: { id: string; label: string; shape?: string; typeLabel?: string; sublabel?: string; tags?: { label: string; fill?: string; stroke?: string; textFill?: string }[] }[];
+  nodes?: { id: string; label: string; shape?: string; typeLabel?: string; sublabel?: string; tags?: { label: string; fill?: string; stroke?: string; textFill?: string }[]; icon?: string; componentType?: string }[];
   arrows?: { from: string; to: string; label?: string; flow?: string; dashed?: boolean }[];
-  containers?: { id: string; label: string; subtitle?: string; sideLabel?: string; nodeIds: string[] }[];
+  containers?: { id: string; label: string; subtitle?: string; sideLabel?: string; nodeIds: string[]; containerType?: string; portLabel?: string; headerPrefix?: string; titleBlock?: { title: string; subtitle: string } }[];
   legend?: { flow: string; label: string }[];
   footer?: string;
 }): DiagramSpec {
-  const styleMap: Record<string, DiagramStyle> = {
-    "flat-icon": "flat-icon",
-    flat: "flat-icon",
-    "dark-terminal": "dark-terminal",
-    dark: "dark-terminal",
-    terminal: "dark-terminal",
-    blueprint: "blueprint",
-    "notion-clean": "notion-clean",
-    notion: "notion-clean",
-    glassmorphism: "glassmorphism",
-    glass: "glassmorphism",
-    claude: "claude",
-    openai: "openai",
-  };
-
   const validTypes: Set<string> = new Set<DiagramType>([
     "architecture", "data-flow", "flowchart", "sequence", "agent",
     "memory", "comparison", "timeline", "mind-map", "class",
@@ -190,7 +223,7 @@ export function buildSpecFromStructuredJson(json: {
   ]);
 
   const type = (json.type && validTypes.has(json.type)) ? json.type as DiagramType : "architecture";
-  const style = styleMap[json.style || ""] || "flat-icon";
+  const style = STYLE_ALIASES[json.style || ""] || "flat-icon";
 
   const nodes: DiagramNode[] = (json.nodes || []).map((n) => ({
     id: n.id,
@@ -199,6 +232,8 @@ export function buildSpecFromStructuredJson(json: {
     typeLabel: n.typeLabel,
     sublabel: n.sublabel,
     tags: n.tags,
+    componentType: (n.componentType as ComponentType) || undefined,
+    icon: n.icon,
   }));
 
   const arrows: DiagramArrow[] = (json.arrows || []).map((a) => ({
@@ -215,6 +250,10 @@ export function buildSpecFromStructuredJson(json: {
     subtitle: c.subtitle,
     sideLabel: c.sideLabel,
     nodeIds: c.nodeIds,
+    containerType: (c.containerType as DiagramContainer["containerType"]) || undefined,
+    portLabel: c.portLabel,
+    headerPrefix: c.headerPrefix,
+    titleBlock: c.titleBlock,
   }));
 
   const legend: DiagramLegend[] = (json.legend || []).map((l) => ({
@@ -295,25 +334,12 @@ export function buildSpecFromRawPrompt(rawPrompt: string): DiagramSpec {
 
   const diagramType = fields.type || "architecture";
 
-  const styleMap: Record<string, DiagramStyle> = {
-    blueprint: "blueprint",
-    notion: "notion-clean",
-    claude: "claude",
-    openai: "openai",
-    "flat-icon": "flat-icon",
-    flat: "flat-icon",
-    dark: "dark-terminal",
-    terminal: "dark-terminal",
-    glass: "glassmorphism",
-    glassmorphism: "glassmorphism",
-  };
-
   return {
     type: diagramType as DiagramType,
     title: fields.title || "Untitled Diagram",
     subtitle: fields.subtitle,
     purpose: fields.purpose || "",
-    style: styleMap[fields.style] || "flat-icon",
+    style: STYLE_ALIASES[fields.style] || "flat-icon",
     nodes,
     arrows,
     containers: [],

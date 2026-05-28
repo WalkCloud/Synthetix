@@ -21,8 +21,7 @@ export function SearchHero({
 }: SearchHeroProps) {
   return (
     <div
-      className="rounded-[22px] border border-border p-8 mb-6 animate-fade-in-up"
-      style={{ background: "linear-gradient(135deg, #F3F1FC 0%, #F4F2EF 50%, #FFFFFF 100%)" }}
+      className="rounded-[22px] border border-border p-8 mb-6 animate-fade-in-up bg-gradient-to-br from-violet-50 via-amber-50/50 to-white dark:from-violet-950/40 dark:via-transparent dark:to-transparent"
     >
       <h3 className="font-display text-[20px] font-bold text-foreground mb-1">
         Search Your Knowledge Base
@@ -30,7 +29,7 @@ export function SearchHero({
       <p className="text-[14px] text-muted-foreground mb-5">
         Find documents by keyword or ask questions with AI-powered semantic search
       </p>
-      <div className="flex bg-white rounded-[16px] shadow-md border-2 border-[#E8E6E1] focus-within:border-primary transition-colors">
+      <div className="flex bg-card rounded-[16px] shadow-md border-2 border-border focus-within:border-primary transition-colors">
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -49,16 +48,16 @@ export function SearchHero({
           onKeyDown={(e) => e.key === "Enter" && onSearch()}
           className="flex-1 border-none px-4 py-4 text-[15px] outline-none bg-transparent font-sans text-foreground placeholder:text-muted-foreground"
         />
-        <div className="flex items-center gap-0.5 p-1.5 bg-[#F4F2EF] rounded-[12px] my-1.5 mr-1.5">
+        <div className="flex items-center gap-0.5 p-1.5 bg-muted rounded-[12px] my-1.5 mr-1.5">
           <button
             onClick={() => setSearchMode("keyword")}
-            className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "keyword" ? "bg-white text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
+            className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "keyword" ? "bg-card text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
           >
             Keyword
           </button>
           <button
             onClick={() => setSearchMode("semantic")}
-            className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "semantic" ? "bg-white text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
+            className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "semantic" ? "bg-card text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
           >
             Semantic
           </button>

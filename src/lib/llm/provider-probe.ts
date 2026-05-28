@@ -120,10 +120,12 @@ export async function detectEmbeddingDim(
   };
 
   for (const url of [actualBase, normalizedBase]) {
-    let dim = await tryProbe(url, { input: ["dimension probe"], model: model.modelId, dimensions: 1536 });
-    if (dim) return dim;
-    dim = await tryProbe(url, { input: ["dimension probe"], model: model.modelId });
-    if (dim) return dim;
+    for (const dim of [1536, 1024, 768]) {
+      const result = await tryProbe(url, { input: ["dimension probe"], model: model.modelId, dimensions: dim });
+      if (result === dim) return dim;
+    }
+    const nativeDim = await tryProbe(url, { input: ["dimension probe"], model: model.modelId });
+    if (nativeDim) return nativeDim;
   }
   return null;
 }

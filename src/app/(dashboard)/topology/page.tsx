@@ -121,8 +121,8 @@ export default function TopologyPage() {
       <div className="p-8 pt-4">
         {loading && !topology ? (
           <div className="flex items-center justify-center h-[calc(100vh-var(--header-height)-96px)]">
-            <div className="text-center text-[#8C887F]">
-              <div className="w-10 h-10 mx-auto mb-3 border-3 border-[#3A2E85] border-t-transparent rounded-full animate-spin" />
+            <div className="text-center text-muted-foreground">
+              <div className="w-10 h-10 mx-auto mb-3 border-3 border-primary border-t-transparent rounded-full animate-spin" />
               <p>Loading {graphMode === "knowledge" ? "knowledge graph" : "topology"}...</p>
             </div>
           </div>
@@ -147,26 +147,26 @@ export default function TopologyPage() {
               totalRelations={topology?.stats?.totalRelations}
               leafCount={topology?.stats?.leafCount}
             />
-            <div className="bg-[#F4F2EF] border border-[#E8E6E1] rounded-[16px] min-h-[560px] flex items-center justify-center">
-              <div className="text-center text-[#8C887F]">
+            <div className="bg-muted border border-border rounded-[16px] min-h-[560px] flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12 mx-auto mb-3 opacity-40">
                   <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                   <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                 </svg>
                 <p className="text-sm">No knowledge graph yet.</p>
-                <p className="text-xs mt-1">Index documents with &ldquo;Entity extraction + knowledge graph&rdquo; mode enabled.</p>
+                <p className="text-xs mt-1">Index documents with &ldquo;Entity extraction + knowledge graph (Recommended)&rdquo; mode enabled.</p>
               </div>
             </div>
           </div>
         ) : drafts.length === 0 && graphMode === "documents" ? (
           <div className="flex items-center justify-center h-[calc(100vh-var(--header-height)-96px)]">
-            <div className="text-center text-[#8C887F]">
+            <div className="text-center text-muted-foreground">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12 mx-auto mb-3 opacity-40">
                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
               </svg>
               <p className="text-sm">No drafts yet. Create a draft from the writing page to see its topology.</p>
-              <a href="/writing" className="text-[#3A2E85] text-sm font-medium hover:underline mt-2 inline-block">Go to Writing</a>
+              <a href="/writing" className="text-primary text-sm font-medium hover:underline mt-2 inline-block">Go to Writing</a>
             </div>
           </div>
         ) : (
@@ -206,8 +206,8 @@ export default function TopologyPage() {
                 graphMode={graphMode}
               />
             ) : (
-              <div className="bg-[#F4F2EF] border border-[#E8E6E1] rounded-[16px] min-h-[560px] flex items-center justify-center">
-                <div className="text-center text-[#8C887F]">
+              <div className="bg-muted border border-border rounded-[16px] min-h-[560px] flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
                   <p className="text-sm">No references found for this draft.</p>
                   <p className="text-xs mt-1">Generate sections with RAG search to build reference relationships.</p>
                 </div>

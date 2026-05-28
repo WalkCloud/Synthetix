@@ -1,8 +1,7 @@
 import { db } from "@/lib/db";
 import { generateSectionFull } from "@/lib/writing/generator";
 import { generateSummary } from "@/lib/writing/summarizer";
-import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
-import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
+import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
 
@@ -59,78 +58,8 @@ async function createAssetsFromContent(
   sectionId: string,
   rawContent: string,
 ): Promise<string> {
-  const { diagrams, images, cleaned } = parseDiagramRequests(rawContent);
-  if (diagrams.length === 0 && images.length === 0) {
-    return cleaned;
-  }
-
-  await db.sectionAsset.deleteMany({ where: { sectionId } });
-
-  for (const diagram of diagrams) {
-    await db.sectionAsset.create({
-      data: {
-        draftId,
-        sectionId,
-        type: "diagram",
-        title: diagram.title,
-        description: diagram.purpose,
-        prompt: diagram.raw,
-        status: "pending",
-        metadata: JSON.stringify({
-          diagramType: diagram.type,
-          placement: diagram.placement,
-          nodes: diagram.nodes,
-          flows: diagram.flows,
-        }),
-      },
-    });
-  }
-
-  for (const image of images) {
-    if (!image.prompt) continue;
-    await db.sectionAsset.create({
-      data: {
-        draftId,
-        sectionId,
-        type: "image",
-        title: image.title,
-        description: image.prompt.slice(0, 200),
-        prompt: image.raw,
-        status: "pending",
-        metadata: JSON.stringify({ imagePrompt: image.prompt }),
-      },
-    });
-  }
-
-  await generateAllPendingAssets(draftId, sectionId);
-
-  const readyAssets = await db.sectionAsset.findMany({
-    where: { sectionId, draftId, status: "ready" },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (readyAssets.length === 0) {
-    return cleaned;
-  }
-
-  const segments = segmentContent(rawContent);
-  const diagramAssets = readyAssets.filter((a) => a.type === "diagram" || a.type === "svg");
-  const imageAssets = readyAssets.filter((a) => a.type === "image");
-  let diagramIndex = 0;
-  let imageIndex = 0;
-  const positionedParts: string[] = [];
-
-  for (const segment of segments) {
-    if (segment.kind === "text") {
-      positionedParts.push(segment.content);
-    } else if (segment.kind === "diagram" && diagramIndex < diagramAssets.length) {
-      positionedParts.push(`\n\n[DIAGRAM:${diagramAssets[diagramIndex++].id}]\n\n`);
-    } else if (segment.kind === "image" && imageIndex < imageAssets.length) {
-      positionedParts.push(`\n\n[IMAGE:${imageAssets[imageIndex++].id}]\n\n`);
-    }
-  }
-
-  return positionedParts.join("");
+  const { contentWithIds } = await createAssetRequests(draftId, sectionId, rawContent);
+  return contentWithIds;
 }
 
 async function lockGeneratedSection(

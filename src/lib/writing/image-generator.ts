@@ -217,26 +217,3 @@ export async function generateImageAsset(assetId: string): Promise<ImageGenerati
     return { success: false, error: message };
   }
 }
-
-export async function generateAllPendingImages(
-  draftId: string,
-  sectionId: string
-): Promise<{ total: number; succeeded: number; failed: number }> {
-  const assets = await db.sectionAsset.findMany({
-    where: { draftId, sectionId, status: "pending", type: "image" },
-  });
-
-  let succeeded = 0;
-  let failed = 0;
-
-  for (const asset of assets) {
-    const result = await generateImageAsset(asset.id);
-    if (result.success) {
-      succeeded++;
-    } else {
-      failed++;
-    }
-  }
-
-  return { total: assets.length, succeeded, failed };
-}

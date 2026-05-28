@@ -86,30 +86,6 @@ export async function generateDiagramAsset(assetId: string): Promise<{
   }
 }
 
-export async function generateAllPendingAssets(draftId: string, sectionId: string): Promise<{
-  total: number;
-  succeeded: number;
-  failed: number;
-}> {
-  const assets = await db.sectionAsset.findMany({
-    where: { draftId, sectionId, status: "pending" },
-  });
-
-  let succeeded = 0;
-  let failed = 0;
-
-  for (const asset of assets) {
-    const result = await generateDiagramAsset(asset.id);
-    if (result.success) {
-      succeeded++;
-    } else {
-      failed++;
-    }
-  }
-
-  return { total: assets.length, succeeded, failed };
-}
-
 export function getAssetFilePath(relativePath: string): string {
   return path.join(process.cwd(), "data", relativePath);
 }

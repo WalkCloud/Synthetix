@@ -275,8 +275,16 @@ function buildRagReferencesSection(
   const sorted = [...references].sort((a, b) => b.score - a.score);
 
   const entries = sorted.map(
-    (ref, index) =>
-      `### Reference ${index + 1} [Source: ${ref.documentName}, Relevance: ${(ref.score * 100).toFixed(0)}%]\n${ref.content}`
+    (ref, index) => {
+      const docId = ref.documentId;
+      const rewrittenContent = docId
+        ? ref.content.replace(
+            /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
+            (_, alt, filename) => `![${alt}](/api/v1/documents/${docId}/images/${filename})`
+          )
+        : ref.content;
+      return `### Reference ${index + 1} [Source: ${ref.documentName}, Relevance: ${(ref.score * 100).toFixed(0)}%]\n${rewrittenContent}`;
+    }
   );
 
   return ["## Reference Material", "", ...entries].join("\n");

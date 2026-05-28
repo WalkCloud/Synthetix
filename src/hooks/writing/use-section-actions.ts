@@ -85,18 +85,21 @@ export function useSectionActions(
     } catch {}
   }, [id, activeSectionId]);
 
-  const handleInsertAsset = useCallback(async (assetId: string, currentContent: string) => {
-    if (!activeSectionId) return;
-    const marker = `\n[IMAGE:${assetId}]\n`;
-    const updated = currentContent + marker;
+  const handleInsertAsset = useCallback(async (markerId: string, assetId: string) => {
+    if (!activeSectionId) return null;
     try {
-      await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`, {
-        method: "PUT",
+      const res = await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}/assets/confirm-asset`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: updated }),
+        body: JSON.stringify({ markerId, assetId }),
       });
+      if (!res.ok) return null;
+      const data = await res.json();
       await loadDraft();
-    } catch {}
+      return data.content as string;
+    } catch {
+      return null;
+    }
   }, [id, activeSectionId, loadDraft]);
 
   const handleRagConfigChange = useCallback(async (ragMode: string, ragDocumentIds: string[]) => {
