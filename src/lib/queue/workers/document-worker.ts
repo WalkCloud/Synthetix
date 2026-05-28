@@ -9,6 +9,7 @@ import {
   embedDocumentChunks,
   indexDocument,
 } from "@/lib/documents/pipeline";
+import { autoTagDocument } from "@/lib/documents/auto-tagger";
 
 const storage = new LocalStorageAdapter();
 
@@ -97,6 +98,18 @@ export async function processDocument(taskId: string): Promise<void> {
         where: { id: taskId },
         data: { progress: 87 },
       });
+    }
+
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { progress: 92 },
+    });
+
+    const mdForTags = ctx.markdownPath
+      ? await import("fs").then((fs) => fs.promises.readFile(ctx.markdownPath, "utf-8").catch(() => ""))
+      : "";
+    if (mdForTags) {
+      await autoTagDocument(ctx, mdForTags);
     }
 
     await db.document.update({

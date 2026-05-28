@@ -138,27 +138,27 @@ function parseBlocks(text: string): Block[] {
 function renderBlock(block: Block, key: number): ReactNode {
   switch (block.type) {
     case "hr":
-      return <hr key={key} className="my-4 border-slate-200" />;
+      return <hr key={key} className="my-4 border-border" />;
 
     case "h":
       const Tag = `h${Math.min(block.level ?? 2, 4)}` as "h2" | "h3" | "h4";
       const headingSizes: Record<string, string> = {
-        h2: "text-lg font-bold text-slate-800 mt-6 mb-3",
-        h3: "text-base font-semibold text-slate-700 mt-5 mb-2",
-        h4: "text-sm font-semibold text-slate-600 mt-4 mb-2",
+        h2: "text-lg font-bold text-foreground mt-6 mb-3",
+        h3: "text-base font-semibold text-foreground/75 mt-5 mb-2",
+        h4: "text-sm font-semibold text-muted-foreground mt-4 mb-2",
       };
       return <Tag key={key} className={headingSizes[Tag]}>{renderInline(block.lines[0])}</Tag>;
 
     case "p":
       return (
-        <p key={key} className="mb-3 text-[15px] leading-[1.85] text-slate-700" style={{ textIndent: "2em" }}>
+        <p key={key} className="mb-3 text-[15px] leading-[1.85] text-foreground/75" style={{ textIndent: "2em" }}>
           {renderInline(block.lines.join(""))}
         </p>
       );
 
     case "ul":
       return (
-        <ul key={key} className="my-2 ml-6 list-disc space-y-1 text-[15px] leading-[1.85] text-slate-700">
+        <ul key={key} className="my-2 ml-6 list-disc space-y-1 text-[15px] leading-[1.85] text-foreground/75">
           {block.lines.map((line, j) => (
             <li key={j}>{renderInline(line)}</li>
           ))}
@@ -167,7 +167,7 @@ function renderBlock(block: Block, key: number): ReactNode {
 
     case "ol":
       return (
-        <ol key={key} className="my-2 ml-6 list-decimal space-y-1 text-[15px] leading-[1.85] text-slate-700">
+        <ol key={key} className="my-2 ml-6 list-decimal space-y-1 text-[15px] leading-[1.85] text-foreground/75">
           {block.lines.map((line, j) => (
             <li key={j}>{renderInline(line)}</li>
           ))}
@@ -176,7 +176,7 @@ function renderBlock(block: Block, key: number): ReactNode {
 
     case "blockquote":
       return (
-        <blockquote key={key} className="my-3 pl-4 border-l-3 border-slate-300 text-slate-600 italic">
+        <blockquote key={key} className="my-3 pl-4 border-l-3 border-border text-muted-foreground italic">
           {block.lines.map((line, j) => (
             <p key={j} className="mb-1" style={{ textIndent: "2em" }}>{renderInline(line)}</p>
           ))}
@@ -199,17 +199,17 @@ function renderBlock(block: Block, key: number): ReactNode {
         <div key={key} className="my-3 overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-100">
+              <tr className="bg-secondary">
                 {header.map((cell, j) => (
-                  <th key={j} className="border border-slate-300 px-3 py-2 text-left font-semibold text-slate-700">{cell}</th>
+                  <th key={j} className="border border-border px-3 py-2 text-left font-semibold text-foreground/75">{cell}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {body.map((row, j) => (
-                <tr key={j} className="even:bg-slate-50">
+                <tr key={j} className="even:bg-muted/30">
                   {row.map((cell, k) => (
-                    <td key={k} className="border border-slate-300 px-3 py-2 text-slate-700">{cell}</td>
+                    <td key={k} className="border border-border px-3 py-2 text-foreground/75">{cell}</td>
                   ))}
                 </tr>
               ))}

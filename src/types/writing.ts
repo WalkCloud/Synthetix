@@ -74,6 +74,7 @@ export interface SectionReferenceMeta {
   sourceAnchor: string | null;
   documentId: string | null;
   content: string | null;
+  images?: Array<{ documentId: string; filename: string; url: string; altText: string | null }>;
 }
 
 export interface SectionMeta {

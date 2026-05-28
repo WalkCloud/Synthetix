@@ -6,7 +6,7 @@ import type { DiagramRequest } from "@/lib/writing/diagram";
 
 export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
   return (
-    <div className="my-4 border border-dashed border-slate-300 rounded-xl bg-slate-50/80 p-4">
+    <div className="my-4 border border-dashed border-border rounded-xl bg-muted/60 p-4">
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5 text-amber-600">
@@ -19,18 +19,18 @@ export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
             <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
               {diagramTypeLabel(diagram.type)}
             </span>
-            <span className="text-[11px] text-slate-400">Diagram Request</span>
+            <span className="text-[11px] text-muted-foreground">Diagram Request</span>
           </div>
-          <p className="text-sm font-medium text-slate-800 leading-snug">
+          <p className="text-sm font-medium text-foreground leading-snug">
             {diagram.title}
           </p>
           {diagram.purpose && (
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               {diagram.purpose}
             </p>
           )}
           {diagram.nodes && (
-            <p className="text-[11px] text-slate-400 mt-1.5">
+            <p className="text-[11px] text-muted-foreground mt-1.5">
               Nodes: {diagram.nodes}
             </p>
           )}
@@ -62,11 +62,11 @@ export function DiagramView({ serveUrl, title }: { serveUrl: string; title?: str
       <img
         src={serveUrl}
         alt={title || "Architecture diagram"}
-        className="w-full rounded-xl border border-slate-200 bg-white"
+        className="w-full rounded-xl border border-border bg-card"
         onError={() => setError(true)}
       />
       {title && (
-        <figcaption className="text-center text-xs text-slate-400 mt-2">
+        <figcaption className="text-center text-xs text-muted-foreground mt-2">
           {title}
         </figcaption>
       )}

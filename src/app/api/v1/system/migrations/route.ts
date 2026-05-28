@@ -15,7 +15,11 @@ export async function GET() {
       ORDER BY started_at ASC
     `;
     return successResponse(rows);
-  } catch (error) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "";
+    if (msg.includes("no such table") && msg.includes("_prisma_migrations")) {
+      return successResponse([]);
+    }
     return errorResponse(error);
   }
 }

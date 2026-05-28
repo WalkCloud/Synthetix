@@ -17,7 +17,7 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
   const indent = depth > 0 ? `pl-${Math.min(depth * 4, 12)}` : "";
 
   return (
-    <div className={isTop ? "rounded-[12px] border bg-white shadow-sm overflow-hidden" : undefined}>
+    <div className={isTop ? "rounded-[12px] border bg-card shadow-sm overflow-hidden" : undefined}>
       <div className={`flex items-center gap-2 ${isTop ? "p-3" : "py-2 pr-1"} ${indent}`}>
         {isTop && <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />}
         <span className={`shrink-0 ${isTop ? "w-5 text-sm font-bold" : "min-w-6 text-xs font-semibold"} text-primary`}>
@@ -28,14 +28,14 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
           value={section.title}
           onChange={(e) => onUpdate(path, "title", e.target.value)}
           placeholder={isTop ? "Section title..." : "Sub-section title..."}
-          className={`min-w-0 flex-1 bg-transparent text-foreground focus:outline-none ${isTop ? "text-sm font-semibold" : "text-[13px] border-b border-dashed border-slate-300 focus:border-primary-400"}`}
+          className={`min-w-0 flex-1 bg-transparent text-foreground focus:outline-none ${isTop ? "text-sm font-semibold" : "text-[13px] border-b border-dashed border-border focus:border-primary-400"}`}
         />
         <input
           type="text"
           inputMode="numeric"
           value={section.estimatedWords || ""}
           onChange={(e) => onUpdate(path, "estimatedWords", e.target.value)}
-          className={`shrink-0 rounded ${isTop ? "w-16 rounded-lg border bg-slate-50 px-2 py-1 text-xs focus:ring-2 focus:ring-primary/20" : "w-14 border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary/20"} text-center text-muted-foreground focus:outline-none`}
+          className={`shrink-0 rounded ${isTop               ? "w-16 rounded-lg border bg-muted/50 px-2 py-1 text-xs focus:ring-2 focus:ring-primary/20"               : "w-14 border border-border bg-card px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary/20"} text-center text-muted-foreground focus:outline-none`}
           placeholder="words"
         />
         <button
@@ -46,7 +46,7 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
         </button>
       </div>
       {isTop && section.children && section.children.length > 0 && (
-        <div className="border-t bg-slate-50/50 p-2 space-y-2">
+        <div className="border-t bg-muted/40 p-2 space-y-2">
           {section.children.map((child, ci) => (
             <EditOutlineNode key={ci} section={child} path={[...path, ci]} onUpdate={onUpdate} onRemove={onRemove} onAddChild={onAddChild} depth={depth + 1} />
           ))}

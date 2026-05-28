@@ -19,7 +19,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
 
   return (
     <div>
-      <div className="bg-white border rounded-[16px] overflow-hidden">
+      <div className="bg-card border rounded-[16px] overflow-hidden">
         {documents.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground">
             <p className="text-lg font-medium mb-1">No documents found</p>
@@ -28,7 +28,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
         ) : (
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-[#F4F2EF]">
+              <tr className="border-b bg-muted">
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Name</th>
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Format</th>
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Size</th>
@@ -78,7 +78,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
                 key={i}
                 onClick={() => onPageChange(i + 1)}
                 className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                  page === i + 1 ? "bg-primary text-white" : "hover:bg-gray-100"
+                  page === i + 1 ? "bg-primary text-white" : "hover:bg-secondary"
                 }`}
               >
                 {i + 1}

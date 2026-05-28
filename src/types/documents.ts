@@ -46,6 +46,19 @@ export interface TagMeta {
   name: string;
 }
 
+export interface DocumentImageMeta {
+  id: string;
+  documentId: string;
+  filename: string;
+  url: string;
+  altText: string | null;
+  mimeType: string;
+  fileSize: number;
+  width: number | null;
+  height: number | null;
+  pageNumber: number | null;
+}
+
 export interface SearchResult {
   chunkId: string;
   documentId: string;
@@ -53,6 +66,7 @@ export interface SearchResult {
   title: string | null;
   content: string;
   score: number;
+  images?: DocumentImageMeta[];
 }
 
 export interface DocumentListParams {

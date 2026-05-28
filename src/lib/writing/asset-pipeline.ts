@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
-import { parseDiagramRequests, segmentContent } from "@/lib/writing/diagram";
-import { generateAllPendingAssets } from "@/lib/writing/diagram-generator";
-import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { parseDiagramRequests } from "@/lib/writing/diagram";
+import { injectMarkerIds } from "@/lib/writing/marker-parser";
 
 import type { DiagramRequest, ImageRequest } from "./diagram";
 
@@ -15,6 +14,7 @@ interface ParsedAssetRequest {
   placement?: string;
   nodes?: unknown;
   flows?: unknown;
+  markerId?: string;
 }
 
 function normalizeDiagrams(diagrams: DiagramRequest[]): ParsedAssetRequest[] {
@@ -29,10 +29,11 @@ export async function createAssetRequests(
   draftId: string,
   sectionId: string,
   rawContent: string,
-): Promise<{ diagrams: ParsedAssetRequest[]; images: ParsedAssetRequest[] }> {
-  const { diagrams, images } = parseDiagramRequests(rawContent);
+): Promise<{ diagrams: ParsedAssetRequest[]; images: ParsedAssetRequest[]; contentWithIds: string }> {
+  const contentWithIds = injectMarkerIds(rawContent);
+  const { diagrams, images } = parseDiagramRequests(contentWithIds);
   if (diagrams.length === 0 && images.length === 0) {
-    return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images) };
+    return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images), contentWithIds };
   }
 
   await db.sectionAsset.deleteMany({ where: { sectionId } });
@@ -73,45 +74,5 @@ export async function createAssetRequests(
     });
   }
 
-  return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images) };
-}
-
-export async function generateAndPlaceAssetMarkers(
-  draftId: string,
-  sectionId: string,
-  sectionTitle: string,
-  rawContent: string,
-): Promise<number> {
-  const genResult = await generateAllPendingAssets(draftId, sectionId);
-  if (genResult.succeeded === 0) return 0;
-
-  const readyAssets = await db.sectionAsset.findMany({
-    where: { sectionId, draftId, status: "ready" },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const segments = segmentContent(rawContent);
-  const diagramAssets = readyAssets.filter((a) => a.type === "diagram" || a.type === "svg");
-  const imageAssets = readyAssets.filter((a) => a.type === "image");
-  let dIdx = 0, iIdx = 0;
-  const positionedParts: string[] = [];
-
-  for (const seg of segments) {
-    if (seg.kind === "text") {
-      positionedParts.push(seg.content);
-    } else if (seg.kind === "diagram" && dIdx < diagramAssets.length) {
-      positionedParts.push(`\n\n[DIAGRAM:${diagramAssets[dIdx++].id}]\n\n`);
-    } else if (seg.kind === "image" && iIdx < imageAssets.length) {
-      positionedParts.push(`\n\n[IMAGE:${imageAssets[iIdx++].id}]\n\n`);
-    }
-  }
-
-  const markedContent = stripLeadingSectionTitle(positionedParts.join(""), sectionTitle);
-
-  await db.section.update({
-    where: { id: sectionId },
-    data: { content: markedContent },
-  });
-
-  return readyAssets.length;
+  return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images), contentWithIds };
 }

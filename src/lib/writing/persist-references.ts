@@ -7,6 +7,7 @@ interface RagReference {
   title?: string | null;
   content: string;
   score: number;
+  images?: Array<{ id: string; documentId: string; filename: string; url: string; altText: string | null; mimeType: string; fileSize: number; width: number | null; height: number | null; pageNumber: number | null }>;
 }
 
 export async function persistSectionReferences(
@@ -24,6 +25,7 @@ export async function persistSectionReferences(
         relevanceScore: ref.score,
         sourceAnchor: ref.title || null,
         content: ref.content || null,
+        images: ref.images ? JSON.stringify(ref.images) : null,
       })),
     });
   }

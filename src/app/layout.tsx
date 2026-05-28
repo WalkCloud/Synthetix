@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
-import { Toaster } from "sonner";
+import { Providers } from "@/components/providers";
 import "./globals.css";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -28,10 +28,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-      <html lang="zh-CN" className={cn(plusJakartaSans.variable, inter.variable)} suppressHydrationWarning>
-      <body className="font-sans antialiased bg-base text-foreground">
-        {children}
-        <Toaster />
+    <html lang="zh-CN" className={cn(plusJakartaSans.variable, inter.variable)} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-background text-foreground">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

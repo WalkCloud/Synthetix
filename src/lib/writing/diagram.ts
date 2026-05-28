@@ -81,10 +81,12 @@ export function parseDiagramRequests(content: string): {
 
 export type ContentSegment =
   | { kind: "text"; content: string }
-  | { kind: "diagram"; diagram: DiagramRequest }
-  | { kind: "image"; image: ImageRequest };
+  | { kind: "diagram_asset"; content: string; assetId: string; title?: string }
+  | { kind: "image_asset"; content: string; assetId: string; title?: string }
+  | { kind: "diagram_request"; content: string; marker: DiagramRequest & { markerId?: string } }
+  | { kind: "image_request"; content: string; marker: ImageRequest & { markerId?: string } };
 
-const ALL_BLOCK_RE = /\[(DIAGRAM_REQUEST|IMAGE_REQUEST):\s*([\s\S]*?)\]/g;
+const ALL_BLOCK_RE = /\[(DIAGRAM_REQUEST|IMAGE_REQUEST|DIAGRAM|IMAGE):\s*([\s\S]*?)\]/g;
 
 export function segmentContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = [];
@@ -113,19 +115,34 @@ export function segmentContent(content: string): ContentSegment[] {
       }
     }
 
-    if (blockType === "IMAGE_REQUEST") {
+    if (blockType === "DIAGRAM") {
       segments.push({
-        kind: "image",
-        image: {
+        kind: "diagram_asset",
+        content: match[0],
+        assetId: body.trim(),
+      });
+    } else if (blockType === "IMAGE") {
+      segments.push({
+        kind: "image_asset",
+        content: match[0],
+        assetId: body.trim(),
+      });
+    } else if (blockType === "IMAGE_REQUEST") {
+      segments.push({
+        kind: "image_request",
+        content: match[0],
+        marker: {
           prompt: fields.prompt || fields.description || "",
           title: fields.title || "Illustration",
           raw: match[0],
+          markerId: fields.id,
         },
       });
     } else {
       segments.push({
-        kind: "diagram",
-        diagram: {
+        kind: "diagram_request",
+        content: match[0],
+        marker: {
           type: fields.type || "unknown",
           title: fields.title || "Untitled Diagram",
           purpose: fields.purpose || "",
@@ -133,6 +150,7 @@ export function segmentContent(content: string): ContentSegment[] {
           nodes: fields.nodes,
           flows: fields.flows,
           raw: match[0],
+          markerId: fields.id,
         },
       });
     }

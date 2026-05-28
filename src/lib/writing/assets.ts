@@ -12,6 +12,8 @@ export async function persistDiagramAssets(
     return { assets: 0, cleaned };
   }
 
+  await db.sectionAsset.deleteMany({ where: { sectionId } });
+
   for (const diagram of diagrams) {
     await db.sectionAsset.create({
       data: {

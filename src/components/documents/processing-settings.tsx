@@ -7,6 +7,7 @@ interface ModelOption {
   modelName: string;
   providerName: string;
   embeddingDim?: number | null;
+  isDefaultFor?: string | null;
 }
 
 export function modelLabel(models: ModelOption[], id: string): string {
@@ -15,18 +16,22 @@ export function modelLabel(models: ModelOption[], id: string): string {
 }
 
 const SPLIT_LABELS: Record<string, string> = {
-  "structure-llm": "Structure first + LLM semantic review",
+  "structure-llm": "Structure first + LLM semantic review (Recommended)",
   "heading-only": "Heading and page boundaries only",
-  "llm-only": "LLM semantic split only",
 };
 
 const INDEX_LABELS: Record<string, string> = {
-  full: "Original + chunks + LightRAG graph",
+  full: "Original + chunks + LightRAG graph (Recommended)",
   original: "Original Markdown only",
   chunks: "Chunks only",
 };
 
-export { SPLIT_LABELS, INDEX_LABELS };
+const GRAPH_LABELS: Record<string, string> = {
+  basic: "Chunk storage only (fast)",
+  graph: "Entity extraction + knowledge graph (Recommended)",
+};
+
+export { SPLIT_LABELS, INDEX_LABELS, GRAPH_LABELS };
 export type { ModelOption };
 
 interface ProcessingSettingsProps {
@@ -55,8 +60,8 @@ export function ProcessingSettings({
   onSplitStrategyChange, onIndexTargetChange, onIndexModeChange, onAutoSplitChange,
 }: ProcessingSettingsProps) {
   return (
-    <div className="bg-base-white border border-[#E8E6E1] rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
-      <div className="flex items-center justify-between px-6 py-5 border-b border-[#E8E6E1]">
+    <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
+      <div className="flex items-center justify-between px-6 py-5 border-b border-border">
         <h3 className="font-display text-[16px] font-semibold text-foreground">Processing Settings</h3>
       </div>
       <div className="p-6">
@@ -95,7 +100,7 @@ export function ProcessingSettings({
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Max Context Usage</label>
             <div className="flex items-center gap-3">
               <input type="range" min="10" max="100" value={contextUsage}
-                className="flex-1 h-2 bg-[#F4F2EF] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
+                className="flex-1 h-2 bg-muted rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
                 onChange={(e) => onContextUsageChange(Number(e.target.value))} />
               <span className="text-[14px] font-semibold text-primary min-w-[36px] text-right">{contextUsage}%</span>
             </div>
@@ -108,9 +113,8 @@ export function ProcessingSettings({
                 <SelectValue>{SPLIT_LABELS[splitStrategy] ?? splitStrategy}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="structure-llm">Structure first + LLM semantic review</SelectItem>
-                <SelectItem value="heading-only">Heading and page boundaries only</SelectItem>
-                <SelectItem value="llm-only">LLM semantic split only</SelectItem>
+                <SelectItem value="structure-llm">{SPLIT_LABELS["structure-llm"]}</SelectItem>
+                <SelectItem value="heading-only">{SPLIT_LABELS["heading-only"]}</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-[12px] text-muted-foreground mt-1">Uses headings, pages, tables, and then domain/topic correlation.</p>
@@ -122,9 +126,9 @@ export function ProcessingSettings({
                 <SelectValue>{INDEX_LABELS[indexTarget] ?? indexTarget}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="full">Original + chunks + LightRAG graph</SelectItem>
-                <SelectItem value="original">Original Markdown only</SelectItem>
-                <SelectItem value="chunks">Chunks only</SelectItem>
+                <SelectItem value="full">{INDEX_LABELS.full}</SelectItem>
+                <SelectItem value="original">{INDEX_LABELS.original}</SelectItem>
+                <SelectItem value="chunks">{INDEX_LABELS.chunks}</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-[12px] text-muted-foreground mt-1">Stores provenance for source file, page, heading path, block, and image assets.</p>
@@ -133,12 +137,14 @@ export function ProcessingSettings({
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Knowledge Graph</label>
             {(() => {
               const selectedEmbed = embedModels.find(m => m.id === embedModel);
-              const probed = (selectedEmbed?.embeddingDim ?? 0) > 0;
-              if (!selectedEmbed || !embedModel) {
+              const dim = selectedEmbed?.embeddingDim ?? 0;
+              const probed = dim > 0;
+              const lightragCompatible = dim >= 1536;
+                if (!selectedEmbed || !embedModel) {
                 return (
                   <Select value="basic" onValueChange={() => {}}>
                     <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
-                      <SelectValue>Chunk storage only (fast)</SelectValue>
+                      <SelectValue>{GRAPH_LABELS.basic}</SelectValue>
                     </SelectTrigger>
                   </Select>
                 );
@@ -147,11 +153,13 @@ export function ProcessingSettings({
                 <>
                   <Select value={indexMode} onValueChange={(v) => onIndexModeChange(v as "basic" | "graph")}>
                     <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                      <SelectValue>{indexMode === "graph" ? "Entity extraction + knowledge graph" : "Chunk storage only (fast)"}</SelectValue>
+                      <SelectValue>{GRAPH_LABELS[indexMode]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="basic">Chunk storage only (fast)</SelectItem>
-                      <SelectItem value="graph">Entity extraction + knowledge graph (slower, richer)</SelectItem>
+                      <SelectItem value="basic">{GRAPH_LABELS.basic}</SelectItem>
+                      <SelectItem value="graph" disabled={!probed || !lightragCompatible}>
+                        {GRAPH_LABELS.graph}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {!probed && (
@@ -159,7 +167,12 @@ export function ProcessingSettings({
                       Embedding dimension not verified. Test Connection in Model Management first.
                     </p>
                   )}
-                  {probed && (
+                  {probed && !lightragCompatible && (
+                    <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
+                      Current model dimension ({dim}) is below the 1536 minimum required for knowledge graph extraction. Use a higher-dimension embedding model.
+                    </p>
+                  )}
+                  {probed && lightragCompatible && (
                     <p className="text-[12px] text-muted-foreground mt-1">Graph mode extracts entities and relations for enhanced retrieval and topology.</p>
                   )}
                 </>
@@ -174,7 +187,7 @@ export function ProcessingSettings({
               </div>
               <label className="relative w-11 h-6 cursor-pointer">
                 <input type="checkbox" checked={autoSplit} onChange={(e) => onAutoSplitChange(e.target.checked)} className="sr-only peer"/>
-                <span className="absolute inset-0 bg-[#E8E6E1] rounded-full transition-all duration-200 peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:bg-white after:rounded-full after:transition-transform after:duration-200 peer-checked:after:translate-x-5"/>
+                <span className="absolute inset-0 bg-muted rounded-full transition-all duration-200 peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:bg-card after:rounded-full after:transition-transform after:duration-200 peer-checked:after:translate-x-5"/>
               </label>
             </div>
           </div>

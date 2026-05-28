@@ -54,17 +54,17 @@ function generationColor(
   if (total > 0 && completed < total) return "text-orange-600";
   if (total > 0 && completed >= total) return "text-green-600";
   if (task?.status === "failed") return "text-red-600";
-  if (task?.status === "cancelled") return "text-slate-500";
-  return "text-slate-400";
+  if (task?.status === "cancelled") return "text-muted-foreground";
+  return "text-muted-foreground";
 }
 
 function taskColor(task?: DraftGenerationTask) {
-  if (!task) return "text-slate-400";
+  if (!task) return "text-muted-foreground";
   if (task.status === "pending" || task.status === "running") return "text-primary-600";
   if (task.status === "completed") return "text-green-600";
   if (task.status === "failed") return "text-red-600";
-  if (task.status === "cancelled") return "text-slate-500";
-  return "text-slate-500";
+  if (task.status === "cancelled") return "text-muted-foreground";
+  return "text-muted-foreground";
 }
 
 export default function WritingListPage() {
@@ -146,8 +146,8 @@ export default function WritingListPage() {
       <div className="p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold mb-1 text-slate-800">Your Drafts</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-xl font-bold mb-1 text-foreground">Your Drafts</h2>
+            <p className="text-sm text-muted-foreground">
               {total} draft{total !== 1 ? "s" : ""} — continue writing or start a new draft from brainstorm.
             </p>
           </div>
@@ -166,9 +166,9 @@ export default function WritingListPage() {
         {loading ? (
           <LoadingState />
         ) : drafts.length === 0 ? (
-          <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl shadow-soft">
-            <p className="text-lg font-semibold text-slate-700 mb-1">No drafts yet</p>
-            <p className="text-sm text-slate-500 mb-5">
+          <div className="p-12 text-center bg-card border border-border rounded-2xl shadow-soft">
+            <p className="text-lg font-semibold text-foreground/75 mb-1">No drafts yet</p>
+            <p className="text-sm text-muted-foreground mb-5">
               Start by brainstorming an outline, then confirm it to create a draft.
             </p>
             <Link
@@ -179,26 +179,26 @@ export default function WritingListPage() {
             </Link>
           </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-soft">
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Title
                   </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Status
                   </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Sections
                   </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Generation
                   </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Last Updated
                   </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-slate-500 px-5 py-4">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
                     Actions
                   </th>
                 </tr>
@@ -213,7 +213,7 @@ export default function WritingListPage() {
                   const isTaskActive = activeDraftIds.has(draft.id);
 
                   return (
-                    <tr key={draft.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                    <tr key={draft.id} className="border-b border-border last:border-0 hover:bg-secondary/70 transition-colors">
                       <td className="px-5 py-4">
                         <button
                           onClick={() => router.push(`/writing/${draft.id}`)}
@@ -231,9 +231,9 @@ export default function WritingListPage() {
                           {statusLabels[draft.status] || draft.status}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-sm font-medium text-slate-600">
+                      <td className="px-5 py-4 text-sm font-medium text-muted-foreground">
                         <div>{completed}/{totalSections} done</div>
-                        <div className="mt-1 h-1.5 max-w-[180px] overflow-hidden rounded-full bg-slate-100">
+                        <div className="mt-1 h-1.5 max-w-[180px] overflow-hidden rounded-full bg-secondary">
                           <div
                             className="h-full rounded-full bg-primary-600 transition-all duration-500"
                             style={{
@@ -247,7 +247,7 @@ export default function WritingListPage() {
                           {generationLabel(task, completed, totalSections)}
                           {isTaskActive ? ` · ${task?.progress ?? 0}%` : ""}
                         </div>
-                        <div className="mt-1 max-w-[240px] truncate text-xs text-slate-500">
+                        <div className="mt-1 max-w-[240px] truncate text-xs text-muted-foreground">
                           {task?.status === "failed" && task.error
                             ? task.error
                             : taskResult.currentSectionTitle
@@ -257,14 +257,14 @@ export default function WritingListPage() {
                                 : "Open the draft to review generated sections"}
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-500">
+                      <td className="px-5 py-4 text-sm text-muted-foreground">
                         {new Date(draft.updatedAt).toLocaleDateString()}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => router.push(`/writing/${draft.id}`)}
-                            className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                            className="text-sm font-medium text-foreground/75 hover:text-foreground hover:bg-secondary px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                           >
                             View
                           </button>

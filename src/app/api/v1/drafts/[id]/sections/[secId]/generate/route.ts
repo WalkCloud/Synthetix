@@ -5,7 +5,7 @@ import { generateSectionStream } from "@/lib/writing/generator";
 import { auditSection } from "@/lib/writing/auditor";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { persistSectionReferences } from "@/lib/writing/persist-references";
-import { createAssetRequests, generateAndPlaceAssetMarkers } from "@/lib/writing/asset-pipeline";
+import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
@@ -74,28 +74,22 @@ export async function POST(
         }
 
         const cleanContent = stripLeadingSectionTitle(fullContent, section.title);
-        const { diagrams, images } = await createAssetRequests(draftId, sectionId, fullContent);
+        const { diagrams, images, contentWithIds } = await createAssetRequests(draftId, sectionId, fullContent);
+
+        const finalContent = stripLeadingSectionTitle(contentWithIds, section.title);
 
         await db.section.update({
           where: { id: sectionId },
           data: {
-            content: cleanContent,
-            wordCount: cleanContent.split(/\s+/).filter(Boolean).length,
+            content: finalContent,
+            wordCount: finalContent.split(/\s+/).filter(Boolean).length,
             status: "reviewing",
           },
         });
 
-        let assetCount = 0;
-        if (diagrams.length > 0 || images.length > 0) {
-          try {
-            assetCount = await generateAndPlaceAssetMarkers(draftId, sectionId, section.title, fullContent);
-          } catch (genErr) {
-            console.error(`[generate] asset generation failed:`, genErr);
-          }
-        }
-
-        if (assetCount > 0) {
-          controller.enqueue(encoder.encode(sseEvent("assets", { count: assetCount })));
+        const pendingCount = diagrams.length + images.length;
+        if (pendingCount > 0) {
+          controller.enqueue(encoder.encode(sseEvent("assets", { count: pendingCount, pending: true })));
         }
 
         await recordTokenUsage({

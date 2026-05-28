@@ -196,7 +196,7 @@ export async function splitAndPersistChunks(
       (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
       8,
     );
-  } else if (options.indexTarget !== "chunks") {
+  } else {
     await db.documentChunk.deleteMany({ where: { documentId: docId } });
 
     const title = markdown.match(/^#\s+(.+)$/m)?.[1] || ctx.doc.originalName;
@@ -316,7 +316,8 @@ export async function indexDocument(ctx: ProcessingContext): Promise<void> {
 
   let indexMode = options.indexMode || "basic";
   if (indexMode === "graph" && !isLightRAGCompatible(embedModel)) {
-    console.warn(`Embedding model ${embedModel.modelId} (dim=${embedModel.embeddingDim}) not verified for LightRAG graph mode, will attempt graph extraction`);
+    console.warn(`Embedding model ${embedModel.modelId} (dim=${embedModel.embeddingDim}) not compatible with LightRAG graph mode (requires >= 1536), downgrading to basic`);
+    indexMode = "basic";
   }
 
   const ragChunksDir = outputDir;
@@ -391,6 +392,54 @@ export function indexWithLightRAG(
   return spawnPythonJson(RAG_INDEX_SCRIPT, args, {
     timeout: indexMode === "graph" ? 600_000 : 120_000,
   });
+}
+
+export async function indexDocumentImages(
+  ctx: ProcessingContext,
+  _storage: StorageAdapter,
+): Promise<void> {
+  const imagesDir = path.join(ctx.outputDir, "images");
+  if (!fs.existsSync(imagesDir)) return;
+
+  const files = fs.readdirSync(imagesDir).filter((f) => !f.startsWith("."));
+  if (files.length === 0) return;
+
+  const markdownPath = path.join(ctx.outputDir, "full.md");
+  const markdown = fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, "utf-8") : "";
+
+  const altMap = new Map<string, string>();
+  const altRegex = /!\[([^\]]*)\]\(images\/([^)]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = altRegex.exec(markdown)) !== null) {
+    altMap.set(match[2], match[1]);
+  }
+
+  for (const filename of files) {
+    const filePath = path.join(imagesDir, filename);
+    const stat = fs.statSync(filePath);
+
+    await db.documentImage.upsert({
+      where: {
+        documentId_filename: { documentId: ctx.docId, filename },
+      },
+      create: {
+        documentId: ctx.docId,
+        filename,
+        altText: altMap.get(filename) || null,
+        mimeType: `image/${path.extname(filename).replace(".", "")}`,
+        fileSize: stat.size,
+        width: null,
+        height: null,
+        pageNumber: null,
+        hash: null,
+      },
+      update: {
+        altText: altMap.get(filename) || null,
+        mimeType: `image/${path.extname(filename).replace(".", "")}`,
+        fileSize: stat.size,
+      },
+    });
+  }
 }
 
 export function splitByLinesInternal(

@@ -68,7 +68,6 @@ export function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -104,7 +103,7 @@ export function LoginForm() {
         initialized === false ? "/api/v1/auth/setup" : "/api/v1/auth/login";
       const body =
         initialized === false
-          ? { username, password, displayName }
+          ? { username, password }
           : { username, password };
       const res = await fetch(endpoint, {
         method: "POST",
@@ -211,9 +210,9 @@ export function LoginForm() {
       </div>
 
       {/* Right form panel */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-12 bg-gradient-to-b from-white to-[#FAFAF8]">
+      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-12 bg-gradient-to-b from-background to-card dark:from-[#0B0F19] dark:to-[#111827]">
         <div className="w-full max-w-[400px]">
-          <h2 className="text-2xl font-extrabold font-display mb-2 tracking-tight animate-fade-in-up-2">
+          <h2 className="text-2xl font-extrabold font-display mb-2 tracking-tight text-foreground animate-fade-in-up-2">
             {initialized === null
               ? "Checking workspace"
               : initialized === false
@@ -263,41 +262,6 @@ export function LoginForm() {
                 />
               </div>
             </div>
-
-            {initialized === false && (
-              <div className="animate-fade-in-up-5">
-                <label
-                  className="block text-[13px] font-medium text-muted-foreground mb-1.5"
-                  htmlFor="displayName"
-                >
-                  Display Name
-                </label>
-                <div className="relative">
-                  <svg
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-muted-foreground pointer-events-none"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                  <input
-                    id="displayName"
-                    type="text"
-                    className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    placeholder="Your name"
-                    autoComplete="name"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Password field */}
             <div className="animate-fade-in-up-5">

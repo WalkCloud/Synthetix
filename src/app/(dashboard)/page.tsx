@@ -125,7 +125,7 @@ export default function DashboardPage() {
           <div className="absolute top-0 right-0 w-64 h-64 bg-primary-400/10 blur-[80px] rounded-full pointer-events-none"></div>
           
           <div className="relative z-10 max-w-md">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white border border-border rounded-full text-xs font-semibold text-primary mb-4 shadow-sm">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-card border border-border rounded-full text-xs font-semibold text-primary mb-4 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
               AI Workspace Active
             </div>
@@ -161,8 +161,8 @@ export default function DashboardPage() {
             href="/documents"
             label="Upload Docs"
             desc="Import & convert files"
-            iconBg="bg-slate-50 group-hover:bg-primary-50"
-            iconColor="text-slate-600 group-hover:text-primary"
+            iconBg="bg-muted/50 group-hover:bg-primary-50"
+            iconColor="text-muted-foreground group-hover:text-primary"
             hoverBorderClass="hover:border-primary-200"
             animationClass="animate-fade-in-up-2"
           >
@@ -176,8 +176,8 @@ export default function DashboardPage() {
             href="/brainstorm"
             label="Brainstorm"
             desc="Organize ideas with AI"
-            iconBg="bg-slate-50 group-hover:bg-blue-50"
-            iconColor="text-slate-600 group-hover:text-blue-600"
+            iconBg="bg-muted/50 group-hover:bg-blue-50"
+            iconColor="text-muted-foreground group-hover:text-blue-600"
             hoverBorderClass="hover:border-blue-200"
             animationClass="animate-fade-in-up-3"
           >
@@ -191,8 +191,8 @@ export default function DashboardPage() {
             href="/writing"
             label="New Draft"
             desc="Start writing a document"
-            iconBg="bg-slate-50 group-hover:bg-green-50"
-            iconColor="text-slate-600 group-hover:text-green-600"
+            iconBg="bg-muted/50 group-hover:bg-green-50"
+            iconColor="text-muted-foreground group-hover:text-green-600"
             hoverBorderClass="hover:border-green-200"
             animationClass="animate-fade-in-up-4"
           >
@@ -207,8 +207,8 @@ export default function DashboardPage() {
             href="/library"
             label="Browse Library"
             desc="Search your knowledge"
-            iconBg="bg-slate-50 group-hover:bg-orange-50"
-            iconColor="text-slate-600 group-hover:text-orange-600"
+            iconBg="bg-muted/50 group-hover:bg-orange-50"
+            iconColor="text-muted-foreground group-hover:text-orange-600"
             hoverBorderClass="hover:border-orange-200"
             animationClass="animate-fade-in-up-5"
           >
@@ -229,7 +229,7 @@ export default function DashboardPage() {
                 View all &rarr;
               </Link>
             </div>
-            <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
+            <div className="bg-card border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
                 <LoadingState />
               ) : recentDocs.length === 0 ? (
@@ -240,12 +240,12 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={doc.id}
-                      className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer group ${
-                        i < recentDocs.length - 1 ? "border-b border-slate-100" : ""
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 transition-colors cursor-pointer group ${
+                        i < recentDocs.length - 1 ? "border-b border-border" : ""
                       }`}
                       onClick={() => router.push(`/library/${doc.id}`)}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center group-hover:bg-primary-50 group-hover:text-primary transition-colors flex-shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-secondary text-muted-foreground flex items-center justify-center group-hover:bg-primary-50 group-hover:text-primary transition-colors flex-shrink-0">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                           <polyline points="14 2 14 8 20 8" />
@@ -274,7 +274,7 @@ export default function DashboardPage() {
                 View all &rarr;
               </Link>
             </div>
-            <div className="bg-white border border-border rounded-2xl shadow-soft overflow-hidden">
+            <div className="bg-card border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
                 <LoadingState />
               ) : recentDrafts.length === 0 ? (
@@ -285,12 +285,12 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={draft.id}
-                      className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer group ${
-                        i < recentDrafts.length - 1 ? "border-b border-slate-100" : ""
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-secondary/70 transition-colors cursor-pointer group ${
+                        i < recentDrafts.length - 1 ? "border-b border-border" : ""
                       }`}
                       onClick={() => router.push(`/writing/${draft.id}`)}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
                         <div
                           className={`w-2 h-2 rounded-full ${
                             draft.status === "drafting"
@@ -312,7 +312,7 @@ export default function DashboardPage() {
                           {progress.completed}/{progress.total} sections · {formatTimeAgo(draft.updatedAt)}
                         </p>
                         {draft.status === "drafting" && progress.total > 0 && (
-                          <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                          <div className="w-full h-1 bg-secondary rounded-full overflow-hidden mt-1.5">
                             <div
                               className="h-full bg-primary rounded-full transition-all duration-300"
                               style={{ width: `${(progress.completed / progress.total) * 100}%` }}
@@ -372,7 +372,7 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className={`group bg-white p-5 rounded-2xl border border-border shadow-soft hover:shadow-hover hover:-translate-y-1 transition-all flex items-start gap-4 ${hoverBorderClass} ${animationClass}`}
+      className={`group bg-card p-5 rounded-2xl border border-border shadow-soft hover:shadow-hover hover:-translate-y-1 transition-all flex items-start gap-4 ${hoverBorderClass} ${animationClass}`}
     >
       <div className={`w-12 h-12 rounded-xl ${iconBg} ${iconColor} flex items-center justify-center transition-colors`}>
         {children}

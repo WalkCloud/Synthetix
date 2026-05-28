@@ -41,10 +41,10 @@ export function ConstraintsBar({
   onSaveWordLimit,
 }: ConstraintsBarProps) {
   return (
-    <div className="mb-5 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+    <div className="mb-5 p-4 bg-card border border-border rounded-2xl shadow-sm">
       <div className="flex gap-2.5 flex-wrap items-end mb-3">
         <div className="min-w-[160px] flex-1">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
             Reference Section
           </label>
           <Select>
@@ -65,12 +65,12 @@ export function ConstraintsBar({
         </div>
 
         <div className="w-[120px]">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
             Word Limit
           </label>
           <input
             type="number"
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+            className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             value={wordLimit}
             placeholder={estimatedWords ? `Recommended ${estimatedWords}` : "500"}
             onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
@@ -79,7 +79,7 @@ export function ConstraintsBar({
         </div>
 
         <div className="min-w-[150px] flex-1">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
             Generation Mode
           </label>
           <Select value={generationMode} onValueChange={(v) => onGenerationModeChange(v as GenerationMode)}>
@@ -96,11 +96,11 @@ export function ConstraintsBar({
         {/* Model selection for single mode */}
         {generationMode === "single" && (
           <div className="min-w-[150px] flex-1">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
               Model
             </label>
             <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
-              <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
+              <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
                 <SelectValue placeholder="Auto Default">
                   {selectedModelA && selectedModelA !== "auto"
                     ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
@@ -119,11 +119,11 @@ export function ConstraintsBar({
         {generationMode === "compare" && (
           <>
             <div className="min-w-[150px] flex-1">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 Model A
               </label>
               <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
-                <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
+                <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
                   <SelectValue placeholder="Auto Default">
                     {selectedModelA && selectedModelA !== "auto"
                       ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
@@ -137,11 +137,11 @@ export function ConstraintsBar({
               </Select>
             </div>
             <div className="min-w-[150px] flex-1">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 Model B
               </label>
               <Select value={selectedModelB || "auto"} onValueChange={(v) => { if (v) onModelBChange(v); }}>
-                <SelectTrigger className="w-full text-[13px] bg-slate-50 focus:bg-white transition-all">
+                <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
                   <SelectValue placeholder="Auto Default">
                     {selectedModelB && selectedModelB !== "auto"
                       ? models.find((m) => m.id === selectedModelB)?.modelName || selectedModelB
@@ -160,12 +160,12 @@ export function ConstraintsBar({
 
       <div className="flex gap-2.5 items-end">
         <div className="flex-1">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
             Additional Requirements
           </label>
           <input
             type="text"
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
+            className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             placeholder={estimatedWords
               ? `Recommended ${estimatedWords} words, e.g., "use bullet points, include examples"...`
               : "e.g., Include sequence diagrams..."

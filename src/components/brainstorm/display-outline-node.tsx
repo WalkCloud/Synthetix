@@ -11,14 +11,14 @@ function DisplayOutlineNode({ section, path, depth }: DisplayOutlineNodeProps) {
 
   if (isTop) {
     return (
-      <li className="rounded-[12px] border bg-white shadow-sm">
+      <li className="rounded-[12px] border bg-card shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2.5">
           <span className="min-w-5 shrink-0 text-sm font-bold text-primary">{section.num}.</span>
           <span className="min-w-0 flex-1 text-sm font-semibold leading-5 text-foreground">{section.title}</span>
           <span className="shrink-0 text-[11px] text-muted-foreground">~{section.estimatedWords || 500}w</span>
         </div>
         {section.children && section.children.length > 0 && (
-          <ul className="border-t bg-slate-50/50 px-3 py-2">
+          <ul className="border-t bg-muted/40 px-3 py-2">
             {section.children.map((child, ci) => (
               <DisplayOutlineNode key={ci} section={child} path={[...path, ci]} depth={depth + 1} />
             ))}
