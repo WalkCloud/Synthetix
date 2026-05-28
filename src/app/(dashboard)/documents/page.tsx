@@ -9,6 +9,7 @@ import { UploadZone } from "@/components/documents/upload-zone";
 import { UploadQueue } from "@/components/documents/upload-queue-panel";
 import type { UploadItem } from "@/components/documents/upload-queue-panel";
 import { ProcessingSettings, modelLabel, type ModelOption } from "@/components/documents/processing-settings";
+import { SUPPORTED_FORMATS } from "@/types/documents";
 
 export default function DocumentsPage() {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
@@ -23,6 +24,14 @@ export default function DocumentsPage() {
   const [autoSplit, setAutoSplit] = useState(true);
   const [processing, setProcessing] = useState(false);
 
+  const handleEmbedModelChange = useCallback((id: string) => {
+    setEmbedModel(id);
+    const m = embedModels.find((x) => x.id === id);
+    if (m && (m.embeddingDim ?? 0) < 1536) {
+      setIndexMode("basic");
+    }
+  }, [embedModels]);
+
   useEffect(() => {
     fetch("/api/v1/models/providers")
       .then((r) => r.json())
@@ -33,7 +42,7 @@ export default function DocumentsPage() {
         for (const p of data.data) {
           for (const m of p.models) {
             const caps = parseCapabilities(m.capabilities);
-            const entry: ModelOption = { id: m.id, modelName: m.modelName, providerName: p.name, embeddingDim: m.embeddingDim };
+            const entry: ModelOption = { id: m.id, modelName: m.modelName, providerName: p.name, embeddingDim: m.embeddingDim, isDefaultFor: m.isDefaultFor };
             if (caps.some((c) => c === "embedding" || c === "embed")) {
               embed.push(entry);
             } else if (caps.includes("chat")) {
@@ -43,14 +52,23 @@ export default function DocumentsPage() {
         }
         setLlmModels(llm);
         setEmbedModels(embed);
-        if (llm.length > 0) setLlmModel(llm[0].id);
-        if (embed.length > 0) setEmbedModel(embed[0].id);
+        const defaultEmbed = embed.find((m) => m.isDefaultFor === "embedding");
+        if (defaultEmbed) setEmbedModel(defaultEmbed.id);
+        else if (embed.length > 0) setEmbedModel(embed[0].id);
+        const defaultLlm = llm.find((m) => m.isDefaultFor === "llm");
+        if (defaultLlm) setLlmModel(defaultLlm.id);
+        else if (llm.length > 0) setLlmModel(llm[0].id);
       })
       .catch(() => {});
   }, []);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const arr = Array.from(files);
+    const supportedExts = new Set(SUPPORTED_FORMATS);
+    const arr = Array.from(files).filter((f) => {
+      const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
+      return supportedExts.has(ext as typeof SUPPORTED_FORMATS[number]);
+    });
+    if (arr.length === 0) return;
     for (const file of arr) {
       const id = crypto.randomUUID();
       const item: UploadItem = { id, name: file.name, size: file.size, status: "converting", progress: 50 };
@@ -140,7 +158,7 @@ export default function DocumentsPage() {
           llmModel={llmModel} embedModel={embedModel}
           contextUsage={contextUsage} splitStrategy={splitStrategy}
           indexTarget={indexTarget} indexMode={indexMode} autoSplit={autoSplit}
-          onLlmModelChange={setLlmModel} onEmbedModelChange={setEmbedModel}
+          onLlmModelChange={setLlmModel} onEmbedModelChange={handleEmbedModelChange}
           onContextUsageChange={setContextUsage} onSplitStrategyChange={setSplitStrategy}
           onIndexTargetChange={setIndexTarget} onIndexModeChange={setIndexMode}
           onAutoSplitChange={setAutoSplit}

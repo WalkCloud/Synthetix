@@ -14,8 +14,8 @@ export function CardSelector({ selected, onSelect, icon, title, description }: C
       onClick={onSelect}
       className={`relative border-2 rounded-[16px] p-5 text-left transition-colors cursor-pointer ${
         selected
-          ? "border-primary bg-primary-50"
-          : "border-[#F4F2EF] hover:border-primary-light hover:bg-primary-50"
+          ? "border-primary bg-primary-50 dark:bg-primary/10"
+          : "border-border hover:border-primary-light hover:bg-primary-50 dark:hover:bg-primary/8"
       }`}
     >
       <div

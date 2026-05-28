@@ -220,7 +220,33 @@ export async function semanticSearch(
     }));
   }
 
-  return rrfFuse(semanticResults, keywordResults, limit);
+  const results = rrfFuse(semanticResults, keywordResults, limit);
+
+  const matchedDocIds = [...new Set(results.map((r) => r.documentId))];
+  if (matchedDocIds.length > 0) {
+    const allImages = await db.documentImage.findMany({
+      where: { documentId: { in: matchedDocIds } },
+    });
+    for (const result of results) {
+      const docImages = allImages.filter((img) => img.documentId === result.documentId);
+      if (docImages.length > 0) {
+        result.images = docImages.map((img) => ({
+          id: img.id,
+          documentId: img.documentId,
+          filename: img.filename,
+          url: `/api/v1/documents/${img.documentId}/images/${img.filename}`,
+          altText: img.altText,
+          mimeType: img.mimeType,
+          fileSize: img.fileSize,
+          width: img.width,
+          height: img.height,
+          pageNumber: img.pageNumber,
+        }));
+      }
+    }
+  }
+
+  return results;
 }
 
 function rrfFuse(

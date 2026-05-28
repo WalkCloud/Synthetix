@@ -31,7 +31,7 @@ export function UploadProgress({ items }: { items: UploadItem[] }) {
   return (
     <div className="mt-6 space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="flex items-center gap-4 p-4 bg-white border rounded-[14px]">
+        <div key={i} className="flex items-center gap-4 p-4 bg-card border rounded-[14px]">
           <div className="w-9 h-9 rounded-[12px] bg-primary-100 text-primary flex items-center justify-center shrink-0">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -46,17 +46,17 @@ export function UploadProgress({ items }: { items: UploadItem[] }) {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex-1 h-1.5 bg-[#F4F2EF] rounded-full overflow-hidden">
+              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
-                    item.status === "failed" ? "bg-[#DC2626]" : "bg-primary"
+                    item.status === "failed" ? "bg-red-500" : "bg-primary"
                   }`}
                   style={{ width: `${item.progress}%` }}
                 />
               </div>
               <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(item.size)}</span>
             </div>
-            {item.error && <p className="text-xs text-[#DC2626] mt-1">{item.error}</p>}
+            {item.error && <p className="text-xs text-red-500 mt-1">{item.error}</p>}
           </div>
         </div>
       ))}

@@ -49,6 +49,9 @@ export async function DELETE(
   }
 
   await storage.deleteDocument(id, user.id);
+  await db.documentChunk.deleteMany({ where: { documentId: id } }).catch(() => {});
+  await db.documentTag.deleteMany({ where: { documentId: id } }).catch(() => {});
+  await db.documentImage.deleteMany({ where: { documentId: id } }).catch(() => {});
   await db.document.delete({ where: { id } });
 
   deleteLightRagData(id, user.id).catch((err) => { console.warn("LightRAG cleanup failed:", err); });

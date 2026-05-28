@@ -22,6 +22,14 @@ import os
 import re
 import argparse
 import asyncio
+import glob as glob_mod
+
+
+def fix_empty_json_files(working_dir: str) -> None:
+    for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        if os.path.getsize(fp) == 0:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write("{}")
 
 
 def load_storage_config():
@@ -205,6 +213,7 @@ async def query_rag(
         **storage_kwargs,
     )
 
+    fix_empty_json_files(working_dir)
     await rag.initialize_storages()
 
     # Resolve mode aliases

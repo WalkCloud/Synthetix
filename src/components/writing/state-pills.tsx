@@ -43,8 +43,8 @@ export function StatePills({ status }: StatePillsProps) {
               isDone
                 ? "bg-emerald-100 text-emerald-600"
                 : isActive
-                  ? "bg-primary-50 text-primary-700"
-                  : "bg-slate-100 text-slate-500"
+                    ? "bg-primary-50 text-primary-700"
+                    : "bg-secondary text-muted-foreground"
             }`}
           >
             {state.label}

@@ -128,23 +128,23 @@ export function ModelListTab({
             );
           })}
           {models.length === 0 && (
-            <div className="p-8 text-center text-muted-foreground text-sm border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+            <div className="p-8 text-center text-muted-foreground text-sm border-2 border-dashed border-border rounded-2xl bg-muted/50">
               {info.empty}
             </div>
           )}
           <button
             onClick={onAdd}
-            className="w-full bg-slate-50 border border-dashed border-slate-300 rounded-2xl px-6 py-5 flex items-center gap-4 hover:border-primary-400 hover:bg-primary-50 transition-all cursor-pointer group shadow-soft"
+            className="w-full bg-muted/50 border border-dashed border-border rounded-2xl px-6 py-5 flex items-center gap-4 hover:border-primary-400 hover:bg-primary-50 transition-all cursor-pointer group shadow-soft"
             style={{ animation: "fadeInUp 0.4s ease both 0.2s" }}
           >
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-white shadow-sm text-slate-400 group-hover:text-primary-600 transition-colors">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-card shadow-sm text-muted-foreground group-hover:text-primary-600 transition-colors">
               <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </div>
             <div className="text-left">
-              <div className="text-base font-semibold text-slate-700 group-hover:text-primary-700 transition-colors">{info.addTitle}</div>
-              <div className="text-sm text-slate-500">{info.addSubtitle}</div>
+              <div className="text-base font-semibold text-foreground/75 group-hover:text-primary-700 transition-colors">{info.addTitle}</div>
+              <div className="text-sm text-muted-foreground">{info.addSubtitle}</div>
             </div>
           </button>
         </div>

@@ -8,6 +8,79 @@ import type {
   ArrowFlow,
   DiagramStyle,
 } from "./diagram-spec";
+import type { ComponentType } from "./diagram-spec";
+import { PRODUCT_ICONS } from "./diagram-icons";
+
+const COMPONENT_COLORS: Record<string, Record<string, { fill: string; stroke: string }>> = {
+  "flat-icon": {
+    frontend:  { fill: "rgba(8,51,68,0.4)",   stroke: "#22d3ee" },
+    backend:   { fill: "rgba(6,78,59,0.4)",   stroke: "#34d399" },
+    database:  { fill: "rgba(76,29,149,0.4)", stroke: "#a78bfa" },
+    cloud:     { fill: "rgba(120,53,15,0.3)", stroke: "#fbbf24" },
+    security:  { fill: "rgba(136,19,55,0.4)", stroke: "#fb7185" },
+    messaging: { fill: "rgba(251,146,60,0.3)",stroke: "#fb923c" },
+    external:  { fill: "rgba(30,41,59,0.5)",  stroke: "#94a3b8" },
+  },
+  "dark-terminal": {
+    frontend:  { fill: "#0f172a", stroke: "#38bdf8" },
+    backend:   { fill: "#0f172a", stroke: "#22c55e" },
+    database:  { fill: "#0f172a", stroke: "#a855f7" },
+    cloud:     { fill: "#0f172a", stroke: "#fbbf24" },
+    security:  { fill: "#0f172a", stroke: "#fb7185" },
+    messaging: { fill: "#0f172a", stroke: "#fb923c" },
+    external:  { fill: "#0f172a", stroke: "#94a3b8" },
+  },
+  blueprint: {
+    frontend:  { fill: "#0b3b5e", stroke: "#67e8f9" },
+    backend:   { fill: "#0b3b5e", stroke: "#6ee7b7" },
+    database:  { fill: "#0b3b5e", stroke: "#c4b5fd" },
+    cloud:     { fill: "#0b3b5e", stroke: "#fde68a" },
+    security:  { fill: "#0b3b5e", stroke: "#fda4af" },
+    messaging: { fill: "#0b3b5e", stroke: "#fdba74" },
+    external:  { fill: "#0b3b5e", stroke: "#cbd5e1" },
+  },
+  "notion-clean": {
+    frontend:  { fill: "#eff6ff", stroke: "#3b82f6" },
+    backend:   { fill: "#f0fdf4", stroke: "#22c55e" },
+    database:  { fill: "#faf5ff", stroke: "#a855f7" },
+    cloud:     { fill: "#fffbeb", stroke: "#f59e0b" },
+    security:  { fill: "#fff1f2", stroke: "#f43f5e" },
+    messaging: { fill: "#fff7ed", stroke: "#f97316" },
+    external:  { fill: "#f8fafc", stroke: "#64748b" },
+  },
+  glassmorphism: {
+    frontend:  { fill: "rgba(59,130,246,0.12)", stroke: "#60a5fa" },
+    backend:   { fill: "rgba(34,197,94,0.12)",  stroke: "#4ade80" },
+    database:  { fill: "rgba(168,85,247,0.12)", stroke: "#c084fc" },
+    cloud:     { fill: "rgba(245,158,11,0.12)", stroke: "#fbbf24" },
+    security:  { fill: "rgba(244,63,94,0.12)",  stroke: "#fb7185" },
+    messaging: { fill: "rgba(249,115,22,0.12)", stroke: "#fb923c" },
+    external:  { fill: "rgba(100,116,139,0.12)",stroke: "#94a3b8" },
+  },
+  claude: {
+    frontend:  { fill: "#faf5f0", stroke: "#d97757" },
+    backend:   { fill: "#f0faf5", stroke: "#6b9f78" },
+    database:  { fill: "#f5f0fa", stroke: "#8b7ba8" },
+    cloud:     { fill: "#faf8f0", stroke: "#c4a84f" },
+    security:  { fill: "#faf0f0", stroke: "#c47070" },
+    messaging: { fill: "#faf5f0", stroke: "#c49f6b" },
+    external:  { fill: "#f5f5f5", stroke: "#8b8b8b" },
+  },
+  openai: {
+    frontend:  { fill: "#f0f7f0", stroke: "#10a37f" },
+    backend:   { fill: "#f0f0f7", stroke: "#6b7fa8" },
+    database:  { fill: "#f7f0f7", stroke: "#a87bb0" },
+    cloud:     { fill: "#f7f7f0", stroke: "#c4a84f" },
+    security:  { fill: "#f7f0f0", stroke: "#c47070" },
+    messaging: { fill: "#f7f5f0", stroke: "#c49f6b" },
+    external:  { fill: "#f5f5f5", stroke: "#8b8b8b" },
+  },
+};
+
+function isTransparent(fill: string): boolean {
+  const match = fill.match(/rgba\([^)]+,([\d.]+)\)/);
+  return !!match && parseFloat(match[1]) < 1;
+}
 
 const CJK_FONT = "'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Microsoft JhengHei', 'SimHei', sans-serif";
 const MONO_FONT = "'SF Mono', 'Fira Code', Menlo, 'Courier New', monospace";
@@ -762,13 +835,19 @@ function renderNodeShape(
   h: number,
   cx: number,
   cy: number,
-  s: StyleProfile
+  s: StyleProfile,
+  overrideFill?: string,
+  overrideStroke?: string
 ): string {
   const r = s.nodeRadius;
-  const fill = s.nodeFill;
-  const stroke = s.nodeStroke;
+  const fill = overrideFill ?? s.nodeFill;
+  const stroke = overrideStroke ?? s.nodeStroke;
   const sw = s.nodeStrokeWidth;
   const filter = s.nodeShadow ? ` filter="${s.nodeShadow}"` : "";
+
+  const bgRect = isTransparent(fill)
+    ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${s.background}"/>\n    `
+    : "";
 
   switch (shape) {
     case "cylinder": {
@@ -872,18 +951,37 @@ function renderNodeShape(
       ].join("\n    ");
     }
     case "dashed_container": {
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="1" stroke-dasharray="6 3"/>`;
+      return `${bgRect}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="1" stroke-dasharray="6 3"/>`;
+    }
+    case "message_bus": {
+      return `${bgRect}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
     }
     default: {
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${filter}/>`;
+      return `${bgRect}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${filter}/>`;
     }
   }
 }
 
-function renderNode(node: DiagramNode, pos: NodeLayout, s: StyleProfile): string {
+function renderNode(node: DiagramNode, pos: NodeLayout, s: StyleProfile, styleName: DiagramStyle): string {
   const x = pos.x - pos.w / 2;
   const y = pos.y - pos.h / 2;
   const shape = node.shape || "rect";
+
+  let nodeFill = s.nodeFill;
+  let nodeStroke = s.nodeStroke;
+  if (node.componentType && COMPONENT_COLORS[styleName]?.[node.componentType]) {
+    const cc = COMPONENT_COLORS[styleName][node.componentType];
+    nodeFill = cc.fill;
+    nodeStroke = cc.stroke;
+  }
+
+  let iconSvg = "";
+  let labelOffsetX = 0;
+  if (node.icon && PRODUCT_ICONS[node.icon]) {
+    const iconDef = PRODUCT_ICONS[node.icon];
+    iconSvg = `<g transform="translate(${x + 8}, ${pos.y - 14})">${iconDef.svgElements.join("")}</g>`;
+    labelOffsetX = 16;
+  }
 
   const typeLabel = node.typeLabel
     ? `<text x="${x + 8}" y="${y + 14}" class="node-type">${escapeXml(node.typeLabel)}</text>`
@@ -891,9 +989,9 @@ function renderNode(node: DiagramNode, pos: NodeLayout, s: StyleProfile): string
 
   const mainLabelY = node.typeLabel ? pos.y + 6 : pos.y + 1;
   const mainLabel = node.sublabel
-    ? `<text x="${pos.x}" y="${mainLabelY - 5}" text-anchor="middle" class="node-title">${escapeXml(node.label)}</text>
-       <text x="${pos.x}" y="${mainLabelY + 9}" text-anchor="middle" class="node-sub">${escapeXml(node.sublabel)}</text>`
-    : `<text x="${pos.x}" y="${mainLabelY + 4}" text-anchor="middle" class="node-title">${escapeXml(node.label)}</text>`;
+    ? `<text x="${pos.x + labelOffsetX}" y="${mainLabelY - 5}" text-anchor="middle" class="node-title">${escapeXml(node.label)}</text>
+       <text x="${pos.x + labelOffsetX}" y="${mainLabelY + 9}" text-anchor="middle" class="node-sub">${escapeXml(node.sublabel)}</text>`
+    : `<text x="${pos.x + labelOffsetX}" y="${mainLabelY + 4}" text-anchor="middle" class="node-title">${escapeXml(node.label)}</text>`;
 
   let tags = "";
   if (node.tags && node.tags.length > 0) {
@@ -910,7 +1008,8 @@ function renderNode(node: DiagramNode, pos: NodeLayout, s: StyleProfile): string
   }
 
   return `  <g>
-    ${renderNodeShape(shape, x, y, pos.w, pos.h, pos.x, pos.y, s)}
+    ${renderNodeShape(shape, x, y, pos.w, pos.h, pos.x, pos.y, s, nodeFill, nodeStroke)}
+    ${iconSvg}
     ${typeLabel}
     ${mainLabel}
     ${tags}
@@ -973,10 +1072,26 @@ function renderContainerSection(
 
   const lines: string[] = [];
   const dashAttr = s.sectionDash ? ` stroke-dasharray="${s.sectionDash}"` : "";
-  lines.push(`  <rect x="${x1}" y="${y1}" width="${w}" height="${h}" rx="${rx}" fill="${s.sectionFill}" stroke="${s.sectionStroke}" stroke-width="1.4"${dashAttr}/>`);
 
-  const label = s.sectionUpper ? escapeXml(container.label.toUpperCase()) : escapeXml(container.label);
-  lines.push(`  <text x="${x1 + 16}" y="${y1 + 20}" class="section-label">${label}</text>`);
+  let cFill = s.sectionFill;
+  let cStroke = s.sectionStroke;
+  let cDashAttr = dashAttr;
+  let labelText = s.sectionUpper ? escapeXml(container.label.toUpperCase()) : escapeXml(container.label);
+
+  if (container.containerType === "security_group") {
+    cStroke = "#fb7185";
+    cDashAttr = ` stroke-dasharray="4,4"`;
+    cFill = "transparent";
+    labelText = `${escapeXml(container.label)} ${container.portLabel ? escapeXml(container.portLabel) : ""}`;
+  } else if (container.containerType === "region") {
+    cStroke = "#fbbf24";
+    cDashAttr = ` stroke-dasharray="8,4"`;
+    cFill = "rgba(251,191,36,0.05)";
+    labelText = escapeXml(container.label);
+  }
+
+  lines.push(`  <rect x="${x1}" y="${y1}" width="${w}" height="${h}" rx="${rx}" fill="${cFill}" stroke="${cStroke}" stroke-width="1.4"${cDashAttr}/>`);
+  lines.push(`  <text x="${x1 + 16}" y="${y1 + 20}" class="section-label">${labelText}</text>`);
 
   if (container.subtitle) {
     lines.push(`  <text x="${x1 + 16}" y="${y1 + 36}" class="section-sub">${escapeXml(container.subtitle)}</text>`);
@@ -1021,6 +1136,7 @@ function renderFooter(footer: string | undefined, s: StyleProfile, w: number, h:
 
 export function renderDiagramSvg(spec: DiagramSpec): string {
   const s = STYLES[spec.style] || STYLES["flat-icon"];
+  const styleName = spec.style;
   const w = 960;
 
   const { positions, containerBounds } = layoutWithContainers(
@@ -1070,7 +1186,7 @@ export function renderDiagramSvg(spec: DiagramSpec): string {
   const nodeSvg = spec.nodes
     .map((n) => {
       const p = positions.get(n.id);
-      return p ? renderNode(n, p, s) : "";
+      return p ? renderNode(n, p, s, styleName) : "";
     })
     .join("\n");
 

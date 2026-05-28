@@ -214,7 +214,7 @@ export function TopologyCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative bg-[#FAFAF8] border border-[#E8E6E1] rounded-2xl overflow-hidden select-none"
+      className="relative bg-background border border-border rounded-2xl overflow-hidden select-none"
       style={{ minHeight: 560, cursor: dragCardId.current ? "default" : rotating.current ? "grabbing" : "grab" }}
     >
       <div className="absolute inset-0 opacity-30" style={{
@@ -250,12 +250,12 @@ export function TopologyCanvas({
           return (
             <div key={it.id}
               data-card-id={it.id}
-              className="absolute bg-white rounded-xl flex items-center gap-2 px-2.5"
+              className="absolute bg-card rounded-xl flex items-center gap-2 px-2.5"
               style={{
                 left: it.x - 70, top: it.y - 26, width: 140, height: 52,
                 borderWidth: 1.5, borderStyle: "solid",
-                borderColor: sel ? it.color : "#E0DDD8",
-                backgroundColor: sel ? it.bg : "white",
+                borderColor: sel ? it.color : "var(--border)",
+                backgroundColor: sel ? it.bg : undefined,
                 boxShadow: sel ? `0 4px 16px ${it.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
                 zIndex: isDragging ? 30 : sel ? 25 : 15,
                 cursor: isDragging ? "grabbing" : "grab",
@@ -271,7 +271,7 @@ export function TopologyCanvas({
                 </svg>
               </div>
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-[10px] font-semibold leading-tight line-clamp-1 text-[#1E1B18]">{it.label}</span>
+                <span className="text-[10px] font-semibold leading-tight line-clamp-1 text-foreground">{it.label}</span>
                 <span className="text-[8px] font-medium mt-px" style={{ color: it.color }}>
                   {it.format.toUpperCase()} · {it.weight} ref{it.weight !== 1 ? "s" : ""}
                 </span>
@@ -292,7 +292,7 @@ export function TopologyCanvas({
           }}
           onClick={() => onNodeClick(draftNode.id)}
         >
-          <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center mb-1.5">
+          <div className="w-10 h-10 rounded-xl bg-foreground/10 flex items-center justify-center mb-1.5">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <polyline points="14 2 14 8 20 8" />
@@ -305,7 +305,7 @@ export function TopologyCanvas({
         </div>
       )}
 
-      <div className="absolute bottom-3 left-4 text-[10px] text-[#8C887F] select-none pointer-events-none">
+      <div className="absolute bottom-3 left-4 text-[10px] text-muted-foreground select-none pointer-events-none">
         Drag to rotate
       </div>
 

@@ -9,7 +9,7 @@ interface StatsCardProps {
 
 export function StatsCard({ icon, iconClass, label, value, change, changeType }: StatsCardProps) {
   return (
-    <div className="bg-white border rounded-2xl p-6 flex items-start gap-4 hover:border-gray-300 hover:shadow-md transition-all">
+    <div className="bg-card border rounded-2xl p-6 flex items-start gap-4 hover:border-border hover:shadow-md transition-all">
       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconClass}`}>
         {icon}
       </div>

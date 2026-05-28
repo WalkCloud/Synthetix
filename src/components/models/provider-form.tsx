@@ -144,7 +144,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
       <div className="space-y-4 mb-6">
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Provider Name</label>
-          <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+          <input className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
             value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My Ollama" required />
         </div>
         <div>
@@ -166,14 +166,14 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">API Base URL</label>
-          <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+          <input className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
             value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} placeholder="http://localhost:11434" required />
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">
             API Key {!isLocal && !isEdit && <span className="text-destructive">*</span>}
           </label>
-          <input type="password" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+          <input type="password" className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
             value={apiKey} onChange={(e) => setApiKey(e.target.value)}
             placeholder={isEdit ? "Leave empty to keep current" : isLocal ? "Optional for local services" : "Enter API Key"}
             required={!isLocal && !isEdit} />
@@ -188,23 +188,23 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         </div>
         <div className="space-y-4">
           {models.map((m, i) => (
-            <div key={i} className="border border-slate-200 rounded-xl p-5 bg-slate-50">
+            <div key={i} className="border border-border rounded-xl p-5 bg-muted/50">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model ID</label>
-                  <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                  <input className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                     value={m.modelId} onChange={(e) => updateModel(i, "modelId", e.target.value)} placeholder={m.modelType === "image" ? "e.g. dall-e-3" : "e.g. qwen2.5:7b"} required />
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Model Name</label>
-                  <input className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                  <input className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                     value={m.modelName} onChange={(e) => updateModel(i, "modelName", e.target.value)} placeholder={m.modelType === "image" ? "e.g. DALL-E 3" : "e.g. Qwen 2.5 7B"} required />
                 </div>
               </div>
               {m.modelType !== "image" && (
                 <div className="mt-3">
                   <label className="block text-xs text-muted-foreground mb-1">Context Window <span className="font-normal">(optional, auto-detected on test)</span></label>
-                  <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                  <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                     value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
                 </div>
               )}
@@ -217,14 +217,14 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
                 <>
                   <div className="mt-3">
                     <label className="block text-xs text-muted-foreground mb-1">Embedding Batch Size <span className="font-normal">(max texts per API call, default 10)</span></label>
-                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                       value={m.embeddingBatchSize ?? 10} onChange={(e) => updateModel(i, "embeddingBatchSize", parseInt(e.target.value, 10) || 10)} placeholder="10" />
                   </div>
                   <div className="mt-3">
                     <label className="block text-xs text-muted-foreground mb-1">
                       Embedding Dimension <span className="font-normal">(auto-detected on test; fill manually if detection fails, must be &ge; 1536 for Knowledge Graph)</span>
                     </label>
-                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white shadow-sm transition-all"
+                    <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                       value={m.embeddingDim ?? ""} onChange={(e) => updateModel(i, "embeddingDim", parseInt(e.target.value, 10) || null)} placeholder="e.g. 1536 (auto-detected if empty)" />
                   </div>
                 </>
@@ -238,7 +238,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
       </div>
 
       <div className="flex gap-3 justify-end">
-        <button type="button" onClick={onClose} className="px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 text-slate-700 transition-colors">Cancel</button>
+        <button type="button" onClick={onClose} className="px-5 py-2.5 border border-border rounded-xl text-sm font-medium hover:bg-secondary/70 text-foreground/75 transition-colors">Cancel</button>
         <button type="submit" disabled={saving}
           className="px-5 py-2.5 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition-all shadow-sm disabled:opacity-50">
           {saving ? "Saving..." : isEdit ? "Update" : "Create"}

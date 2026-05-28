@@ -68,7 +68,7 @@ function SectionNode({
             ? "bg-primary-50 text-primary-700 font-semibold"
             : status === "done"
               ? "text-emerald-600"
-              : "text-slate-500 hover:bg-slate-50"
+              : "text-muted-foreground hover:bg-secondary/70"
         }`}
         style={{ paddingLeft: `${10 + depth * 14}px` }}
       >
@@ -78,7 +78,7 @@ function SectionNode({
               ? "bg-emerald-500"
               : status === "current"
                 ? "bg-primary-600 animate-pulse"
-                : "bg-slate-200"
+                : "bg-muted"
           }`}
         />
         <span className="min-w-0 leading-5">
@@ -125,25 +125,25 @@ function EditSectionRow({
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg group/editRow"
         style={{ paddingLeft: `${indent}px` }}
       >
-        <GripVertical className="w-3 h-3 shrink-0 text-slate-300" />
+        <GripVertical className="w-3 h-3 shrink-0 text-muted-foreground" />
         <input
           type="text"
           value={item.title}
           onChange={(e) => onUpdate(item.id, "title", e.target.value)}
           placeholder="Section title..."
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 focus:outline-none border-b border-transparent focus:border-primary-300 transition"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground focus:outline-none border-b border-transparent focus:border-primary-300 transition"
         />
         <input
           type="text"
           inputMode="numeric"
           value={item.estimatedWords ?? ""}
           onChange={(e) => onUpdate(item.id, "estimatedWords", e.target.value)}
-          className="shrink-0 w-14 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-center text-slate-500 focus:ring-1 focus:ring-primary/20 focus:outline-none"
+          className="shrink-0 w-14 rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-center text-muted-foreground focus:ring-1 focus:ring-primary/20 focus:outline-none"
           placeholder="words"
         />
         <button
           onClick={() => onRemove(item.id)}
-          className="flex shrink-0 cursor-pointer items-center justify-center rounded h-6 w-6 text-slate-400 hover:text-red-500 hover:bg-red-50 transition"
+          className="flex shrink-0 cursor-pointer items-center justify-center rounded h-6 w-6 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -322,9 +322,9 @@ export function OutlinePanel({
   const topLevelEdit = visibleEditItems.filter((s) => !s.parentId);
 
   return (
-    <div className="outline-panel bg-white border-r border-slate-200 p-5 overflow-y-auto h-full flex flex-col">
+    <div className="outline-panel bg-card border-r border-border p-5 overflow-y-auto h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900">
+        <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -355,7 +355,7 @@ export function OutlinePanel({
             <button
               onClick={cancelEditing}
               disabled={saving}
-              className="flex cursor-pointer items-center justify-center h-7 w-7 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition disabled:opacity-40"
+              className="flex cursor-pointer items-center justify-center h-7 w-7 rounded-lg border border-border text-muted-foreground hover:bg-secondary/70 transition disabled:opacity-40"
               title="Cancel"
             >
               <X className="h-3.5 w-3.5" />
@@ -364,7 +364,7 @@ export function OutlinePanel({
         ) : (
           <button
             onClick={startEditing}
-            className="flex cursor-pointer items-center gap-1 h-7 px-2.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition text-xs font-medium"
+            className="flex cursor-pointer items-center gap-1 h-7 px-2.5 rounded-lg border border-border text-muted-foreground hover:bg-secondary/70 hover:text-foreground/75 transition text-xs font-medium"
             title="Edit outline"
           >
             <Edit3 className="h-3 w-3" />
@@ -376,7 +376,7 @@ export function OutlinePanel({
         {editing ? (
           <div className="space-y-1">
             {topLevelEdit.map((item) => (
-              <div key={item.id} className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div key={item.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
                 <EditSectionRow
                   item={item}
                   allItems={visibleEditItems}
@@ -385,7 +385,7 @@ export function OutlinePanel({
                   depth={0}
                 />
                 {visibleEditItems.filter((s) => s.parentId === item.id).length > 0 && (
-                  <div className="border-t border-slate-100 bg-slate-50/50 px-2 py-1">
+                  <div className="border-t border-border bg-muted/40 px-2 py-1">
                     {visibleEditItems
                       .filter((s) => s.parentId === item.id)
                       .map((child) => (
@@ -407,7 +407,7 @@ export function OutlinePanel({
                   </div>
                 )}
                 {visibleEditItems.filter((s) => s.parentId === item.id).length === 0 && (
-                  <div className="border-t border-slate-100 px-2 py-1">
+                  <div className="border-t border-border px-2 py-1">
                     <button
                       onClick={() => addEditChild(item.id)}
                       className="flex cursor-pointer items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-primary/50 hover:text-primary transition"
@@ -441,11 +441,11 @@ export function OutlinePanel({
         )}
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-200">
-        <div className="text-xs text-slate-500 mb-1.5 font-medium">
+      <div className="mt-4 pt-4 border-t border-border">
+        <div className="text-xs text-muted-foreground mb-1.5 font-medium">
           {completedCount} / {totalCount} sections completed
         </div>
-        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
           <div
             className="h-full bg-primary-600 rounded-full transition-all duration-500"
             style={{ width: `${progressPercent}%` }}

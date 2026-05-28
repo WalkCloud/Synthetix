@@ -18,11 +18,21 @@ export async function GET(request: Request) {
   const format = searchParams.get("format") || undefined;
   const status = searchParams.get("status") || undefined;
   const tag = searchParams.get("tag") || undefined;
+  const tagsParam = searchParams.get("tags") || undefined;
+  const tagNames = tagsParam
+    ? tagsParam.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+    : tag
+      ? [tag.toLowerCase()]
+      : undefined;
 
   const where: Record<string, unknown> = { userId: user.id };
   if (status) where.status = status;
   if (format) where.originalFormat = format;
-  if (tag) where.tags = { some: { tag: { name: tag } } };
+  if (tagNames && tagNames.length === 1) {
+    where.tags = { some: { tag: { name: tagNames[0] } } };
+  } else if (tagNames && tagNames.length > 1) {
+    where.tags = { some: { tag: { name: { in: tagNames } } } };
+  }
 
   const [total, documents] = await Promise.all([
     db.document.count({ where }),

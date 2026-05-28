@@ -10,7 +10,7 @@ import type { AuthUser } from "@/types/auth";
 const setupSchema = z.object({
   username: z.string().min(3).max(50),
   password: z.string().min(6).max(100),
-  displayName: z.string().min(1).max(100),
+  displayName: z.string().max(100).optional(),
 });
 
 export async function POST(
@@ -29,14 +29,14 @@ export async function POST(
       return errorResponse(firstError?.message ?? "Invalid input", 400);
     }
 
-    const { username, password, displayName } = parsed.data;
+    const { username, password } = parsed.data;
 
     const passwordHash = await hashPassword(password);
     const user = await db.user.create({
       data: {
         username,
         passwordHash,
-        displayName,
+        displayName: parsed.data.displayName || username,
         role: "admin",
       },
     });

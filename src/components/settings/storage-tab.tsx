@@ -70,14 +70,14 @@ export function StorageTab() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border rounded-[16px]">
+      <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-            <h3 className="text-base font-semibold">Document Storage Mode</h3>
+            <h3 className="text-base font-semibold text-foreground">Document Storage Mode</h3>
           </div>
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${storageConfigured ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
-            <span className={`w-2 h-2 rounded-full ${storageConfigured ? "bg-[#16A34A]" : "bg-[#D97706]"}`} />
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${storageConfigured ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300"}`}>
+            <span className={`w-2 h-2 rounded-full ${storageConfigured ? "bg-emerald-500" : "bg-amber-500"}`} />
             {storageConfigured ? (storageMode === "s3" ? "S3 Object Storage" : "Local Storage") : "Not Configured"}
           </div>
         </div>
@@ -86,14 +86,14 @@ export function StorageTab() {
             <CardSelector
               selected={storageMode === "local"}
               onSelect={() => { setStorageMode("local"); setStorageConfigured(true); }}
-              icon={<div className="w-10 h-10 rounded-lg bg-primary-100 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
+              icon={<div className="w-10 h-10 rounded-lg bg-primary-100 dark:bg-primary/12 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
               title="Local Storage"
               description="Store documents on your local file system. Best for offline deployment."
             />
             <CardSelector
               selected={storageMode === "s3"}
               onSelect={() => { setStorageMode("s3"); setStorageConfigured(!!s3Bucket); }}
-              icon={<div className="w-10 h-10 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
+              icon={<div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/35 dark:text-blue-300 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
               title="S3 Object Storage"
               description="S3-compatible storage (AWS S3, MinIO). Best for cloud deployment."
             />
@@ -102,11 +102,11 @@ export function StorageTab() {
       </div>
 
       {storageMode === "local" && (
-        <div className="bg-white border rounded-[16px]">
+        <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">
               <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-              <h3 className="text-base font-semibold">Local Storage Configuration</h3>
+              <h3 className="text-base font-semibold text-foreground">Local Storage Configuration</h3>
             </div>
           </div>
           <div className="p-6 space-y-5">
@@ -120,12 +120,12 @@ export function StorageTab() {
               <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageCachePath} onChange={(e) => setStorageCachePath(e.target.value)} />
               <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache. Can be safely deleted.</span>
             </div>
-            <div className="mt-5 p-4 bg-[#F4F2EF] rounded-[16px]">
+            <div className="mt-5 p-4 bg-muted rounded-[16px]">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-semibold">Storage Usage</span>
                 <span className="text-[13px] text-muted-foreground">2.4 GB / 50 GB</span>
               </div>
-              <div className="w-full h-2.5 bg-[#F4F2EF] rounded-full overflow-hidden">
+              <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
                 <div className="h-full bg-primary rounded-full" style={{ width: "4.8%" }} />
               </div>
               <div className="flex gap-5 mt-3 text-[13px] text-muted-foreground">
@@ -135,7 +135,7 @@ export function StorageTab() {
             </div>
             <div className="flex gap-3 mt-5">
               {storageMsg && (
-                <div className={`text-sm px-3 py-2 rounded-lg ${storageMsg.type === "success" ? "bg-[#DCFCE7] text-[#16A34A]" : "bg-[#FEE2E2] text-[#DC2626]"}`}>
+                <div className={`text-sm px-3 py-2 rounded-lg ${storageMsg.type === "success" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-red-100 text-red-700 dark:bg-red-950/35 dark:text-red-300"}`}>
                   {storageMsg.text}
                 </div>
               )}
@@ -153,11 +153,11 @@ export function StorageTab() {
       )}
 
       {storageMode === "s3" && (
-        <div className="bg-white border rounded-[16px]">
+        <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">
               <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-              <h3 className="text-base font-semibold">S3 Object Storage Configuration</h3>
+              <h3 className="text-base font-semibold text-foreground">S3 Object Storage Configuration</h3>
             </div>
           </div>
           <div className="p-6 space-y-5">
@@ -200,7 +200,7 @@ export function StorageTab() {
                   </>
                 )}
               </button>
-              <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors" onClick={() => setStorageMode("local")}>Cancel</button>
+              <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors" onClick={() => setStorageMode("local")}>Cancel</button>
             </div>
           </div>
         </div>

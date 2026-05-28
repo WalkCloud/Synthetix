@@ -3,17 +3,16 @@
 import { useState, useEffect, use } from "react";
 import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
-import { TagBadge } from "@/components/library/tag-badge";
 import { ChunkContent } from "@/components/library/chunk-content";
 import type { DocumentMeta } from "@/types/documents";
 
 function topicColor(index: number): string {
   const colors = [
-    "border-l-[#7C3AED] bg-[#F5F3FF]",
-    "border-l-[#2563EB] bg-[#EFF6FF]",
-    "border-l-[#16A34A] bg-[#F0FDF4]",
-    "border-l-[#EA580C] bg-[#FFF7ED]",
-    "border-l-[#D97706] bg-[#FFFBEB]",
+    "border-l-[#7C3AED] bg-violet-100 dark:bg-violet-950/20",
+    "border-l-[#2563EB] bg-blue-100 dark:bg-blue-950/20",
+    "border-l-[#16A34A] bg-emerald-100 dark:bg-emerald-950/20",
+    "border-l-[#EA580C] bg-orange-100 dark:bg-orange-950/20",
+    "border-l-[#D97706] bg-amber-100 dark:bg-amber-950/20",
   ];
   return colors[index % colors.length];
 }
@@ -44,24 +43,6 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     setExpandedChunks(newExpanded);
   }
 
-  async function addTag(name: string) {
-    await fetch(`/api/v1/library/documents/${id}/tags`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    const res = await fetch(`/api/v1/library/documents/${id}`);
-    const data = await res.json();
-    if (data.success) setDoc(data.data);
-  }
-
-  async function removeTag(name: string) {
-    await fetch(`/api/v1/library/documents/${id}/tags/${name}`, { method: "DELETE" });
-    const res = await fetch(`/api/v1/library/documents/${id}`);
-    const data = await res.json();
-    if (data.success) setDoc(data.data);
-  }
-
   if (loading) return <div><Header title="Loading..." /><LoadingState /></div>;
   if (!doc) return <div><Header title="Not Found" /><div className="p-8">Document not found.</div></div>;
 
@@ -82,17 +63,17 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
         {/* Main: structured chunk view */}
         <div className="space-y-4">
           {isProcessing && (
-            <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-[12px] p-4 flex items-center gap-3">
-              <svg className="animate-spin w-5 h-5 text-[#EA580C]" viewBox="0 0 24 24" fill="none">
+            <div className="bg-orange-100 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-950/30 rounded-[12px] p-4 flex items-center gap-3">
+              <svg className="animate-spin w-5 h-5 text-orange-600 dark:text-orange-400" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.3" />
                 <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
-              <span className="text-sm font-medium text-[#EA580C]">Processing — {doc.status}</span>
+              <span className="text-sm font-medium text-orange-700 dark:text-orange-300">Processing — {doc.status}</span>
             </div>
           )}
 
           {chunks.length === 0 ? (
-            <div className="bg-white border rounded-[16px] p-12 text-center text-muted-foreground">
+            <div className="bg-card border rounded-[16px] p-12 text-center text-muted-foreground">
               {isProcessing ? "Document is being processed..." : "No chunks available. Try reprocessing the document."}
             </div>
           ) : (
@@ -124,8 +105,8 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                           onClick={() => toggleChunk(chunk.index)}
                           className={`w-full text-left rounded-[10px] transition-all border ${
                             isExpanded
-                              ? "bg-white border-[#D4D4D8] shadow-sm"
-                              : "bg-white/60 border-transparent hover:bg-white hover:border-slate-200"
+                              ? "bg-card border-border shadow-sm"
+                              : "bg-card/60 border-transparent hover:bg-card hover:border-border"
                           }`}
                         >
                           <div className="p-3">
@@ -144,13 +125,13 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                                   </div>
                                 )}
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
+                              <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0">
                                 {chunk.tokenCount?.toLocaleString()} tokens
                               </span>
                             </div>
 
                             {isExpanded && chunk.content && (
-                              <div className="mt-3 pt-3 border-t border-slate-200">
+                              <div className="mt-3 pt-3 border-t border-border">
                                 <ChunkContent content={chunk.content.slice(0, 4000)} docId={id} />
                                 {(chunk.content.length || 0) > 4000 && (
                                   <p className="text-xs text-muted-foreground mt-1">...(truncated, {chunk.content.length.toLocaleString()} chars total)</p>
@@ -170,7 +151,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
 
         {/* Sidebar */}
         <aside className="space-y-4">
-          <div className="bg-white border rounded-[16px] p-5">
+          <div className="bg-card border rounded-[16px] p-5">
             <h3 className="font-semibold mb-3">Document Info</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-muted-foreground">Format</dt><dd className="font-medium uppercase">{doc.originalFormat}</dd></div>
@@ -179,11 +160,11 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                 <dt className="text-muted-foreground">Status</dt>
                 <dd className="font-medium">
                   {doc.status === "ready" ? (
-                    <span className="text-[#16A34A]">Ready</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">Ready</span>
                   ) : doc.status === "failed" ? (
-                    <span className="text-[#DC2626]">Failed</span>
+                    <span className="text-red-600 dark:text-red-400">Failed</span>
                   ) : (
-                    <span className="text-[#EA580C] capitalize">{doc.status}</span>
+                    <span className="text-orange-600 dark:text-orange-400 capitalize">{doc.status}</span>
                   )}
                 </dd>
               </div>
@@ -192,16 +173,6 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
               {chunks.length > 0 && <div className="flex justify-between"><dt className="text-muted-foreground">Chunks</dt><dd className="font-medium">{chunks.length}</dd></div>}
               {topicGroups.size > 0 && <div className="flex justify-between"><dt className="text-muted-foreground">Topics</dt><dd className="font-medium">{topicGroups.size}</dd></div>}
             </dl>
-          </div>
-          <div className="bg-white border rounded-[16px] p-5">
-            <h3 className="font-semibold mb-3">Tags</h3>
-            <div className="flex gap-1.5 flex-wrap mb-3">
-              {doc.tags?.map((tag) => <TagBadge key={tag.id} name={tag.name} onRemove={removeTag} />)}
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); const input = (e.target as HTMLFormElement).tag as HTMLInputElement; if (input.value) { addTag(input.value); input.value = ""; } }} className="flex gap-2">
-              <input name="tag" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-sm shadow-sm" placeholder="Add tag..." />
-              <button type="submit" className="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">Add</button>
-            </form>
           </div>
         </aside>
       </div>

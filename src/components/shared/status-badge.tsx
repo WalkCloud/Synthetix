@@ -9,20 +9,20 @@ interface StatusBadgeProps {
 }
 
 const variantClasses: Record<NonNullable<StatusBadgeProps["variant"]>, string> = {
-  success: "bg-[#DCFCE7] text-[#16A34A]",
-  warning: "bg-[#FEF3C7] text-[#D97706]",
-  danger: "bg-[#FEE2E2] text-[#DC2626]",
-  info: "bg-[#FFF7ED] text-[#EA580C]",
-  neutral: "bg-[#F4F2EF] text-[#6B6560]",
+  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300",
+  warning: "bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300",
+  danger: "bg-red-100 text-red-700 dark:bg-red-950/35 dark:text-red-300",
+  info: "bg-orange-100 text-orange-700 dark:bg-orange-950/35 dark:text-orange-300",
+  neutral: "bg-muted text-muted-foreground",
   primary: "bg-primary-100 text-primary",
 };
 
 const dotClasses: Record<NonNullable<StatusBadgeProps["variant"]>, string> = {
-  success: "bg-[#16A34A]",
-  warning: "bg-[#D97706]",
-  danger: "bg-[#DC2626]",
-  info: "bg-[#EA580C]",
-  neutral: "bg-[#6B6560]",
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+  info: "bg-orange-500",
+  neutral: "bg-muted-foreground",
   primary: "bg-primary",
 };
 

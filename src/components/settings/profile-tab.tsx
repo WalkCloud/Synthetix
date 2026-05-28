@@ -1,21 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-
-interface UserProfile {
-  id: string;
-  username: string;
-  email: string | null;
-  displayName: string;
-  avatarUrl?: string | null;
-  role?: string;
-  createdAt?: string;
-}
+import { useUser } from "@/lib/user-context";
 
 type Tab = "profile" | "auth" | "storage" | "database" | "rag";
 
 export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { user, refreshUser } = useUser();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [bio, setBio] = useState("");
@@ -28,17 +19,12 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    fetch("/api/v1/users/profile")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          setProfile(data.data);
-          setDisplayName(data.data.displayName);
-          setEmail(data.data.email || "");
-          setAvatarUrl(data.data.avatarUrl || null);
-        }
-      });
-  }, []);
+    if (user) {
+      setDisplayName(user.displayName);
+      setEmail(user.email || "");
+      setAvatarUrl(user.avatarUrl);
+    }
+  }, [user]);
 
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
@@ -49,7 +35,12 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       body: JSON.stringify({ displayName, email: email || null }),
     });
     const data = await res.json();
-    setMessage(data.success ? { type: "success", text: "Profile updated" } : { type: "error", text: data.error || "Update failed" });
+    if (data.success) {
+      setMessage({ type: "success", text: "Profile updated" });
+      refreshUser();
+    } else {
+      setMessage({ type: "error", text: data.error || "Update failed" });
+    }
   }
 
   async function handlePasswordChange(e: React.FormEvent) {
@@ -106,6 +97,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       if (data.success) {
         setAvatarUrl(data.data.avatarUrl);
         setMessage({ type: "success", text: "Avatar updated successfully." });
+        refreshUser();
       } else {
         setMessage({ type: "error", text: data.error || "Upload failed." });
       }
@@ -125,13 +117,13 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
     if (/[0-9]/.test(pw)) s++;
     if (/[^A-Za-z0-9]/.test(pw)) s++;
-    if (s <= 2) return { score: 2, label: "Weak", color: "bg-[#DC2626]" };
-    if (s <= 3) return { score: 3, label: "Medium", color: "bg-[#D97706]" };
-    return { score: 4, label: "Strong", color: "bg-[#16A34A]" };
+    if (s <= 2) return { score: 2, label: "Weak", color: "bg-red-500" };
+    if (s <= 3) return { score: 3, label: "Medium", color: "bg-amber-500" };
+    return { score: 4, label: "Strong", color: "bg-emerald-500" };
   }
 
   const strength = getPasswordStrength(newPassword);
-  const initials = displayName ? displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : profile?.username?.slice(0, 2).toUpperCase() || "U";
+  const initials = displayName ? displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : user?.username?.slice(0, 2).toUpperCase() || "U";
 
   return (
     <>
@@ -143,7 +135,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
 
       {tab === "profile" && (
         <div className="grid grid-cols-[320px_1fr] gap-6 items-start">
-          <div className="bg-white border rounded-[16px]">
+          <div className="bg-card border rounded-[16px]">
             <div className="p-6 text-center">
               <div className="relative w-[120px] h-[120px] mx-auto mb-5 group">
                 {avatarUrl ? (
@@ -169,7 +161,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleAvatarUpload} />
               </div>
-              <div className="text-xl font-bold mb-1">{displayName || profile?.username || "User"}</div>
+              <div className="text-xl font-bold mb-1">{displayName || user?.username || "User"}</div>
               <div className="text-sm text-muted-foreground mb-3">{email || "No email set"}</div>
               <div className="flex flex-col items-center gap-2 mb-6">
                 <span className="inline-flex items-center gap-1 bg-primary-100 text-primary px-2.5 py-1 rounded-full text-xs font-medium">Admin</span>
@@ -177,15 +169,15 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                   </svg>
-                  Member since {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-secondary/70 transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
                   {uploadingAvatar ? "Uploading..." : "Change Avatar"}
                 </button>
-                <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">
+                <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                   Change Password
                 </button>
@@ -193,14 +185,14 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             </div>
           </div>
 
-          <div className="bg-white border rounded-[16px]">
+          <div className="bg-card border rounded-[16px]">
             <div className="p-6">
               <div className="text-lg font-bold mb-6">Edit Profile</div>
               <form onSubmit={handleProfileSave} className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
-                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-[#F4F2EF] text-muted-foreground cursor-not-allowed" value={profile?.username || ""} disabled />
+                    <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-muted text-muted-foreground cursor-not-allowed" value={user?.username || ""} disabled />
                   </div>
                   <div>
                     <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Display Name</label>
@@ -210,7 +202,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                 <div>
                   <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Email</label>
                   <div className="relative">
-                    <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-[#F4F2EF] text-muted-foreground cursor-not-allowed" value={email} disabled />
+                    <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-muted text-muted-foreground cursor-not-allowed" value={email} disabled />
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                   </div>
                   <span className="text-xs text-muted-foreground mt-1 block">Email cannot be changed. Contact your administrator if needed.</span>
@@ -224,7 +216,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     Save Changes
                   </button>
-                  <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-gray-50 rounded-lg transition-colors">Cancel</button>
+                  <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors">Cancel</button>
                 </div>
               </form>
             </div>
@@ -234,11 +226,11 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
 
       {tab === "auth" && (
         <div className="space-y-6">
-          <div className="bg-white border rounded-[16px]">
+          <div className="bg-card border rounded-[16px]">
             <div className="flex items-center justify-between px-6 py-5 border-b">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                <h3 className="text-base font-semibold">Local Authentication</h3>
+                <h3 className="text-base font-semibold text-foreground">Local Authentication</h3>
               </div>
             </div>
             <div className="p-6">
@@ -248,11 +240,11 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             </div>
           </div>
 
-          <div className="bg-white border rounded-[16px]">
+          <div className="bg-card border rounded-[16px]">
             <div className="flex items-center justify-between px-6 py-5 border-b">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                <h3 className="text-base font-semibold">Password Settings</h3>
+                <h3 className="text-base font-semibold text-foreground">Password Settings</h3>
               </div>
             </div>
             <div className="p-6">
@@ -268,10 +260,10 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                     <div className="mt-3">
                       <div className="flex gap-1 mb-1.5">
                         {[1, 2, 3, 4].map((i) => (
-                          <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-[#F4F2EF]"}`} />
+                          <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-muted"}`} />
                         ))}
                       </div>
-                      <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-[#DC2626]" : strength.label === "Medium" ? "text-[#D97706]" : "text-[#16A34A]"}`}>{strength.label}</span>
+                      <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-red-600 dark:text-red-400" : strength.label === "Medium" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>{strength.label}</span>
                     </div>
                   )}
                 </div>
