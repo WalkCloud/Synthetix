@@ -344,15 +344,33 @@ export default function BrainstormPage() {
                     This step may take longer because each section receives drafting guidance that will be used later for full-document generation.
                   </div>
                 </div>
+              ) : sess.phase === "mode_select" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><Sparkles className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">Select Generation Mode</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Click <strong className="text-foreground font-semibold">A — Generate Directly</strong> or <strong className="text-foreground font-semibold">B — Refine by Section</strong> in the chat.</p>
+                </div>
+              ) : sess.phase === "section_refine" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><MessageSquare className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">Refining Sections</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Answer the AI's questions in the chat to refine each section before generating the outline.</p>
+                </div>
+              ) : sess.phase === "ready" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive"><RefreshCw className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">Generation Failed</h4>
+                  <p className="mb-4 max-w-[240px] text-sm leading-6 text-muted-foreground">The outline could not be generated. Please try again.</p>
+                  <button onClick={outline.generateOutline} disabled={sess.loading}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground/75 shadow-sm transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40">
+                    <RefreshCw className="h-4 w-4" /> Retry
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><LayoutList className="h-7 w-7" /></div>
                   <h4 className="mb-2 font-semibold text-foreground">Outline Preview</h4>
-                  <p className="mb-6 max-w-[250px] text-sm leading-6 text-muted-foreground">Discuss your requirements with the AI, and an outline will appear here.</p>
-                  <button onClick={outline.generateOutline} disabled={sess.loading || sess.messages.length < 2 || !activeSession}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-primary-200 bg-card px-4 py-2 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-40">
-                    <Sparkles className="h-4 w-4" /> Generate Manually
-                  </button>
+                  <p className="max-w-[250px] text-sm leading-6 text-muted-foreground">Discuss your requirements with the AI, and an outline will appear here.</p>
                 </div>
               )}
             </div>
