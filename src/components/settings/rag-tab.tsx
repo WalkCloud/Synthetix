@@ -168,32 +168,6 @@ export function RagTab() {
         </div>
       )}
 
-      <div className="bg-card border rounded-[16px]">
-        <div className="flex items-center justify-between px-6 py-5 border-b">
-          <div className="flex items-center gap-2.5">
-            <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-            <h3 className="text-base font-semibold text-foreground">Neo4j Graph Storage (Optional)</h3>
-          </div>
-        </div>
-        <div className="p-6 space-y-4">
-          <p className="text-[13px] text-muted-foreground">Optional graph database for entity relationship storage. Only needed for &quot;graph&quot; index mode.</p>
-          <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Neo4j URI</label>
-            <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="bolt://localhost:7687" value={ragNeo4jUri} onChange={(e) => setRagNeo4jUri(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
-              <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="neo4j" value={ragNeo4jUser} onChange={(e) => setRagNeo4jUser(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
-              <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter password" value={ragNeo4jPassword} onChange={(e) => setRagNeo4jPassword(e.target.value)} />
-            </div>
-          </div>
-        </div>
-      </div>
-
       {ragVectorDb === "milvus" && (
         <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
@@ -248,6 +222,34 @@ export function RagTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {ragVectorDb !== "local" && (
+      <div className="bg-card border rounded-[16px]">
+        <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="flex items-center gap-2.5">
+            <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+            <h3 className="text-base font-semibold text-foreground">Neo4j Graph Storage (Optional)</h3>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          <p className="text-[13px] text-muted-foreground">Optional graph database for entity relationship storage. Only needed for &quot;graph&quot; index mode.</p>
+          <div>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Neo4j URI</label>
+            <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="bolt://localhost:7687" value={ragNeo4jUri} onChange={(e) => setRagNeo4jUri(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
+              <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="neo4j" value={ragNeo4jUser} onChange={(e) => setRagNeo4jUser(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Password</label>
+              <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter password" value={ragNeo4jPassword} onChange={(e) => setRagNeo4jPassword(e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
       )}
 
       {ragVectorDb !== "local" && (

@@ -28,6 +28,7 @@ export async function GET(
       action: "entity-detail",
       embedConfig: ctx.embedConfig,
       llmConfig: ctx.llmConfig!,
+      rerankConfig: ctx.rerankConfig,
       embedDim: ctx.embedDim,
       entityName: decodeURIComponent(name),
       depth,

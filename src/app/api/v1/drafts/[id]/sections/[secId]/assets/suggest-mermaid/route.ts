@@ -16,8 +16,8 @@ Examples:
 Input (EN): "The system uses a microservices architecture with an API gateway..."
 Output: "Architecture diagram: API Gateway → User Service → PostgreSQL, with Redis cache"
 
-Input (CN): "系统采用微服务架构，通过API网关..."
-Output: "微服务架构图：API 网关 → 用户服务 → PostgreSQL，配合 Redis 缓存"`;
+Input: "The system uses a microservice architecture behind an API gateway..."
+Output: "Microservice architecture diagram: API Gateway -> User Service -> PostgreSQL, with Redis cache"`;
 
 export async function POST(
   request: Request,

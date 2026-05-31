@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { renderAIContent } from "@/components/shared/markdown-renderer";
 import { useBrainstormSessions } from "@/hooks/brainstorm/use-brainstorm-sessions";
@@ -8,7 +8,7 @@ import { useBrainstormChat } from "@/hooks/brainstorm/use-brainstorm-chat";
 import { useBrainstormOutline } from "@/hooks/brainstorm/use-brainstorm-outline";
 import { EditOutlineNode } from "@/components/brainstorm/edit-outline-node";
 import { DisplayOutlineNode } from "@/components/brainstorm/display-outline-node";
-import type { BrainstormMessage, Phase } from "@/hooks/brainstorm/types";
+import type { Phase } from "@/hooks/brainstorm/types";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
@@ -16,20 +16,21 @@ import {
 } from "lucide-react";
 
 const phaseLabels: Record<Phase, string> = {
-  gathering: "需求深挖中",
-  direction: "选择大纲方向",
-  mode_select: "选择生成模式",
-  section_refine: "逐章精炼中",
-  ready: "大纲已就绪",
+  gathering: "Gathering requirements",
+  direction: "Choosing outline direction",
+  mode_select: "Choosing generation mode",
+  section_refine: "Refining by section",
+  ready: "Outline ready",
 };
 
 export default function BrainstormPage() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const messagesEnd = useRef<HTMLDivElement>(null);
   const sess = useBrainstormSessions();
 
   const scrollToEnd = useCallback(() => {
-    setTimeout(() => sess.messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }, []);
 
   const outline = useBrainstormOutline({
@@ -40,9 +41,15 @@ export default function BrainstormPage() {
     setPhase: sess.setPhase,
     loading: sess.loading,
     setLoading: sess.setLoading,
-    setSessions: sess.setSessions as any,
+    setSessions: sess.setSessions,
     scrollToEnd,
   });
+
+  useEffect(() => {
+    if (sess.outlineTaskId) {
+      outline.startPollingExternal(sess.outlineTaskId);
+    }
+  }, [outline, sess.outlineTaskId]);
 
   const handleMarker = useCallback((marker: string) => {
     switch (marker) {
@@ -53,14 +60,14 @@ export default function BrainstormPage() {
       case "ALL_SECTIONS_CONFIRMED": sess.setPhase("ready"); outline.generateOutline(); break;
       default: sess.setLoading(false); break;
     }
-  }, [outline.generateOutline, sess.setPhase, sess.setLoading]);
+  }, [outline, sess]);
 
   const chat = useBrainstormChat({
     activeId: sess.activeId,
     loading: sess.loading,
     setLoading: sess.setLoading,
     setMessages: sess.setMessages,
-    setSessions: sess.setSessions as any,
+    setSessions: sess.setSessions,
     setPhase: sess.setPhase,
     handleMarker,
     scrollToEnd,
@@ -230,25 +237,25 @@ export default function BrainstormPage() {
 
               {sess.phase === "mode_select" && !chat.isSending && (
                 <div className="flex max-w-[85%] self-start gap-3 ml-12">
-                  <button onClick={() => chat.sendQuickMessage("A，请直接生成完整大纲，可以直接开始写作。")}
+                  <button onClick={() => chat.sendQuickMessage("A, please generate the full outline directly so I can start writing.")}
                     className="flex-1 rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer">
-                    <div className="text-sm font-bold text-foreground">A) 直接生成</div>
-                    <div className="mt-1 text-xs text-muted-foreground">一次性生成完整大纲，直接进入写作</div>
+                    <div className="text-sm font-bold text-foreground">A) Generate directly</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Create the full outline in one step and move into writing</div>
                   </button>
-                  <button onClick={() => chat.sendQuickMessage("B，我想逐章讨论，确保每个章节都精准覆盖想要的内容。")}
+                  <button onClick={() => chat.sendQuickMessage("B, I want to discuss each section so every part covers exactly what I need.")}
                     className="flex-1 rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer">
-                    <div className="text-sm font-bold text-foreground">B) 逐章精炼</div>
-                    <div className="mt-1 text-xs text-muted-foreground">逐个讨论每章内容后再生成大纲</div>
+                    <div className="text-sm font-bold text-foreground">B) Refine section by section</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Discuss each section before generating the final outline</div>
                   </button>
                 </div>
               )}
 
               {sess.phase === "section_refine" && !sess.loading && !sess.outline && (
                 <div className="self-center rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-center text-xs text-primary font-semibold">
-                  逐章精炼模式 · 请逐一回答 AI 关于每个章节的问题
+                  Section-by-section mode · answer the AI questions for each section
                 </div>
               )}
-              <div ref={sess.messagesEnd} />
+              <div ref={messagesEnd} />
             </div>
 
             <div className="bg-muted/40 px-6 pb-6 pt-3 shrink-0">

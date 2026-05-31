@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { SectionMeta, GenerationMode, ModelOption } from "@/types/writing";
-import { isSectionDone } from "@/types/writing";
+import { isSectionDone } from "@/lib/writing/status";
 import { getOutlineNumber } from "@/lib/writing/outline-utils";
 import { countWords } from "@/lib/text/count-words";
 import { StatePills } from "./state-pills";

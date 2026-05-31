@@ -182,7 +182,7 @@ export function TopologyCanvas({
       const off = cardOffsets.current[refNodes[i].id] ?? { dx: 0, dy: 0 };
       result.push({
         id: refNodes[i].id,
-        label: refNodes[i].label || (refNodes[i] as any).entityType || "Entity",
+        label: refNodes[i].label || refNodes[i].entityType || "Entity",
         format: refNodes[i].format || "entity",
         weight: edge?.weight ?? 1,
         color: clr(refNodes[i].format || "entity"),

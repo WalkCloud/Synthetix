@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { OutlinePanel } from "@/components/writing/outline-panel";
 import { EditorPanel } from "@/components/writing/editor-panel";
 import { ReferencePanel } from "@/components/writing/reference-panel";
-import { isSectionDone } from "@/types/writing";
+import { isSectionDone } from "@/lib/writing/status";
 import { useDraftData } from "@/hooks/writing/use-draft-data";
 import { useGenerateAll } from "@/hooks/writing/use-generate-all";
 import { useGeneration } from "@/hooks/writing/use-generation";
@@ -41,10 +41,9 @@ export default function WritingPage({
     kind: "image" | "diagram";
     params: Record<string, string>;
   } | null>(null);
-  const [rightPanelTab, setRightPanelTab] = useState<"references" | "asset-gen">("references");
 
   const activeSection = draft?.sections.find((s) => s.id === activeSectionId) || null;
-  const pendingMarkerCount = activeSection?.content ? parseAllMarkers(activeSection.content).length : 0;
+  const pendingMarkerCount = activeSection?.content ? parseAllMarkers(activeSection.content).filter((m) => m.raw.includes("_REQUEST")).length : 0;
 
   useEffect(() => {
     if (!draft || !activeSectionId) {
@@ -92,9 +91,16 @@ export default function WritingPage({
     const marker = markers.find((m) => m.markerId === markerId);
     if (!marker) return;
     setActiveMarker({ markerId, kind, params: marker.params });
-    setRightPanelTab("asset-gen");
     if (referenceCollapsed) setReferenceCollapsed(false);
   }, [activeSection?.content, referenceCollapsed]);
+
+  const handleAssetConfirm = useCallback(async (markerId: string, assetId: string) => {
+    if (!activeSectionId) return;
+    const newContent = await actions.handleInsertAsset(markerId, assetId);
+    if (newContent) {
+      setActiveMarker(null);
+    }
+  }, [activeSectionId, actions]);
 
   const handleBatchGenerate = useCallback(async () => {
     if (!activeSection?.content || !activeSectionId) return;
@@ -109,15 +115,6 @@ export default function WritingPage({
       await loadDraft();
     } catch {}
   }, [id, activeSectionId, activeSection?.content, loadDraft]);
-
-  const handleAssetConfirm = useCallback(async (markerId: string, assetId: string) => {
-    if (!activeSectionId) return;
-    const newContent = await actions.handleInsertAsset(markerId, assetId);
-    if (newContent) {
-      setActiveMarker(null);
-      setRightPanelTab("references");
-    }
-  }, [activeSectionId, actions]);
 
   if (loading) {
     return (
@@ -446,9 +443,7 @@ export default function WritingPage({
                 onAssetChanged={actions.loadAssets}
                 onRagConfigChange={actions.handleRagConfigChange}
                 onInsertAsset={(assetId: string) => actions.handleInsertAsset("", assetId)}
-                tab={rightPanelTab}
                 activeMarker={activeMarker}
-                onTabChange={setRightPanelTab}
                 onAssetConfirm={handleAssetConfirm}
               />
             </div>

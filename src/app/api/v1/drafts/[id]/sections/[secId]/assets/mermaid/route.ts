@@ -16,7 +16,7 @@ export async function POST(
 
   const { id: draftId, secId: sectionId } = await params;
   const body = await request.json();
-  const { code, title, replaceAssetId } = body as { code?: string; title?: string; replaceAssetId?: string };
+  const { code, title, replaceAssetId, skipAppend } = body as { code?: string; title?: string; replaceAssetId?: string; skipAppend?: boolean };
 
   if (!code || !code.trim()) return errorResponse("Diagram code is required", 400);
 
@@ -74,7 +74,7 @@ export async function POST(
         where: { id: sectionId },
         select: { content: true },
       });
-      if (sectionContent?.content) {
+      if (!skipAppend && sectionContent?.content) {
         const marker = `[IMAGE:${assetId}]`;
         if (!sectionContent.content.includes(marker)) {
           await db.section.update({
@@ -87,6 +87,7 @@ export async function POST(
 
     return successResponse({ assetId, path: relativePath, status: "ready", mode: replaceAssetId ? "replaced" : "created" });
   } catch (error) {
+    console.error("[mermaid-render] error:", error);
     return errorResponse(error);
   }
 }

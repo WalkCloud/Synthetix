@@ -8,7 +8,7 @@ import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./
 interface FormModelConfig {
   modelId: string;
   modelName: string;
-  modelType: "llm" | "embedding" | "image";
+  modelType: "llm" | "embedding" | "rerank" | "image";
   capabilities: string[];
   contextWindow: number;
   maxOutputTokens: number | null;
@@ -22,7 +22,7 @@ interface FormModelConfig {
 
 interface ProviderFormProps {
   provider: ProviderType | null;
-  tab: "llm" | "embedding" | "image";
+  tab: "llm" | "embedding" | "rerank" | "image";
   onClose: () => void;
 }
 
@@ -43,7 +43,7 @@ const defaultModel: FormModelConfig = {
 
 function toFormModel(m: ApiModelConfig): FormModelConfig {
   const caps = parseCapabilities(m.capabilities);
-  const modelType = caps.includes("embedding") || caps.includes("embed") ? "embedding" : caps.includes("image_generation") ? "image" : "llm";
+  const modelType = caps.includes("embedding") || caps.includes("embed") ? "embedding" : caps.includes("rerank") ? "rerank" : caps.includes("image_generation") ? "image" : "llm";
   return {
     modelId: m.modelId,
     modelName: m.modelName,
@@ -67,7 +67,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
   const [apiBaseUrl, setApiBaseUrl] = useState(provider?.apiBaseUrl || "");
   const [apiKey, setApiKey] = useState("");
   const isLocal = providerType === "ollama" || providerType === "custom";
-  const resolvedModelType = tab === "embedding" ? "embedding" : tab === "image" ? "image" : "llm" as const;
+  const resolvedModelType = tab === "embedding" ? "embedding" : tab === "rerank" ? "rerank" : tab === "image" ? "image" : "llm" as const;
   const [models, setModels] = useState<FormModelConfig[]>(
     provider?.models?.length
       ? provider.models.map(toFormModel)
@@ -95,7 +95,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
     setSaving(true);
 
     const cleanModels = models.map((m) => {
-      const caps = m.modelType === "embedding" ? ["embedding"] : m.modelType === "image" ? ["image_generation"] : ["chat"];
+      const caps = m.modelType === "embedding" ? ["embedding"] : m.modelType === "rerank" ? ["rerank"] : m.modelType === "image" ? ["image_generation"] : ["chat"];
       const cleaned: Record<string, unknown> = {
         ...m,
         capabilities: caps,
@@ -208,7 +208,12 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
                     value={m.contextWindow || ""} onChange={(e) => updateModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)} placeholder="e.g. 4096" />
                 </div>
               )}
-              {m.modelType === "image" && (
+               {m.modelType === "rerank" && (
+                <div className="mt-3 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                  <p className="text-xs text-purple-700">This model will be used by LightRAG to rerank retrieval results via the <code className="bg-purple-100 px-1 rounded">/rerank</code> API endpoint, improving search accuracy.</p>
+                </div>
+               )}
+               {m.modelType === "image" && (
                 <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
                   <p className="text-xs text-blue-700">This model will be used by the <strong>Gen</strong> button in the writing panel to generate images from text prompts via the <code className="bg-blue-100 px-1 rounded">/v1/images/generations</code> API.</p>
                 </div>

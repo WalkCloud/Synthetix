@@ -11,14 +11,14 @@ interface IconColors {
 }
 
 const MODEL_ICON_COLORS: IconColors[] = [
-  { bg: "bg-blue-50", text: "text-blue-600" },
-  { bg: "bg-green-50", text: "text-green-600" },
-  { bg: "bg-yellow-50", text: "text-yellow-600" },
-  { bg: "bg-orange-50", text: "text-orange-600" },
-  { bg: "bg-primary-50", text: "text-primary-600" },
+  { bg: "bg-blue-50 dark:bg-blue-950/35", text: "text-blue-600 dark:text-blue-400" },
+  { bg: "bg-green-50 dark:bg-green-950/35", text: "text-green-600 dark:text-green-400" },
+  { bg: "bg-yellow-50 dark:bg-yellow-950/35", text: "text-yellow-600 dark:text-yellow-400" },
+  { bg: "bg-orange-50 dark:bg-orange-950/35", text: "text-orange-600 dark:text-orange-400" },
+  { bg: "bg-primary-50 dark:bg-primary-950/35", text: "text-primary-600 dark:text-primary-400" },
 ];
 
-type ModelSlot = "llm" | "embedding" | "image";
+type ModelSlot = "llm" | "embedding" | "rerank" | "image";
 
 interface ModelListTabProps {
   providers: Provider[];
@@ -44,8 +44,9 @@ function isDefaultForSlot(
   if (model.isDefaultFor !== "default") return false;
   const caps = parseCapabilities(model.capabilities);
   if (slot === "embedding") return caps.some((c) => c === "embedding" || c === "embed");
+  if (slot === "rerank") return caps.includes("rerank");
   if (slot === "image") return caps.includes("image_generation");
-  return !caps.some((c) => c === "embedding" || c === "embed" || c === "image_generation");
+  return !caps.some((c) => c === "embedding" || c === "embed" || c === "rerank" || c === "image_generation");
 }
 
 function filterModels(providers: Provider[], slot: ModelSlot) {
@@ -54,10 +55,12 @@ function filterModels(providers: Provider[], slot: ModelSlot) {
     p.models.forEach((m, idx) => {
       const caps = parseCapabilities(m.capabilities);
       const isEmbed = caps.some((c) => c === "embedding" || c === "embed");
+      const isRerank = caps.includes("rerank");
       const isImage = caps.includes("image_generation");
       if (slot === "embedding" && !isEmbed) return;
+      if (slot === "rerank" && !isRerank) return;
       if (slot === "image" && !isImage) return;
-      if (slot === "llm" && (isEmbed || isImage)) return;
+      if (slot === "llm" && (isEmbed || isRerank || isImage)) return;
       const colorIdx = result.length % MODEL_ICON_COLORS.length;
       result.push({ provider: p, modelIndex: idx, iconColors: MODEL_ICON_COLORS[colorIdx] });
     });
@@ -79,6 +82,13 @@ const SLOT_INFO: Record<ModelSlot, { label: string; description: string; addTitl
     addTitle: "Add Embedding Model",
     addSubtitle: "Connect an embedding service for document indexing",
     empty: "No embedding models configured. Add a provider with embedding capability.",
+  },
+  rerank: {
+    label: "Rerank Models",
+    description: "Configure reranker models to improve LightRAG retrieval accuracy. Optional — if no reranker is configured, LightRAG uses its default retrieval.",
+    addTitle: "Add Rerank Model",
+    addSubtitle: "Jina, Cohere, TEI, or any OpenAI-compatible rerank endpoint",
+    empty: "No rerank models configured. Reranking is optional — add a provider to enhance retrieval accuracy.",
   },
   image: {
     label: "Image Generation",
@@ -134,7 +144,7 @@ export function ModelListTab({
           )}
           <button
             onClick={onAdd}
-            className="w-full bg-muted/50 border border-dashed border-border rounded-2xl px-6 py-5 flex items-center gap-4 hover:border-primary-400 hover:bg-primary-50 transition-all cursor-pointer group shadow-soft"
+            className="w-full bg-muted/50 border border-dashed border-border rounded-2xl px-6 py-5 flex items-center gap-4 hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/30 transition-all cursor-pointer group shadow-soft"
             style={{ animation: "fadeInUp 0.4s ease both 0.2s" }}
           >
             <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-card shadow-sm text-muted-foreground group-hover:text-primary-600 transition-colors">

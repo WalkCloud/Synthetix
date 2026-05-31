@@ -13,7 +13,24 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "_archive/**",
+    "tmp/**",
+    "tmp-chrome-profile/**",
+    "data/**",
+    "workers/python/__pycache__/**",
   ]),
+  {
+    files: ["scripts/**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
+    rules: {
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -5,9 +5,10 @@ type ModelWithProvider = NonNullable<
   Awaited<ReturnType<typeof db.modelConfig.findFirst<{ include: { provider: true } }>>>
 >;
 
-function defaultSlotForCapability(capability: string): "llm" | "embedding" | "image" {
+function defaultSlotForCapability(capability: string): "llm" | "embedding" | "image" | "rerank" {
   if (capability === "embedding" || capability === "embed") return "embedding";
   if (capability === "image_generation" || capability === "image") return "image";
+  if (capability === "rerank") return "rerank";
   return "llm";
 }
 

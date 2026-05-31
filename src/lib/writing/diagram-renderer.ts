@@ -436,18 +436,18 @@ interface Bounds {
   y2: number;
 }
 
-const NODE_H = 56;
-const MIN_NODE_W = 140;
-const MAX_NODE_W = 220;
-const CHAR_W = 8.5;
-const CJK_CHAR_W = 14;
-const H_GAP = 60;
-const V_GAP = 80;
-const TITLE_BLOCK_H = 70;
-const SECTION_PAD = 20;
-const SECTION_HEADER_H = 30;
-const SECTION_LABEL_H = 24;
-const CONTAINER_GAP = 24;
+const NODE_H = 72;
+const MIN_NODE_W = 160;
+const MAX_NODE_W = 280;
+const CHAR_W = 9;
+const CJK_CHAR_W = 15;
+const H_GAP = 90;
+const V_GAP = 110;
+const TITLE_BLOCK_H = 80;
+const SECTION_PAD = 24;
+const SECTION_HEADER_H = 34;
+const SECTION_LABEL_H = 28;
+const CONTAINER_GAP = 28;
 
 function escapeXml(s: string): string {
   return s
@@ -470,7 +470,7 @@ function measureText(s: string): number {
 }
 
 function nodeWidth(label: string): number {
-  const est = measureText(label) + 40;
+  const est = measureText(label) + 48;
   return Math.max(MIN_NODE_W, Math.min(MAX_NODE_W, est));
 }
 
@@ -482,9 +482,9 @@ function topoLayeredLayout(
   nodes: DiagramNode[],
   arrows: DiagramArrow[],
   canvasW: number
-): Map<string, NodeLayout> {
+): { positions: Map<string, NodeLayout>; maxLayerW: number } {
   const result = new Map<string, NodeLayout>();
-  if (nodes.length === 0) return result;
+  if (nodes.length === 0) return { positions: result, maxLayerW: 0 };
 
   const adj = new Map<string, string[]>();
   const inDeg = new Map<string, number>();
@@ -556,7 +556,7 @@ function topoLayeredLayout(
     });
   });
 
-  return result;
+  return { positions: result, maxLayerW };
 }
 
 function layoutWithContainers(
@@ -564,12 +564,12 @@ function layoutWithContainers(
   arrows: DiagramArrow[],
   containers: DiagramContainer[],
   canvasW: number
-): { positions: Map<string, NodeLayout>; containerBounds: Map<string, Bounds> } {
-  const positions = topoLayeredLayout(nodes, arrows, canvasW);
+): { positions: Map<string, NodeLayout>; containerBounds: Map<string, Bounds>; maxLayerW: number } {
+  const { positions, maxLayerW } = topoLayeredLayout(nodes, arrows, canvasW);
   const containerBounds = new Map<string, Bounds>();
 
   if (containers.length === 0) {
-    return { positions, containerBounds };
+    return { positions, containerBounds, maxLayerW };
   }
 
   for (const c of containers) {
@@ -598,7 +598,7 @@ function layoutWithContainers(
     });
   }
 
-  return { positions, containerBounds };
+  return { positions, containerBounds, maxLayerW };
 }
 
 function arrowColor(s: StyleProfile, flow?: ArrowFlow): string {
@@ -1137,14 +1137,20 @@ function renderFooter(footer: string | undefined, s: StyleProfile, w: number, h:
 export function renderDiagramSvg(spec: DiagramSpec): string {
   const s = STYLES[spec.style] || STYLES["flat-icon"];
   const styleName = spec.style;
-  const w = 960;
 
-  const { positions, containerBounds } = layoutWithContainers(
+  const preliminary = layoutWithContainers(
     spec.nodes,
     spec.arrows,
     spec.containers,
-    w
+    960
   );
+
+  const w = Math.max(960, preliminary.maxLayerW + 96);
+
+  const { positions, containerBounds } =
+    w > 960
+      ? layoutWithContainers(spec.nodes, spec.arrows, spec.containers, w)
+      : preliminary;
 
   const nodeObstacles = spec.nodes
     .map((n) => {

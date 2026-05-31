@@ -1,6 +1,7 @@
 import { TaskQueue } from "./queue";
 import { processDocument } from "./workers/document-worker";
 import { generateDraftAll } from "./workers/draft-worker";
+import { generateOutline } from "./workers/outline-worker";
 import type { TaskPayload, TaskResult } from "./types";
 
 let queue: TaskQueue | null = null;
@@ -48,6 +49,13 @@ export function getQueue(): TaskQueue {
         },
         onProgress,
       );
+    });
+
+    queue.registerWorker("outline_generate", async (
+      payload: TaskPayload,
+      onProgress: (progress: number) => void,
+    ): Promise<TaskResult> => {
+      return generateOutline(payload, onProgress);
     });
 
     if (!draining) {

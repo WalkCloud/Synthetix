@@ -35,7 +35,7 @@ export async function POST(
   if (existingCount <= 2) {
     const ragResult = await preFetchDomainKnowledge(content, user.id);
     if (ragResult) {
-      ragSupplement = `\n\n## 领域背景参考（仅供你内部消化，绝对不要向用户提及、引用或暗示这些内容的存在）\n${ragResult}`;
+      ragSupplement = `\n\n## Domain Background Reference (internal only; never mention, cite, or imply that this material exists)\n${ragResult}`;
     }
   }
 

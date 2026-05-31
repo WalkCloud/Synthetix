@@ -50,7 +50,19 @@ function parseFields(body: string): Record<string, string> {
   return fields;
 }
 
-const ALL_MARKER_RE = /\[(IMAGE_REQUEST|DIAGRAM_REQUEST):\s*([\s\S]*?)\]/g;
+const ALL_MARKER_RE = /\[(IMAGE_REQUEST|DIAGRAM_REQUEST|IMAGE|DIAGRAM):\s*([\s\S]*?)\]/g;
+
+function parseAssetFields(body: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const parts = body.split("|");
+  for (let i = 1; i < parts.length; i++) {
+    const eqIdx = parts[i].indexOf("=");
+    if (eqIdx > 0) {
+      fields[parts[i].slice(0, eqIdx).trim()] = parts[i].slice(eqIdx + 1).trim();
+    }
+  }
+  return fields;
+}
 
 export function parseAllMarkers(content: string): ParsedMarker[] {
   const markers: ParsedMarker[] = [];
@@ -60,6 +72,47 @@ export function parseAllMarkers(content: string): ParsedMarker[] {
   while ((match = ALL_MARKER_RE.exec(content)) !== null) {
     const blockType = match[1];
     const body = match[2];
+
+    if (blockType === "IMAGE" || blockType === "DIAGRAM") {
+      const fields = parseAssetFields(body.trim());
+      const markerId = fields.id;
+      if (!markerId) continue;
+
+      if (blockType === "IMAGE") {
+        markers.push({
+          kind: "image",
+          raw: match[0],
+          markerId,
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          params: {
+            type: fields.type || "illustration",
+            title: fields.title || "Illustration",
+            prompt: fields.prompt || fields.description || "",
+            size: fields.size,
+            style: fields.style,
+          },
+        });
+      } else {
+        markers.push({
+          kind: "diagram",
+          raw: match[0],
+          markerId,
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          params: {
+            type: fields.type || "architecture",
+            title: fields.title || "Untitled Diagram",
+            purpose: fields.purpose,
+            nodes: fields.nodes,
+            flows: fields.flows,
+            style: fields.style,
+          },
+        });
+      }
+      continue;
+    }
+
     const fields = parseFields(body);
     const markerId = fields.id || generateMarkerId();
 
@@ -100,9 +153,11 @@ export function parseAllMarkers(content: string): ParsedMarker[] {
   return markers;
 }
 
+const REQUEST_MARKER_RE = /\[(IMAGE_REQUEST|DIAGRAM_REQUEST):\s*([\s\S]*?)\]/g;
+
 export function injectMarkerIds(content: string): string {
-  ALL_MARKER_RE.lastIndex = 0;
-  return content.replace(ALL_MARKER_RE, (match, blockType: string, body: string) => {
+  REQUEST_MARKER_RE.lastIndex = 0;
+  return content.replace(REQUEST_MARKER_RE, (match, blockType: string, body: string) => {
     const fields = parseFields(body);
     if (fields.id) return match;
     const id = generateMarkerId();

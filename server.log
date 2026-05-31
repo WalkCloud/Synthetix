@@ -1,0 +1,40 @@
+
+> synthetix@0.5.3.0 dev
+> next dev
+
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.18.0.1:3000
+- Environments: .env
+✓ Ready in 467ms
+[queue] Task queue initialized
+- Experiments (use with caution):
+  · proxyClientMaxBodySize: "200mb"
+
+○ Compiling /settings ...
+ GET /settings 200 in 5.0s (next.js: 4.5s, proxy.ts: 153ms, application-code: 274ms)
+ GET /api/v1/users/profile 200 in 578ms (next.js: 546ms, proxy.ts: 10ms, application-code: 21ms)
+ POST /api/v1/auth/login 400 in 222ms (next.js: 206ms, proxy.ts: 6ms, application-code: 10ms)
+ GET /api/v1/system/db-stats 401 in 148ms (next.js: 137ms, proxy.ts: 4ms, application-code: 7ms)
+ GET /settings 200 in 166ms (next.js: 37ms, proxy.ts: 26ms, application-code: 103ms)
+ GET /settings 200 in 90ms (next.js: 5ms, proxy.ts: 5ms, application-code: 81ms)
+ GET /settings 200 in 59ms (next.js: 5ms, proxy.ts: 9ms, application-code: 44ms)
+ GET /settings 200 in 59ms (next.js: 28ms, proxy.ts: 9ms, application-code: 23ms)
+[db-stats] unhandled error: TypeError: Cannot mix BigInt and other types, use explicit conversions
+    at <unknown> (src\app\api\v1\system\db-stats\route.ts:76:47)
+    at Array.reduce (<anonymous>)
+    at GET (src\app\api\v1\system\db-stats\route.ts:76:30)
+  74 |     }
+  75 |
+> 76 |     const totalRows = tables.reduce((s, t) => s + t.rows, 0);
+     |                                               ^
+  77 |
+  78 |     return successResponse({
+  79 |       dbType,
+ GET /api/v1/system/db-stats 500 in 424ms (next.js: 45ms, proxy.ts: 5ms, application-code: 374ms)
+ GET /settings 200 in 136ms (next.js: 48ms, proxy.ts: 27ms, application-code: 61ms)
+ GET /settings 200 in 137ms (next.js: 39ms, proxy.ts: 26ms, application-code: 72ms)
+ GET /settings 200 in 106ms (next.js: 3ms, proxy.ts: 5ms, application-code: 98ms)
+ GET /settings 200 in 74ms (next.js: 7ms, proxy.ts: 13ms, application-code: 54ms)
+ GET /settings 200 in 74ms (next.js: 38ms, proxy.ts: 12ms, application-code: 23ms)
+ GET /api/v1/system/db-stats 401 in 54ms (next.js: 39ms, proxy.ts: 4ms, application-code: 11ms)

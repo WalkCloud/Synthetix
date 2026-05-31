@@ -40,8 +40,21 @@ export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
   );
 }
 
-export function DiagramView({ serveUrl, title }: { serveUrl: string; title?: string }) {
+export function DiagramView({
+  serveUrl,
+  title,
+  markerId,
+  kind,
+  onMarkerClick,
+}: {
+  serveUrl: string;
+  title?: string;
+  markerId?: string;
+  kind?: "image" | "diagram";
+  onMarkerClick?: (markerId: string, kind: "image" | "diagram") => void;
+}) {
   const [error, setError] = useState(false);
+  const [hovering, setHovering] = useState(false);
 
   if (error) {
     return (
@@ -57,14 +70,37 @@ export function DiagramView({ serveUrl, title }: { serveUrl: string; title?: str
     );
   }
 
+  const interactive = markerId && onMarkerClick;
+
   return (
     <figure className="my-5">
-      <img
-        src={serveUrl}
-        alt={title || "Architecture diagram"}
-        className="w-full rounded-xl border border-border bg-card"
-        onError={() => setError(true)}
-      />
+      <div
+        className="relative group"
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+      >
+        <img
+          src={serveUrl}
+          alt={title || "Architecture diagram"}
+          className="w-full rounded-xl border border-border bg-card"
+          onError={() => setError(true)}
+        />
+        {interactive && hovering && (
+          <div className="absolute inset-0 rounded-xl bg-black/40 flex items-center justify-center transition-opacity">
+            <button
+              type="button"
+              onClick={() => onMarkerClick!(markerId!, kind || "image")}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white text-gray-900 text-sm font-medium shadow-lg hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M1 4v6h6M23 20v-6h-6" />
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+              </svg>
+              Regenerate
+            </button>
+          </div>
+        )}
+      </div>
       {title && (
         <figcaption className="text-center text-xs text-muted-foreground mt-2">
           {title}

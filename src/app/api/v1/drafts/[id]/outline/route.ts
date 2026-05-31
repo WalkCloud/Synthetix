@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { patchOutline } from "@/lib/writing/outline-patch";
+import { patchOutline, type SectionInput } from "@/lib/writing/outline-patch";
 
 export async function PATCH(
   request: Request,
@@ -23,7 +23,7 @@ export async function PATCH(
     const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id }, select: { id: true } });
     if (!draft) return errorResponse("Draft not found", 404);
 
-    const updated = await patchOutline(draftId, body as { sections?: any[]; outline?: string });
+    const updated = await patchOutline(draftId, body as { sections?: SectionInput[]; outline?: string });
     return successResponse(updated);
   } catch (error: unknown) {
     return errorResponse(error);

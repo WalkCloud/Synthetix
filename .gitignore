@@ -78,6 +78,8 @@ screenshots/
 tmp-*.txt
 tmp/
 tmp-chrome-profile/
+__pycache__/
+*.pyc
 test_*.ts
 test_out.txt
 

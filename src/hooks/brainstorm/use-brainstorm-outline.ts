@@ -1,8 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { deepClone, getByPath, updateByPath, removeByPath, addChildAtPath, renumberSections, numForPath } from "@/lib/outline-tree";
 import type { OutlineSection } from "@/lib/outline-tree";
-import type { BrainstormOutline, Phase } from "./types";
+import type { BrainstormOutline, BrainstormSession, Phase } from "./types";
+
+const POLL_INTERVAL = 2000;
 
 interface UseBrainstormOutlineOptions {
   activeId: string | null;
@@ -12,7 +14,7 @@ interface UseBrainstormOutlineOptions {
   setPhase: (p: Phase) => void;
   loading: boolean;
   setLoading: (v: boolean) => void;
-  setSessions: React.Dispatch<React.SetStateAction<{ id: string; title: string }[]>>;
+  setSessions: React.Dispatch<React.SetStateAction<BrainstormSession[]>>;
   scrollToEnd: () => void;
 }
 
@@ -27,6 +29,15 @@ export function useBrainstormOutline({
   const [editSections, setEditSections] = useState<OutlineSection[]>([]);
   const [editTitle, setEditTitle] = useState("");
   const [sectionNotes, setSectionNotes] = useState<{ num: string; title: string; notes: string }[]>([]);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
 
   async function persistOutline(updatedOutline: BrainstormOutline | null) {
     if (!activeId || !updatedOutline) return;
@@ -37,25 +48,81 @@ export function useBrainstormOutline({
     }).catch(() => {});
   }
 
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+
+  function startPolling(taskId: string) {
+    stopPolling();
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/tasks/${taskId}`);
+        const d = await res.json();
+        if (!d.success) { stopPolling(); setIsGeneratingOutline(false); setLoading(false); return; }
+
+        const task = d.data;
+        if (task.status === "completed" && task.result) {
+          stopPolling();
+          const generatedOutline = task.result.outline;
+          const generatedTitle = task.result.title;
+          const currentActiveId = activeIdRef.current;
+          if (generatedOutline) {
+            setOutline(generatedOutline);
+            setStatus("Complete");
+            setPhase("ready");
+            if (currentActiveId) {
+              setSessions((prev) => prev.map((s) => s.id === currentActiveId ? { ...s, title: generatedTitle || "New Brainstorming Session" } : s));
+            }
+          }
+          setIsGeneratingOutline(false);
+          setLoading(false);
+        } else if (task.status === "failed") {
+          stopPolling();
+          setIsGeneratingOutline(false);
+          setLoading(false);
+          console.error("Outline generation failed:", task.error);
+        } else if (task.status === "cancelled") {
+          stopPolling();
+          setIsGeneratingOutline(false);
+          setLoading(false);
+        }
+      } catch {
+        stopPolling();
+        setIsGeneratingOutline(false);
+        setLoading(false);
+      }
+    }, POLL_INTERVAL);
+  }
+
   const generateOutline = useCallback(async () => {
     if (!activeId) return;
     setLoading(true); setIsGeneratingOutline(true);
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST" });
       const d = await res.json();
-      if (d.success) {
-        setOutline(d.data);
-        setStatus("Complete");
-        setPhase("ready");
-        setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, title: d.data.title || "New Brainstorming Session" } : s));
+      if (d.success && d.data?.taskId) {
+        startPolling(d.data.taskId);
+      } else {
+        setIsGeneratingOutline(false); setLoading(false);
       }
-    } finally {
+    } catch {
       setIsGeneratingOutline(false); setLoading(false);
     }
   }, [activeId]);
 
+  function startPollingExternal(taskId: string) {
+    setIsGeneratingOutline(true);
+    setLoading(true);
+    startPolling(taskId);
+  }
+
   async function clearOutline() {
     if (!activeId || loading) return;
+    stopPolling();
     setLoading(true);
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}`, {
@@ -144,6 +211,6 @@ export function useBrainstormOutline({
     generateOutline, clearOutline, confirmAndWrite,
     startEditing, cancelEditing, saveEditing,
     updateEditNode, removeEditNode, addEditChild, addEditSection,
-    totalWords,
+    totalWords, startPollingExternal, stopPolling,
   };
 }

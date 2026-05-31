@@ -34,18 +34,25 @@ export async function semanticSplit(
   }
 
   const provider = createLLMProvider(modelConfig.provider);
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 20;
+  const CONCURRENCY = 3;
 
   const allDecisions: MergeDecision[] = [];
 
-  // Send section TITLES to LLM (not content) — lightweight merge decisions
+  const batches: { offset: number; chunks: SplitChunk[] }[] = [];
   for (let b = 0; b < structuralChunks.length; b += BATCH_SIZE) {
-    const batchChunks = structuralChunks.slice(b, b + BATCH_SIZE);
-    const titleList = batchChunks.map((c, i) =>
-      `[${b + i}] ${c.title}`
-    ).join("\n");
+    batches.push({ offset: b, chunks: structuralChunks.slice(b, b + BATCH_SIZE) });
+  }
 
-    const prompt = `These are consecutive section titles from a document. For each ADJACENT pair, decide if they belong to the same topic and should be merged.
+  for (let i = 0; i < batches.length; i += CONCURRENCY) {
+    const slice = batches.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      slice.map(async ({ offset, chunks: batchChunks }) => {
+        const titleList = batchChunks.map((c, j) =>
+          `[${offset + j}] ${c.title}`
+        ).join("\n");
+
+        const prompt = `These are consecutive section titles from a document. For each ADJACENT pair, decide if they belong to the same topic and should be merged.
 
 ${titleList}
 
@@ -58,24 +65,27 @@ Rules:
 - The topic label should be 3-8 words, in the same language as the titles.
 - Only return decisions for pairs that should be merged.`;
 
-    try {
-      const resp = await provider.chat({
-        model: modelConfig.modelId,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0,
-        maxTokens: 1024,
-      });
+        const resp = await provider.chat({
+          model: modelConfig.modelId,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0,
+          maxTokens: 1024,
+        });
 
-      const text = resp.content.trim();
-      const jsonStr = extractFirstJsonArray(text);
-      if (jsonStr) {
+        const text = resp.content.trim();
+        const jsonStr = extractFirstJsonArray(text);
+        if (!jsonStr) return [];
         const parsed = JSON.parse(jsonStr);
-        if (Array.isArray(parsed)) {
-          allDecisions.push(...(parsed as MergeDecision[]));
-        }
+        return Array.isArray(parsed) ? (parsed as MergeDecision[]) : [];
+      }),
+    );
+
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        allDecisions.push(...r.value);
+      } else if (r.status === "rejected") {
+        console.warn(`Semantic batch failed:`, r.reason);
       }
-    } catch (err) {
-      console.warn(`Semantic batch ${b} failed:`, err);
     }
   }
 

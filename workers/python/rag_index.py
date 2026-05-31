@@ -29,9 +29,17 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
 
-def fix_empty_json_files(working_dir: str) -> None:
+def fix_corrupted_json_files(working_dir: str) -> None:
     for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
         if os.path.getsize(fp) == 0:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write("{}")
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
             with open(fp, "w", encoding="utf-8") as f:
                 f.write("{}")
 
@@ -132,6 +140,9 @@ async def index_document(
     llm_api_key: str = "",
     llm_model: str = "",
     embeddings_file: str = "",
+    rerank_api_base: str = "",
+    rerank_api_key: str = "",
+    rerank_model: str = "",
 ) -> dict:
     """Index chunk files into LightRAG.
 
@@ -187,7 +198,7 @@ async def index_document(
     # embedding_func: use cached embeddings when available, otherwise call API
     if embedding_iter is not None:
 
-        def embedding_func(texts: list[str], **kwargs):
+        async def embedding_func(texts: list[str], **kwargs):
             result = []
             for _ in texts:
                 emb = next(embedding_iter, None)
@@ -198,8 +209,8 @@ async def index_document(
             return result
     else:
 
-        def embedding_func(texts: list[str], **kwargs):
-            result = openai_embed(
+        async def embedding_func(texts: list[str], **kwargs):
+            result = await openai_embed(
                 texts,
                 model=embed_model,
                 base_url=embed_api_base,
@@ -212,6 +223,8 @@ async def index_document(
 
     entity_stats: dict = {}
 
+    _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
+
     if index_mode == "graph" and llm_api_base and llm_model:
         async def llm_func(
             prompt: str,
@@ -219,18 +232,59 @@ async def index_document(
             history_messages: list = [],
             **kwargs,
         ) -> str:
-            return await openai_complete_if_cache(
-                model=llm_model,
-                prompt=prompt,
-                system_prompt=system_prompt,
-                history_messages=history_messages,
-                base_url=llm_api_base,
-                api_key=llm_api_key,
-                **kwargs,
-            )
+            clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+            try:
+                return await openai_complete_if_cache(
+                    model=llm_model,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    base_url=llm_api_base,
+                    api_key=llm_api_key,
+                    **clean_kwargs,
+                )
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "response_format" in err_msg or "invalid_request" in err_msg:
+                    for bad_key in ("response_format", "keyword_extraction"):
+                        clean_kwargs.pop(bad_key, None)
+                    return await openai_complete_if_cache(
+                        model=llm_model,
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        history_messages=history_messages,
+                        base_url=llm_api_base,
+                        api_key=llm_api_key,
+                        **clean_kwargs,
+                    )
+                raise
     else:
         async def llm_func(*args, **kwargs) -> str:
             return ""
+
+    rerank_kwargs: dict = {}
+    if rerank_api_base and rerank_model:
+        import httpx
+
+        async def rerank_func(query: str, documents: list[str], top_n: int = None, **kwargs):
+            payload = {"model": rerank_model, "query": query, "documents": documents}
+            if top_n:
+                payload["top_n"] = top_n
+            headers = {"Content-Type": "application/json"}
+            if rerank_api_key:
+                headers["Authorization"] = f"Bearer {rerank_api_key}"
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{rerank_api_base.rstrip('/')}/rerank",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            results = data.get("results", [])
+            return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
+
+        rerank_kwargs["rerank_model_func"] = rerank_func
 
     rag = LightRAG(
         working_dir=working_dir,
@@ -254,9 +308,10 @@ async def index_document(
             ],
         },
         **storage_kwargs,
+        **rerank_kwargs,
     )
 
-    fix_empty_json_files(working_dir)
+    fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()
 
     chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
@@ -317,6 +372,9 @@ def main() -> None:
     parser.add_argument("--llm-api-base", default="")
     parser.add_argument("--llm-api-key", default="")
     parser.add_argument("--llm-model", default="")
+    parser.add_argument("--rerank-api-base", default="")
+    parser.add_argument("--rerank-api-key", default="")
+    parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 
     result = asyncio.run(
@@ -333,6 +391,9 @@ def main() -> None:
             llm_api_key=args.llm_api_key,
             llm_model=args.llm_model,
             embeddings_file=args.embeddings_file,
+            rerank_api_base=args.rerank_api_base,
+            rerank_api_key=args.rerank_api_key,
+            rerank_model=args.rerank_model,
         )
     )
     print(json.dumps(result))
