@@ -25,9 +25,17 @@ import asyncio
 import glob as glob_mod
 
 
-def fix_empty_json_files(working_dir: str) -> None:
+def fix_corrupted_json_files(working_dir: str) -> None:
     for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
         if os.path.getsize(fp) == 0:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write("{}")
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
             with open(fp, "w", encoding="utf-8") as f:
                 f.write("{}")
 
@@ -101,6 +109,9 @@ async def query_rag(
     llm_api_base: str = "http://localhost:11434/v1",
     llm_api_key: str = "ollama",
     llm_model: str = "llama3.2",
+    rerank_api_base: str = "",
+    rerank_api_key: str = "",
+    rerank_model: str = "",
 ) -> dict:
     """Query LightRAG and return structured results: chunks, optional entities/relations."""
     working_dir = os.path.join("data", "rag", user_id)
@@ -116,8 +127,8 @@ async def query_rag(
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    def embedding_func(texts: list[str]):
-        return openai_embed(
+    async def embedding_func(texts: list[str]):
+        return await openai_embed(
             texts,
             model=embed_model,
             base_url=embed_api_base,
@@ -198,6 +209,30 @@ async def query_rag(
         else:
             eff_dim = 768
 
+    rerank_kwargs: dict = {}
+    if rerank_api_base and rerank_model:
+        import httpx
+
+        async def rerank_func(query: str, documents: list[str], top_n: int = None, **kwargs):
+            payload = {"model": rerank_model, "query": query, "documents": documents}
+            if top_n:
+                payload["top_n"] = top_n
+            headers = {"Content-Type": "application/json"}
+            if rerank_api_key:
+                headers["Authorization"] = f"Bearer {rerank_api_key}"
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{rerank_api_base.rstrip('/')}/rerank",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            results = data.get("results", [])
+            return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
+
+        rerank_kwargs["rerank_model_func"] = rerank_func
+
     rag = LightRAG(
         working_dir=working_dir,
         llm_model_func=llm_func,
@@ -211,9 +246,10 @@ async def query_rag(
         graph_storage=graph_storage,
         doc_status_storage=doc_status_storage,
         **storage_kwargs,
+        **rerank_kwargs,
     )
 
-    fix_empty_json_files(working_dir)
+    fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()
 
     # Resolve mode aliases
@@ -312,6 +348,9 @@ def main() -> None:
     parser.add_argument("--llm-api-base", default="http://localhost:11434/v1")
     parser.add_argument("--llm-api-key", default="ollama")
     parser.add_argument("--llm-model", default="llama3.2")
+    parser.add_argument("--rerank-api-base", default="")
+    parser.add_argument("--rerank-api-key", default="")
+    parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 
     asyncio.run(
@@ -329,6 +368,9 @@ def main() -> None:
             llm_api_base=args.llm_api_base,
             llm_api_key=args.llm_api_key,
             llm_model=args.llm_model,
+            rerank_api_base=args.rerank_api_base,
+            rerank_api_key=args.rerank_api_key,
+            rerank_model=args.rerank_model,
         )
     )
 

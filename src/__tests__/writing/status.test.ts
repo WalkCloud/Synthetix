@@ -4,7 +4,7 @@ import {
   deriveDraftStatus,
   CONFIRMED_SECTION_STATUSES,
   type SectionStatus,
-} from "@/types/writing";
+} from "@/lib/writing/status";
 
 describe("isSectionDone", () => {
   it("returns true for locked", () => {

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 
-interface SectionInput {
+export interface SectionInput {
   id?: string;
   title?: string;
   index?: number;
@@ -20,7 +21,7 @@ function isTempId(id: string | undefined): boolean {
 export async function patchOutline(draftId: string, body: { sections?: SectionInput[]; outline?: string }) {
   const deletes: string[] = [];
   const updates: { id: string; data: Record<string, unknown> }[] = [];
-  const creates: { tempId?: string; parentTempId?: string; data: Record<string, unknown> }[] = [];
+  const creates: { tempId?: string; parentTempId?: string; data: Prisma.SectionUncheckedCreateInput }[] = [];
 
   for (const s of body.sections ?? []) {
     if (s._delete && s.id && !isTempId(s.id)) { deletes.push(s.id); continue; }
@@ -53,12 +54,12 @@ export async function patchOutline(draftId: string, body: { sections?: SectionIn
 
     const tempIdMap = new Map<string, string>();
     for (const c of creates.filter((c) => !c.parentTempId)) {
-      const created = await tx.section.create({ data: c.data as any });
+      const created = await tx.section.create({ data: c.data });
       if (c.tempId) tempIdMap.set(c.tempId, created.id);
     }
     for (const c of creates.filter((c) => c.parentTempId)) {
       if (c.parentTempId) { const real = tempIdMap.get(c.parentTempId); if (real) c.data.parentId = real; }
-      const created = await tx.section.create({ data: c.data as any });
+      const created = await tx.section.create({ data: c.data });
       if (c.tempId) tempIdMap.set(c.tempId, created.id);
     }
 

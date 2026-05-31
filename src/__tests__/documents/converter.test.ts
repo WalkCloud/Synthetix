@@ -7,11 +7,8 @@ describe("convertToMarkdown", () => {
   });
 
   it("rejects for nonexistent file", async () => {
-    try {
-      await convertToMarkdown("/nonexistent/file-12345.xyz", "/tmp/test-out");
-      expect.unreachable();
-    } catch (e: any) {
-      expect(e.message).toBeDefined();
-    }
+    await expect(
+      convertToMarkdown("/nonexistent/file-12345.xyz", "/tmp/test-out")
+    ).rejects.toThrow("Input file does not exist");
   });
 });

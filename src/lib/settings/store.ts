@@ -21,6 +21,7 @@ interface UserSettings {
   pgPort?: number;
   pgDatabase?: string;
   pgUser?: string;
+  pgPassword?: string;
   // RAG / Vector DB settings
   ragVectorDb?: string;
   ragPgUrl?: string;

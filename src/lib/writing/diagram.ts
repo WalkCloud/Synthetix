@@ -81,12 +81,40 @@ export function parseDiagramRequests(content: string): {
 
 export type ContentSegment =
   | { kind: "text"; content: string }
-  | { kind: "diagram_asset"; content: string; assetId: string; title?: string }
-  | { kind: "image_asset"; content: string; assetId: string; title?: string }
+  | { kind: "diagram_asset"; content: string; assetId: string; title?: string; markerId?: string; markerParams?: Record<string, string> }
+  | { kind: "image_asset"; content: string; assetId: string; title?: string; markerId?: string; markerParams?: Record<string, string> }
   | { kind: "diagram_request"; content: string; marker: DiagramRequest & { markerId?: string } }
   | { kind: "image_request"; content: string; marker: ImageRequest & { markerId?: string } };
 
 const ALL_BLOCK_RE = /\[(DIAGRAM_REQUEST|IMAGE_REQUEST|DIAGRAM|IMAGE):\s*([\s\S]*?)\]/g;
+
+function parseAssetBody(body: string): {
+  assetId: string;
+  markerId?: string;
+  markerParams?: Record<string, string>;
+  title?: string;
+} {
+  const parts = body.split("|");
+  const assetId = parts[0].trim();
+  if (parts.length < 2) return { assetId };
+
+  const params: Record<string, string> = {};
+  for (let i = 1; i < parts.length; i++) {
+    const eqIdx = parts[i].indexOf("=");
+    if (eqIdx > 0) {
+      const key = parts[i].slice(0, eqIdx).trim();
+      const val = parts[i].slice(eqIdx + 1).trim();
+      params[key] = val;
+    }
+  }
+
+  return {
+    assetId,
+    markerId: params.id,
+    markerParams: Object.keys(params).length > 0 ? params : undefined,
+    title: params.title,
+  };
+}
 
 export function segmentContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = [];
@@ -116,16 +144,24 @@ export function segmentContent(content: string): ContentSegment[] {
     }
 
     if (blockType === "DIAGRAM") {
+      const { assetId, markerId, markerParams, title } = parseAssetBody(body.trim());
       segments.push({
         kind: "diagram_asset",
         content: match[0],
-        assetId: body.trim(),
+        assetId,
+        title,
+        markerId,
+        markerParams,
       });
     } else if (blockType === "IMAGE") {
+      const { assetId, markerId, markerParams, title } = parseAssetBody(body.trim());
       segments.push({
         kind: "image_asset",
         content: match[0],
-        assetId: body.trim(),
+        assetId,
+        title,
+        markerId,
+        markerParams,
       });
     } else if (blockType === "IMAGE_REQUEST") {
       segments.push({

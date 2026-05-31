@@ -35,7 +35,7 @@ export async function POST(request: Request) {
         if (!entityName || !entityType || !description) {
           return errorResponse("entityName, entityType, and description required", 400);
         }
-        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, entityName, entityType, description });
+        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName, entityType, description });
         break;
       }
       case "delete-entity": {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
         if (!entityName) {
           return errorResponse("entityName required", 400);
         }
-        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, entityName });
+        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName });
         break;
       }
       case "merge-entities": {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         if (!sources || !target || !Array.isArray(sources) || sources.length < 2) {
           return errorResponse("sources (array of 2+ names) and target required", 400);
         }
-        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, embedDim: ctx.embedDim, sources: sources.join(","), target });
+        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, sources: sources.join(","), target });
         break;
       }
       default:

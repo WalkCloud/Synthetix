@@ -20,6 +20,7 @@ export interface BrainstormMessage {
 
 export interface BrainstormOutline {
   title: string;
+  documentType?: string;
   sections: OutlineSection[];
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { DraftMeta, SectionMeta } from "@/types/writing";
-import { isSectionDone } from "@/types/writing";
+import { isSectionDone } from "@/lib/writing/status";
 
 interface DraftDetail extends DraftMeta {
   sections: SectionMeta[];

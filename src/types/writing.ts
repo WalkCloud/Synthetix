@@ -1,30 +1,11 @@
-export type DraftStatus = "drafting" | "completed";
+import type { DraftStatus, SectionStatus } from "@/lib/writing/status";
 
-export type SectionStatus =
-  | "pending"
-  | "retrieving"
-  | "generating"
-  | "comparing"
-  | "reviewing"
-  | "summarized"
-  | "locked"
-  | "failed";
-
-export const CONFIRMED_SECTION_STATUSES: SectionStatus[] = [
-  "locked",
-  "summarized",
-];
-
-export function isSectionDone(status: string): boolean {
-  return CONFIRMED_SECTION_STATUSES.includes(status as SectionStatus);
-}
-
-export function deriveDraftStatus(sections: { status: string }[]): DraftStatus {
-  const total = sections.length;
-  if (total === 0) return "drafting";
-  const done = sections.filter((s) => isSectionDone(s.status)).length;
-  return done >= total ? "completed" : "drafting";
-}
+export {
+  CONFIRMED_SECTION_STATUSES,
+  deriveDraftStatus,
+  isSectionDone,
+} from "@/lib/writing/status";
+export type { DraftStatus, SectionStatus } from "@/lib/writing/status";
 
 export type GenerationMode = "single" | "compare";
 

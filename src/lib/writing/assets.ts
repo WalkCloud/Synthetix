@@ -75,7 +75,7 @@ export function replaceDiagramBlocksWithPlaceholders(content: string): string {
       const parsed = parseDiagramRequests(match);
       if (parsed.diagrams.length === 0) return match;
       const d = parsed.diagrams[0];
-      return `[图片占位符 — ${d.title}：图表待生成]`;
+      return `[Image placeholder - ${d.title}: chart pending]`;
     }
   );
 
@@ -85,7 +85,7 @@ export function replaceDiagramBlocksWithPlaceholders(content: string): string {
       const parsed = parseDiagramRequests(match);
       if (parsed.images.length === 0) return match;
       const img = parsed.images[0];
-      return `[图片占位符 — ${img.title}：图片待生成]`;
+      return `[Image placeholder - ${img.title}: image pending]`;
     }
   );
 

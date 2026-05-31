@@ -35,11 +35,11 @@ const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing pa
 18. "Innovative" / "cutting-edge" / "groundbreaking"
 19. "Robust" / "scalable" / "dynamic"
 
-**Language/Grammar Patterns (Chinese):**
-20. Hard-banned words: 此外, 织锦, 格局, 标志着, 毋庸置疑, 举足轻重, 淋漓尽致, 相得益彰, 薪火相传, 砥砺前行
-21. Soft-constraint overuse (≥3/paragraph without evidence): 至关重要, 关键, 核心, 赋能, 助力, 驱动, 引领, 打造, 高效, 智能
-22. Negative parallelisms: "不是...而是...不是...而是..."
-23. Forced tripartite: "不仅...还...更..."
+**Language/Grammar Patterns:**
+20. Hard-banned cliches: additionally, tapestry, landscape, milestone, undoubtedly, pivotal, seamless, empower, robust
+21. Soft-constraint overuse (3 or more per paragraph without evidence): crucial, key, core, drive, lead, build, efficient, intelligent
+22. Repeated negative parallelisms, such as "not X but Y, not A but B"
+23. Forced three-part structures
 24. Em-dash overuse: more than 1 per 500 characters
 
 **Style Patterns:**
@@ -55,7 +55,7 @@ const AUDIT_PROMPT = `You are an expert editor detecting AI-generated writing pa
 32. Restating the same point with different words
 33. Apologizing or hedging before making a point ("While it may seem...")
 34. Ending with a call-to-action or inspirational note
-35. Paragraphs outside 80-300 Chinese character range
+35. Paragraphs that are much shorter or longer than the surrounding document style
 
 For each pattern found, quote the specific text and explain why it feels AI-generated. Be thorough — your audit determines rewrite quality.
 
@@ -83,7 +83,7 @@ const REWRITE_PROMPT = `You are an expert human writer. Rewrite the following te
 - Maintain all factual content and technical accuracy from the original
 - Preserve all factual content and technical accuracy from the original, but do not reintroduce source material references or citations that the original text does not contain
 - Preserve any [DIAGRAM_REQUEST:...] blocks exactly as they are. Do not modify, paraphrase, or remove them.
-- Keep the same language (Chinese/English) as the original
+- Keep the same language as the original
 
 ## Tone
 - Authoritative but conversational
@@ -95,8 +95,7 @@ const REWRITE_PROMPT = `You are an expert human writer. Rewrite the following te
 Before finalizing, verify NONE of these remain:
   - "delve", "tapestry", "realm", "pivotal", "foster", "seamless", "empower", "robust", "multifaceted"
   - "it's worth noting", "importantly", "in conclusion"
-  - Chinese hard-banned: 此外, 织锦, 格局, 标志着, 毋庸置疑, 举足轻重, 淋漓尽致, 相得益彰, 薪火相传, 砥砺前行
-  - Chinese soft-constraint overuse: 至关重要, 赋能, 助力, 驱动, 引领 (max 2 per paragraph)
+  - Language-specific cliches and filler phrases that do not add concrete meaning
   - Every paragraph starting with a topic sentence
 - Lists of exactly 3 items
 - Hedging before every claim

@@ -5,9 +5,9 @@ import { ProviderForm } from "./provider-form";
 import { ModelListTab } from "./model-list-tab";
 import type { Provider, UsageData } from "./types";
 
-type Tab = "llm" | "embedding" | "image" | "usage";
+type Tab = "llm" | "embedding" | "rerank" | "image" | "usage";
 type TimeRange = "today" | "week" | "month";
-type DefaultSlot = "llm" | "embedding" | "image";
+type DefaultSlot = "llm" | "embedding" | "rerank" | "image";
 
 const MODULE_LABELS: Record<string, string> = {
   brainstorm: "Brainstorm",
@@ -154,8 +154,8 @@ export function ModelsTabs() {
   return (
     <div className="max-w-5xl mx-auto">
       <div className="flex gap-2 border-b border-border mb-8 pb-px">
-        {(["llm", "embedding", "image", "usage"] as const).map((t) => {
-          const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", image: "Image Generation", usage: "Usage Analytics" };
+        {(["usage", "llm", "embedding", "rerank", "image"] as const).map((t) => {
+           const labels: Record<Tab, string> = { llm: "LLM Models", embedding: "Embedding Models", rerank: "Rerank Models", image: "Image Generation", usage: "Usage Analytics" };
           const isActive = tab === t;
           return (
             <button
@@ -173,7 +173,7 @@ export function ModelsTabs() {
         })}
       </div>
 
-      {(tab === "llm" || tab === "embedding" || tab === "image") && (
+      {(tab === "llm" || tab === "embedding" || tab === "rerank" || tab === "image") && (
         <ModelListTab slot={tab} {...modelTabProps} />
       )}
 
@@ -368,7 +368,7 @@ export function ModelsTabs() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => handleFormClose()}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4" onClick={(e) => e.stopPropagation()}>
-            <ProviderForm provider={editingProvider} tab={tab === "usage" ? "llm" : (tab as "llm" | "embedding" | "image")} onClose={handleFormClose} />
+            <ProviderForm provider={editingProvider} tab={tab === "usage" ? "llm" : (tab as "llm" | "embedding" | "rerank" | "image")} onClose={handleFormClose} />
           </div>
         </div>
       )}

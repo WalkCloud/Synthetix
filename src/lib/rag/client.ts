@@ -15,6 +15,7 @@ interface RagBaseOptions {
   embedDim: number;
   embedConfig: EmbedConfig;
   llmConfig: EmbedConfig;
+  rerankConfig?: EmbedConfig;
 }
 
 export type RagManageOptions =
@@ -41,6 +42,14 @@ export async function manageRag(
   ];
 
   if (options.embedDim > 0) args.push("--embed-dim", String(options.embedDim));
+
+  if (options.rerankConfig) {
+    args.push(
+      "--rerank-api-base", options.rerankConfig.apiBase,
+      "--rerank-api-key", options.rerankConfig.apiKey,
+      "--rerank-model", options.rerankConfig.model,
+    );
+  }
 
   switch (options.action) {
     case "entities":

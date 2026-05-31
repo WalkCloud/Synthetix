@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { parseCapabilities } from "@/lib/llm/capabilities";
+import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 import { decrypt } from "@/lib/crypto";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
@@ -26,6 +27,8 @@ interface ImageRequest {
 }
 
 function parseImageRequest(rawPrompt: string): ImageRequest | null {
+  if (!rawPrompt || !rawPrompt.trim()) return null;
+
   const fields: Record<string, string> = {};
   for (const line of rawPrompt.split("\n")) {
     const trimmed = line.trim();
@@ -38,7 +41,8 @@ function parseImageRequest(rawPrompt: string): ImageRequest | null {
     }
   }
 
-  const prompt = fields.prompt || fields.description || "";
+  // Use structured prompt= field if found, otherwise treat the entire input as the prompt
+  const prompt = fields.prompt || fields.description || rawPrompt.trim();
   if (!prompt) return null;
 
   return {
@@ -55,8 +59,15 @@ async function generateImageViaApi(
   providerApiKey: string | null,
   model: string
 ): Promise<Buffer | null> {
-  const baseUrl = providerBaseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
-  const url = `${baseUrl}/v1/images/generations`;
+  // If the URL already contains /images/generations, use it directly —
+  // some providers (e.g. DashScope) have non-standard paths like /api/v3/images/generations
+  let url: string;
+  if (/\/images\/generations\/?$/i.test(providerBaseUrl)) {
+    url = providerBaseUrl.replace(/\/+$/, "");
+  } else {
+    const baseUrl = normalizeProviderBaseUrl(providerBaseUrl);
+    url = `${baseUrl}/v1/images/generations`;
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -65,12 +76,11 @@ async function generateImageViaApi(
     headers["Authorization"] = `Bearer ${decrypt(providerApiKey)}`;
   }
 
+  // Build request body — only include universally supported params
+  // Omit `size`, `response_format`, `n` — they are provider-specific and may cause errors
   const body = JSON.stringify({
     model,
     prompt,
-    n: 1,
-    size: "1024x1024",
-    response_format: "b64_json",
   });
 
   const response = await fetch(url, {
@@ -84,11 +94,18 @@ async function generateImageViaApi(
     throw new Error(`Image generation failed (${response.status}): ${errorText}`);
   }
 
+  // Parse response — handle both OpenAI and DashScope formats:
+  //   OpenAI:    { data: [{ b64_json?, url? }] }
+  //   DashScope: { output: { results: [{ url? }] } } or { results: [{ url? }] }
   const data = (await response.json()) as {
-    data: Array<{ b64_json?: string; url?: string }>;
+    data?: Array<{ b64_json?: string; url?: string }>;
+    output?: { results?: Array<{ b64_json?: string; url?: string }> };
+    results?: Array<{ b64_json?: string; url?: string }>;
   };
+  const result = data.data?.[0]
+    || data.output?.results?.[0]
+    || data.results?.[0];
 
-  const result = data.data?.[0];
   if (!result) return null;
 
   if (result.b64_json) {

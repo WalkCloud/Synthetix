@@ -75,9 +75,9 @@ export function extractSectionTitles(markdown: string): string[] {
       continue;
     }
 
-    // Chinese numbered sections: 一、二、三、...   (一) (二)  第X章/节
-    if (/^[一二三四五六七八九十]+[、，,]\s*/.test(trimmed)) { titles.push(trimmed); continue; }
-    if (/^第[一二三四五六七八九十\d]+[章节]/.test(trimmed)) { titles.push(trimmed); continue; }
+    // CJK numbered sections.
+    if (/^[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+[\u3001\uff0c,]\s*/.test(trimmed)) { titles.push(trimmed); continue; }
+    if (/^\u7b2c[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\d]+[\u7ae0\u8282]/.test(trimmed)) { titles.push(trimmed); continue; }
     if (/^[①②③④⑤⑥⑦⑧⑨⑩]/.test(trimmed)) { titles.push(trimmed); continue; }
 
     // Numbered sections: "1.", "1.1", "1.1.1", "(1)", "1)", "A.", "a)"
@@ -126,7 +126,7 @@ function splitByTitles(
       sections[sections.length - 1].content += "\n\n" + before;
     } else if (sections.length === 0 && before) {
       // Preamble content before first title
-      sections.push({ title: "前言", content: before });
+      sections.push({ title: "Preface", content: before });
     }
 
     sections.push({ title, content: "" });

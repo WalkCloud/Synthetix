@@ -31,9 +31,13 @@ export function ContentRenderer({
         if (seg.kind === "diagram_asset") {
           const cards = summaryCardsMap?.[seg.assetId];
           return (
-            <div key={`da-${i}`}>
+            <div key={`da-${i}-${seg.assetId}`}>
               <DiagramView
                 serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${seg.assetId}/serve`}
+                title={seg.title}
+                markerId={seg.markerId}
+                kind="diagram"
+                onMarkerClick={onMarkerClick}
               />
               {cards && cards.length > 0 && <SummaryCards cards={cards} />}
             </div>
@@ -43,8 +47,12 @@ export function ContentRenderer({
         if (seg.kind === "image_asset") {
           return (
             <DiagramView
-              key={`ia-${i}`}
+              key={`ia-${i}-${seg.assetId}`}
               serveUrl={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${seg.assetId}/serve`}
+              title={seg.title}
+              markerId={seg.markerId}
+              kind="image"
+              onMarkerClick={onMarkerClick}
             />
           );
         }

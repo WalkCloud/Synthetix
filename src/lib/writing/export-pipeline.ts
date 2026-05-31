@@ -5,7 +5,7 @@ import { spawn } from "child_process";
 import { db } from "@/lib/db";
 import { getAssetFilePath } from "@/lib/writing/diagram-generator";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
-import { CONFIRMED_SECTION_STATUSES } from "@/types/writing";
+import { CONFIRMED_SECTION_STATUSES } from "@/lib/writing/status";
 
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "python3";

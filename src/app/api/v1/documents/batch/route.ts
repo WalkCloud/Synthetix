@@ -23,7 +23,7 @@ export async function DELETE(request: Request) {
   const ownIds = docs.map((d) => d.id);
 
   for (const id of ownIds) {
-    await storage.deleteDocument(id, user.id);
+    await storage.deleteDocumentData(id, user.id);
     await db.documentChunk.deleteMany({ where: { documentId: id } }).catch(() => {});
     await db.documentTag.deleteMany({ where: { documentId: id } }).catch(() => {});
     await db.documentImage.deleteMany({ where: { documentId: id } }).catch(() => {});
@@ -44,6 +44,7 @@ async function deleteLightRagData(docId: string, userId: string) {
     action: "delete-by-doc",
     embedConfig: ctx.embedConfig,
     llmConfig: ctx.llmConfig,
+    rerankConfig: ctx.rerankConfig,
     embedDim: ctx.embedDim,
     docId,
   });

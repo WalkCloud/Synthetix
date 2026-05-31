@@ -21,7 +21,7 @@ Rules:
 - Types: ${DIAGRAM_TYPES}
 - Shapes: ${NODE_SHAPES}
 - Flows: ${ARROW_FLOWS}
-- Max 18 nodes, 25 arrows. Concise labels (1-3 words).
+- Max 24 nodes, 35 arrows. Concise labels (1-4 words).
 - Every arrow needs a meaningful flow type and label.
 - Use containers to group related nodes.
 - All text labels (title, node labels, arrow labels, container labels, legend) MUST be in the SAME language as the user's description.`;
@@ -49,11 +49,13 @@ function extractAllTexts(json: string): string[] {
   return [...new Set(texts)];
 }
 
-function applyTranslations(obj: any, translations: Record<string, string>): any {
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+function applyTranslations(obj: JsonValue, translations: Record<string, string>): JsonValue {
   if (typeof obj === "string") return translations[obj] || obj;
   if (Array.isArray(obj)) return obj.map((item) => applyTranslations(item, translations));
   if (typeof obj === "object" && obj !== null) {
-    const result: any = {};
+    const result: Record<string, JsonValue> = {};
     for (const [key, value] of Object.entries(obj)) {
       if (key === "title" || key === "subtitle" || key === "label" || key === "sublabel" || key === "typeLabel" || key === "footer") {
         result[key] = typeof value === "string" ? (translations[value] || value) : value;
@@ -74,7 +76,7 @@ export async function translateLabels(code: string, provider: LLMProvider, model
   const resp = await provider.chat({
     model: modelId,
     messages: [
-      { role: "system", content: `Translate the following technical diagram labels to Chinese. Output ONLY a JSON object mapping original English to Chinese translation. Example: {"API Gateway":"API 网关","Database":"数据库"}. No explanation.` },
+      { role: "system", content: `Translate the following technical diagram labels to Chinese. Output ONLY a JSON object mapping original English to Chinese translation. Example: {"API Gateway":"API \\u7f51\\u5173","Database":"\\u6570\\u636e\\u5e93"}. No explanation.` },
       { role: "user", content: list },
     ],
     temperature: 0.1,
@@ -89,7 +91,9 @@ export async function translateLabels(code: string, provider: LLMProvider, model
       const parsed = JSON.parse(code);
       return JSON.stringify(applyTranslations(parsed, map));
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[diagram-translate] translateLabels failed, using original:", e instanceof Error ? e.message : String(e));
+  }
   return code;
 }
 

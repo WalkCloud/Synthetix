@@ -23,9 +23,17 @@ import asyncio
 import glob as glob_mod
 
 
-def fix_empty_json_files(working_dir: str) -> None:
+def fix_corrupted_json_files(working_dir: str) -> None:
     for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
         if os.path.getsize(fp) == 0:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write("{}")
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
             with open(fp, "w", encoding="utf-8") as f:
                 f.write("{}")
 
@@ -236,6 +244,35 @@ async def action_delete_entity(rag, entity_name: str) -> dict:
         return {"error": str(e)}
 
 
+def _build_rerank_kwargs(args) -> dict:
+    rerank_api_base = getattr(args, "rerank_api_base", "")
+    rerank_api_key = getattr(args, "rerank_api_key", "")
+    rerank_model_name = getattr(args, "rerank_model", "")
+    if not rerank_api_base or not rerank_model_name:
+        return {}
+    import httpx
+
+    async def rerank_func(query: str, documents: list[str], top_n: int = None, **kwargs):
+        payload = {"model": rerank_model_name, "query": query, "documents": documents}
+        if top_n:
+            payload["top_n"] = top_n
+        headers = {"Content-Type": "application/json"}
+        if rerank_api_key:
+            headers["Authorization"] = f"Bearer {rerank_api_key}"
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{rerank_api_base.rstrip('/')}/rerank",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        results = data.get("results", [])
+        return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
+
+    return {"rerank_model_func": rerank_func}
+
+
 async def main_async(args) -> None:
     working_dir = os.path.join("data", "rag", args.user_id)
     os.makedirs(working_dir, exist_ok=True)
@@ -246,13 +283,15 @@ async def main_async(args) -> None:
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    def embedding_func(texts: list[str]):
-        return openai_embed(
+    async def embedding_func(texts: list[str]):
+        return await openai_embed(
             texts,
             model=args.embed_model,
             base_url=args.embed_api_base,
             api_key=args.embed_api_key,
         )
+
+    _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
 
     async def llm_func(
         prompt: str,
@@ -260,15 +299,32 @@ async def main_async(args) -> None:
         history_messages: list = [],
         **kwargs,
     ) -> str:
-        return await openai_complete_if_cache(
-            model=args.llm_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            base_url=args.llm_api_base,
-            api_key=args.llm_api_key,
-            **kwargs,
-        )
+        clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+        try:
+            return await openai_complete_if_cache(
+                model=args.llm_model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages,
+                base_url=args.llm_api_base,
+                api_key=args.llm_api_key,
+                **clean_kwargs,
+            )
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "response_format" in err_msg or "invalid_request" in err_msg:
+                for bad_key in ("response_format", "keyword_extraction"):
+                    clean_kwargs.pop(bad_key, None)
+                return await openai_complete_if_cache(
+                    model=args.llm_model,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    base_url=args.llm_api_base,
+                    api_key=args.llm_api_key,
+                    **clean_kwargs,
+                )
+            raise
 
     # Resolve effective embedding dimension
     embed_model = args.embed_model
@@ -310,9 +366,10 @@ async def main_async(args) -> None:
         ],
     },
     **storage_kwargs,
+    **_build_rerank_kwargs(args),
     )
 
-    fix_empty_json_files(working_dir)
+    fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()
 
     action = args.action
@@ -376,6 +433,9 @@ def main() -> None:
     parser.add_argument("--llm-api-base", default="http://localhost:11434/v1")
     parser.add_argument("--llm-api-key", default="ollama")
     parser.add_argument("--llm-model", default="llama3.2")
+    parser.add_argument("--rerank-api-base", default="")
+    parser.add_argument("--rerank-api-key", default="")
+    parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 
     asyncio.run(main_async(args))

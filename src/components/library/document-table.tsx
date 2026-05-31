@@ -222,7 +222,7 @@ export function DocumentTable({
                     { label: "Chunks", style: "w-[100px]" },
                     { label: "Size", style: "w-[90px]" },
                     { label: "Indexed", style: "w-[130px]" },
-                    { label: "Date", style: "w-[100px]" },
+                    { label: "Date", style: "w-[110px]" },
                     { label: "", style: "w-[112px]" },
                   ].map((h) => (
                     <th
@@ -300,7 +300,7 @@ export function DocumentTable({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-muted-foreground">
+                      <td className="px-4 py-3.5 text-sm text-muted-foreground whitespace-nowrap">
                         {new Date(doc.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </td>
                       <td className="px-4 py-3.5">
