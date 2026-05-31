@@ -13,7 +13,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "auth", label: "Password Settings" },
   { id: "storage", label: "Storage Settings" },
-  { id: "database", label: "Database Settings" },
+  { id: "database", label: "Database" },
   { id: "rag", label: "Vector Database" },
 ];
 

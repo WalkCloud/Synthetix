@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       action: mode === "core" ? "core-graph" : "graph",
       embedConfig: ctx.embedConfig,
       llmConfig: ctx.llmConfig!,
+      rerankConfig: ctx.rerankConfig,
       embedDim: ctx.embedDim,
       entityName: entityName || undefined,
       depth,

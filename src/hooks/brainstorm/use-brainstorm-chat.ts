@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { BrainstormMessage, Phase } from "./types";
+import type { BrainstormMessage, BrainstormSession, Phase } from "./types";
 
 function newClientMessageId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -10,7 +10,7 @@ interface UseBrainstormChatOptions {
   loading: boolean;
   setLoading: (v: boolean) => void;
   setMessages: React.Dispatch<React.SetStateAction<BrainstormMessage[]>>;
-  setSessions: React.Dispatch<React.SetStateAction<{ id: string; title: string; _count?: { messages: number } }[]>>;
+  setSessions: React.Dispatch<React.SetStateAction<BrainstormSession[]>>;
   setPhase: (p: Phase) => void;
   handleMarker: (marker: string) => void;
   scrollToEnd: () => void;

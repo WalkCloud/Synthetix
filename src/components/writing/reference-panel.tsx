@@ -51,18 +51,16 @@ interface ReferencePanelProps {
   onAssetChanged: () => void;
   onRagConfigChange: (ragMode: string, ragDocumentIds: string[]) => void;
   onInsertAsset?: (assetId: string) => void;
-  tab?: "references" | "asset-gen";
+  onInsertImage?: (url: string, alt: string) => void;
   activeMarker?: {
     markerId: string;
     kind: "image" | "diagram";
     params: Record<string, string>;
   } | null;
-  onTabChange?: (tab: "references" | "asset-gen") => void;
   onAssetConfirm?: (markerId: string, assetId: string) => void;
-  onInsertImage?: (url: string, alt: string) => void;
 }
 
-type ActiveDialog = null | "gen" | "mermaid";
+type GeneratingMethod = null | "gen" | "mermaid" | "import";
 
 export function ReferencePanel({
   references,
@@ -77,21 +75,13 @@ export function ReferencePanel({
   onAssetChanged,
   onRagConfigChange,
   onInsertAsset,
-  tab = "references",
-  activeMarker,
-  onTabChange,
-  onAssetConfirm,
   onInsertImage,
+  activeMarker,
+  onAssetConfirm,
 }: ReferencePanelProps) {
-  const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
-
-  const [genPrompt, setGenPrompt] = useState("");
-  const [genLoading, setGenLoading] = useState(false);
-
-  const [mermaidPrompt, setMermaidPrompt] = useState("");
-  const [mermaidLoading, setMermaidLoading] = useState(false);
-  const [mermaidSuggesting, setMermaidSuggesting] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [generatingMethod, setGeneratingMethod] = useState<GeneratingMethod>(null);
+  const [workspaceAssetId, setWorkspaceAssetId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -101,12 +91,27 @@ export function ReferencePanel({
   const [previewAsset, setPreviewAsset] = useState<SectionAsset | null>(null);
   const [renderVer, setRenderVer] = useState(0);
 
-  const readyAssets = assets.filter((a) => a.status === "ready" || a.status === "pending" || a.status === "generating");
-  const hasAssets = readyAssets.length > 0;
+  const readyAssets = assets.filter((a) => a.status === "ready");
+  const generatingAssets = assets.filter((a) => a.status === "generating" || a.status === "pending");
 
   useEffect(() => {
     setRenderVer((v) => v + 1);
   }, [assets]);
+
+  useEffect(() => {
+    if (activeMarker) {
+      const p = activeMarker.params;
+      const parts: string[] = [];
+      if (p.prompt) parts.push(p.prompt);
+      if (p.type) parts.push(`${p.type} diagram`);
+      if (p.title) parts.push(`"${p.title}"`);
+      if (p.purpose) parts.push(p.purpose);
+      if (p.nodes) parts.push(`nodes: ${p.nodes}`);
+      if (p.flows) parts.push(`flows: ${p.flows}`);
+      setImagePrompt(parts.join(". "));
+      setWorkspaceAssetId(null);
+    }
+  }, [activeMarker?.markerId]);
 
   useEffect(() => {
     setSelectedDocIds(new Set(sectionRagDocumentIds));
@@ -138,125 +143,90 @@ export function ReferencePanel({
     });
   }
 
-  function openGen() {
-    setActiveDialog("gen");
-    setGenPrompt("");
-  }
-
-  async function openMermaid() {
-    setActiveDialog("mermaid");
-    setMermaidPrompt("");
-
-    if (!sectionId || !sectionContent.trim()) return;
-
-    setMermaidSuggesting(true);
-    try {
-      const res = await fetch(
-        `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/suggest-mermaid`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: sectionContent }),
-        }
-      );
-      const data = await res.json();
-      if (data.success && data.data?.suggestion) {
-        setMermaidPrompt(data.data.suggestion);
-      }
-    } catch {
-      // Silently fail — user can still type manually
-    } finally {
-      setMermaidSuggesting(false);
-    }
-  }
-
-  function closeDialog() {
-    setActiveDialog(null);
-    setGenPrompt("");
-    setMermaidPrompt("");
-  }
-
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !sectionId) return;
-
-    setImportLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (hasAssets) fd.append("replaceAssetId", readyAssets[0].id);
-
-      const res = await fetch(
-        `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/upload-image`,
-        { method: "POST", body: fd }
-      );
-      const data = await res.json();
-      if (data.success) {
-        onAssetChanged();
-      } else {
-        toast.error(data.error || "Upload failed");
-      }
-    } catch {
-      toast.error("Upload request failed");
-    } finally {
-      setImportLoading(false);
-      if (importInputRef.current) importInputRef.current.value = "";
-    }
-  }
-
   async function handleGen() {
-    if (!sectionId || !genPrompt.trim()) return;
-    setGenLoading(true);
+    if (!sectionId || !imagePrompt.trim()) return;
+    setGeneratingMethod("gen");
     try {
       const res = await fetch(
-        `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/manual-image`,
+        `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/generate-image`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: genPrompt.trim(),
-            title: genPrompt.trim().slice(0, 50),
-            replaceAssetId: hasAssets ? readyAssets[0].id : null,
+            prompt: imagePrompt.trim(),
+            title: imagePrompt.trim().slice(0, 50),
+            markerId: activeMarker?.markerId,
           }),
         }
       );
-      const data = await res.json();
-      if (data.success) {
-        closeDialog();
-        onAssetChanged();
-      } else {
-        toast.error(data.error || "Image generation failed");
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error(err.error || "Image generation failed");
       }
-    } catch {
-      toast.error("Image generation request failed");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let newAssetId: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "error") {
+              toast.error(data.error || "Image generation failed");
+            } else if (data.type === "complete" && data.assetId) {
+              newAssetId = data.assetId;
+            }
+          } catch {}
+        }
+      }
+
+      await onAssetChanged();
+      if (newAssetId) setWorkspaceAssetId(newAssetId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Image generation request failed");
     } finally {
-      setGenLoading(false);
+      setGeneratingMethod(null);
     }
   }
 
   async function handleMermaid() {
-    if (!sectionId || !mermaidPrompt.trim()) return;
-    setMermaidLoading(true);
+    if (!sectionId || !imagePrompt.trim()) return;
+    setGeneratingMethod("mermaid");
     try {
+      let prompt = imagePrompt.trim();
+      if (activeMarker?.params?.nodes) {
+        prompt += `\nNodes: ${activeMarker.params.nodes}`;
+      }
+      if (activeMarker?.params?.flows) {
+        prompt += `\nFlows: ${activeMarker.params.flows}`;
+      }
       const codeRes = await fetch(
         `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/mermaid-generate-code`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: mermaidPrompt.trim(),
-          }),
+          body: JSON.stringify({ prompt }),
         }
       );
       const codeData = await codeRes.json();
-      console.log("[Mermaid] code gen response:", codeData);
       if (!codeData.success || !codeData.data?.code) {
-        console.error("[Mermaid] code gen failed:", codeData.error);
-        toast.error(codeData.error || "Mermaid code generation failed");
+        toast.error(codeData.error || "Failed to generate chart code. Check the prompt and try again.");
         return;
       }
 
-      console.log("[Mermaid] code to render (first 500):", codeData.data.code.slice(0, 500));
       const renderRes = await fetch(
         `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/mermaid`,
         {
@@ -264,24 +234,50 @@ export function ReferencePanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             code: codeData.data.code,
-            title: mermaidPrompt.trim().slice(0, 50) || "Mermaid Diagram",
-            replaceAssetId: hasAssets ? readyAssets[0].id : null,
+            title: imagePrompt.trim().slice(0, 50) || "Diagram",
+            skipAppend: !!activeMarker,
           }),
         }
       );
       const renderData = await renderRes.json();
       if (renderData.success) {
-        closeDialog();
-        onAssetChanged();
+        await onAssetChanged();
+        setWorkspaceAssetId(renderData.data?.assetId);
       } else {
-        console.error("[Mermaid] render failed:", renderData.error);
-        toast.error(renderData.error || "Mermaid rendering failed");
+        toast.error(renderData.error || "Failed to render the chart. The generated code may be invalid.");
       }
-    } catch (err) {
-      console.error("[Mermaid] generation failed:", err);
-      toast.error("Mermaid generation failed");
+    } catch {
+      toast.error("An unexpected chart generation error occurred. Please try again.");
     } finally {
-      setMermaidLoading(false);
+      setGeneratingMethod(null);
+    }
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !sectionId) return;
+
+    setGeneratingMethod("import");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const res = await fetch(
+        `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/upload-image`,
+        { method: "POST", body: fd }
+      );
+      const data = await res.json();
+      if (data.success) {
+        await onAssetChanged();
+        setWorkspaceAssetId(data.data?.assetId);
+      } else {
+        toast.error(data.error || "Upload failed");
+      }
+    } catch {
+      toast.error("Upload request failed");
+    } finally {
+      setGeneratingMethod(null);
+      if (importInputRef.current) importInputRef.current.value = "";
     }
   }
 
@@ -306,27 +302,8 @@ export function ReferencePanel({
 
   return (
     <div className="bg-card border-l border-border h-full flex flex-col">
-      <div className="flex border-b border-border px-5 pt-3">
-        <button
-          onClick={() => onTabChange?.("references")}
-          className={`px-3 pb-2 text-xs font-semibold transition-colors ${
-            tab === "references" ? "text-primary-600 border-b-2 border-primary-600" : "text-muted-foreground hover:text-muted-foreground"
-          }`}
-        >
-          References
-        </button>
-        <button
-          onClick={() => onTabChange?.("asset-gen")}
-          className={`px-3 pb-2 text-xs font-semibold transition-colors ${
-            tab === "asset-gen" ? "text-primary-600 border-b-2 border-primary-600" : "text-muted-foreground hover:text-muted-foreground"
-          }`}
-        >
-          Asset Gen
-        </button>
-      </div>
-
-      {tab === "references" && (
       <div className="p-5 overflow-y-auto flex-1">
+
       {/* References */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
@@ -451,7 +428,7 @@ export function ReferencePanel({
         <div className="mb-5 border-t border-border pt-4">
           <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-foreground">
             <span>📷</span>
-            <span>引用图片 ({allRefImages.length})</span>
+            <span>Ref Images ({allRefImages.length})</span>
           </h4>
           <div className="grid grid-cols-3 gap-2">
             {allRefImages.map((img, idx) => (
@@ -472,7 +449,7 @@ export function ReferencePanel({
                       className="text-[11px] text-primary-600 hover:underline mt-0.5"
                       onClick={() => onInsertImage(img.url, img.altText || "")}
                     >
-                      插入
+                      Insert
                     </button>
                   )}
                 </div>
@@ -491,112 +468,111 @@ export function ReferencePanel({
             <polyline points="21 15 16 10 5 21" />
           </svg>
           Images
-          {hasAssets && (
+          {activeMarker && (
             <span className="text-[11px] px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded-full font-bold">
-              {readyAssets.length}
+              {activeMarker.params.title || activeMarker.markerId}
             </span>
           )}
         </h4>
 
-        {hasAssets ? (
-          <div className="space-y-2 mb-3">
-            {readyAssets.map((asset) => {
-              const serveUrl = `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${asset.id}/serve?v=${renderVer}`;
-              return (
-                <div key={asset.id} className="flex items-center gap-2 p-2 border border-border rounded-lg bg-muted/50">
-                  {asset.status === "ready" ? (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewAsset(asset)}
-                      className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-card border border-border cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all"
-                    >
-                      <img src={serveUrl} alt={asset.title} className="w-full h-full object-contain p-0.5" />
-                    </button>
-                  ) : (
-                    <div className="flex-shrink-0 w-12 h-12 rounded-md bg-secondary flex items-center justify-center">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-muted-foreground animate-spin">
-                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                      </svg>
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground/75 truncate">{asset.title}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {asset.type === "diagram" || asset.type === "svg" ? "Diagram" : asset.type === "mermaid" ? "Mermaid" : "Image"}
-                      {" · "}{asset.status === "ready" ? "Ready" : "Generating..."}
-                    </p>
-                  </div>
-                  {asset.status === "ready" && (
-                    <div className="flex items-center gap-0.5">
-                      {onInsertAsset && (
-                        <button
-                          type="button"
-                          onClick={() => onInsertAsset(asset.id)}
-                          className="p-1 rounded hover:bg-primary-50 text-muted-foreground hover:text-primary-600 transition-colors cursor-pointer"
-                          title="Insert into section"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                            <path d="M12 5v14M5 12h14" />
-                          </svg>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setPreviewAsset(asset)}
-                        className="p-1 rounded hover:bg-primary-50 text-muted-foreground hover:text-primary-600 transition-colors cursor-pointer"
-                        title="Preview"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground mb-2.5">No images yet. Use Gen or Mermaid to add.</p>
-        )}
+        {/* Preview Area */}
+        {sectionId && (() => {
+          const previewTarget = workspaceAssetId
+            ? assets.find((a) => a.id === workspaceAssetId)
+            : null;
 
-        <div className="flex gap-2">
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImportFile}
-          />
+          if (previewTarget) {
+            const isReady = previewTarget.status === "ready";
+            const serveUrl = `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${previewTarget.id}/serve?v=${renderVer}`;
+
+            return (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={() => isReady && setPreviewAsset(previewTarget)}
+                  disabled={!isReady}
+                  className={`w-full rounded-xl overflow-hidden border border-border bg-muted/50 ${isReady ? "cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all" : "cursor-default"}`}
+                >
+                  {isReady ? (
+                    <img src={serveUrl} alt={previewTarget.title} className="w-full max-h-[200px] object-contain bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px]" />
+                  ) : (
+                    <div className="h-[120px] flex flex-col items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      <span className="text-[11px] text-muted-foreground">Generating...</span>
+                    </div>
+                  )}
+                </button>
+                <p className="text-[11px] text-muted-foreground text-center mt-1 truncate">{previewTarget.title}</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="mb-3 rounded-xl border border-dashed border-border bg-muted/30 h-[100px] flex items-center justify-center">
+              <p className="text-[11px] text-muted-foreground">Preview will appear here after generation</p>
+            </div>
+          );
+        })()}
+
+        {/* Prompt */}
+        <textarea
+          className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs text-foreground/75 bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none shadow-sm mb-2.5"
+          placeholder="Describe the image or diagram you want to generate..."
+          rows={3}
+          value={imagePrompt}
+          onChange={(e) => setImagePrompt(e.target.value)}
+        />
+
+        {/* Three Action Buttons */}
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+        <div className="flex gap-2 mb-3">
           <button
-            onClick={openGen}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm"
+            onClick={handleGen}
+            disabled={generatingMethod !== null || !imagePrompt.trim()}
+            title="Generate an image with an AI text-to-image model"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <line x1="12" y1="8" x2="12" y2="16" />
-              <line x1="8" y1="12" x2="16" y2="12" />
-            </svg>
+            {generatingMethod === "gen" ? (
+              <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="12" y1="8" x2="12" y2="16" />
+                <line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+            )}
             Gen
           </button>
           <button
-            onClick={openMermaid}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm"
+            onClick={handleMermaid}
+            disabled={generatingMethod !== null || !imagePrompt.trim()}
+            title="Generate an SVG chart with an LLM"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
+            {generatingMethod === "mermaid" ? (
+              <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            )}
             Mermaid
           </button>
           <button
             onClick={() => importInputRef.current?.click()}
-            disabled={importLoading}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+            disabled={generatingMethod !== null}
+            title="Upload an image from your device"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {importLoading ? (
+            {generatingMethod === "import" ? (
               <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             ) : (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
@@ -609,67 +585,63 @@ export function ReferencePanel({
           </button>
         </div>
 
-        {/* Gen Dialog */}
-        {activeDialog === "gen" && (
-          <div className="mt-3 p-3 border border-primary-200 rounded-xl bg-primary-50/50">
-            <label className="text-xs font-semibold text-foreground/75 mb-1 block">Prompt (English recommended)</label>
-            <textarea
-              className="w-full px-2 py-1.5 border border-border rounded-lg text-xs text-foreground/75 bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none shadow-sm mb-2"
-              placeholder="A flowchart showing the CI/CD pipeline with build, test, and deploy stages..."
-              rows={3}
-              value={genPrompt}
-              onChange={(e) => setGenPrompt(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleGen}
-                disabled={genLoading || !genPrompt.trim()}
-                className="flex-1 px-2 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {genLoading ? "Generating..." : "Generate"}
-              </button>
-              <button
-                onClick={closeDialog}
-                className="px-2 py-1.5 border border-border rounded-lg text-xs font-semibold text-muted-foreground hover:bg-secondary/70 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Insert Button */}
+        {activeMarker && onAssetConfirm && workspaceAssetId && (() => {
+          const target = assets.find((a) => a.id === workspaceAssetId);
+          if (!target || target.status !== "ready") return null;
+          return (
+            <button
+              type="button"
+              onClick={() => onAssetConfirm(activeMarker.markerId, workspaceAssetId!)}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-xl text-xs font-semibold hover:bg-primary-700 transition-colors cursor-pointer shadow-sm"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Insert
+            </button>
+          );
+        })()}
 
-        {/* Mermaid Dialog */}
-        {activeDialog === "mermaid" && (
-          <div className="mt-3 p-3 border border-primary-200 rounded-xl bg-primary-50/50">
-            <label className="text-xs font-semibold text-foreground/75 mb-1 block">Describe your diagram</label>
-            <textarea
-              className="w-full px-2 py-1.5 border border-border rounded-lg text-xs text-foreground/75 bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none shadow-sm mb-2"
-              placeholder={mermaidSuggesting ? "Analyzing section content..." : "e.g. A flowchart showing user authentication: login form → validate → check 2FA → grant access or deny"}
-              rows={3}
-              value={mermaidPrompt}
-              onChange={(e) => setMermaidPrompt(e.target.value)}
-              disabled={mermaidSuggesting}
-            />
-            {mermaidSuggesting && (
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-[11px] text-primary-600">Generating suggestion based on section content...</span>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={handleMermaid}
-                disabled={mermaidLoading || mermaidSuggesting || !mermaidPrompt.trim()}
-                className="flex-1 px-2 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {mermaidLoading ? "Generating..." : "Generate"}
-              </button>
-              <button
-                onClick={closeDialog}
-                className="px-2 py-1.5 border border-border rounded-lg text-xs font-semibold text-muted-foreground hover:bg-secondary/70 transition-colors"
-              >
-                Cancel
-              </button>
+        {/* Asset history when no activeMarker */}
+        {!activeMarker && readyAssets.length > 0 && (
+          <div className="border-t border-border pt-3 mt-3">
+            <p className="text-[11px] text-muted-foreground mb-2">History ({readyAssets.length})</p>
+            <div className="space-y-1.5">
+              {readyAssets.map((asset) => {
+                const serveUrl = `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${asset.id}/serve?v=${renderVer}`;
+                return (
+                  <div key={asset.id} className="flex items-center gap-2 p-1.5 border border-border rounded-lg bg-muted/50">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewAsset(asset)}
+                      className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-card border border-border cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all"
+                    >
+                      <img src={serveUrl} alt={asset.title} className="w-full h-full object-contain p-0.5" />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium text-foreground/75 truncate">{asset.title}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {asset.type === "mermaid" ? "Chart" : "Image"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      {onInsertAsset && (
+                        <button
+                          type="button"
+                          onClick={() => onInsertAsset(asset.id)}
+                          className="p-1 rounded hover:bg-primary-50 text-muted-foreground hover:text-primary-600 transition-colors cursor-pointer"
+                          title="Insert into section"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -753,34 +725,6 @@ export function ReferencePanel({
       )}
 
       </div>
-      )}
-
-      {tab === "asset-gen" && (
-        <div className="flex-1 overflow-y-auto p-5">
-          {activeMarker ? (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">{activeMarker.kind === "image" ? "🖼️" : "📊"}</span>
-                <h4 className="text-sm font-bold text-foreground">{activeMarker.params.title || activeMarker.markerId}</h4>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">
-                {activeMarker.kind === "image" ? "Image" : "Diagram"} marker — use controls below to generate.
-              </p>
-              {activeMarker.params.prompt && (
-                <div className="p-2.5 border border-border rounded-lg bg-muted/50 mb-3">
-                  <p className="text-[11px] text-muted-foreground mb-1">Prompt</p>
-                  <p className="text-xs text-foreground/75">{activeMarker.params.prompt}</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center text-muted-foreground py-8">
-              <p className="text-sm font-medium mb-1">No marker selected</p>
-              <p className="text-xs">Click a marker chip in the editor to start generating.</p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

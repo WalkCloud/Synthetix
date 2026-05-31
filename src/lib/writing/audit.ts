@@ -16,19 +16,19 @@ const AUDIT_SYSTEM_PROMPT = `You are a document quality auditor. Review the prov
 
 ## Audit Rules
 
-1. **reference_exposure**: Does the text contain phrases like "根据参考资料", "引用文档", "资料显示", "根据参考资料", "如参考文档所述", "based on the reference material", "according to the source", "as shown in Reference N", or similar wording that exposes the existence of reference material? This is a critical issue.
+1. **reference_exposure**: Does the text contain phrases like "based on the reference material", "according to the source", "as shown in Reference N", "the source document says", or similar wording that exposes the existence of reference material? This is a critical issue.
 
 2. **entity_leak**: Does the text contain customer names, internal project names, file names, internal IDs, or vendor names that appear to come from reference material rather than being directly relevant to the document topic? This is a warning.
 
-3. **ai_signatures**: Does the text contain typical AI writing patterns such as: "delve", "tapestry", "it's worth noting", "importantly", "in today's era", "with the continuous development of", every paragraph starting with a topic sentence, lists of exactly 3 items, symmetrical paragraph lengths, hedging before every claim? This is a warning. Also check for Chinese AI markers: 此外, 织锦, 格局, 标志着, 毋庸置疑, 举足轻重, 淋漓尽致, 相得益彰, 薪火相传, 砥砺前行 — any of these is a critical issue.
+3. **ai_signatures**: Does the text contain typical AI writing patterns such as: "delve", "tapestry", "it's worth noting", "importantly", "in today's era", "with the continuous development of", every paragraph starting with a topic sentence, lists of exactly 3 items, symmetrical paragraph lengths, or hedging before every claim? This is a warning.
 
-4. **meta_framing**: Does the text start with meta-phrases like "This section will introduce...", "This chapter mainly discusses...", "本文将介绍...", "本节主要讨论..."? This is a critical issue.
+4. **meta_framing**: Does the text start with meta-phrases like "This section will introduce..." or "This chapter mainly discusses..."? This is a critical issue.
 
-5. **empty_filler**: Does the text contain vague filler phrases like "various methods", "multiple aspects", "comprehensive improvement", "robust support", "empowering users", "赋能", "助力", "驱动", "引领", "打造", "一站式", "端到端" without specific details or data? This is a warning.
+5. **empty_filler**: Does the text contain vague filler phrases like "various methods", "multiple aspects", "comprehensive improvement", "robust support", "empowering users", "one-stop", or "end-to-end" without specific details or data? This is a warning.
 
 6. **generic_ending**: Does the text end with a generic inspirational summary or call to action rather than substantive content? This is a warning.
 
-7. **paragraph_length**: Are any paragraphs excessively short (<80 Chinese characters) or excessively long (>300 Chinese characters)? Are there forced tripartite structures ("不仅...还...更...") or excessive em-dashes (>1 per 500 characters)? This is a warning.
+7. **paragraph_length**: Are any paragraphs excessively short or excessively long relative to the document style? Are there forced three-part structures or excessive em-dashes (>1 per 500 characters)? This is a warning.
 
 ## Response Format
 

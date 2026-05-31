@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { SectionMeta } from "@/types/writing";
-import { isSectionDone } from "@/types/writing";
+import { isSectionDone } from "@/lib/writing/status";
 import { parseOutlineNumbers, normalizeTitle, getOutlineNumber } from "@/lib/writing/outline-utils";
 import { Edit3, Check, X, Plus, Trash2, GripVertical } from "lucide-react";
 

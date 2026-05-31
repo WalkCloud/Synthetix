@@ -38,6 +38,7 @@ async function searchViaLightRAG(
   embedDim: number,
   embedConfig: { apiBase: string; apiKey: string; model: string },
   llmConfig: { apiBase: string; apiKey: string; model: string },
+  rerankConfig?: { apiBase: string; apiKey: string; model: string },
 ): Promise<{ chunks: RagChunkResult[]; mode: string; entities?: unknown[]; relations?: unknown[] }> {
   const args = [
     "--user-id", userId,
@@ -52,6 +53,13 @@ async function searchViaLightRAG(
     "--llm-model", llmConfig.model,
   ];
   if (embedDim > 0) args.push("--embed-dim", String(embedDim));
+  if (rerankConfig) {
+    args.push(
+      "--rerank-api-base", rerankConfig.apiBase,
+      "--rerank-api-key", rerankConfig.apiKey,
+      "--rerank-model", rerankConfig.model,
+    );
+  }
 
   const parsed: RagQueryOutput = await spawnPythonJson(RAG_QUERY_SCRIPT, args, { timeout: 60_000 });
   if (parsed.error) {
@@ -152,6 +160,7 @@ export async function semanticSearch(
         ctx.embedDim,
         ctx.embedConfig,
         ctx.llmConfig,
+        ctx.rerankConfig,
       );
 
       if (ragResults.chunks.length > 0) {

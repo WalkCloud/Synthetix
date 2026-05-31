@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { deriveDraftStatus, isSectionDone } from "@/types/writing";
+import { deriveDraftStatus } from "@/lib/writing/status";
 import {
   authErrorResponse,
   errorResponse,

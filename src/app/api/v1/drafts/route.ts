@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { isSectionDone, deriveDraftStatus } from "@/types/writing";
+import { deriveDraftStatus, isSectionDone } from "@/lib/writing/status";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import type { OutlineData } from "@/types/writing";
 import { resolveOutline, createDraftWithSections } from "@/lib/writing/resolve-outline";

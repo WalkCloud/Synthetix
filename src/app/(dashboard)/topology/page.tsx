@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { TopologyCanvas } from "@/components/topology/topology-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
@@ -113,8 +114,6 @@ export default function TopologyPage() {
   const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.2, 0.4)), []);
   const handleZoomFit = useCallback(() => setZoom(1), []);
 
-  const selectedDraft = drafts.find((d) => d.id === selectedDraftId);
-
   return (
     <div>
       <Header title="Document Topology" />
@@ -166,7 +165,7 @@ export default function TopologyPage() {
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
               </svg>
               <p className="text-sm">No drafts yet. Create a draft from the writing page to see its topology.</p>
-              <a href="/writing" className="text-primary text-sm font-medium hover:underline mt-2 inline-block">Go to Writing</a>
+              <Link href="/writing" className="text-primary text-sm font-medium hover:underline mt-2 inline-block">Go to Writing</Link>
             </div>
           </div>
         ) : (

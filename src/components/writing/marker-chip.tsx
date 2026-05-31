@@ -17,12 +17,12 @@ export function MarkerChip({ kind, title, markerId, onClick }: MarkerChipProps) 
     <button
       type="button"
       onClick={() => onClick?.(markerId, kind)}
-      className={`my-2 w-full flex items-center gap-2 p-3 border border-dashed rounded-lg transition-colors text-left ${borderClass}`}
+      className={`my-2 w-full flex items-center gap-2 p-3 border border-dashed rounded-lg transition-colors text-left cursor-pointer ${borderClass}`}
     >
       <span className="text-lg">{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{title}</p>
-        <p className="text-xs text-muted-foreground">点击生成</p>
+        <p className="text-xs text-muted-foreground">Click to generate</p>
       </div>
     </button>
   );

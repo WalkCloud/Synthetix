@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       action: "entities",
       embedConfig: ctx.embedConfig,
       llmConfig: ctx.llmConfig!,
+      rerankConfig: ctx.rerankConfig,
       embedDim: ctx.embedDim,
       keyword,
       limit,

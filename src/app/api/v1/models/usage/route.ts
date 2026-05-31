@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
-  const module = searchParams.get("module");
+  const usageModule = searchParams.get("module");
   const days = parseInt(searchParams.get("days") || "30");
 
   const since = new Date();
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const where = {
     userId: user.id,
     createdAt: { gte: since },
-    ...(module && { module }),
+    ...(usageModule && { module: usageModule }),
   };
 
   const [usage, byModelRaw, byModuleRaw, summaryRaw, distinctModels] =

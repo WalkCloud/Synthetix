@@ -76,6 +76,17 @@ export class LocalStorageAdapter implements StorageAdapter {
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   }
 
+  async deleteDocumentData(docId: string, userId: string): Promise<void> {
+    const dir = this.getDocumentDir(docId, userId);
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      if (entry.startsWith("original.")) continue;
+      const full = path.join(dir, entry);
+      fs.rmSync(full, { recursive: true, force: true });
+    }
+  }
+
   getImagesDir(docId: string, userId: string): string {
     return path.join(this.getDocumentDir(docId, userId), "images");
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { BrainstormSession, BrainstormMessage, BrainstormOutline, Phase } from "./types";
 
 export function useBrainstormSessions() {
@@ -9,7 +9,7 @@ export function useBrainstormSessions() {
   const [status, setStatus] = useState("");
   const [phase, setPhase] = useState<Phase>("gathering");
   const [loading, setLoading] = useState(false);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const [outlineTaskId, setOutlineTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/brainstorm/sessions")
@@ -19,6 +19,7 @@ export function useBrainstormSessions() {
 
   const loadSession = useCallback(async (id: string) => {
     setActiveId(id); setLoading(true);
+    setOutlineTaskId(null);
     const res = await fetch(`/api/v1/brainstorm/sessions/${id}`);
     const d = await res.json();
     if (d.success) {
@@ -30,10 +31,20 @@ export function useBrainstormSessions() {
         setPhase("ready");
       } else {
         setPhase("gathering");
+        const taskRes = await fetch(`/api/v1/tasks?type=outline_generate&status=pending,running`).catch(() => null);
+        if (taskRes) {
+          const taskData = await taskRes.json().catch(() => null);
+          if (taskData?.success && taskData.data?.length > 0) {
+            const activeTask = taskData.data.find((t: { sessionId: string | null }) => t.sessionId === id);
+            if (activeTask) {
+              setOutlineTaskId(activeTask.id);
+              setPhase("ready");
+            }
+          }
+        }
       }
     }
     setLoading(false);
-    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }, []);
 
   async function createSession() {
@@ -67,7 +78,7 @@ export function useBrainstormSessions() {
   return {
     sessions, setSessions, activeId, messages, setMessages,
     outline, setOutline, status, setStatus, phase, setPhase,
-    loading, setLoading, messagesEnd,
+    loading, setLoading, outlineTaskId,
     loadSession, createSession, deleteSession,
   };
 }

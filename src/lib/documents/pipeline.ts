@@ -9,7 +9,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import type { StorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim, isLightRAGCompatible } from "@/lib/rag/dimension";
-import { buildEmbedConfig } from "@/lib/rag/context";
+import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
 import type { ProcessingOptions } from "@/lib/queue/types";
@@ -149,10 +149,11 @@ export async function splitAndPersistChunks(
     const splitStrategy = options.splitStrategy || "structure-llm";
     if (splitStrategy !== "heading-only" && writingModel && chunks.length > 1) {
       try {
+        const splitTimeout = Math.min(60_000 + chunks.length * 5_000, 300_000);
         const result = await Promise.race([
           semanticSplit(chunks, writingModel),
           new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("Semantic split timed out after 60s")), 60_000);
+            setTimeout(() => reject(new Error(`Semantic split timed out after ${splitTimeout / 1000}s`)), splitTimeout);
           }),
         ]);
         chunks = result.chunks;
@@ -331,6 +332,14 @@ export async function indexDocument(ctx: ProcessingContext): Promise<void> {
 
   const ragEmbedDim = await resolveEmbeddingDim(embedModel).catch(() => 768);
 
+  let ragRerankConfig: EmbedConfig | undefined;
+  try {
+    const rerankModel = await resolveModel("rerank");
+    if (rerankModel) {
+      ragRerankConfig = buildEmbedConfig(rerankModel);
+    }
+  } catch {}
+
   const embeddingsPath = `${outputDir}/embeddings.bin`;
   const hasCachedEmbeddings = fs.existsSync(embeddingsPath);
 
@@ -339,6 +348,7 @@ export async function indexDocument(ctx: ProcessingContext): Promise<void> {
     hasCachedEmbeddings ? undefined : ragEmbedConfig,
     ragLlmConfig,
     hasCachedEmbeddings ? embeddingsPath : undefined,
+    ragRerankConfig,
   ).catch((err) => {
     console.warn("LightRAG indexing failed (non-blocking):", err);
     return { status: "failed", chunks: 0, error: String(err) };
@@ -365,6 +375,7 @@ export function indexWithLightRAG(
   embedConfig?: { apiBase: string; apiKey: string; model: string },
   llmConfig?: { apiBase: string; apiKey: string; model: string },
   embeddingsFile?: string,
+  rerankConfig?: { apiBase: string; apiKey: string; model: string },
 ): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }> {
   const args = [
     "--doc-id", docId,
@@ -387,6 +398,13 @@ export function indexWithLightRAG(
       "--llm-api-base", llmConfig.apiBase,
       "--llm-api-key", llmConfig.apiKey,
       "--llm-model", llmConfig.model,
+    );
+  }
+  if (rerankConfig) {
+    args.push(
+      "--rerank-api-base", rerankConfig.apiBase,
+      "--rerank-api-key", rerankConfig.apiKey,
+      "--rerank-model", rerankConfig.model,
     );
   }
   return spawnPythonJson(RAG_INDEX_SCRIPT, args, {

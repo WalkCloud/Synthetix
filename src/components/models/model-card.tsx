@@ -45,7 +45,7 @@ export function ModelCard({
 }) {
   return (
     <div
-      className={`bg-card border rounded-2xl px-6 py-5 shadow-soft hover:shadow-hover transition-all relative overflow-hidden ${isTesting ? "border-primary-300" : "border-border"}`}
+      className={`bg-card border rounded-2xl px-6 py-5 shadow-soft hover:shadow-hover transition-all relative overflow-hidden ${isTesting ? "border-primary-300 dark:border-primary-600" : "border-border"}`}
       style={{ animation: "fadeInUp 0.4s ease both" }}
     >
       {isTesting && (
@@ -64,7 +64,7 @@ export function ModelCard({
             <div className="flex items-center gap-2">
               <span className="text-base font-semibold text-foreground">{name}</span>
               {isDefault && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/35 dark:text-amber-300 dark:border-amber-800/40">
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                     <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" />
                   </svg>
@@ -73,17 +73,17 @@ export function ModelCard({
               )}
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
-              {providerName}{contextWindow > 0 && (<><span className="text-slate-300 mx-1.5">|</span>{parseContextWindow(contextWindow)} tokens</>)}
+              {providerName}              {contextWindow > 0 && (<><span className="text-border mx-1.5">|</span>{parseContextWindow(contextWindow)} tokens</>)}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {testResult ? (
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${testResult.connected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${testResult.connected ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/35 dark:text-green-400 dark:border-green-800/40" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/35 dark:text-red-400 dark:border-red-800/40"}`}>
               {testResult.connected ? "Connected" : "Failed"}
             </span>
           ) : isActive ? (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-green-600 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/35 border border-green-100 dark:border-green-800/40 px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
               Connected
             </span>
@@ -96,8 +96,8 @@ export function ModelCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-4">
-        <span className="text-xs font-medium px-2 py-1 bg-muted/50 text-muted-foreground rounded-md border border-slate-100">{providerName}</span>
+      <div className="flex items-center justify-between border-t border-border pt-4 mt-4">
+        <span className="text-xs font-medium px-2 py-1 bg-muted/50 text-muted-foreground rounded-md border border-border">{providerName}</span>
         <div className="flex items-center gap-2">
           {isDeleting ? (
             <>
@@ -113,7 +113,7 @@ export function ModelCard({
           ) : (
             <>
               <button onClick={onToggleDefault} title={isDefault ? "Remove default" : "Set as default model"}
-                className={`p-2 rounded-lg transition-colors cursor-pointer ${isDefault ? "text-amber-500 hover:bg-amber-50" : "text-slate-300 hover:text-amber-400 hover:bg-secondary/70"}`}>
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${isDefault ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30" : "text-muted-foreground/30 hover:text-amber-400 dark:hover:text-amber-300 hover:bg-secondary/70"}`}>
                 <svg viewBox="0 0 24 24" fill={isDefault ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-5 h-5">
                   <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" transform="translate(4,3) scale(0.85)" />
                 </svg>
@@ -134,7 +134,7 @@ export function ModelCard({
                 Edit
               </button>
               <button onClick={onDelete}
-                className="px-4 py-1.5 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
                 Delete
               </button>
             </>

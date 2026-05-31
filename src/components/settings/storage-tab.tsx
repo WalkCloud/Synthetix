@@ -5,6 +5,50 @@ import { CardSelector } from "@/components/shared/card-selector";
 
 type StorageMode = "local" | "s3";
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let idx = 0;
+  let val = bytes;
+  while (val >= 1024 && idx < units.length - 1) { val /= 1024; idx++; }
+  return `${val.toFixed(val >= 100 ? 0 : val >= 10 ? 1 : 2)} ${units[idx]}`;
+}
+
+interface UsageStats {
+  documentsBytes: number;
+  assetsBytes: number;
+  indexBytes: number;
+  otherBytes: number;
+  totalDataBytes: number;
+  diskFreeBytes: number;
+  diskTotalBytes: number;
+}
+
+function Row({ label, bytes, color, hint }: { label: string; bytes: number; color: string; hint: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <div className="flex items-center gap-2">
+        <span className={`w-2.5 h-2.5 rounded-sm ${color} inline-block shrink-0`} />
+        <span className="text-[13px] text-foreground">{label}</span>
+        <span className="text-[11px] text-muted-foreground hidden sm:inline">({hint})</span>
+      </div>
+      <span className="text-[13px] text-muted-foreground tabular-nums">{formatBytes(bytes)}</span>
+    </div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <div className="flex items-center gap-2">
+        <div className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/15 shrink-0 animate-pulse" />
+        <div className="h-3 w-24 bg-muted-foreground/15 rounded animate-pulse" />
+      </div>
+      <div className="h-3 w-14 bg-muted-foreground/15 rounded animate-pulse" />
+    </div>
+  );
+}
+
 export function StorageTab() {
   const [storageMode, setStorageMode] = useState<StorageMode>("local");
   const [storageLocalPath, setStorageLocalPath] = useState("./data/documents");
@@ -17,6 +61,7 @@ export function StorageTab() {
   const [savingStorage, setSavingStorage] = useState(false);
   const [storageConfigured, setStorageConfigured] = useState(true);
   const [storageMsg, setStorageMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/settings/storage")
@@ -33,6 +78,7 @@ export function StorageTab() {
           setS3AccessKey(s.s3AccessKey || "");
           setS3SecretKey(s.s3SecretKey || "");
           setStorageConfigured(s.storageType !== "s3" || !!s.s3Bucket);
+          if (s.usage) setUsage(s.usage);
         }
       })
       .catch(() => {});
@@ -121,17 +167,37 @@ export function StorageTab() {
               <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache. Can be safely deleted.</span>
             </div>
             <div className="mt-5 p-4 bg-muted rounded-[16px]">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-semibold">Storage Usage</span>
-                <span className="text-[13px] text-muted-foreground">2.4 GB / 50 GB</span>
+              <div className="flex justify-between items-start mb-3">
+                <span className="text-sm font-semibold text-foreground">Storage Usage</span>
+                {usage && (
+                  <span className="text-sm font-semibold text-foreground">{formatBytes(usage.totalDataBytes)}</span>
+                )}
               </div>
-              <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full" style={{ width: "4.8%" }} />
-              </div>
-              <div className="flex gap-5 mt-3 text-[13px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary inline-block" /> Documents: 1.8 GB</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary-light inline-block" /> Cache: 0.6 GB</span>
-              </div>
+
+              {usage ? (
+                <div className="space-y-1.5">
+                  <Row label="Documents" bytes={usage.documentsBytes} color="bg-primary" hint="original & markdown" />
+                  <Row label="Assets" bytes={usage.assetsBytes} color="bg-blue-500" hint="images, diagrams, SVG" />
+                  <Row label="Index" bytes={usage.indexBytes} color="bg-amber-500" hint="vector embeddings" />
+                  <Row label="Other" bytes={usage.otherBytes} color="bg-muted-foreground/40" hint="tmp, settings" />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </div>
+              )}
+
+              {usage && usage.diskTotalBytes > 0 && (
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+                  <svg className="w-3.5 h-3.5 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
+                  <span className="text-[12px] text-muted-foreground">
+                    Disk free <span className="text-foreground font-medium">{formatBytes(usage.diskFreeBytes)}</span> / {formatBytes(usage.diskTotalBytes)}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 mt-5">
               {storageMsg && (

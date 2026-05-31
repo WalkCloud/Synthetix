@@ -13,8 +13,10 @@ export interface EmbedConfig {
 export interface RagContext {
   embedModel: NonNullable<Awaited<ReturnType<typeof resolveModel>>>;
   llmModel: Awaited<ReturnType<typeof resolveModel>>;
+  rerankModel: Awaited<ReturnType<typeof resolveModel>>;
   embedConfig: EmbedConfig;
   llmConfig: EmbedConfig | undefined;
+  rerankConfig: EmbedConfig | undefined;
   embedDim: number;
 }
 
@@ -36,9 +38,10 @@ export async function createRagContext(
     embedDimFallback?: number;
   },
 ): Promise<RagContext> {
-  const [embedModel, llmModel] = await Promise.all([
+  const [embedModel, llmModel, rerankModel] = await Promise.all([
     resolveModel("embedding"),
     resolveModel("writing"),
+    resolveModel("rerank").catch(() => null),
   ]);
 
   if (!embedModel) {
@@ -53,12 +56,15 @@ export async function createRagContext(
 
   const embedConfig = buildEmbedConfig(embedModel);
   const llmConfig = llmModel?.provider.apiKey ? buildEmbedConfig(llmModel) : undefined;
+  const rerankConfig = rerankModel ? buildEmbedConfig(rerankModel) : undefined;
 
   return {
     embedModel,
     llmModel,
+    rerankModel,
     embedConfig,
     llmConfig,
+    rerankConfig,
     embedDim,
   };
 }

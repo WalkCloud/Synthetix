@@ -1,4 +1,4 @@
-import type { TranslationKeys } from "./zh-CN";
+import type { TranslationKeys } from "../types";
 
 const en: TranslationKeys = {
   sidebar: {
@@ -30,7 +30,6 @@ const en: TranslationKeys = {
     copyright: "All rights reserved.",
   },
   language: {
-    zhCN: "简体中文",
     en: "English",
   },
 };

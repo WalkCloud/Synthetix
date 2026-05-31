@@ -88,16 +88,45 @@ export function useSectionActions(
   const handleInsertAsset = useCallback(async (markerId: string, assetId: string) => {
     if (!activeSectionId) return null;
     try {
+      // Case 1: No markerId — append [IMAGE:assetId] to section content directly
+      if (!markerId) {
+        const sectionRes = await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`);
+        if (!sectionRes.ok) return null;
+        const sectionData = await sectionRes.json();
+        const content = sectionData?.data?.content || sectionData?.content || "";
+        const marker = `[IMAGE:${assetId}]`;
+        if (content.includes(marker)) {
+          // Already inserted
+          return content;
+        }
+        const updatedContent = content + "\n\n" + marker;
+        await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: updatedContent }),
+        });
+        await loadDraft();
+        return updatedContent;
+      }
+
+      // Case 2: With markerId — replace existing marker via confirm-asset API
       const res = await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}/assets/confirm-asset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markerId, assetId }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Insert failed" }));
+        console.error("[handleInsertAsset] confirm-asset failed:", res.status, err);
+        const { toast } = await import("sonner");
+        toast.error(err.error || "Failed to insert image");
+        return null;
+      }
       const data = await res.json();
       await loadDraft();
       return data.content as string;
-    } catch {
+    } catch (e) {
+      console.error("[handleInsertAsset] error:", e);
       return null;
     }
   }, [id, activeSectionId, loadDraft]);

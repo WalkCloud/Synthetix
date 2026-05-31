@@ -8,12 +8,12 @@ describe("countWords", () => {
   });
 
   it("counts CJK characters", () => {
-    expect(countWords("你好世界")).toBe(4);
-    expect(countWords("测试")).toBe(2);
+    expect(countWords("\u4f60\u597d\u4e16\u754c")).toBe(4);
+    expect(countWords("\u6d4b\u8bd5")).toBe(2);
   });
 
   it("counts mixed Latin and CJK", () => {
-    expect(countWords("hello你好world世界")).toBe(6);
+    expect(countWords("hello\u4f60\u597dworld\u4e16\u754c")).toBe(6);
   });
 
   it("counts numbers as words", () => {

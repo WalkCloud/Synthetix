@@ -8,15 +8,14 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import zhCN, { type TranslationKeys } from "./locales/zh-CN";
 import en from "./locales/en";
+import type { TranslationKeys } from "./types";
 
-export type Locale = "zh-CN" | "en";
+export type Locale = "en";
 
 const STORAGE_KEY = "synthetix-locale";
 
 const localeMap: Record<Locale, TranslationKeys> = {
-  "zh-CN": zhCN,
   en,
 };
 
@@ -27,13 +26,13 @@ interface LocaleContextValue {
 }
 
 const LocaleContext = createContext<LocaleContextValue>({
-  locale: "zh-CN",
-  t: zhCN,
+  locale: "en",
+  t: en,
   setLocale: () => {},
 });
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("zh-CN");
+  const [locale, setLocaleState] = useState<Locale>("en");
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) as Locale | null;

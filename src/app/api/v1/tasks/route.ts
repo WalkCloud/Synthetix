@@ -8,11 +8,15 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
+  const type = searchParams.get("type");
   const limit = parseInt(searchParams.get("limit") || "50", 10);
 
   const where: Record<string, unknown> = { userId: user.id };
   if (status) {
     where.status = { in: status.split(",") };
+  }
+  if (type) {
+    where.type = type;
   }
 
   const tasks = await db.asyncTask.findMany({
@@ -49,6 +53,7 @@ export async function GET(request: Request) {
         status: t.status,
         progress: t.progress,
         draftId: typeof input?.draftId === "string" ? input.draftId : null,
+        sessionId: typeof input?.sessionId === "string" ? input.sessionId : null,
         result,
         error: t.errorMessage,
         createdAt: t.createdAt.toISOString(),
