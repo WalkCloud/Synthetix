@@ -114,6 +114,12 @@ export async function POST(
         controller.enqueue(encoder.encode(sseDone()));
         controller.close();
       } catch (error) {
+        if (modelConfigId && (inTokens > 0 || outTokens > 0)) {
+          await recordTokenUsage({
+            userId: user.id, modelConfigId, module: "writing",
+            inputTokens: inTokens, outputTokens: outTokens,
+          }).catch(() => {});
+        }
         await db.section.update({
           where: { id: sectionId }, data: { status: "failed" },
         }).catch((err) => { console.warn("Failed to update section status:", err); });

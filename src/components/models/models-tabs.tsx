@@ -15,6 +15,12 @@ const MODULE_LABELS: Record<string, string> = {
   writing: "Writing",
   embedding: "Indexing",
   comparison: "Comparison",
+  audit: "Quality Audit",
+  summary: "Summarization",
+  "auto-tag": "Auto Tagging",
+  mermaid: "Diagram",
+  chunking: "Doc Chunking",
+  search: "Semantic Search",
 };
 
 const TIME_RANGE_TO_DAYS: Record<TimeRange, number> = {
