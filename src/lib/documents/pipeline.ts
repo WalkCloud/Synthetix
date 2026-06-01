@@ -158,6 +158,17 @@ export async function splitAndPersistChunks(
         ]);
         chunks = result.chunks;
 
+        if (result.inputTokens > 0 || result.outputTokens > 0) {
+          await recordTokenUsage({
+            userId: ctx.doc.userId,
+            modelConfigId: writingModel.id,
+            module: "chunking",
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            referenceId: ctx.docId,
+          }).catch(() => {});
+        }
+
         const subChunks: typeof chunks = [];
         for (const chunk of chunks) {
           if (chunk.tokenCount <= chunkMaxTokens) {

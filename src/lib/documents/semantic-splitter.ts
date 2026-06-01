@@ -14,9 +14,16 @@ interface SemanticModelConfig {
   };
 }
 
+interface SplitMergeResult {
+  chunks: SplitChunk[];
+  topics: { title: string; chunkIndices: number[] }[];
+}
+
 interface SemanticSplitResult {
   chunks: SplitChunk[];
   topics: { title: string; chunkIndices: number[] }[];
+  inputTokens: number;
+  outputTokens: number;
 }
 
 interface MergeDecision {
@@ -30,13 +37,15 @@ export async function semanticSplit(
   modelConfig: SemanticModelConfig,
 ): Promise<SemanticSplitResult> {
   if (structuralChunks.length <= 1) {
-    return { chunks: structuralChunks, topics: [] };
+    return { chunks: structuralChunks, topics: [], inputTokens: 0, outputTokens: 0 };
   }
 
   const provider = createLLMProvider(modelConfig.provider);
   const BATCH_SIZE = 20;
   const CONCURRENCY = 3;
 
+  let totalInput = 0;
+  let totalOutput = 0;
   const allDecisions: MergeDecision[] = [];
 
   const batches: { offset: number; chunks: SplitChunk[] }[] = [];
@@ -72,6 +81,9 @@ Rules:
           maxTokens: 1024,
         });
 
+        totalInput += resp.inputTokens;
+        totalOutput += resp.outputTokens;
+
         const text = resp.content.trim();
         const jsonStr = extractFirstJsonArray(text);
         if (!jsonStr) return [];
@@ -95,17 +107,18 @@ Rules:
       title: c.headingPath || c.title,
       chunkIndices: [c.index],
     }));
-    return { chunks: structuralChunks, topics };
+    return { chunks: structuralChunks, topics, inputTokens: totalInput, outputTokens: totalOutput };
   }
 
   // Apply merge decisions
-  return applyMerges(structuralChunks, allDecisions);
+  const merged = applyMerges(structuralChunks, allDecisions);
+  return { ...merged, inputTokens: totalInput, outputTokens: totalOutput };
 }
 
 function applyMerges(
   structuralChunks: SplitChunk[],
   decisions: MergeDecision[],
-): SemanticSplitResult {
+): SplitMergeResult {
   const merged = new Set<number>();
   const groups: { title: string; indices: number[] }[] = [];
 

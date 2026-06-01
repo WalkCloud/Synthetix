@@ -104,13 +104,26 @@ export async function GET(request: Request) {
         totalOutputTokens: r._sum.outputTokens ?? 0,
         totalCalls: r._count,
       };
-    })
-    .sort(
-      (a, b) =>
-        b.totalInputTokens +
-        b.totalOutputTokens -
-        (a.totalInputTokens + a.totalOutputTokens),
-    );
+    });
+
+  const nullRecords = byModelRaw.filter((r) => r.modelConfigId === null);
+  if (nullRecords.length > 0) {
+    byModel.push({
+      modelConfigId: "__deleted__",
+      modelName: "Deleted Model",
+      providerName: "-",
+      totalInputTokens: nullRecords.reduce((s, r) => s + (r._sum.inputTokens ?? 0), 0),
+      totalOutputTokens: nullRecords.reduce((s, r) => s + (r._sum.outputTokens ?? 0), 0),
+      totalCalls: nullRecords.reduce((s, r) => s + r._count, 0),
+    });
+  }
+
+  byModel.sort(
+    (a, b) =>
+      b.totalInputTokens +
+      b.totalOutputTokens -
+      (a.totalInputTokens + a.totalOutputTokens),
+  );
 
   const byModule = byModuleRaw
     .map((r) => ({
@@ -126,7 +139,7 @@ export async function GET(request: Request) {
         (a.totalInputTokens + a.totalOutputTokens),
     );
 
-  const modelsUsed = distinctModels.filter((d) => d.modelConfigId !== null).length;
+  const modelsUsed = byModel.length;
 
   return successResponse({
     entries,

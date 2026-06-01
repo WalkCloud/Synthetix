@@ -68,9 +68,13 @@ function applyTranslations(obj: JsonValue, translations: Record<string, string>)
   return obj;
 }
 
-export async function translateLabels(code: string, provider: LLMProvider, modelId: string): Promise<string> {
+export async function translateLabels(
+  code: string,
+  provider: LLMProvider,
+  modelId: string,
+): Promise<{ code: string; inputTokens: number; outputTokens: number }> {
   const englishTexts = extractAllTexts(code);
-  if (englishTexts.length === 0) return code;
+  if (englishTexts.length === 0) return { code, inputTokens: 0, outputTokens: 0 };
 
   const list = englishTexts.map((t, i) => `${i + 1}. ${t}`).join("\n");
   const resp = await provider.chat({
@@ -89,12 +93,12 @@ export async function translateLabels(code: string, provider: LLMProvider, model
     const map = JSON.parse(raw);
     if (typeof map === "object" && map !== null) {
       const parsed = JSON.parse(code);
-      return JSON.stringify(applyTranslations(parsed, map));
+      return { code: JSON.stringify(applyTranslations(parsed, map)), inputTokens: resp.inputTokens, outputTokens: resp.outputTokens };
     }
   } catch (e) {
     console.warn("[diagram-translate] translateLabels failed, using original:", e instanceof Error ? e.message : String(e));
   }
-  return code;
+  return { code, inputTokens: resp.inputTokens, outputTokens: resp.outputTokens };
 }
 
 export function repairJson(code: string): string {

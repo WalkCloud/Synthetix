@@ -147,6 +147,20 @@ export async function POST(
         controller.enqueue(encoder.encode(sseDone()));
         controller.close();
       } catch (error) {
+        const tokenPromises: Promise<void>[] = [];
+        if (modelARecord.id && (inputTokensA > 0 || outputTokensA > 0)) {
+          tokenPromises.push(recordTokenUsage({
+            userId: user.id, modelConfigId: modelARecord.id, module: "comparison",
+            inputTokens: inputTokensA, outputTokens: outputTokensA, referenceId: sectionId,
+          }).catch(() => {}));
+        }
+        if (modelBRecord.id && (inputTokensB > 0 || outputTokensB > 0)) {
+          tokenPromises.push(recordTokenUsage({
+            userId: user.id, modelConfigId: modelBRecord.id, module: "comparison",
+            inputTokens: inputTokensB, outputTokens: outputTokensB, referenceId: sectionId,
+          }).catch(() => {}));
+        }
+        await Promise.all(tokenPromises);
         try {
           await db.section.update({
             where: { id: sectionId }, data: { status: "failed" },
