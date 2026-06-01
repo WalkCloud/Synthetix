@@ -43,8 +43,12 @@ export function useSectionActions(
             prompt: a.prompt,
           })),
         );
+      } else {
+        console.warn("[loadAssets] failed:", data.error, "sectionId:", activeSectionId);
       }
-    } catch {}
+    } catch {
+      console.warn("[loadAssets] fetch error sectionId:", activeSectionId);
+    }
   }, [id, activeSectionId]);
 
   useEffect(() => { loadAssets(); }, [loadAssets]);

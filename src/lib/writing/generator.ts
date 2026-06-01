@@ -425,3 +425,123 @@ export async function compareSection(
     throw new Error(`Section comparison failed: ${message}`);
   }
 }
+
+export interface CompareStreamCallbacks {
+  onReferences?: (refs: ContextInput["ragReferences"]) => void;
+  onChunk: (source: "a" | "b", content: string) => void;
+  onDone: (result: {
+    contentA: string;
+    contentB: string;
+    modelA: string;
+    modelB: string;
+    inputTokensA: number;
+    outputTokensA: number;
+    inputTokensB: number;
+    outputTokensB: number;
+    contentASource?: "a";
+    contentBSource?: "b";
+  }) => void;
+  onError: (source: "a" | "b", error: string) => void;
+}
+
+export async function compareSectionStream(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
+  modelBConfig: { provider: unknown; modelId: string; modelConfigId?: string },
+  constraints: ContextInput["constraints"] | undefined,
+  callbacks: CompareStreamCallbacks,
+): Promise<void> {
+  const providerA = modelAConfig.provider as ReturnType<typeof createLLMProvider>;
+  const providerB = modelBConfig.provider as ReturnType<typeof createLLMProvider>;
+
+  const ragReferences = await fetchRagReferences(
+    draft.title,
+    section,
+    userId,
+    parseRagConfig(section),
+  );
+  callbacks.onReferences?.(ragReferences);
+
+  const effectiveConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
+  );
+
+  const messages = assembleContext({
+    draft,
+    section,
+    completedSections,
+    ragReferences,
+    constraints: effectiveConstraints,
+  });
+
+  const chatParams = {
+    messages,
+    temperature: GENERATION_TEMPERATURE,
+    stream: true as const,
+  };
+
+  let contentA = "";
+  let contentB = "";
+  let modelA = "";
+  let modelB = "";
+  let inputTokensA = 0;
+  let outputTokensA = 0;
+  let inputTokensB = 0;
+  let outputTokensB = 0;
+
+  await Promise.allSettled([
+    (async () => {
+      try {
+        const stream = providerA.chatStream({ ...chatParams, model: modelAConfig.modelId });
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            contentA += chunk.content;
+            callbacks.onChunk("a", chunk.content);
+          }
+          if (chunk.done) {
+            modelA = modelAConfig.modelId;
+            inputTokensA = chunk.inputTokens ?? 0;
+            outputTokensA = chunk.outputTokens ?? 0;
+          }
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        callbacks.onError("a", message);
+      }
+    })(),
+    (async () => {
+      try {
+        const stream = providerB.chatStream({ ...chatParams, model: modelBConfig.modelId });
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            contentB += chunk.content;
+            callbacks.onChunk("b", chunk.content);
+          }
+          if (chunk.done) {
+            modelB = modelBConfig.modelId;
+            inputTokensB = chunk.inputTokens ?? 0;
+            outputTokensB = chunk.outputTokens ?? 0;
+          }
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        callbacks.onError("b", message);
+      }
+    })(),
+  ]);
+
+  callbacks.onDone({
+    contentA,
+    contentB,
+    modelA,
+    modelB,
+    inputTokensA,
+    outputTokensA,
+    inputTokensB,
+    outputTokensB,
+  });
+}

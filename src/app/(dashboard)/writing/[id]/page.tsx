@@ -102,20 +102,6 @@ export default function WritingPage({
     }
   }, [activeSectionId, actions]);
 
-  const handleBatchGenerate = useCallback(async () => {
-    if (!activeSection?.content || !activeSectionId) return;
-    const markers = parseAllMarkers(activeSection.content);
-    if (markers.length === 0) return;
-    try {
-      await fetch(`/api/v1/drafts/${id}/sections/${activeSectionId}/assets/batch-generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markers }),
-      });
-      await loadDraft();
-    } catch {}
-  }, [id, activeSectionId, activeSection?.content, loadDraft]);
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/40">
@@ -392,8 +378,10 @@ export default function WritingPage({
             isHumanizing={gen.isHumanizing}
             isConfirming={gen.isConfirming}
             streamingContent={gen.generatingSectionId === activeSectionId ? gen.streamingContent : ""}
+            streamContentA={gen.generatingSectionId === activeSectionId ? gen.streamContentA : ""}
+            streamContentB={gen.generatingSectionId === activeSectionId ? gen.streamContentB : ""}
+            genMode={gen.generationMode}
             onMarkerClick={handleMarkerClick}
-            onBatchGenerate={handleBatchGenerate}
             pendingMarkerCount={pendingMarkerCount}
           />
         </div>

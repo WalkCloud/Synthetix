@@ -16,6 +16,7 @@ export async function POST(
   }
 
   const { id: draftId, secId: sectionId } = await params;
+  console.log("[unlock] params:", { draftId, sectionId, userId: user.id });
 
   let targetStatus: "reviewing" | "pending" = "reviewing";
   try {

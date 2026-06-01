@@ -166,7 +166,7 @@ export async function generateDraftAll(
 
         if (!summary) {
           try {
-            summary = await generateSummary(section.content, section.title);
+            summary = await generateSummary(section.content, section.title, userId, section.id);
           } catch (error) {
             console.warn(`Summary generation failed for section ${section.id}:`, error);
           }
@@ -276,7 +276,7 @@ export async function generateDraftAll(
       let summary: string | null = null;
 
       try {
-        summary = await generateSummary(content, section.title);
+        summary = await generateSummary(content, section.title, userId, section.id);
       } catch (error) {
         console.warn(`Summary generation failed for section ${section.id}:`, error);
       }
