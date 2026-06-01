@@ -23,6 +23,9 @@ export function useGeneration(
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingSectionId, setGeneratingSectionId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamContentA, setStreamContentA] = useState("");
+  const [streamContentB, setStreamContentB] = useState("");
+  const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
   const [isThinking, setIsThinking] = useState(false);
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -38,6 +41,9 @@ export function useGeneration(
       setIsGenerating(true);
       setGeneratingSectionId(sectionId);
       setStreamingContent("");
+      setStreamContentA("");
+      setStreamContentB("");
+      setGenerationMode(mode);
       setIsThinking(false);
 
       const endpoint =
@@ -73,6 +79,8 @@ export function useGeneration(
           const decoder = new TextDecoder();
           let buffer = "";
           let contentBuf = "";
+          let contentBufA = "";
+          let contentBufB = "";
 
           while (true) {
             const { done, value } = await reader.read();
@@ -89,8 +97,18 @@ export function useGeneration(
                   else if (data.type === "reasoning") setIsThinking(true);
                   else if (data.type === "chunk") {
                     setIsThinking(false);
-                    contentBuf += data.content;
-                    setStreamingContent(contentBuf);
+                    if (data.source === "a") {
+                      contentBufA += data.content;
+                      setStreamContentA(contentBufA);
+                    } else if (data.source === "b") {
+                      contentBufB += data.content;
+                      setStreamContentB(contentBufB);
+                    } else {
+                      contentBuf += data.content;
+                      setStreamingContent(contentBuf);
+                    }
+                  } else if (data.type === "model_error") {
+                    toast.error(`Model ${(data.source as string).toUpperCase()}: ${data.error}`);
                   } else if (data.type === "error") {
                     toast.error(data.error);
                   }
@@ -100,6 +118,8 @@ export function useGeneration(
           }
           await loadDraft();
           setStreamingContent("");
+          setStreamContentA("");
+          setStreamContentB("");
         } else {
           const data = await res.json();
           if (!data.success) {
@@ -180,14 +200,24 @@ export function useGeneration(
           body: JSON.stringify({ targetStatus: targetStatus || "reviewing" }),
         },
       );
-      if (res.ok) await loadDraft();
-    } catch {}
+      if (res.ok) {
+        await loadDraft();
+      } else {
+        const data = await res.json().catch(() => ({} as Record<string, unknown>));
+        toast.error((data.error as string) || "Failed to unlock section");
+      }
+    } catch {
+      toast.error("Unlock request failed");
+    }
   }, [activeSectionId, id, loadDraft]);
 
   return {
     isGenerating,
     generatingSectionId,
     streamingContent,
+    streamContentA,
+    streamContentB,
+    generationMode,
     isThinking,
     isHumanizing,
     isConfirming,

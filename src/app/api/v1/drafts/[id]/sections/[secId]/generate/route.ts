@@ -99,7 +99,7 @@ export async function POST(
 
         (async () => {
           try {
-            const auditResult = await auditSection(section.title, cleanContent, section.keyPoints);
+            const auditResult = await auditSection(section.title, cleanContent, section.keyPoints, user.id, sectionId);
             const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
             const existing = current?.constraints ? JSON.parse(current.constraints) : {};
             await db.section.update({

@@ -9,6 +9,7 @@ export interface ChatParams {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  streamOptions?: Record<string, unknown>;
 }
 
 export interface ChatChunk {

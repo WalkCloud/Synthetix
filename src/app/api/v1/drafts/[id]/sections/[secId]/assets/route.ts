@@ -16,6 +16,7 @@ export async function GET(
   }
 
   const { id: draftId, secId: sectionId } = await params;
+  console.log("[assets] params:", { draftId, sectionId, userId: user.id });
 
   const draft = await db.draft.findFirst({
     where: { id: draftId, userId: user.id },

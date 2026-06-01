@@ -8,9 +8,9 @@ import {
   getErrorMessage,
 } from "@/lib/api-helpers";
 
-async function generateSummaryBackground(sectionId: string, content: string, title: string) {
+async function generateSummaryBackground(sectionId: string, content: string, title: string, userId: string) {
   try {
-    const summary = await generateSummary(content, title);
+    const summary = await generateSummary(content, title, userId, sectionId);
     await db.section.update({
       where: { id: sectionId },
       data: { summary, status: "locked" },
@@ -85,7 +85,7 @@ export async function POST(
       data: { status: "locked", wordCount },
     });
 
-    generateSummaryBackground(sectionId, section.content, section.title);
+    generateSummaryBackground(sectionId, section.content, section.title, user.id);
 
     return successResponse(locked);
   } catch (error: unknown) {

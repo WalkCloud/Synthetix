@@ -1,10 +1,13 @@
 import { resolveLLMClient } from "@/lib/llm/client";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import { buildAuditPrompt, parseAuditResponse, type AuditResult } from "./audit";
 
 export async function auditSection(
   title: string,
   content: string,
-  keyPoints?: string | null
+  keyPoints?: string | null,
+  userId?: string,
+  referenceId?: string,
 ): Promise<AuditResult> {
   const client = await resolveLLMClient("writing");
   if (!client) {
@@ -27,6 +30,17 @@ export async function auditSection(
       ],
       temperature: 0.1,
     });
+
+    if (userId) {
+      await recordTokenUsage({
+        userId,
+        modelConfigId: client.modelConfigId,
+        module: "audit",
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        referenceId,
+      }).catch((err) => { console.warn("Failed to record audit token usage:", err); });
+    }
 
     return parseAuditResponse(response.content);
   } catch (error) {

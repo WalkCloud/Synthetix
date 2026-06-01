@@ -28,7 +28,7 @@ function formatNumber(n: number): string {
 }
 
 export function ModelsTabs() {
-  const [tab, setTab] = useState<Tab>("llm");
+  const [tab, setTab] = useState<Tab>("usage");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);

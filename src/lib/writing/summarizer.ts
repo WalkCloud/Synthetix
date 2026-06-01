@@ -1,4 +1,5 @@
 import { getLLMClient } from "@/lib/llm/client";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ChatMessage } from "@/lib/llm/types";
 
 const SUMMARY_MAX_TOKENS = 300;
@@ -32,7 +33,9 @@ function buildSummaryMessages(
 
 export async function generateSummary(
   sectionContent: string,
-  sectionTitle: string
+  sectionTitle: string,
+  userId?: string,
+  referenceId?: string,
 ): Promise<string> {
   if (!sectionContent.trim()) {
     throw new Error("Cannot generate summary: section content is empty.");
@@ -42,7 +45,7 @@ export async function generateSummary(
     throw new Error("Cannot generate summary: section title is empty.");
   }
 
-  const { provider, modelId } = await getLLMClient("writing");
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
 
   const messages = buildSummaryMessages(sectionContent, sectionTitle);
 
@@ -58,6 +61,17 @@ export async function generateSummary(
 
     if (!summary) {
       throw new Error("Model returned empty summary.");
+    }
+
+    if (userId) {
+      await recordTokenUsage({
+        userId,
+        modelConfigId,
+        module: "summary",
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        referenceId,
+      }).catch((err) => { console.warn("Failed to record summary token usage:", err); });
     }
 
     return summary;
