@@ -4,16 +4,20 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import type { DocumentMeta, SearchResult } from "@/types/documents";
+import type { TopologyResponse } from "@/types/topology";
 import { SearchHero } from "@/components/library/search-hero";
 import { StatsRibbon } from "@/components/library/stats-ribbon";
 import { DocumentTable } from "@/components/library/document-table";
 import { SemanticResults } from "@/components/library/semantic-results";
+import { TopologyCanvas } from "@/components/topology/topology-canvas";
+import { TopologyControls } from "@/components/topology/topology-controls";
 
-type TabId = "documents" | "search";
+type TabId = "documents" | "search" | "knowledge-graph";
 
 const tabItems: { id: TabId; label: string }[] = [
   { id: "documents", label: "Document Management" },
   { id: "search", label: "Document Search" },
+  { id: "knowledge-graph", label: "Knowledge Graph" },
 ];
 
 export default function LibraryPage() {
@@ -36,6 +40,69 @@ export default function LibraryPage() {
   const [searchStage, setSearchStage] = useState(0);
   const searchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  const [kgTopology, setKgTopology] = useState<TopologyResponse | null>(null);
+  const [kgLoading, setKgLoading] = useState(false);
+  const [kgZoom, setKgZoom] = useState(1);
+  const [kgSearch, setKgSearch] = useState("");
+  const [kgCenter, setKgCenter] = useState("");
+  const [kgSelectedNodeId, setKgSelectedNodeId] = useState<string | null>(null);
+  const kgCacheRef = useRef<TopologyResponse | null>(null);
+
+  const loadKnowledgeGraph = useCallback(async (entity?: string) => {
+    setKgLoading(true);
+    setKgSelectedNodeId(null);
+    try {
+      const params = new URLSearchParams({ depth: "2", max_nodes: "100", mode: "core" });
+      if (entity) { params.set("entity", entity); params.set("mode", "graph"); }
+      const res = await fetch(`/api/v1/knowledge/graph?${params}`);
+      const d = await res.json();
+      if (d.success && d.data?.graph) {
+        const kg = d.data.graph;
+        const stats = {
+          totalReferences: 0, uniqueDocuments: 0, sectionsWithReferences: 0, totalSections: 0,
+          mostReferencedDoc: null, coverage: "",
+          totalEntities: kg.nodes?.length || 0,
+          totalRelations: kg.edges?.length || 0,
+          leafCount: d.data.leaf_count || 0,
+        };
+        const data: TopologyResponse = {
+          draft: { id: "kg-root", title: entity || "Knowledge Graph", status: "ready" },
+          nodes: kg.nodes.map((node: { id: string; label: string; type: string; description: string }) => ({
+            id: node.id, type: "entity" as const,
+            label: node.label || node.id?.slice(0, 30) || "Entity",
+            format: "entity", referenceCount: 0, relevanceScore: 0,
+            entityType: node.type || "entity",
+          })),
+          edges: kg.edges.map((edge: { source: string; target: string; label: string; weight: number; description: string }) => ({
+            source: edge.source, target: edge.target,
+            weight: edge.weight || 1, sectionIds: [], sectionLabels: [],
+            description: edge.description,
+          })),
+          stats,
+        };
+        setKgTopology(data);
+        if (!entity) kgCacheRef.current = data;
+      } else {
+        setKgTopology(null);
+      }
+    } catch {
+      setKgTopology(null);
+    }
+    setKgLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "knowledge-graph") return;
+    if (kgCenter) {
+      loadKnowledgeGraph(kgCenter);
+    } else if (kgCacheRef.current && !kgCenter) {
+      setKgTopology(kgCacheRef.current);
+      setKgLoading(false);
+    } else {
+      loadKnowledgeGraph();
+    }
+  }, [activeTab, loadKnowledgeGraph, kgCenter]);
 
   const fetchDocs = useCallback(async (p: number) => {
     setLoading(true);
@@ -223,6 +290,58 @@ export default function LibraryPage() {
               searchMode={searchMode}
               searchStage={searchStage}
             />
+          </>
+        )}
+
+        {activeTab === "knowledge-graph" && (
+          <>
+            <TopologyControls
+              mode="knowledge"
+              zoom={kgZoom}
+              onZoomIn={() => setKgZoom((z) => Math.min(z + 0.2, 3))}
+              onZoomOut={() => setKgZoom((z) => Math.max(z - 0.2, 0.4))}
+              onZoomFit={() => setKgZoom(1)}
+              kgSearch={kgSearch}
+              onKgSearchChange={setKgSearch}
+              onKgSearchSubmit={() => { if (kgSearch.trim()) { setKgCenter(kgSearch.trim()); setKgSearch(""); }}}
+              kgCenter={kgCenter}
+              onKgCenterClear={() => { setKgCenter(""); setKgTopology(kgCacheRef.current); }}
+              totalEntities={kgTopology?.stats?.totalEntities}
+              totalRelations={kgTopology?.stats?.totalRelations}
+              leafCount={kgTopology?.stats?.leafCount}
+            />
+            {kgLoading && !kgTopology ? (
+              <div className="flex items-center justify-center min-h-[560px]">
+                <div className="text-center text-muted-foreground">
+                  <div className="w-10 h-10 mx-auto mb-3 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p>Loading knowledge graph...</p>
+                </div>
+              </div>
+            ) : !kgTopology || kgTopology.nodes.length === 0 ? (
+              <div className="bg-muted border border-border rounded-[16px] min-h-[560px] flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12 mx-auto mb-3 opacity-40">
+                    <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                  <p className="text-sm">No knowledge graph yet.</p>
+                  <p className="text-xs mt-1">Index documents with &ldquo;Entity extraction + knowledge graph&rdquo; mode enabled.</p>
+                </div>
+              </div>
+            ) : (
+              <TopologyCanvas
+                nodes={kgTopology.nodes}
+                edges={kgTopology.edges}
+                zoom={kgZoom}
+                selectedNodeId={kgSelectedNodeId}
+                onNodeClick={(nodeId) => {
+                  setKgSelectedNodeId(nodeId);
+                  const node = kgTopology.nodes.find(n => n.id === nodeId);
+                  if (node) setKgCenter(node.label || nodeId);
+                }}
+                graphMode="knowledge"
+              />
+            )}
           </>
         )}
       </div>

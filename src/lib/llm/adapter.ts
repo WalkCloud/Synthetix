@@ -27,6 +27,14 @@ function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIME
   return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
 }
 
+function estimateTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 1.5));
+}
+
+function estimateMessagesTokens(messages: ChatParams["messages"]): number {
+  return estimateTokens(messages.map((message) => message.content).join("\n"));
+}
+
 export class OpenAICompatibleAdapter implements LLMProvider {
   private readonly normalizedBase: string;
   private readonly apiKey?: string;
@@ -64,10 +72,11 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     };
 
     const msg = data.choices[0]?.message;
+    const content = msg?.content || msg?.reasoning_content || "";
     return {
-      content: msg?.content || msg?.reasoning_content || "",
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0,
+      content,
+      inputTokens: data.usage?.prompt_tokens ?? estimateMessagesTokens(params.messages),
+      outputTokens: data.usage?.completion_tokens ?? estimateTokens(content),
       model: data.model ?? params.model,
     };
   }
@@ -78,6 +87,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       model: params.model,
       messages: params.messages,
       stream: true,
+      stream_options: params.streamOptions ?? { include_usage: true },
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
@@ -98,6 +108,10 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let finalDoneEmitted = false;
+    let lastInputTokens: number | undefined;
+    let lastOutputTokens: number | undefined;
+    let accumulatedContent = "";
 
     try {
       while (true) {
@@ -114,7 +128,14 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
           const data = trimmed.slice(6);
           if (data === "[DONE]") {
-            yield { content: "", done: true };
+            if (!finalDoneEmitted) {
+              yield {
+                content: "",
+                done: true,
+                inputTokens: lastInputTokens ?? estimateMessagesTokens(params.messages),
+                outputTokens: lastOutputTokens ?? estimateTokens(accumulatedContent),
+              };
+            }
             return;
           }
 
@@ -127,14 +148,23 @@ export class OpenAICompatibleAdapter implements LLMProvider {
               usage?: { prompt_tokens?: number; completion_tokens?: number };
             };
             const delta = parsed.choices[0]?.delta;
+            const content = delta?.content ?? "";
+            accumulatedContent += content;
             const chunk: ChatChunk = {
-              content: delta?.content ?? "",
-              done: parsed.choices[0]?.finish_reason != null,
+              content,
+              done: parsed.choices[0]?.finish_reason != null || Boolean(parsed.usage),
             };
             if (delta?.reasoning_content) chunk.reasoning = delta.reasoning_content;
             if (parsed.usage) {
               chunk.inputTokens = parsed.usage.prompt_tokens;
               chunk.outputTokens = parsed.usage.completion_tokens;
+              lastInputTokens = parsed.usage.prompt_tokens;
+              lastOutputTokens = parsed.usage.completion_tokens;
+            }
+            if (chunk.done) {
+              finalDoneEmitted = true;
+              chunk.inputTokens = chunk.inputTokens ?? lastInputTokens ?? estimateMessagesTokens(params.messages);
+              chunk.outputTokens = chunk.outputTokens ?? lastOutputTokens ?? estimateTokens(accumulatedContent);
             }
             yield chunk;
           } catch {
@@ -146,7 +176,12 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       reader.releaseLock();
     }
 
-    yield { content: "", done: true };
+    yield {
+      content: "",
+      done: true,
+      inputTokens: lastInputTokens ?? estimateMessagesTokens(params.messages),
+      outputTokens: lastOutputTokens ?? estimateTokens(accumulatedContent),
+    };
   }
 
   async embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse> {
@@ -171,7 +206,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
     return {
       embeddings: data.data.map((item) => item.embedding),
-      inputTokens: data.usage?.prompt_tokens ?? 0,
+      inputTokens: data.usage?.prompt_tokens ?? estimateTokens(texts.join("\n")),
     };
   }
 

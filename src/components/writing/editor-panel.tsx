@@ -38,8 +38,10 @@ interface EditorPanelProps {
   isHumanizing: boolean;
   isConfirming: boolean;
   streamingContent?: string;
+  streamContentA?: string;
+  streamContentB?: string;
+  genMode?: GenerationMode;
   onMarkerClick?: (markerId: string, kind: "image" | "diagram") => void;
-  onBatchGenerate?: () => void;
   pendingMarkerCount?: number;
 }
 
@@ -64,8 +66,10 @@ export function EditorPanel({
   isHumanizing,
   isConfirming,
   streamingContent = "",
+  streamContentA = "",
+  streamContentB = "",
+  genMode = "single",
   onMarkerClick,
-  onBatchGenerate,
   pendingMarkerCount = 0,
 }: EditorPanelProps) {
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
@@ -75,6 +79,13 @@ export function EditorPanel({
   const [displayedContent, setDisplayedContent] = useState("");
   const typingRef = useRef<number | null>(null);
   const targetRef = useRef("");
+
+  const [displayContentA, setDisplayContentA] = useState("");
+  const [displayContentB, setDisplayContentB] = useState("");
+  const typingRefA = useRef<number | null>(null);
+  const typingRefB = useRef<number | null>(null);
+  const targetRefA = useRef("");
+  const targetRefB = useRef("");
 
   // Update wordLimit when section changes
   useEffect(() => {
@@ -122,6 +133,62 @@ export function EditorPanel({
       }
     };
   }, [isGenerating, streamingContent]);
+
+  const isCompareStreaming = genMode === "compare" && isGenerating;
+
+  useEffect(() => {
+    if (!isCompareStreaming || !streamContentA) {
+      targetRefA.current = "";
+      setDisplayContentA("");
+      if (typingRefA.current) {
+        cancelAnimationFrame(typingRefA.current);
+        typingRefA.current = null;
+      }
+      return;
+    }
+    targetRefA.current = streamContentA;
+    if (typingRefA.current) return;
+    const tick = () => {
+      setDisplayContentA((prev) => {
+        const target = targetRefA.current;
+        if (prev.length >= target.length) { typingRefA.current = null; return prev; }
+        const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
+        return target.slice(0, Math.min(prev.length + step, target.length));
+      });
+      typingRefA.current = requestAnimationFrame(tick);
+    };
+    typingRefA.current = requestAnimationFrame(tick);
+    return () => {
+      if (typingRefA.current) { cancelAnimationFrame(typingRefA.current); typingRefA.current = null; }
+    };
+  }, [isCompareStreaming, streamContentA]);
+
+  useEffect(() => {
+    if (!isCompareStreaming || !streamContentB) {
+      targetRefB.current = "";
+      setDisplayContentB("");
+      if (typingRefB.current) {
+        cancelAnimationFrame(typingRefB.current);
+        typingRefB.current = null;
+      }
+      return;
+    }
+    targetRefB.current = streamContentB;
+    if (typingRefB.current) return;
+    const tick = () => {
+      setDisplayContentB((prev) => {
+        const target = targetRefB.current;
+        if (prev.length >= target.length) { typingRefB.current = null; return prev; }
+        const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
+        return target.slice(0, Math.min(prev.length + step, target.length));
+      });
+      typingRefB.current = requestAnimationFrame(tick);
+    };
+    typingRefB.current = requestAnimationFrame(tick);
+    return () => {
+      if (typingRefB.current) { cancelAnimationFrame(typingRefB.current); typingRefB.current = null; }
+    };
+  }, [isCompareStreaming, streamContentB]);
 
   const handleGenerate = useCallback(() => {
     onSaveEstimatedWords?.(wordLimit);
@@ -178,20 +245,6 @@ export function EditorPanel({
       {/* State Pills */}
       <StatePills status={section.status} />
 
-      {pendingMarkerCount > 0 && isLocked && onBatchGenerate && (
-        <div className="mb-4">
-          <button
-            onClick={onBatchGenerate}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-            </svg>
-            Generate All Pending ({pendingMarkerCount})
-          </button>
-        </div>
-      )}
-
       {/* Constraints Bar — only show for pending/failed */}
       {canGenerate && (
         <ConstraintsBar
@@ -215,7 +268,7 @@ export function EditorPanel({
       )}
 
       {/* Content Display */}
-          {isLocked && section.content && (
+          {editingContent === null && isLocked && section.content && (
             <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
               <div className="p-5 text-[15px] leading-loose text-foreground/75">
                 <ContentRenderer
@@ -464,6 +517,43 @@ export function EditorPanel({
           <div className="p-5 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
             {displayedContent}
             <span className="inline-block w-0.5 h-[18px] ml-0.5 bg-primary-500 animate-pulse translate-y-[3px]" />
+          </div>
+        </div>
+      )}
+
+      {isCompareStreaming && (displayContentA || displayContentB) && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="bg-card border border-emerald-200 rounded-2xl overflow-hidden shadow-sm">
+            <div className="h-1 bg-emerald-100">
+              <div className="h-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400 bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite]" style={{ width: "100%" }} />
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-semibold text-emerald-600">{modelAName}</span>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentA)} words</span>
+            </div>
+            <div className="p-4 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
+              {displayContentA}
+              {streamContentA && <span className="inline-block w-0.5 h-[18px] ml-0.5 bg-emerald-500 animate-pulse translate-y-[3px]" />}
+            </div>
+          </div>
+          <div className="bg-card border border-blue-200 rounded-2xl overflow-hidden shadow-sm">
+            <div className="h-1 bg-blue-100">
+              <div className="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-blue-400 bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite]" style={{ width: "100%" }} />
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-xs font-semibold text-blue-600">{modelBName}</span>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentB)} words</span>
+            </div>
+            <div className="p-4 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
+              {displayContentB}
+              {streamContentB && <span className="inline-block w-0.5 h-[18px] ml-0.5 bg-blue-500 animate-pulse translate-y-[3px]" />}
+            </div>
           </div>
         </div>
       )}

@@ -37,7 +37,7 @@ export async function POST(
     return errorResponse("Section has no content to audit", 400);
   }
 
-  const result = await auditSection(section.title, section.content, section.keyPoints);
+  const result = await auditSection(section.title, section.content, section.keyPoints, user.id, sectionId);
 
   await db.section.update({
     where: { id: sectionId },
