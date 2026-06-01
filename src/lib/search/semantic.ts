@@ -1,6 +1,7 @@
 import path from "path";
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import { createRagContext } from "@/lib/rag/context";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
@@ -78,15 +79,16 @@ async function searchViaDirectEmbedding(
   userId: string,
   limit: number,
   embedModelId: string,
-): Promise<SearchResult[]> {
+): Promise<{ results: SearchResult[]; inputTokens: number }> {
   const embedModel = await db.modelConfig.findUnique({
     where: { id: embedModelId },
     include: { provider: true },
   });
-  if (!embedModel) return [];
+  if (!embedModel) return { results: [], inputTokens: 0 };
 
   const provider = createLLMProvider(embedModel.provider);
   const embedResult = await provider.embed([query], embedModel.modelId);
+  const embedTokens = embedResult.inputTokens ?? 0;
   const queryEmbedding = new Float32Array(embedResult.embeddings[0]);
 
   const chunks = await db.documentChunk.findMany({
@@ -102,7 +104,7 @@ async function searchViaDirectEmbedding(
     take: 500,
   });
 
-  if (chunks.length === 0) return [];
+  if (chunks.length === 0) return { results: [], inputTokens: embedTokens };
 
   const scored = chunks
     .map((chunk) => {
@@ -116,7 +118,7 @@ async function searchViaDirectEmbedding(
     .filter((r) => r.raw >= MIN_COSINE_THRESHOLD)
     .slice(0, limit);
 
-  if (scored.length === 0) return [];
+  if (scored.length === 0) return { results: [], inputTokens: embedTokens };
 
   const topChunkIds = scored.map((r) => r.chunk.id);
   const topChunks = await db.documentChunk.findMany({
@@ -125,14 +127,14 @@ async function searchViaDirectEmbedding(
   });
   const contentMap = new Map(topChunks.map((c) => [c.id, c]));
 
-  return scored.map((r) => ({
+  return { results: scored.map((r) => ({
     chunkId: r.chunk.id,
     documentId: r.chunk.document.id,
     documentName: r.chunk.document.originalName,
     title: contentMap.get(r.chunk.id)?.title || null,
     content: contentMap.get(r.chunk.id)?.content?.slice(0, 4000) || "",
     score: Math.round(r.raw * 1000) / 1000,
-  }));
+  })), inputTokens: embedTokens };
 }
 
 export async function semanticSearch(
@@ -211,7 +213,17 @@ export async function semanticSearch(
   }
 
   if (semanticResults.length === 0) {
-    semanticResults = await searchViaDirectEmbedding(query, userId, limit * 2, ctx.embedModel.id);
+    const direct = await searchViaDirectEmbedding(query, userId, limit * 2, ctx.embedModel.id);
+    semanticResults = direct.results;
+    if (direct.inputTokens > 0) {
+      await recordTokenUsage({
+        userId,
+        modelConfigId: ctx.embedModel.id,
+        module: "search",
+        inputTokens: direct.inputTokens,
+        outputTokens: 0,
+      }).catch(() => {});
+    }
   }
 
   let keywordResults = await searchByKeyword(query, limit * 2).catch(() => [] as SearchResult[]);
