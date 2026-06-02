@@ -8,7 +8,6 @@ import type {
   ArrowFlow,
   DiagramStyle,
 } from "./diagram-spec";
-import type { ComponentType } from "./diagram-spec";
 import { PRODUCT_ICONS } from "./diagram-icons";
 
 const COMPONENT_COLORS: Record<string, Record<string, { fill: string; stroke: string }>> = {
@@ -447,7 +446,6 @@ const TITLE_BLOCK_H = 80;
 const SECTION_PAD = 24;
 const SECTION_HEADER_H = 34;
 const SECTION_LABEL_H = 28;
-const CONTAINER_GAP = 28;
 
 function escapeXml(s: string): string {
   return s
@@ -455,10 +453,6 @@ function escapeXml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function isCJK(s: string): boolean {
-  return /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(s);
 }
 
 function measureText(s: string): number {
@@ -536,7 +530,6 @@ function topoLayeredLayout(
     return w;
   });
 
-  const totalH = layers.length * (NODE_H + V_GAP);
   const offsetX = Math.max(48, (canvasW - maxLayerW) / 2);
 
   layers.forEach((layer, li) => {
@@ -613,8 +606,7 @@ function arrowDash(s: StyleProfile, flow?: ArrowFlow, explicitDashed?: boolean):
 function buildOrthRoute(
   from: NodeLayout,
   to: NodeLayout,
-  obstacles: Bounds[],
-  allPositions: Map<string, NodeLayout>
+  obstacles: Bounds[]
 ): { x: number; y: number }[] {
   const fx = from.x,
     fy = from.y,
@@ -873,7 +865,7 @@ function renderNodeShape(
       return `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
     }
     case "diamond": {
-      const hw = w / 2, hh = h / 2;
+      const hw = w / 2;
       return `<polygon points="${cx},${y} ${cx + hw},${cy} ${cx},${y + h} ${cx - hw},${cy}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
     }
     case "double_rect": {
@@ -1026,7 +1018,7 @@ function renderArrow(
   const to = positions.get(arrow.to);
   if (!from || !to) return "";
 
-  const route = buildOrthRoute(from, to, obstacles, positions);
+  const route = buildOrthRoute(from, to, obstacles);
   if (route.length < 2) return "";
 
   const flow = arrow.flow || "neutral";

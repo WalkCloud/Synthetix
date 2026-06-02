@@ -1,7 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { db } from "@/lib/db";
-import { createLLMProvider } from "@/lib/llm/factory";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";

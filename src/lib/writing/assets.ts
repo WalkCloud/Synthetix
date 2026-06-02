@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parseDiagramRequests, type DiagramRequest, type ImageRequest } from "@/lib/writing/diagram";
+import { parseDiagramRequests } from "@/lib/writing/diagram";
 
 export async function persistDiagramAssets(
   draftId: string,
