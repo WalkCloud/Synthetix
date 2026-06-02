@@ -111,6 +111,33 @@ async def action_list_entities(rag, keyword: str = "", limit: int = 50) -> dict:
     return {"entities": entities[:limit], "count": len(entities[:limit])}
 
 
+def _flatten_node(n) -> dict:
+    labels = getattr(n, "labels", None) or []
+    props = getattr(n, "properties", None) or {}
+    return {
+        "id": getattr(n, "id", ""),
+        "label": labels[0] if labels else getattr(n, "id", ""),
+        "type": props.get("entity_type", "") or "entity",
+        "description": (props.get("description", "") or "").split("<SEP>")[0].strip(),
+        "source_id": props.get("source_id", ""),
+        "file_path": props.get("file_path", ""),
+    }
+
+
+def _flatten_edge(e) -> dict:
+    props = getattr(e, "properties", None) or {}
+    desc = props.get("description", "") or ""
+    return {
+        "source": getattr(e, "source", ""),
+        "target": getattr(e, "target", ""),
+        "label": (desc.split("<SEP>")[0].strip()) if desc else "",
+        "description": (desc.split("<SEP>")[0].strip()) if desc else "",
+        "weight": props.get("weight", 1) or 1,
+        "keywords": (props.get("keywords", "") or ""),
+        "source_id": props.get("source_id", ""),
+    }
+
+
 async def action_entity_detail(rag, entity_name: str, max_depth: int = 2, max_nodes: int = 100) -> dict:
     try:
         kg = await rag.get_knowledge_graph(
@@ -118,7 +145,15 @@ async def action_entity_detail(rag, entity_name: str, max_depth: int = 2, max_no
             max_depth=max_depth,
             max_nodes=max_nodes,
         )
-        return {"entity": entity_name, "graph": kg.model_dump()}
+        nodes_raw = getattr(kg, "nodes", []) or []
+        edges_raw = getattr(kg, "edges", []) or []
+        return {
+            "entity": entity_name,
+            "graph": {
+                "nodes": [_flatten_node(n) for n in nodes_raw],
+                "edges": [_flatten_edge(e) for e in edges_raw],
+            },
+        }
     except Exception as e:
         return {"error": str(e), "entity": entity_name}
 
@@ -225,11 +260,8 @@ async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> di
     return {
         "entity": best_label,
         "graph": {
-            "nodes": [{"id": n.id, "label": (n.labels[0] if n.labels else n.id) or n.id, "type": getattr(n, 'entity_type', 'entity') or "entity",
-                       "description": getattr(n, 'description', '') or ""} for n in filtered_nodes],
-            "edges": [{"source": e.source, "target": e.target,
-                       "label": getattr(e, 'description', '') or "",
-                       "weight": getattr(e, 'weight', 1) or 1} for e in filtered_edges],
+            "nodes": [_flatten_node(n) for n in filtered_nodes],
+            "edges": [_flatten_edge(e) for e in filtered_edges],
         },
         "total_entities": len(labels),
         "leaf_count": len(labels) - len(filtered_nodes),

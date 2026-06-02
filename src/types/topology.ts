@@ -8,6 +8,8 @@ export interface TopologyNode {
   relevanceScore: number;
   /** Entity-specific: entity type (person, concept, organization, etc.) */
   entityType?: string;
+  /** Entity description from knowledge graph */
+  description?: string;
 }
 
 export interface TopologyEdge {
