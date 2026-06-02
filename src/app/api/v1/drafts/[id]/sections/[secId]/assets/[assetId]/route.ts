@@ -33,7 +33,7 @@ export async function POST(
     return errorResponse("Asset not found", 404);
   }
 
-  const result = await generateDiagramAsset(assetId);
+  const result = await generateDiagramAsset(assetId, user.id);
 
   if (!result.success) {
     return errorResponse(result.error);

@@ -211,7 +211,7 @@ export async function generateSectionFull(
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;
   } else {
-    const resolved = await getLLMClient("writing");
+    const resolved = await getLLMClient("writing", userId);
     provider = resolved.provider;
     modelId = resolved.modelId;
     modelConfigId = resolved.modelConfigId;
@@ -302,7 +302,7 @@ export async function generateSectionStream(
     modelConfigId = modelConfig.id;
   } else {
     // Use default writing model
-    const resolved = await getLLMClient("writing");
+    const resolved = await getLLMClient("writing", userId);
     provider = resolved.provider;
     modelId = resolved.modelId;
     modelConfigId = resolved.modelConfigId;
