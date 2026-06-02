@@ -139,7 +139,7 @@ export async function POST(
               contentB: stripLeadingSectionTitle(contentB, section.title),
               modelA,
               modelB,
-              status: "comparing",
+              status: "reviewing",
             },
           });
         }
