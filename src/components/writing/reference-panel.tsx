@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
 
 interface RefImage {
@@ -287,7 +287,7 @@ export function ReferencePanel({
     { value: "off", label: "Off" },
   ];
 
-  const groupedReferences: GroupedReferences[] = (() => {
+  const groupedReferences: GroupedReferences[] = useMemo(() => {
     const map = new Map<string, (Reference & { _originalIndex: number })[]>();
     references.forEach((ref, i) => {
       const key = ref.documentName || "Unknown";
@@ -295,10 +295,10 @@ export function ReferencePanel({
       map.get(key)!.push({ ...ref, _originalIndex: i });
     });
     return Array.from(map.entries()).map(([documentName, refs]) => ({ documentName, refs }));
-  })();
+  }, [references]);
 
-  const allRefImages = references.flatMap((ref) => ref.images || []);
-  const referencesWithImages = references.filter((ref) => ref.images && ref.images.length > 0);
+  const allRefImages = useMemo(() => references.flatMap((ref) => ref.images || []), [references]);
+  const referencesWithImages = useMemo(() => references.filter((ref) => ref.images && ref.images.length > 0), [references]);
 
   return (
     <div className="bg-card border-l border-border h-full flex flex-col">

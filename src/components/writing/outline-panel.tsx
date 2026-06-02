@@ -312,7 +312,8 @@ export function OutlinePanel({
         setEditItems([]);
         onSectionsChanged();
       }
-    } catch {
+    } catch (err) {
+      console.error("Failed to save outline changes:", err);
     } finally {
       setSaving(false);
     }
