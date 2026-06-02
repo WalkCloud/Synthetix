@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import type { DocumentMeta } from "@/types/documents";
@@ -85,15 +85,15 @@ export default function LibraryPage() {
   }
 
   const statDocs = total || documents.length;
-  const statChunks = documents.reduce((sum, d) => sum + (d.chunks?.length || 0), 0);
-  const statReady = documents.filter((d) => d.status === "ready").length;
+  const statChunks = useMemo(() => documents.reduce((sum, d) => sum + (d.chunks?.length || 0), 0), [documents]);
+  const statReady = useMemo(() => documents.filter((d) => d.status === "ready").length, [documents]);
   const statIndexed = documents.length > 0 ? Math.round((statReady / documents.length) * 100) : 0;
-  const statSize = documents.reduce((sum, d) => sum + d.originalSize, 0);
-  const maxChunks = Math.max(1, ...documents.map((d) => d.chunks?.length || 0));
+  const statSize = useMemo(() => documents.reduce((sum, d) => sum + d.originalSize, 0), [documents]);
+  const maxChunks = useMemo(() => Math.max(1, ...documents.map((d) => d.chunks?.length || 0)), [documents]);
 
-  const filteredDocs = quickSearch.trim()
+  const filteredDocs = useMemo(() => quickSearch.trim()
     ? documents.filter((d) => d.originalName.toLowerCase().includes(quickSearch.toLowerCase()))
-    : documents;
+    : documents, [documents, quickSearch]);
 
   return (
     <div>
