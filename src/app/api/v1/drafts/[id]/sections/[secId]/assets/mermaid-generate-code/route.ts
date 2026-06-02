@@ -81,8 +81,14 @@ export async function POST(
   if (!user) return authErrorResponse();
 
   const { id: draftId, secId: sectionId } = await params;
-  const body = await request.json();
-  const { prompt, existingCode } = body as { prompt?: string; existingCode?: string };
+
+  let body: { prompt?: string; existingCode?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return errorResponse("Invalid request body", 400);
+  }
+  const { prompt, existingCode } = body;
 
   if (!prompt || !prompt.trim()) return errorResponse("Prompt is required", 400);
 
