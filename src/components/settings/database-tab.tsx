@@ -41,8 +41,8 @@ function SqliteMonitor() {
       <div className="p-6 space-y-4">
         <div className="h-4 w-32 bg-muted-foreground/15 rounded animate-pulse" />
         <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-3 bg-muted-foreground/10 rounded animate-pulse" style={{ width: `${60 + Math.random() * 30}%` }} />
+          {[70, 85, 60, 90, 75, 65].map((w, i) => (
+            <div key={i} className="h-3 bg-muted-foreground/10 rounded animate-pulse" style={{ width: `${w}%` }} />
           ))}
         </div>
       </div>

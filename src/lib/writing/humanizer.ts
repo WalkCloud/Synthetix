@@ -1,6 +1,5 @@
 import { getLLMClient } from "@/lib/llm/client";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import type { ChatResponse } from "@/lib/llm/types";
 
 /**
  * Anti-AI writing pattern detection and rewrite module.

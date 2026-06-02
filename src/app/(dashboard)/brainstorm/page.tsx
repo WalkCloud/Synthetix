@@ -354,7 +354,7 @@ export default function BrainstormPage() {
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><MessageSquare className="h-7 w-7" /></div>
                   <h4 className="mb-2 font-semibold text-foreground">Refining Sections</h4>
-                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Answer the AI's questions in the chat to refine each section before generating the outline.</p>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Answer the AI&apos;s questions in the chat to refine each section before generating the outline.</p>
                 </div>
               ) : sess.phase === "ready" ? (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
