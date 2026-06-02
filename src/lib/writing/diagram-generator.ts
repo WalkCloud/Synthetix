@@ -11,7 +11,7 @@ async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
 }
 
-export async function generateDiagramAsset(assetId: string): Promise<{
+export async function generateDiagramAsset(assetId: string, userId?: string): Promise<{
   success: boolean;
   path?: string;
   error?: string;
@@ -22,7 +22,7 @@ export async function generateDiagramAsset(assetId: string): Promise<{
   }
 
   if (asset.type === "image") {
-    return generateImageAsset(assetId);
+    return generateImageAsset(assetId, userId);
   }
 
   if (asset.type !== "diagram" && asset.type !== "svg") {

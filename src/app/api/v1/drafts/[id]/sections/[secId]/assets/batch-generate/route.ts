@@ -61,7 +61,7 @@ export async function POST(
             type: asset.type,
           })));
 
-          const result = await generateDiagramAsset(asset.id);
+          const result = await generateDiagramAsset(asset.id, user.id);
 
           if (result.success) {
             succeeded++;

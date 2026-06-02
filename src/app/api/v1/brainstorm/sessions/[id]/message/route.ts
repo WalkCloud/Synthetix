@@ -30,7 +30,7 @@ export async function POST(
     data: { sessionId: id, role: "user", content },
   });
 
-  const chatModel = await resolveModel("chat");
+  const chatModel = await resolveModel("chat", user.id);
   if (!chatModel) return errorResponse("No chat model configured", 400);
 
   const existingCount = await db.message.count({

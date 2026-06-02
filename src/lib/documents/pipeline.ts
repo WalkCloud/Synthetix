@@ -105,10 +105,10 @@ export async function resolveProcessingModels(ctx: ProcessingContext): Promise<v
 
   const writingModel = options.llmModelId
     ? (await db.modelConfig.findUnique({ where: { id: options.llmModelId }, include: { provider: true } })) ?? null
-    : await resolveModel("writing");
+    : await resolveModel("writing", ctx.doc.userId);
   const embedModel = options.embedModelId
     ? await db.modelConfig.findUnique({ where: { id: options.embedModelId }, include: { provider: true } })
-    : await resolveModel("embedding");
+    : await resolveModel("embedding", ctx.doc.userId);
 
   const contextWindow = writingModel?.contextWindow || 4096;
   const splitRatio = options.contextUsage ? options.contextUsage / 100 : DEFAULT_SPLIT_RATIO;
@@ -345,7 +345,7 @@ export async function indexDocument(ctx: ProcessingContext): Promise<void> {
 
   let ragRerankConfig: EmbedConfig | undefined;
   try {
-    const rerankModel = await resolveModel("rerank");
+    const rerankModel = await resolveModel("rerank", ctx.doc.userId);
     if (rerankModel) {
       ragRerankConfig = buildEmbedConfig(rerankModel);
     }

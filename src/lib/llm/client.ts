@@ -9,9 +9,10 @@ export interface LLMClient {
 }
 
 export async function resolveLLMClient(
-  capability: string
+  capability: string,
+  userId?: string
 ): Promise<LLMClient | null> {
-  const model = await resolveModel(capability);
+  const model = await resolveModel(capability, userId);
   if (!model?.provider) return null;
 
   return {
@@ -24,8 +25,8 @@ export async function resolveLLMClient(
   };
 }
 
-export async function getLLMClient(capability: string): Promise<LLMClient> {
-  const client = await resolveLLMClient(capability);
+export async function getLLMClient(capability: string, userId?: string): Promise<LLMClient> {
+  const client = await resolveLLMClient(capability, userId);
   if (!client) {
     throw new Error(
       `No ${capability} model configured. Add one in Settings → Model Management.`

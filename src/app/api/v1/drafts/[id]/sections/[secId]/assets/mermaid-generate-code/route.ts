@@ -99,7 +99,7 @@ export async function POST(
   if (!draft) return errorResponse("Draft not found", 404);
 
   try {
-    const writingModel = await resolveModel("writing");
+    const writingModel = await resolveModel("writing", user.id);
     if (!writingModel?.provider) return errorResponse("No LLM model configured", 400);
 
     const provider = createLLMProvider({

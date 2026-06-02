@@ -27,7 +27,7 @@ export async function generateOutline(
 
   onProgress(10);
 
-  const chatModel = await resolveModel("chat");
+  const chatModel = await resolveModel("chat", userId);
   if (!chatModel) throw new Error("No chat model configured");
 
   const conversation = session.messages

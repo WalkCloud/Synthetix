@@ -45,8 +45,8 @@ export async function POST(
     return errorResponse("Section not found", 404);
   }
 
-  const modelARecord = await resolveModelOrFallback(body.modelAConfigId, "writing");
-  const modelBRecord = await resolveSecondModel(modelARecord.id);
+  const modelARecord = await resolveModelOrFallback(body.modelAConfigId, "writing", user.id);
+  const modelBRecord = await resolveSecondModel(modelARecord.id, user.id);
 
   await db.section.update({
     where: { id: sectionId },
