@@ -22,90 +22,11 @@ import os
 import struct
 import argparse
 import asyncio
-import glob as glob_mod
 
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
-
-
-def fix_corrupted_json_files(working_dir: str) -> None:
-    for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        if os.path.getsize(fp) == 0:
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
-            continue
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                json.load(f)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
-
-
-def load_storage_config():
-    """Build LightRAG storage configuration from environment variables.
-
-    Default: local file-based storage (NanoVectorDB + NetworkX + JsonKVStorage).
-    Enterprise: set LIGHTRAG_* env vars to switch to pgvector/Neo4j/Milvus/Qdrant.
-    """
-    kv_storage = os.getenv("LIGHTRAG_KV_STORAGE", "JsonKVStorage")
-    vector_storage = os.getenv("LIGHTRAG_VECTOR_STORAGE", "NanoVectorDBStorage")
-    graph_storage = os.getenv("LIGHTRAG_GRAPH_STORAGE", "NetworkXStorage")
-    doc_status_storage = os.getenv("LIGHTRAG_DOC_STATUS_STORAGE", "JsonDocStatusStorage")
-
-    storage_kwargs: dict = {}
-
-    # PostgreSQL/pgvector (single backend for KV + Vector + Graph via AGE, or KV + Vector only)
-    if os.getenv("LIGHTRAG_PG_DATABASE_URL"):
-        pg_url = os.environ["LIGHTRAG_PG_DATABASE_URL"]
-        kv_storage = "PGKVStorage"
-        vector_storage = "PGVectorStorage"
-        storage_kwargs["pg_database_url"] = pg_url
-    elif os.getenv("POSTGRES_HOST"):
-        kv_storage = "PGKVStorage"
-        vector_storage = "PGVectorStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in [
-                "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER",
-                "POSTGRES_PASSWORD", "POSTGRES_DATABASE",
-            ]
-            if k in os.environ
-        })
-
-    # Neo4j graph storage (production graph DB)
-    if os.getenv("NEO4J_URI"):
-        graph_storage = "Neo4JStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in ["NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD"]
-            if k in os.environ
-        })
-
-    # Milvus vector storage
-    if os.getenv("MILVUS_URI"):
-        vector_storage = "MilvusVectorDBStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in [
-                "MILVUS_URI", "MILVUS_TOKEN", "MILVUS_USER",
-                "MILVUS_PASSWORD", "MILVUS_DB_NAME",
-            ]
-            if k in os.environ
-        })
-
-    # Qdrant vector storage
-    if os.getenv("QDRANT_URL"):
-        vector_storage = "QdrantVectorDBStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in ["QDRANT_URL", "QDRANT_API_KEY"]
-            if k in os.environ
-        })
-
-    return kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs
+from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
 
 
 def load_cached_embeddings(file_path: str):
@@ -229,9 +150,11 @@ async def index_document(
         async def llm_func(
             prompt: str,
             system_prompt: str | None = None,
-            history_messages: list = [],
+            history_messages: list | None = None,
             **kwargs,
         ) -> str:
+            if history_messages is None:
+                history_messages = []
             clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
             try:
                 return await openai_complete_if_cache(
@@ -262,29 +185,8 @@ async def index_document(
         async def llm_func(*args, **kwargs) -> str:
             return ""
 
-    rerank_kwargs: dict = {}
-    if rerank_api_base and rerank_model:
-        import httpx
-
-        async def rerank_func(query: str, documents: list[str], top_n: int = None, **kwargs):
-            payload = {"model": rerank_model, "query": query, "documents": documents}
-            if top_n:
-                payload["top_n"] = top_n
-            headers = {"Content-Type": "application/json"}
-            if rerank_api_key:
-                headers["Authorization"] = f"Bearer {rerank_api_key}"
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{rerank_api_base.rstrip('/')}/rerank",
-                    json=payload,
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            results = data.get("results", [])
-            return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
-
-        rerank_kwargs["rerank_model_func"] = rerank_func
+    rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
+    rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
     rag = LightRAG(
         working_dir=working_dir,

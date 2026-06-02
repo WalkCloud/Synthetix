@@ -98,8 +98,8 @@ def convert_docx(input_file: str, output_dir: str) -> str:
                                         rel_path = _save_image(img_bytes, images_dir, img_index, ext)
                                         md_lines.append(f"\n![Image {img_index + 1}]({rel_path})\n")
                                         img_index += 1
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        print(f"Warning: DOCX image extraction failed: {e}", file=sys.stderr)
 
             text = "".join(text_parts).strip()
             if text:
@@ -192,7 +192,8 @@ def convert_pdf(input_file: str, output_dir: str) -> str:
                     rel_path = _save_image(img_bytes, images_dir, img_index, ext)
                     md_parts.append(f"\n![Page {page_num + 1} - Image {img_index + 1}]({rel_path})\n")
                     img_index += 1
-            except Exception:
+            except Exception as e:
+                print(f"Warning: PDF image extraction failed: {e}", file=sys.stderr)
                 continue
 
     doc.close()
@@ -237,8 +238,8 @@ def convert_pptx(input_file: str, output_dir: str) -> str:
                     rel_path = _save_image(img_bytes, images_dir, img_index, ext)
                     slide_texts.append(f"\n![Slide {slide_num} - Image {img_index + 1}]({rel_path})\n")
                     img_index += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Warning: PPTX image extraction failed: {e}", file=sys.stderr)
 
         if slide_texts:
             md_parts.append(f"## Slide {slide_num}\n\n" + "\n\n".join(slide_texts))
