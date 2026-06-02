@@ -123,15 +123,25 @@ export class TaskQueue {
       return;
     }
 
-    const task = await db.asyncTask.findFirst({
-      where: { status: "pending" },
-      orderBy: { createdAt: "asc" },
-    });
+    // Atomic claim: try to update a pending task to "running" in a single query
+    // This prevents race conditions when multiple workers call processNext concurrently
+    const claimed = await db.$queryRaw<{ id: string; type: string; inputData: string | null }[]>`
+      UPDATE async_tasks
+      SET status = 'running', updated_at = ${new Date()}
+      WHERE id = (
+        SELECT id FROM async_tasks
+        WHERE status = 'pending'
+        ORDER BY created_at ASC
+        LIMIT 1
+      ) AND status = 'pending'
+      RETURNING id, type, input_data
+    `;
 
-    if (!task) {
+    if (!claimed || claimed.length === 0) {
       return;
     }
 
+    const task = claimed[0];
     this.activeCount += 1;
 
     try {
