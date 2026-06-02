@@ -10,6 +10,8 @@ interface TopologyCanvasProps {
   readonly zoom: number;
   readonly selectedNodeId: string | null;
   readonly onNodeClick: (nodeId: string) => void;
+  readonly onNodeDblClick?: (nodeId: string) => void;
+  readonly entityDetailLoading?: boolean;
   readonly graphMode?: "documents" | "knowledge";
 }
 
@@ -37,6 +39,8 @@ export function TopologyCanvas({
   zoom,
   selectedNodeId,
   onNodeClick,
+  onNodeDblClick,
+  entityDetailLoading,
   graphMode = "documents",
 }: TopologyCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -201,8 +205,8 @@ export function TopologyCanvas({
   }, [items]);
 
   const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) ?? null : null;
-  const selectedEdge = selectedNodeId
-    ? edges.find((e) => e.source === selectedNodeId || e.target === selectedNodeId) ?? null : null;
+  const selectedEdges = selectedNodeId
+    ? edges.filter((e) => e.source === selectedNodeId || e.target === selectedNodeId) : [];
 
   const wrapperStyle: React.CSSProperties = {
     position: "absolute",
@@ -263,6 +267,7 @@ export function TopologyCanvas({
                 transform: "rotate(calc(-1 * var(--rotation-deg, 0deg)))",
               }}
               onClick={() => { if (!dragHasMoved.current) onNodeClick(it.id); }}
+              onDoubleClick={() => { if (!dragHasMoved.current && onNodeDblClick) onNodeDblClick(it.id); }}
             >
               <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: it.bg }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={it.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -309,8 +314,14 @@ export function TopologyCanvas({
         Drag to rotate
       </div>
 
-      {selectedNode && selectedEdge && (
-        <TopologyDetailPanel node={selectedNode} edge={selectedEdge} onClose={() => onNodeClick("")} />
+      {selectedNode && (
+        <TopologyDetailPanel
+          node={selectedNode}
+          edges={selectedEdges}
+          loading={entityDetailLoading}
+          onClose={() => onNodeClick("")}
+          onNavigate={isKnowledge ? (label) => { if (onNodeDblClick) onNodeDblClick(selectedNode.id); } : undefined}
+        />
       )}
     </div>
   );

@@ -8,6 +8,7 @@ const en: TranslationKeys = {
     dashboard: "Dashboard",
     documentInit: "Document Init",
     documentLibrary: "Document Library",
+    knowledgeSearch: "Knowledge Search",
     mindOrganization: "Mind Organization",
     documentWriting: "Document Writing",
     documentTopology: "Document Topology",

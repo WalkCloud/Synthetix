@@ -18,6 +18,7 @@ export function spawnPython(
     const proc = spawn(PYTHON_PATH, [script, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout,
+      env: { ...process.env, PYTHONUTF8: "1" },
     });
 
     let stdout = "";
