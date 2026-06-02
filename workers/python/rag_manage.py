@@ -20,76 +20,8 @@ import json
 import os
 import argparse
 import asyncio
-import glob as glob_mod
 
-
-def fix_corrupted_json_files(working_dir: str) -> None:
-    for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        if os.path.getsize(fp) == 0:
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
-            continue
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                json.load(f)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
-
-
-def load_storage_config():
-    kv_storage = os.getenv("LIGHTRAG_KV_STORAGE", "JsonKVStorage")
-    vector_storage = os.getenv("LIGHTRAG_VECTOR_STORAGE", "NanoVectorDBStorage")
-    graph_storage = os.getenv("LIGHTRAG_GRAPH_STORAGE", "NetworkXStorage")
-    doc_status_storage = os.getenv("LIGHTRAG_DOC_STATUS_STORAGE", "JsonDocStatusStorage")
-
-    storage_kwargs: dict = {}
-
-    if os.getenv("LIGHTRAG_PG_DATABASE_URL"):
-        kv_storage = "PGKVStorage"
-        vector_storage = "PGVectorStorage"
-        storage_kwargs["pg_database_url"] = os.environ["LIGHTRAG_PG_DATABASE_URL"]
-    elif os.getenv("POSTGRES_HOST"):
-        kv_storage = "PGKVStorage"
-        vector_storage = "PGVectorStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in [
-                "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER",
-                "POSTGRES_PASSWORD", "POSTGRES_DATABASE",
-            ]
-            if k in os.environ
-        })
-
-    if os.getenv("NEO4J_URI"):
-        graph_storage = "Neo4JStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in ["NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD"]
-            if k in os.environ
-        })
-
-    if os.getenv("MILVUS_URI"):
-        vector_storage = "MilvusVectorDBStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in [
-                "MILVUS_URI", "MILVUS_TOKEN", "MILVUS_USER",
-                "MILVUS_PASSWORD", "MILVUS_DB_NAME",
-            ]
-            if k in os.environ
-        })
-
-    if os.getenv("QDRANT_URL"):
-        vector_storage = "QdrantVectorDBStorage"
-        storage_kwargs.update({
-            k: os.environ[k]
-            for k in ["QDRANT_URL", "QDRANT_API_KEY"]
-            if k in os.environ
-        })
-
-    return kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs
+from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
 
 
 async def action_list_entities(rag, keyword: str = "", limit: int = 50) -> dict:
@@ -200,18 +132,20 @@ async def action_graph_summary(rag) -> dict:
         if not labels:
             return {"entities": [], "total_entities": 0, "total_relations": 0, "top": []}
 
-        # Count degrees from the subgraph of each major entity
-        top_entities = []
-        for label in labels[:30]:  # Check top 30 for degree counting
+        # Count degrees from the subgraph of each major entity (concurrent)
+        async def _get_degree(label: str) -> dict | None:
             try:
                 kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
                 degree = len(kg.edges or [])
-                if degree > 0:
-                    top_entities.append({"name": label, "degree": degree})
+                return {"name": label, "degree": degree} if degree > 0 else None
             except Exception:
-                pass
+                return None
 
-        top_entities.sort(key=lambda x: -x["degree"])
+        results = await asyncio.gather(*[_get_degree(label) for label in labels[:30]])
+        top_entities = sorted(
+            [r for r in results if r is not None],
+            key=lambda x: -x["degree"],
+        )
         return {
             "total_entities": len(labels),
             "top": top_entities[:20],
@@ -226,18 +160,16 @@ async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> di
     if not labels:
         return {"entity": "", "graph": {"nodes": [], "edges": []}}
 
-    # Pick the most central entity as root
-    best_label = labels[0]
-    best_degree = 0
-    for label in labels[:20]:
+    # Pick the most central entity as root (concurrent)
+    async def _get_degree_pair(label: str) -> tuple[str, int]:
         try:
             kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
-            d = len(kg.edges or [])
-            if d > best_degree:
-                best_degree = d
-                best_label = label
+            return (label, len(kg.edges or []))
         except Exception:
-            pass
+            return (label, 0)
+
+    degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in labels[:20]])
+    best_label, best_degree = max(degree_pairs, key=lambda x: x[1])
 
     # Get subgraph from the central entity
     kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
@@ -276,34 +208,6 @@ async def action_delete_entity(rag, entity_name: str) -> dict:
         return {"error": str(e)}
 
 
-def _build_rerank_kwargs(args) -> dict:
-    rerank_api_base = getattr(args, "rerank_api_base", "")
-    rerank_api_key = getattr(args, "rerank_api_key", "")
-    rerank_model_name = getattr(args, "rerank_model", "")
-    if not rerank_api_base or not rerank_model_name:
-        return {}
-    import httpx
-
-    async def rerank_func(query: str, documents: list[str], top_n: int = None, **kwargs):
-        payload = {"model": rerank_model_name, "query": query, "documents": documents}
-        if top_n:
-            payload["top_n"] = top_n
-        headers = {"Content-Type": "application/json"}
-        if rerank_api_key:
-            headers["Authorization"] = f"Bearer {rerank_api_key}"
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{rerank_api_base.rstrip('/')}/rerank",
-                json=payload,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        results = data.get("results", [])
-        return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
-
-    return {"rerank_model_func": rerank_func}
-
 
 async def main_async(args) -> None:
     working_dir = os.path.join("data", "rag", args.user_id)
@@ -328,9 +232,11 @@ async def main_async(args) -> None:
     async def llm_func(
         prompt: str,
         system_prompt: str | None = None,
-        history_messages: list = [],
+        history_messages: list | None = None,
         **kwargs,
     ) -> str:
+        if history_messages is None:
+            history_messages = []
         clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
         try:
             return await openai_complete_if_cache(
@@ -359,22 +265,7 @@ async def main_async(args) -> None:
             raise
 
     # Resolve effective embedding dimension
-    embed_model = args.embed_model
-    eff_dim = args.embed_dim
-    if not eff_dim:
-        model_lower = embed_model.lower()
-        if any(x in model_lower for x in ("bge-m3", "bge-large", "text-embedding-3-large", "text-embedding-ada")):
-            eff_dim = 1536
-        elif any(x in model_lower for x in ("bge", "gte", "e5")):
-            eff_dim = 1024
-        elif "text-embedding-3-small" in model_lower:
-            eff_dim = 1536
-        elif "text-embedding-v4" in model_lower:
-            eff_dim = 1536
-        elif any(x in model_lower for x in ("mxbai", "nomic")):
-            eff_dim = 768
-        else:
-            eff_dim = 768
+    eff_dim = resolve_embed_dim(args.embed_model, args.embed_dim)
 
     rag = LightRAG(
     working_dir=working_dir,
@@ -398,8 +289,12 @@ async def main_async(args) -> None:
         ],
     },
     **storage_kwargs,
-    **_build_rerank_kwargs(args),
     )
+
+    # Configure rerank if available
+    rerank_fn = build_rerank_func(args.rerank_api_base, args.rerank_api_key, args.rerank_model)
+    if rerank_fn:
+        rag.rerank_model_func = rerank_fn
 
     fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()
