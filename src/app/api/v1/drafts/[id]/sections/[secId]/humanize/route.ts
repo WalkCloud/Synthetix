@@ -46,7 +46,7 @@ export async function POST(
     let updatedSection;
     let auditNotes: string;
 
-    if (hasComparison && section.status === "comparing") {
+    if (hasComparison && (section.status === "comparing" || section.status === "reviewing")) {
       const tasks: Promise<{ content: string; contentField: string; notes: string }>[] = [];
 
       if (section.contentA?.trim()) {
@@ -71,8 +71,8 @@ export async function POST(
         lastNotes = r.notes;
       }
 
-      const effectiveContent = section.content || section.contentA || section.contentB || "";
-      updateData["wordCount"] = effectiveContent.split(/\s+/).filter(Boolean).length;
+      const humanizedContent = (updateData["contentA"] as string) || (updateData["contentB"] as string) || section.content || "";
+      updateData["wordCount"] = humanizedContent.split(/\s+/).filter(Boolean).length;
 
       updatedSection = await db.section.update({
         where: { id: sectionId },
