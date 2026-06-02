@@ -157,7 +157,7 @@ export function runExport(input: string, output: string, format: string): Promis
     const proc = spawn(PYTHON_PATH, [EXPORT_SCRIPT, "--input", input, "--output", output, "--format", format], { stdio: "pipe", timeout: 60_000 });
     let stderr = "";
     proc.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
-    proc.on("close", (code: number | null) => { code === 0 ? resolve() : reject(new Error(stderr || `Export failed with code ${code}`)); });
+    proc.on("close", (code: number | null) => { if (code === 0) { resolve(); } else { reject(new Error(stderr || `Export failed with code ${code}`)); } });
     proc.on("error", (err: Error) => reject(err));
   });
 }

@@ -1,4 +1,3 @@
-import { db } from "@/lib/db";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { resolveEmbeddingDim } from "@/lib/rag/dimension";
 import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";

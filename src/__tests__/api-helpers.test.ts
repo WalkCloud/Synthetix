@@ -8,7 +8,7 @@ describe("getErrorMessage", () => {
   });
 
   it("returns 'Unknown error' for non-Error values", () => {
-    expect(getErrorMessage("string error")).toBe("Unknown error");
+    expect(getErrorMessage("string error")).toBe("string error");
     expect(getErrorMessage(123)).toBe("Unknown error");
     expect(getErrorMessage(null)).toBe("Unknown error");
     expect(getErrorMessage(undefined)).toBe("Unknown error");

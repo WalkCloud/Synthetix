@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { decrypt } from "@/lib/crypto";
 import type { ModelProvider, ModelConfig } from "@/generated/prisma/client";
 
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
