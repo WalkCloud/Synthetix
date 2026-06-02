@@ -114,7 +114,7 @@ export async function humanizeContent(
   sectionTitle: string,
   userId: string
 ): Promise<HumanizeResult> {
-  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing", userId);
 
   // Pass 1: Audit — detect AI patterns
   const auditResponse = await provider.chat({

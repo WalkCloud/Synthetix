@@ -120,7 +120,7 @@ async function generateImageViaApi(
   return null;
 }
 
-export async function generateImageAsset(assetId: string): Promise<ImageGenerationResult> {
+export async function generateImageAsset(assetId: string, userId?: string): Promise<ImageGenerationResult> {
   const asset = await db.sectionAsset.findUnique({ where: { id: assetId } });
   if (!asset) {
     return { success: false, error: "Asset not found" };
@@ -141,9 +141,9 @@ export async function generateImageAsset(assetId: string): Promise<ImageGenerati
       throw new Error("Invalid image request: missing prompt");
     }
 
-    let imageModel = await resolveModel("image_generation");
+    let imageModel = await resolveModel("image_generation", userId);
     if (!imageModel?.provider) {
-      imageModel = await resolveModel("writing");
+      imageModel = await resolveModel("writing", userId);
     }
     if (!imageModel?.provider) {
       throw new Error("No model provider configured for image generation. Please configure one in Model Management → Image Generation.");

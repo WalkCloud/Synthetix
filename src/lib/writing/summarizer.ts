@@ -45,7 +45,7 @@ export async function generateSummary(
     throw new Error("Cannot generate summary: section title is empty.");
   }
 
-  const { provider, modelId, modelConfigId } = await getLLMClient("writing");
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing", userId);
 
   const messages = buildSummaryMessages(sectionContent, sectionTitle);
 

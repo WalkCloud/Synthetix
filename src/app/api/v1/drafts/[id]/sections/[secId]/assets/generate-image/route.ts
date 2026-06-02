@@ -53,7 +53,7 @@ export async function POST(
       try {
         controller.enqueue(encoder.encode(sseEvent("progress", { stage: "calling_api" })));
 
-        const result = await generateImageAsset(asset.id);
+        const result = await generateImageAsset(asset.id, user.id);
 
         if (result.success) {
           const serveUrl = `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${asset.id}/serve`;

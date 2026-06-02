@@ -13,6 +13,7 @@ interface ModelWithProvider {
 export async function resolveModelOrFallback(
   modelConfigId: string | undefined,
   module: string,
+  userId?: string,
 ): Promise<ModelWithProvider> {
   if (modelConfigId) {
     const record = await db.modelConfig.findUnique({
@@ -21,7 +22,7 @@ export async function resolveModelOrFallback(
     });
     if (record?.provider) return record as ModelWithProvider;
   }
-  const record = await resolveModel(module);
+  const record = await resolveModel(module, userId);
   if (!record?.provider) {
     throw new Error(`No default ${module} model configured. Set a default model in settings.`);
   }
@@ -30,11 +31,13 @@ export async function resolveModelOrFallback(
 
 export async function resolveSecondModel(
   excludeId: string,
+  userId?: string,
 ): Promise<ModelWithProvider> {
   const record = await db.modelConfig.findFirst({
     where: {
       id: { not: excludeId },
       capabilities: { contains: "chat" },
+      ...(userId ? { provider: { userId } } : {}),
     },
     include: { provider: true },
   });

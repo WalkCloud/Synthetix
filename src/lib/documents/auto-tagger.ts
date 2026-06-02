@@ -58,7 +58,7 @@ export async function autoTagDocument(
   ctx: ProcessingContext,
   markdown: string,
 ): Promise<string[]> {
-  const client = await resolveLLMClient("writing");
+  const client = await resolveLLMClient("writing", ctx.doc.userId);
   if (!client) return [];
 
   const truncated = truncateToTokens(markdown, MAX_INPUT_TOKENS);

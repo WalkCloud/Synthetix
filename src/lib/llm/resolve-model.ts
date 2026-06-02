@@ -21,10 +21,12 @@ function matchesCapability(rawCapabilities: unknown, capability: string): boolea
   );
 }
 
-export async function resolveModel(capability: string): Promise<ModelWithProvider | null> {
+export async function resolveModel(capability: string, userId?: string): Promise<ModelWithProvider | null> {
   const defaultFor = defaultSlotForCapability(capability);
+  const userFilter = userId ? { provider: { userId } } : {};
+
   const scopedDefault = await db.modelConfig.findFirst({
-    where: { isDefaultFor: defaultFor },
+    where: { isDefaultFor: defaultFor, ...userFilter },
     include: { provider: true },
   });
 
@@ -33,7 +35,7 @@ export async function resolveModel(capability: string): Promise<ModelWithProvide
   }
 
   const legacyDefault = await db.modelConfig.findFirst({
-    where: { isDefaultFor: "default" },
+    where: { isDefaultFor: "default", ...userFilter },
     include: { provider: true },
   });
 
@@ -41,7 +43,10 @@ export async function resolveModel(capability: string): Promise<ModelWithProvide
     return legacyDefault;
   }
 
-  const all = await db.modelConfig.findMany({ include: { provider: true } });
+  const all = await db.modelConfig.findMany({
+    where: userFilter,
+    include: { provider: true },
+  });
   return (
     all.find((m) => matchesCapability(m.capabilities, capability)) || null
   );

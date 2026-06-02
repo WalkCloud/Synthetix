@@ -38,9 +38,9 @@ export async function createRagContext(
   },
 ): Promise<RagContext> {
   const [embedModel, llmModel, rerankModel] = await Promise.all([
-    resolveModel("embedding"),
-    resolveModel("writing"),
-    resolveModel("rerank").catch(() => null),
+    resolveModel("embedding", userId),
+    resolveModel("writing", userId),
+    resolveModel("rerank", userId).catch(() => null),
   ]);
 
   if (!embedModel) {

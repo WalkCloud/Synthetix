@@ -9,7 +9,7 @@ export async function auditSection(
   userId?: string,
   referenceId?: string,
 ): Promise<AuditResult> {
-  const client = await resolveLLMClient("writing");
+  const client = await resolveLLMClient("writing", userId);
   if (!client) {
     return {
       passed: true,
