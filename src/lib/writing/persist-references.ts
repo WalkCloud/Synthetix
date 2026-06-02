@@ -14,19 +14,21 @@ export async function persistSectionReferences(
   sectionId: string,
   references: RagReference[],
 ) {
-  await db.sectionReference.deleteMany({ where: { sectionId } });
-  if (references.length > 0) {
-    await db.sectionReference.createMany({
-      data: references.map((ref) => ({
-        sectionId,
-        documentId: ref.documentId || null,
-        chunkId: ref.chunkId || null,
-        documentName: ref.documentName,
-        relevanceScore: ref.score,
-        sourceAnchor: ref.title || null,
-        content: ref.content || null,
-        images: ref.images ? JSON.stringify(ref.images) : null,
-      })),
-    });
-  }
+  await db.$transaction(async (tx) => {
+    await tx.sectionReference.deleteMany({ where: { sectionId } });
+    if (references.length > 0) {
+      await tx.sectionReference.createMany({
+        data: references.map((ref) => ({
+          sectionId,
+          documentId: ref.documentId || null,
+          chunkId: ref.chunkId || null,
+          documentName: ref.documentName,
+          relevanceScore: ref.score,
+          sourceAnchor: ref.title || null,
+          content: ref.content || null,
+          images: ref.images ? JSON.stringify(ref.images) : null,
+        })),
+      });
+    }
+  });
 }

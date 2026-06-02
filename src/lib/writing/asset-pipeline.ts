@@ -38,40 +38,36 @@ export async function createAssetRequests(
 
   await db.sectionAsset.deleteMany({ where: { sectionId } });
 
-  for (const diagram of diagrams) {
-    await db.sectionAsset.create({
-      data: {
-        draftId,
-        sectionId,
-        type: "diagram",
-        title: diagram.title,
-        description: diagram.purpose,
-        prompt: diagram.raw,
-        status: "pending",
-        metadata: JSON.stringify({
-          diagramType: diagram.type,
-          placement: diagram.placement,
-          nodes: diagram.nodes,
-          flows: diagram.flows,
-        }),
-      },
-    });
-  }
+  const allAssets = [
+    ...diagrams.map((d) => ({
+      draftId,
+      sectionId,
+      type: "diagram" as const,
+      title: d.title,
+      description: d.purpose,
+      prompt: d.raw,
+      status: "pending" as const,
+      metadata: JSON.stringify({
+        diagramType: d.type,
+        placement: d.placement,
+        nodes: d.nodes,
+        flows: d.flows,
+      }),
+    })),
+    ...images.filter((i) => i.prompt).map((i) => ({
+      draftId,
+      sectionId,
+      type: "image" as const,
+      title: i.title,
+      description: i.prompt!.slice(0, 200),
+      prompt: i.raw,
+      status: "pending" as const,
+      metadata: JSON.stringify({ imagePrompt: i.prompt }),
+    })),
+  ];
 
-  for (const image of images) {
-    if (!image.prompt) continue;
-    await db.sectionAsset.create({
-      data: {
-        draftId,
-        sectionId,
-        type: "image",
-        title: image.title,
-        description: image.prompt.slice(0, 200),
-        prompt: image.raw,
-        status: "pending",
-        metadata: JSON.stringify({ imagePrompt: image.prompt }),
-      },
-    });
+  if (allAssets.length > 0) {
+    await db.sectionAsset.createMany({ data: allAssets });
   }
 
   return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images), contentWithIds };

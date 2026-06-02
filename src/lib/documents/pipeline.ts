@@ -255,6 +255,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const baseBatchSize = embedModel.embeddingBatchSize || 10;
   const CONCURRENT_EMBED_BATCHES = 3;
   let totalEmbedTokens = 0;
+  const writtenEmbeddings = new Map<string, Uint8Array>();
 
   for (let i = 0; i < validTexts.length; i += baseBatchSize * CONCURRENT_EMBED_BATCHES) {
     const requests: Promise<{ embeddings: number[][]; inputTokens: number }>[] = [];
@@ -275,10 +276,12 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
       totalEmbedTokens += embedResult.inputTokens;
       const start = offsets[ri];
 
-      const updates = embedResult.embeddings.map((emb, ei) => ({
-        chunkId: validChunks[start + ei].id,
-        embedding: float32ToBuffer(new Float32Array(emb)),
-      }));
+      const updates = embedResult.embeddings.map((emb, ei) => {
+        const embBuf = float32ToBuffer(new Float32Array(emb));
+        const chunkId = validChunks[start + ei].id;
+        writtenEmbeddings.set(chunkId, embBuf);
+        return { chunkId, embedding: embBuf };
+      });
       await boundedAll(updates, (u) =>
         db.documentChunk.update({
           where: { id: u.chunkId },
@@ -290,12 +293,11 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   }
 
   const embeddingsBinPath = path.join(ctx.outputDir, "embeddings.bin");
-  const validEmbeddings: Buffer[] = [];
+  const validEmbeddings: Uint8Array[] = [];
   let embedDim = 0;
   for (const chunk of validChunks) {
-    const updated = await db.documentChunk.findUnique({ where: { id: chunk.id }, select: { embedding: true } });
-    if (updated?.embedding) {
-      const embBuf = Buffer.from(updated.embedding);
+    const embBuf = writtenEmbeddings.get(chunk.id);
+    if (embBuf) {
       if (embedDim === 0) embedDim = embBuf.length / 4;
       validEmbeddings.push(embBuf);
     }
