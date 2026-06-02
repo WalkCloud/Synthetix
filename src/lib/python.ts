@@ -42,7 +42,7 @@ export function spawnPython(
         JSON.parse(trimmed);
         resolve(trimmed);
       } catch {
-        resolve("{}");
+        reject(new Error(`${script} returned invalid JSON: ${trimmed.slice(0, 500)}`));
       }
     });
 
