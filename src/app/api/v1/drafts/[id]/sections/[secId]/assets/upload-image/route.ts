@@ -45,6 +45,11 @@ export async function POST(
     return errorResponse("No file provided", 400);
   }
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  if (file.size > MAX_FILE_SIZE) {
+    return errorResponse(`File too large. Maximum size is 10MB`, 400);
+  }
+
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const allowedExts = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
   if (!allowedExts.includes(ext)) {

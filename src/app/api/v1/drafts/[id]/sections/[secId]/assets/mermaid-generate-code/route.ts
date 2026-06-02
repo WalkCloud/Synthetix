@@ -63,8 +63,8 @@ async function generateDiagramCode(
       if (code.includes("-->") || code.includes("==>") || code.includes("-.->")) {
         return { code, inputTokens: totalInput, outputTokens: totalOutput };
       }
-      lastError = "Output is neither valid JSON nor recognizable mermaid syntax";
-      console.error("[mermaid-generate-code] LLM returned unparseable output:", code.slice(0, 200));
+      lastError = `Unparseable output (${code.length} chars)`;
+      console.error("[mermaid-generate-code] LLM returned unparseable output, length:", code.length);
     }
   }
 

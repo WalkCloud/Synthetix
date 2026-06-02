@@ -1,12 +1,13 @@
 "use client";
 
-import { createElement, Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
-type Token = { type: "text"; value: string } | { type: "tag"; value: string };
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+type Token =
+  | { type: "text"; value: string }
+  | { type: "bold-italic"; value: string }
+  | { type: "bold"; value: string }
+  | { type: "italic"; value: string }
+  | { type: "code"; value: string };
 
 function inlineToTokens(text: string): Token[] {
   const tokens: Token[] = [];
@@ -17,13 +18,13 @@ function inlineToTokens(text: string): Token[] {
     if (m.index > last) tokens.push({ type: "text", value: text.slice(last, m.index) });
     const raw = m[0];
     if (raw.startsWith("***")) {
-      tokens.push({ type: "tag", value: `<strong><em>${m[2]}</em></strong>` });
+      tokens.push({ type: "bold-italic", value: m[2] });
     } else if (raw.startsWith("**")) {
-      tokens.push({ type: "tag", value: `<strong>${m[3]}</strong>` });
+      tokens.push({ type: "bold", value: m[3] });
     } else if (raw.startsWith("*") && !raw.startsWith("**")) {
-      tokens.push({ type: "tag", value: `<em>${m[4]}</em>` });
+      tokens.push({ type: "italic", value: m[4] });
     } else if (raw.startsWith("`")) {
-      tokens.push({ type: "tag", value: `<code>${m[5]}</code>` });
+      tokens.push({ type: "code", value: m[5] });
     }
     last = m.index + raw.length;
   }
@@ -34,8 +35,18 @@ function inlineToTokens(text: string): Token[] {
 function renderInline(text: string): ReactNode[] {
   const tokens = inlineToTokens(text);
   return tokens.map((t, i) => {
-    if (t.type === "text") return <Fragment key={i}>{t.value}</Fragment>;
-    return <span key={i} dangerouslySetInnerHTML={{ __html: t.value }} />;
+    switch (t.type) {
+      case "text":
+        return <Fragment key={i}>{t.value}</Fragment>;
+      case "bold-italic":
+        return <strong key={i}><em>{t.value}</em></strong>;
+      case "bold":
+        return <strong key={i}>{t.value}</strong>;
+      case "italic":
+        return <em key={i}>{t.value}</em>;
+      case "code":
+        return <code key={i}>{t.value}</code>;
+    }
   });
 }
 
