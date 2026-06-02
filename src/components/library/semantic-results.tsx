@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { SearchResult } from "@/types/documents";
 
@@ -8,9 +9,12 @@ interface SemanticResultsProps {
   isSearching: boolean;
   searchMode: "keyword" | "semantic";
   searchStage: number;
+  onViewDocument?: (documentId: string) => void;
 }
 
-export function SemanticResults({ results, isSearching, searchMode, searchStage }: SemanticResultsProps) {
+export function SemanticResults({ results, isSearching, searchMode, searchStage, onViewDocument }: SemanticResultsProps) {
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
   return (
     <div className="space-y-3 animate-fade-in-up">
       {isSearching ? (
@@ -75,57 +79,91 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage 
           description="Try a different query or switch to keyword search."
         />
       ) : (
-        results.map((r, i) => (
-          <div
-            key={i}
-            className="bg-card border border-border rounded-[16px] p-5 hover:border-border transition-colors"
-          >
-            <div className="flex justify-between items-center mb-2.5">
-              <span className="font-semibold text-[15px] text-foreground">{r.documentName}</span>
-              {typeof r.score === "number" && r.score >= 0.85 ? (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300">
-                  {Math.round(r.score * 100)}% match
-                </span>
-              ) : typeof r.score === "number" && r.score >= 0.75 ? (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary-100 text-primary">
-                  {Math.round(r.score * 100)}% match
-                </span>
-              ) : typeof r.score === "number" ? (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
-                  {Math.round(r.score * 100)}% match
-                </span>
-              ) : (
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-                  Keyword match
-                </span>
+        results.map((r, i) => {
+          const isExpanded = expandedIndex === i;
+          return (
+            <div
+              key={i}
+              className="bg-card border border-border rounded-[16px] p-5 hover:border-primary/30 transition-all cursor-pointer"
+              onClick={() => setExpandedIndex(isExpanded ? null : i)}
+            >
+              <div className="flex justify-between items-center mb-2.5">
+                <span className="font-semibold text-[15px] text-foreground">{r.documentName}</span>
+                <div className="flex items-center gap-2">
+                  <svg
+                    width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  {typeof r.score === "number" && r.score >= 0.85 ? (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300">
+                      {Math.round(r.score * 100)}% match
+                    </span>
+                  ) : typeof r.score === "number" && r.score >= 0.75 ? (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary-100 text-primary">
+                      {Math.round(r.score * 100)}% match
+                    </span>
+                  ) : typeof r.score === "number" ? (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
+                      {Math.round(r.score * 100)}% match
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+                      Keyword match
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground leading-relaxed">
+                {isExpanded ? (
+                  r.content
+                ) : (
+                  <>
+                    {r.content.slice(0, 300)}
+                    {r.content.length > 300 && <span className="text-muted-foreground/50">...</span>}
+                  </>
+                )}
+              </div>
+              {isExpanded && (
+                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border">
+                  {onViewDocument && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onViewDocument(r.documentId); }}
+                      className="flex items-center gap-1.5 text-[13px] font-medium text-primary hover:underline cursor-pointer"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      View full document
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setExpandedIndex(null); }}
+                    className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    Collapse
+                  </button>
+                </div>
+              )}
+              {!isExpanded && (
+                <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    </svg>{" "}
+                    {r.chunkId}
+                  </span>
+                  {r.title && <span>{r.title}</span>}
+                </div>
               )}
             </div>
-            <div className="text-sm text-muted-foreground leading-relaxed">
-              {(() => {
-                const text = r.content.slice(0, 300);
-                const parts = text.split(/(\b(?:search|document|test|content)\b)/gi);
-                return parts.map((part, pi) =>
-                  /^(search|document|test|content)$/i.test(part) ? (
-                    <mark key={pi} className="bg-violet-100 dark:bg-violet-950/20 text-primary px-1 py-px rounded-sm">
-                      {part}
-                    </mark>
-                  ) : (
-                    part
-                  )
-                );
-              })()}
-            </div>
-            <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                </svg>{" "}
-                {r.chunkId}
-              </span>
-              {r.title && <span>{r.title}</span>}
-            </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );

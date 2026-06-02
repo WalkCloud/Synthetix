@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TopologyControlsProps {
@@ -40,6 +41,57 @@ export function TopologyControls({
   totalRelations,
   leafCount,
 }: TopologyControlsProps) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const allEntitiesRef = useRef<string[]>([]);
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (!q || q.length < 1) { setSuggestions([]); setShowDropdown(false); return; }
+    try {
+      if (allEntitiesRef.current.length === 0) {
+        const res = await fetch("/api/v1/knowledge/entities?limit=500");
+        const d = await res.json();
+        if (d.success && Array.isArray(d.data?.entities)) {
+          allEntitiesRef.current = d.data.entities;
+        }
+      }
+      const lower = q.toLowerCase();
+      const filtered = allEntitiesRef.current.filter(e => e.toLowerCase().includes(lower)).slice(0, 8);
+      setSuggestions(filtered);
+      setShowDropdown(filtered.length > 0);
+    } catch {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "knowledge") return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [mode]);
+
+  function handleInputChange(val: string) {
+    onKgSearchChange?.(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 300);
+  }
+
+  function handleSelectSuggestion(name: string) {
+    setShowDropdown(false);
+    setSuggestions([]);
+    onKgSearchChange?.(name);
+    if (onKgSearchSubmit) {
+      setTimeout(() => onKgSearchSubmit(), 0);
+    }
+  }
+
   return (
     <div className="flex items-center gap-2.5 mb-4 flex-wrap h-8">
       {mode === "documents" && drafts && onDraftChange && (
@@ -58,21 +110,43 @@ export function TopologyControls({
       )}
 
       {mode === "knowledge" && (
-        <div className={`flex items-center gap-2 ${BAR_H}`}>
+        <div className={`relative ${BAR_H}`}>
           <div className="relative h-full">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               type="text"
               value={kgSearch ?? ""}
-              onChange={(e) => onKgSearchChange?.(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && kgSearch?.trim()) onKgSearchSubmit?.(); }}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && kgSearch?.trim()) {
+                  setShowDropdown(false);
+                  onKgSearchSubmit?.();
+                }
+                if (e.key === "Escape") setShowDropdown(false);
+              }}
+              onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="Search entity..."
-              className="w-[180px] h-full pl-7 pr-2 border border-border rounded-lg text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className="w-[200px] h-full pl-7 pr-2 border border-border rounded-lg text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             />
           </div>
+          {showDropdown && suggestions.length > 0 && (
+            <div ref={dropdownRef} className="absolute top-full left-0 mt-1 w-[200px] bg-card border border-border rounded-lg shadow-lg z-50 max-h-[200px] overflow-y-auto">
+              {suggestions.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-[12px] text-foreground hover:bg-secondary truncate cursor-pointer"
+                  onMouseDown={(e) => { e.preventDefault(); handleSelectSuggestion(name); }}
+                  onClick={() => handleSelectSuggestion(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
           {kgCenter && (
-            <button onClick={onKgCenterClear} className="text-[12px] text-primary font-medium hover:underline whitespace-nowrap cursor-pointer">Back</button>
+            <button onClick={onKgCenterClear} className="text-[12px] text-primary font-medium hover:underline whitespace-nowrap cursor-pointer ml-2">Back</button>
           )}
         </div>
       )}

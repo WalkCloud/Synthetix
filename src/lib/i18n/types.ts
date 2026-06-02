@@ -6,6 +6,7 @@ export type TranslationKeys = {
     dashboard: string;
     documentInit: string;
     documentLibrary: string;
+    knowledgeSearch: string;
     mindOrganization: string;
     documentWriting: string;
     documentTopology: string;
