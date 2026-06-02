@@ -17,7 +17,13 @@ export async function POST(
   const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
   if (!session) return errorResponse("Not found", 404);
 
-  const { content } = await request.json();
+  let body: { content?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return errorResponse("Invalid request body", 400);
+  }
+  const { content } = body;
   if (!content) return errorResponse("Message required", 400);
 
   const userMessage = await db.message.create({

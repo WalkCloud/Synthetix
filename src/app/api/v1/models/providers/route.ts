@@ -1,8 +1,8 @@
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
 import { toProviderDto } from "@/lib/models/provider-dto";
+import { providerCreateSchema } from "@/lib/models/provider-schema";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export const dynamic = "force-dynamic";
@@ -20,40 +20,18 @@ export async function GET() {
   return successResponse(providers.map(toProviderDto));
 }
 
-const modelConfigSchema = z.object({
-  modelId: z.string().min(1),
-  modelName: z.string().min(1),
-  capabilities: z.array(z.string()).default([]),
-  contextWindow: z.number().int().min(0).default(0),
-  maxOutputTokens: z.number().int().optional(),
-  supportsStreaming: z.boolean().default(true),
-  inputPrice: z.number().optional(),
-  outputPrice: z.number().optional(),
-  localOrCloud: z.enum(["local", "cloud"]).default("local"),
-  isDefaultFor: z.string().optional(),
-  embeddingBatchSize: z.number().int().min(1).max(1000).optional(),
-  embeddingDim: z.number().int().min(1).optional(),
-});
-
-const providerSchema = z.object({
-  name: z.string().min(1).max(100),
-  providerType: z.enum([
-    "ollama",
-    "openai_compatible",
-    "anthropic",
-    "custom",
-  ]),
-  apiBaseUrl: z.string().url(),
-  apiKey: z.string().optional(),
-  models: z.array(modelConfigSchema).min(1),
-});
-
 export async function POST(request: Request) {
   const user = await getAuthUser();
   if (!user) return authErrorResponse();
 
-  const body = await request.json();
-  const parsed = providerSchema.safeParse(body);
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse("Invalid request body", 400);
+  }
+
+  const parsed = providerCreateSchema.safeParse(body);
   if (!parsed.success) {
     return errorResponse(parsed.error.flatten(), 400);
   }
