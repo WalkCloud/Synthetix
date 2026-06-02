@@ -46,13 +46,19 @@ export async function syncFtsIndex(): Promise<void> {
   >(`SELECT rowid, title, content FROM document_chunks`);
   await db.$executeRawUnsafe(`DELETE FROM document_fts`);
   if (chunks.length === 0) return;
-  await db.$executeRawUnsafe(`INSERT INTO document_fts(rowid, title, content) VALUES ${chunks.map(() => '(?, ?, ?)').join(',')}`,
-    ...chunks.flatMap((chunk) => [
-      chunk.rowid,
-      chunk.title ? tokenizeChinese(chunk.title) : "",
-      chunk.content ? tokenizeChinese(chunk.content) : "",
-    ])
-  );
+
+  const BATCH_SIZE = 100; // 100 rows × 3 vars = 300, well under SQLite's 999 limit
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    await db.$executeRawUnsafe(
+      `INSERT INTO document_fts(rowid, title, content) VALUES ${batch.map(() => '(?, ?, ?)').join(',')}`,
+      ...batch.flatMap((chunk) => [
+        chunk.rowid,
+        chunk.title ? tokenizeChinese(chunk.title) : "",
+        chunk.content ? tokenizeChinese(chunk.content) : "",
+      ])
+    );
+  }
   ftsIndexed = true;
 }
 
@@ -81,14 +87,18 @@ export async function syncFtsIndexForDocument(docId: string): Promise<void> {
 
   if (chunks.length === 0) return;
 
-  await db.$executeRawUnsafe(
-    `INSERT INTO document_fts(rowid, title, content) VALUES ${chunks.map(() => "(?, ?, ?)").join(",")}`,
-    ...chunks.flatMap((chunk) => [
-      chunk.rowid,
-      chunk.title ? tokenizeChinese(chunk.title) : "",
-      chunk.content ? tokenizeChinese(chunk.content) : "",
-    ]),
-  );
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    await db.$executeRawUnsafe(
+      `INSERT INTO document_fts(rowid, title, content) VALUES ${batch.map(() => "(?, ?, ?)").join(",")}`,
+      ...batch.flatMap((chunk) => [
+        chunk.rowid,
+        chunk.title ? tokenizeChinese(chunk.title) : "",
+        chunk.content ? tokenizeChinese(chunk.content) : "",
+      ]),
+    );
+  }
 
   ftsIndexed = true;
 }
