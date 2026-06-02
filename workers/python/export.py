@@ -10,6 +10,7 @@ import sys
 import json
 import argparse
 import os
+import html as html_mod
 
 
 def export_to_html(md_path: str, output_path: str) -> dict:
@@ -36,7 +37,7 @@ def export_to_html(md_path: str, output_path: str) -> dict:
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>{title or "Document"}</title>
+<title>{html_mod.escape(title) or "Document"}</title>
 <style>
   @media print {{
     body {{ margin: 20mm 25mm; }}
