@@ -45,17 +45,13 @@ export async function POST(
     return errorResponse("markerId and assetId are required", 400);
   }
 
-  console.log("[confirm-asset] Request: draftId:", draftId, "sectionId:", sectionId, "markerId:", body.markerId, "assetId:", body.assetId);
-
   const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
   if (!draft) {
-    console.error("[confirm-asset] Draft not found. draftId:", draftId);
     return errorResponse("Draft not found", 404);
   }
 
   const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
   if (!section) {
-    console.error("[confirm-asset] Section not found. sectionId:", sectionId, "draftId:", draftId);
     return errorResponse("Section not found", 404);
   }
 
@@ -63,7 +59,6 @@ export async function POST(
     where: { id: body.assetId, draftId, sectionId },
   });
   if (!asset) {
-    console.error("[confirm-asset] Asset not found. assetId:", body.assetId, "draftId:", draftId, "sectionId:", sectionId);
     return errorResponse("Asset not found", 404);
   }
 
@@ -86,10 +81,6 @@ export async function POST(
   }
 
   if (!match) {
-    console.error("[confirm-asset] Marker not found in content.");
-    console.error("[confirm-asset] markerId:", body.markerId, "source:", source);
-    console.error("[confirm-asset] Content length:", content.length);
-    console.error("[confirm-asset] Content snippet:", content.slice(0, 800));
     return errorResponse(`Marker not found: ${body.markerId}`, 404);
   }
 
