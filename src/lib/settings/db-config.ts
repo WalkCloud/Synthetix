@@ -14,8 +14,18 @@ export interface DbGlobalConfig {
   updatedAt?: string;
 }
 
+function requireEncryptionKey(): string {
+  if (!process.env.ENCRYPTION_KEY) {
+    throw new Error(
+      "FATAL: ENCRYPTION_KEY environment variable is required for database credential encryption. " +
+      "Set it before starting the server."
+    );
+  }
+  return process.env.ENCRYPTION_KEY;
+}
+
 function encrypt(data: string): string {
-  const key = process.env.ENCRYPTION_KEY || "fallback-key-32-chars--";
+  const key = requireEncryptionKey();
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-cbc", Buffer.from(key.padEnd(32).slice(0, 32), "utf-8"), iv);
   let encrypted = cipher.update(data, "utf-8", "hex");
@@ -24,7 +34,7 @@ function encrypt(data: string): string {
 }
 
 function decrypt(encoded: string): string {
-  const key = process.env.ENCRYPTION_KEY || "fallback-key-32-chars--";
+  const key = requireEncryptionKey();
   const parts = encoded.split(":");
   if (parts.length !== 2) return "";
   const iv = Buffer.from(parts[0], "hex");

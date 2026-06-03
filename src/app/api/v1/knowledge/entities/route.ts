@@ -25,6 +25,9 @@ export async function GET(request: Request) {
       keyword,
       limit,
     });
+    if (result.error) {
+      return errorResponse(result.error as string, 500);
+    }
     return successResponse(result);
   } catch (error) {
     if (error instanceof Error && error.message.includes("model configured")) {

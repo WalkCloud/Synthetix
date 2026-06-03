@@ -26,8 +26,8 @@ export function getQueue(): TaskQueue {
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      await processDocument(taskId);
-      return { ok: true };
+      const result = await processDocument(taskId);
+      return result;
     });
 
     queue.registerWorker("draft_generate_all", async (

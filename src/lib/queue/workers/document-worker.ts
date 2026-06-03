@@ -13,7 +13,7 @@ import { autoTagDocument } from "@/lib/documents/auto-tagger";
 
 const storage = new LocalStorageAdapter();
 
-export async function processDocument(taskId: string): Promise<void> {
+export async function processDocument(taskId: string): Promise<{ ok: boolean; rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string }> {
   await db.asyncTask.update({
     where: { id: taskId },
     data: { status: "running", progress: 10 },
@@ -91,7 +91,7 @@ export async function processDocument(taskId: string): Promise<void> {
       data: { progress: 85 },
     });
 
-    await indexDocument(ctx);
+    const indexResult = await indexDocument(ctx);
 
     if (ctx.options.indexMode === "graph") {
       await db.asyncTask.update({
@@ -120,6 +120,12 @@ export async function processDocument(taskId: string): Promise<void> {
       where: { id: taskId },
       data: { status: "completed", progress: 100 },
     });
+
+    return {
+      ok: true,
+      rag: indexResult?.rag,
+      indexMode: indexResult?.indexMode,
+    };
   } catch (error) {
     await db.document.update({
       where: { id: ctx.docId },
@@ -133,5 +139,6 @@ export async function processDocument(taskId: string): Promise<void> {
           error instanceof Error ? error.message : "Document processing failed",
       },
     });
+    throw error;
   }
 }

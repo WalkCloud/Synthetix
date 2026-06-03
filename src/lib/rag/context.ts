@@ -23,9 +23,10 @@ export function buildEmbedConfig(model: {
   provider: { apiBaseUrl: string; apiKey: string | null };
   modelId: string;
 }): EmbedConfig {
+  const apiKey = model.provider.apiKey;
   return {
     apiBase: normalizeProviderBaseUrl(model.provider.apiBaseUrl),
-    apiKey: decrypt(model.provider.apiKey || ""),
+    apiKey: apiKey ? decrypt(apiKey) : "",
     model: model.modelId,
   };
 }
@@ -55,7 +56,7 @@ export async function createRagContext(
 
   const embedConfig = buildEmbedConfig(embedModel);
   const llmConfig = llmModel?.provider.apiKey ? buildEmbedConfig(llmModel) : undefined;
-  const rerankConfig = rerankModel ? buildEmbedConfig(rerankModel) : undefined;
+  const rerankConfig = rerankModel?.provider.apiKey ? buildEmbedConfig(rerankModel) : undefined;
 
   return {
     embedModel,

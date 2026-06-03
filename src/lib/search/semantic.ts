@@ -146,8 +146,10 @@ export async function semanticSearch(
   let ctx: Awaited<ReturnType<typeof createRagContext>>;
   try {
     ctx = await createRagContext(userId);
-  } catch {
-    return [];
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[semantic] Failed to create RAG context:", message);
+    throw new Error(`Semantic search unavailable: ${message}`);
   }
 
   let semanticResults: SearchResult[] = [];

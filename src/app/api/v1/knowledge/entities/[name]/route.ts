@@ -34,6 +34,9 @@ export async function GET(
       depth,
       maxNodes,
     });
+    if (result.error) {
+      return errorResponse(result.error as string, 500);
+    }
     return successResponse(result);
   } catch (error) {
     if (error instanceof Error && error.message.includes("model configured")) {

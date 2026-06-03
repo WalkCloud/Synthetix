@@ -82,7 +82,12 @@ export function parseAuditResponse(raw: string): AuditResult {
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return { passed: true, score: 100, issues: [], checkedAt: new Date().toISOString() };
+      return {
+        passed: false,
+        score: 0,
+        issues: [{ rule: "audit_parse_error", severity: "critical", detail: "Audit response did not contain valid JSON." }],
+        checkedAt: new Date().toISOString(),
+      };
     }
     const parsed = JSON.parse(jsonMatch[0]) as {
       passed?: boolean;
@@ -111,6 +116,11 @@ export function parseAuditResponse(raw: string): AuditResult {
       checkedAt: new Date().toISOString(),
     };
   } catch {
-    return { passed: true, score: 100, issues: [], checkedAt: new Date().toISOString() };
+    return {
+      passed: false,
+      score: 0,
+      issues: [{ rule: "audit_parse_error", severity: "critical", detail: "Failed to parse audit response JSON." }],
+      checkedAt: new Date().toISOString(),
+    };
   }
 }
