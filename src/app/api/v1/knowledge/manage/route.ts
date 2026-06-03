@@ -58,6 +58,9 @@ export async function POST(request: Request) {
         return errorResponse(`Unknown action: ${action}`, 400);
     }
 
+    if (result.error) {
+      return errorResponse(result.error as string, 500);
+    }
     return successResponse(result);
   } catch (error) {
     return errorResponse(error);

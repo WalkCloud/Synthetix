@@ -319,14 +319,14 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   }).catch((err) => { console.warn("Failed to record embedding token usage:", err); });
 }
 
-export async function indexDocument(ctx: ProcessingContext): Promise<void> {
+export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string } | null> {
   const { docId, doc, outputDir, embedModel, writingModel, options } = ctx;
 
   await syncFtsIndexForDocument(docId).catch((err) => { console.warn("FTS index sync failed:", err); });
 
   const indexTarget = options.indexTarget || "full";
   const needRag = indexTarget === "full";
-  if (!needRag || !embedModel) return;
+  if (!needRag || !embedModel) return null;
 
   let indexMode = options.indexMode || "basic";
   if (indexMode === "graph" && !isLightRAGCompatible(embedModel)) {
@@ -367,16 +367,7 @@ export async function indexDocument(ctx: ProcessingContext): Promise<void> {
     return { status: "failed", chunks: 0, error: String(err) };
   });
 
-  await db.asyncTask.update({
-    where: { id: ctx.taskId },
-    data: {
-      progress: 95,
-      resultData: JSON.stringify({
-        rag: indexResult,
-        indexMode,
-      }),
-    },
-  });
+  return { rag: indexResult, indexMode };
 }
 
 export function indexWithLightRAG(

@@ -12,9 +12,9 @@ export async function auditSection(
   const client = await resolveLLMClient("writing", userId);
   if (!client) {
     return {
-      passed: true,
-      score: 100,
-      issues: [],
+      passed: false,
+      score: 0,
+      issues: [{ rule: "audit_unavailable", severity: "critical", detail: "No writing model configured. Cannot perform audit." }],
       checkedAt: new Date().toISOString(),
     };
   }

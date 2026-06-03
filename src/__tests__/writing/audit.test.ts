@@ -81,11 +81,12 @@ describe("parseAuditResponse", () => {
     expect(result.passed).toBe(false);
   });
 
-  it("returns safe default on invalid JSON", () => {
+  it("returns failed result on invalid JSON", () => {
     const result = parseAuditResponse("not json at all");
-    expect(result.passed).toBe(true);
-    expect(result.score).toBe(100);
-    expect(result.issues).toEqual([]);
+    expect(result.passed).toBe(false);
+    expect(result.score).toBe(0);
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues[0].rule).toBe("audit_parse_error");
   });
 
   it("extracts JSON from text with surrounding content", () => {
