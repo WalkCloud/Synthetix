@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
   const { query, limit = 20, mode = "hybrid" } = await request.json();
   if (!query || typeof query !== "string") {
-    return errorResponse("query required", 400);
+    return errorResponse({ code: "invalidInput", message: "query required" }, 400);
   }
 
   const queryMode: QueryMode = VALID_MODES.includes(mode as QueryMode) ? (mode as QueryMode) : "hybrid";

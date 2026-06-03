@@ -21,11 +21,11 @@ export async function PUT(request: Request) {
 
   const { currentPassword, newPassword } = parsed.data;
   const dbUser = await db.user.findUnique({ where: { id: user.id } });
-  if (!dbUser) return errorResponse("User not found", 404);
+  if (!dbUser) return errorResponse({ code: "notFound", message: "User not found" }, 404);
 
   const valid = await verifyPassword(currentPassword, dbUser.passwordHash);
   if (!valid) {
-    return errorResponse("Current password is incorrect", 400);
+    return errorResponse({ code: "passwordIncorrect", message: "Current password is incorrect" }, 400);
   }
 
   const newHash = await hashPassword(newPassword);

@@ -468,6 +468,9 @@ export type TranslationSchema = {
     fileEmpty: string;
     unsupportedFormat: string;
     passwordIncorrect: string;
+    invalidInput: string;
+    conflict: string;
+    batchDeleteFailed: string;
     unknown: string;
   };
 };

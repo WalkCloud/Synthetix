@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { getLocalizedError } from "@/lib/i18n";
 
 interface GenerateAllTask {
   id: string;
@@ -96,7 +97,7 @@ export function useGenerateAll(
       });
       const data = await res.json();
       if (!data.success) {
-        toast.error(data.error || "Failed to start full draft generation");
+        toast.error(getLocalizedError(data));
         return;
       }
       setTaskId(data.data.taskId);
@@ -108,7 +109,7 @@ export function useGenerateAll(
       });
       await loadDraft();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to start full draft generation");
+      toast.error(getLocalizedError({ error: error instanceof Error ? error.message : undefined }));
     } finally {
       setIsStarting(false);
     }
@@ -121,13 +122,13 @@ export function useGenerateAll(
       const res = await fetch(`/api/v1/tasks/${taskId}`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.success === false) {
-        toast.error(data?.error || "Failed to stop full draft generation");
+        toast.error(getLocalizedError(data));
         return;
       }
       setTask((prev) => prev ? { ...prev, status: "cancelled" } : prev);
       await loadDraft();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to stop full draft generation");
+      toast.error(getLocalizedError({ error: error instanceof Error ? error.message : undefined }));
     } finally {
       setIsCancelling(false);
     }

@@ -23,7 +23,7 @@ export async function GET(
   });
 
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   return successResponse({ ...doc, tags: doc.tags.map((dt) => dt.tag) });

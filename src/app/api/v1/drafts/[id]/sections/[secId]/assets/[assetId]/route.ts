@@ -23,14 +23,14 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const asset = await db.sectionAsset.findFirst({
     where: { id: assetId, draftId, sectionId },
   });
   if (!asset) {
-    return errorResponse("Asset not found", 404);
+    return errorResponse({ code: "notFound", message: "Asset not found" }, 404);
   }
 
   const result = await generateDiagramAsset(assetId, user.id);

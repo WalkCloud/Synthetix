@@ -19,7 +19,7 @@ export async function POST(
   try {
     const userCount = await db.user.count();
     if (userCount > 0) {
-      return errorResponse("System is already initialized", 400);
+      return errorResponse({ code: "conflict", message: "System is already initialized" }, 400);
     }
 
     const body = await request.json();

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
+import { getLocalizedError } from "@/lib/i18n";
 
 export function useExport(
   id: string,
@@ -27,7 +28,7 @@ export function useExport(
       URL.revokeObjectURL(url);
     } else {
       const data = await res.json();
-      toast.error(data.error || "Export failed");
+      toast.error(getLocalizedError(data));
     }
   }, [id, draftTitle, exportFormat]);
 

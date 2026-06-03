@@ -15,7 +15,7 @@ export async function POST(
     where: { id, userId: user.id },
     select: { id: true },
   });
-  if (!session) return errorResponse("Not found", 404);
+  if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
   const existingTask = await db.asyncTask.findFirst({
     where: {

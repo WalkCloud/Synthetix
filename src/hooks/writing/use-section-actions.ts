@@ -123,7 +123,8 @@ export function useSectionActions(
         const err = await res.json().catch(() => ({ error: "Insert failed" }));
         console.error("[handleInsertAsset] confirm-asset failed:", res.status, err);
         const { toast } = await import("sonner");
-        toast.error(err.error || "Failed to insert image");
+        const { getLocalizedError } = await import("@/lib/i18n");
+        toast.error(getLocalizedError(err));
         return null;
       }
       const data = await res.json();

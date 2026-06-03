@@ -35,14 +35,14 @@ export async function POST(
     where: { id: draftId, userId: user.id },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const section = await db.section.findFirst({
     where: { id: sectionId, draftId },
   });
   if (!section) {
-    return errorResponse("Section not found", 404);
+    return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
   }
 
   const modelARecord = await resolveModelOrFallback(body.modelAConfigId, "writing", user.id);

@@ -16,9 +16,9 @@ export async function POST(request: Request): Promise<Response> {
   if (!user) return authErrorResponse();
 
   let body: CreateDraftBody;
-  try { body = (await request.json()) as CreateDraftBody; } catch { return errorResponse("Invalid JSON body", 400); }
+  try { body = (await request.json()) as CreateDraftBody; } catch { return errorResponse({ code: "invalidInput", message: "Invalid JSON body" }, 400); }
 
-  if (!body.sessionId && !body.outline) return errorResponse("Either sessionId or outline must be provided", 400);
+  if (!body.sessionId && !body.outline) return errorResponse({ code: "invalidInput", message: "Either sessionId or outline must be provided" }, 400);
 
   const result = await resolveOutline(body.sessionId, body.outline, user.id);
   if ("error" in result) return errorResponse(result.error, result.status);

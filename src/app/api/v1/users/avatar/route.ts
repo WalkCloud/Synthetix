@@ -21,9 +21,9 @@ export async function PUT(request: Request) {
     const formData = await request.formData();
     const file = formData.get("avatar") as File | null;
     if (!file)
-      return errorResponse("No file provided", 400);
+      return errorResponse({ code: "noFileProvided", message: "No file provided" }, 400);
     if (file.size > MAX_FILE_SIZE)
-      return errorResponse("File too large (max 5MB)", 400);
+      return errorResponse({ code: "invalidInput", message: "File too large (max 5MB)" }, 400);
     if (!ALLOWED_TYPES.includes(file.type))
       return errorResponse(`Invalid file type: ${file.type}. Allowed: JPEG, PNG, WebP, GIF`, 400);
     buffer = Buffer.from(await file.arrayBuffer());
@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
       10,
     );
     if (len > MAX_FILE_SIZE)
-      return errorResponse("File too large (max 5MB)", 400);
+      return errorResponse({ code: "invalidInput", message: "File too large (max 5MB)" }, 400);
     buffer = Buffer.from(await request.arrayBuffer());
     contentType = ct;
   }
@@ -82,7 +82,7 @@ export async function GET() {
   });
 
   if (!dbUser?.avatarUrl)
-    return errorResponse("No avatar set", 404);
+    return errorResponse({ code: "notFound", message: "No avatar set" }, 404);
 
   return successResponse({ avatarUrl: dbUser.avatarUrl });
 }

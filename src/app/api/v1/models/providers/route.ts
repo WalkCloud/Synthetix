@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return errorResponse("Invalid request body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
   }
 
   const parsed = providerCreateSchema.safeParse(body);

@@ -26,21 +26,21 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return errorResponse("Draft not found", 404);
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     const section = await db.section.findFirst({
       where: { id: sectionId, draftId },
     });
     if (!section) {
-      return errorResponse("Section not found", 404);
+      return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
     }
 
     const hasContent = section.content?.trim();
     const hasComparison = section.contentA?.trim() || section.contentB?.trim();
 
     if (!hasContent && !hasComparison) {
-      return errorResponse("No content to humanize", 400);
+      return errorResponse({ code: "invalidInput", message: "No content to humanize" }, 400);
     }
 
     let updatedSection;

@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     return successResponse(result);
   } catch (error) {
     if (error instanceof Error && error.message.includes("model configured")) {
-      return errorResponse("Configure embedding and LLM models first", 400);
+      return errorResponse({ code: "ragNotConfigured", message: "Configure embedding and LLM models first" }, 400);
     }
     return errorResponse(error);
   }

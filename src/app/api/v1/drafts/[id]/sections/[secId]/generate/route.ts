@@ -26,10 +26,10 @@ export async function POST(
   }
 
   const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
-  if (!draft) return errorResponse("Draft not found", 404);
+  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
 
   const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
-  if (!section) return errorResponse("Section not found", 404);
+  if (!section) return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
 
   const constraints = body.constraints
     ? { wordLimit: body.constraints.wordLimit, additionalRequirements: body.constraints.additionalRequirements }

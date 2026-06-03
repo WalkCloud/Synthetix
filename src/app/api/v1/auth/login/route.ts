@@ -31,12 +31,12 @@ export async function POST(
     });
 
     if (!user) {
-      return errorResponse("Invalid credentials", 401);
+      return errorResponse({ code: "unauthorized", message: "Invalid credentials" }, 401);
     }
 
     const isValid = await verifyPassword(password, user.passwordHash);
     if (!isValid) {
-      return errorResponse("Invalid credentials", 401);
+      return errorResponse({ code: "unauthorized", message: "Invalid credentials" }, 401);
     }
 
     const jwtPayload = {

@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   try {
@@ -28,6 +28,6 @@ export async function GET(
     );
     return successResponse({ content: rewritten });
   } catch {
-    return errorResponse("Content not yet available", 404);
+    return errorResponse({ code: "notFound", message: "Content not yet available" }, 404);
   }
 }
