@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { getQueue } from "@/lib/queue";
+import { resolveLocale } from "@/lib/i18n/server";
+import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 
 export async function POST(
   request: Request,
@@ -29,7 +31,8 @@ export async function POST(
   }
 
   const queue = getQueue();
-  const taskId = await queue.submit("outline_generate", { sessionId: id, userId: user.id }, user.id);
+  const locale = resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale();
+  const taskId = await queue.submit("outline_generate", { sessionId: id, userId: user.id, locale }, user.id);
 
   return successResponse({ taskId, status: "pending", progress: 0 }, 201);
 }

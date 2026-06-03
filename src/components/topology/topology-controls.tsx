@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLocale } from "@/lib/i18n";
 
 interface TopologyControlsProps {
   readonly mode: "documents" | "knowledge";
@@ -41,6 +42,8 @@ export function TopologyControls({
   totalRelations,
   leafCount,
 }: TopologyControlsProps) {
+  const { locale } = useLocale();
+  const isZh = locale === "zh-CN";
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,8 +100,8 @@ export function TopologyControls({
       {mode === "documents" && drafts && onDraftChange && (
         <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
           <SelectTrigger size="sm" className="w-[200px] text-[13px] bg-card cursor-pointer">
-            <SelectValue placeholder="Select a draft...">
-              {(v: string | null) => drafts.find(d => d.id === v)?.title ?? "Select a draft..."}
+            <SelectValue placeholder={isZh ? "选择草稿..." : "Select a draft..."}>
+              {(v: string | null) => drafts.find(d => d.id === v)?.title ?? (isZh ? "选择草稿..." : "Select a draft...")}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -126,7 +129,7 @@ export function TopologyControls({
               }}
               onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
               onMouseDown={(e) => e.stopPropagation()}
-              placeholder="Search entity..."
+              placeholder={isZh ? "搜索实体..." : "Search entity..."}
               className="w-[200px] h-full pl-7 pr-2 border border-border rounded-lg text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             />
           </div>
@@ -146,30 +149,30 @@ export function TopologyControls({
             </div>
           )}
           {kgCenter && (
-            <button onClick={onKgCenterClear} className="text-[12px] text-primary font-medium hover:underline whitespace-nowrap cursor-pointer ml-2">Back</button>
+            <button onClick={onKgCenterClear} className="text-[12px] text-primary font-medium hover:underline whitespace-nowrap cursor-pointer ml-2">{isZh ? "返回" : "Back"}</button>
           )}
         </div>
       )}
 
       {mode === "knowledge" && totalEntities !== undefined && totalRelations !== undefined && (
         <span className="text-[13px] text-muted-foreground">
-          {totalEntities} entities &middot; {totalRelations} rels
-          {leafCount !== undefined && leafCount > 0 && <span className="ml-2">({leafCount} hidden)</span>}
+          {totalEntities} {isZh ? "实体" : "entities"} &middot; {totalRelations} {isZh ? "关系" : "rels"}
+          {leafCount !== undefined && leafCount > 0 && <span className="ml-2">({leafCount} {isZh ? "已隐藏" : "hidden"})</span>}
         </span>
       )}
 
       <div className={`flex items-center gap-0.5 border border-border rounded-lg p-0.5 ${BAR_H}`}>
-        <button type="button" onClick={onZoomIn} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label="Zoom in" title="Zoom in">
+        <button type="button" onClick={onZoomIn} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "放大" : "Zoom in"} title={isZh ? "放大" : "Zoom in"}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
           </svg>
         </button>
-        <button type="button" onClick={onZoomOut} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label="Zoom out" title="Zoom out">
+        <button type="button" onClick={onZoomOut} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "缩小" : "Zoom out"} title={isZh ? "缩小" : "Zoom out"}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="8" y1="11" x2="14" y2="11" />
           </svg>
         </button>
-        <button type="button" onClick={onZoomFit} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label="Fit to screen" title="Fit to screen">
+        <button type="button" onClick={onZoomFit} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "适配屏幕" : "Fit to screen"} title={isZh ? "适配屏幕" : "Fit to screen"}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" />
           </svg>

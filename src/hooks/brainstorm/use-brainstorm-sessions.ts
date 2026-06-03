@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BrainstormSession, BrainstormMessage, BrainstormOutline, Phase } from "./types";
+import { useLocale } from "@/lib/i18n";
 
 export function useBrainstormSessions() {
+  const { locale, t } = useLocale();
   const [sessions, setSessions] = useState<BrainstormSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<BrainstormMessage[]>([]);
@@ -26,7 +28,7 @@ export function useBrainstormSessions() {
       setMessages(d.data.messages || []);
       const parsedOutline = d.data.outline ? JSON.parse(d.data.outline) : null;
       setOutline(parsedOutline);
-      setStatus(d.data.status === "active" ? "Active" : "Complete");
+      setStatus(d.data.status === "active" ? t.brainstorm.status.active : t.brainstorm.status.complete);
       if (parsedOutline) {
         setPhase("ready");
       } else {
@@ -45,13 +47,13 @@ export function useBrainstormSessions() {
       }
     }
     setLoading(false);
-  }, []);
+  }, [t.brainstorm.status.active, t.brainstorm.status.complete]);
 
   async function createSession() {
     const res = await fetch("/api/v1/brainstorm/sessions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "New Brainstorming Session" }),
+      headers: { "Content-Type": "application/json", "x-locale": locale },
+      body: JSON.stringify({ title: t.brainstorm.defaultSessionTitle, locale }),
     });
     const d = await res.json();
     if (d.success) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { TopologyNode, TopologyEdge } from "@/types/topology";
+import { useLocale } from "@/lib/i18n";
 
 interface TopologyDetailPanelProps {
   readonly node: TopologyNode;
@@ -27,6 +28,8 @@ export function TopologyDetailPanel({
   onNavigate,
   onClose,
 }: TopologyDetailPanelProps) {
+  const { locale } = useLocale();
+  const isZh = locale === "zh-CN";
   const etype = node.entityType || "entity";
   const tc = typeColor(etype);
   const hasDescription = !!node.description;
@@ -35,7 +38,7 @@ export function TopologyDetailPanel({
   return (
     <div className="absolute right-4 top-4 z-30 w-[280px] max-h-[calc(100%-32px)] bg-card/95 backdrop-blur-sm border border-border rounded-xl shadow-xl flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-        <span className="text-[12px] font-semibold text-foreground">Details</span>
+        <span className="text-[12px] font-semibold text-foreground">{isZh ? "详情" : "Details"}</span>
         <button
           type="button"
           onClick={onClose}
@@ -55,20 +58,20 @@ export function TopologyDetailPanel({
         {loading && (
           <div className="flex items-center gap-2 py-1">
             <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="text-[11px] text-muted-foreground">Loading details...</span>
+            <span className="text-[11px] text-muted-foreground">{isZh ? "正在加载详情..." : "Loading details..."}</span>
           </div>
         )}
 
         {hasDescription && (
           <div>
-            <span className="text-[11px] text-muted-foreground block mb-1">Description</span>
+            <span className="text-[11px] text-muted-foreground block mb-1">{isZh ? "描述" : "Description"}</span>
             <p className="text-[11px] text-foreground/80 leading-relaxed">{node.description}</p>
           </div>
         )}
 
         {hasRelations && (
           <div>
-            <span className="text-[11px] text-muted-foreground block mb-1.5">Relations ({edges.length})</span>
+            <span className="text-[11px] text-muted-foreground block mb-1.5">{isZh ? "关系" : "Relations"} ({edges.length})</span>
             <div className="space-y-1.5 max-h-[240px] overflow-y-auto">
               {edges.map((edge, i) => {
                 const isSource = edge.source === node.id;
@@ -94,7 +97,7 @@ export function TopologyDetailPanel({
         )}
 
         {!hasDescription && !hasRelations && !loading && (
-          <p className="text-[11px] text-muted-foreground italic">No additional information available.</p>
+          <p className="text-[11px] text-muted-foreground italic">{isZh ? "暂无更多信息。" : "No additional information available."}</p>
         )}
 
         {onNavigate && (
@@ -106,7 +109,7 @@ export function TopologyDetailPanel({
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            View in graph
+            {isZh ? "在图谱中查看" : "View in graph"}
           </button>
         )}
       </div>

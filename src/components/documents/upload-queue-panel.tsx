@@ -3,6 +3,7 @@
 import { formatFileSize } from "@/lib/text/format-file-size";
 import { getFileExt, getFileIconClass } from "@/lib/text/file-utils";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useLocale } from "@/lib/i18n";
 
 export interface UploadItem {
   id: string;
@@ -20,13 +21,14 @@ interface UploadQueueProps {
 }
 
 export function UploadQueue({ items, onRemove }: UploadQueueProps) {
+  const { t } = useLocale();
   if (items.length === 0) return null;
 
   return (
     <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
       <div className="flex items-center justify-between px-6 py-5 border-b border-border">
-        <h3 className="font-display text-[16px] font-semibold text-foreground">Upload Queue</h3>
-        <StatusBadge label={`${items.length} file${items.length !== 1 ? "s" : ""}`} variant="primary" size="md" />
+        <h3 className="font-display text-[16px] font-semibold text-foreground">{t.documents.upload.queuing}</h3>
+        <StatusBadge label={`${items.length}`} variant="primary" size="md" />
       </div>
       <div className="px-6 py-2">
         {items.map((item) => {
@@ -51,18 +53,18 @@ export function UploadQueue({ items, onRemove }: UploadQueueProps) {
               <div className="flex items-center gap-2 min-w-[140px] shrink-0">
                 {item.status === "converting" && (
                   <>
-                    <StatusBadge label="Converting..." variant="info" size="md" />
+                    <StatusBadge label={t.documents.uploadQueue.converting} variant="info" size="md" />
                     <span className="text-[13px] font-semibold text-primary">{item.progress}%</span>
                   </>
                 )}
                 {item.status === "complete" && (
-                  <StatusBadge label="Complete" variant="success" size="md" />
+                  <StatusBadge label={t.documents.uploadQueue.complete} variant="success" size="md" />
                 )}
                 {item.status === "queued" && (
-                  <StatusBadge label="Queued" variant="neutral" size="md" />
+                  <StatusBadge label={t.documents.uploadQueue.queued} variant="neutral" size="md" />
                 )}
                 {item.status === "failed" && (
-                  <StatusBadge label={item.error || "Failed"} variant="danger" size="md" />
+                  <StatusBadge label={item.error || t.documents.uploadQueue.failed} variant="danger" size="md" />
                 )}
               </div>
               <button onClick={() => onRemove(item.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0">

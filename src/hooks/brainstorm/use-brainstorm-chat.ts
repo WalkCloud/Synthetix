@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import type { BrainstormMessage, BrainstormSession, Phase } from "./types";
+import { useLocale } from "@/lib/i18n";
 
 function newClientMessageId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -20,6 +21,7 @@ export function useBrainstormChat({
   activeId, loading, setLoading, setMessages, setSessions,
   setPhase, handleMarker, scrollToEnd,
 }: UseBrainstormChatOptions) {
+  const { locale, t, format } = useLocale();
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
 
@@ -38,7 +40,7 @@ export function useBrainstormChat({
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-locale": locale },
         body: JSON.stringify({ content }),
       });
       const d = await res.json();
@@ -59,11 +61,11 @@ export function useBrainstormChat({
         }
         fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
       } else {
-        setMessages((prev) => [...prev, systemMsg(`Error: ${d.error || "Unknown error"}`)]);
+        setMessages((prev) => [...prev, systemMsg(`${t.brainstorm.errorPrefix}: ${d.error || t.brainstorm.unknownError}`)]);
         setIsSending(false); setLoading(false);
       }
     } catch {
-      setMessages((prev) => [...prev, systemMsg("Network error, please try again.")]);
+      setMessages((prev) => [...prev, systemMsg(t.brainstorm.networkError)]);
       setIsSending(false); setLoading(false);
     }
     scrollToEnd();
@@ -91,17 +93,17 @@ export function useBrainstormChat({
     if (!activeId || loading) return;
     setLoading(true);
     const optId = newClientMessageId("opt-sys");
-    setMessages((prev) => [...prev, { id: optId, sessionId: activeId, role: "system", content: `Uploading document "${file.name}" and extracting content...`, createdAt: new Date().toISOString() }]);
+    setMessages((prev) => [...prev, { id: optId, sessionId: activeId, role: "system", content: format.template(t.brainstorm.uploadStatus, { fileName: file.name }), createdAt: new Date().toISOString() }]);
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/upload`, { method: "POST", body: formData });
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/upload`, { method: "POST", headers: { "x-locale": locale }, body: formData });
       const d = await res.json();
       if (d.success) {
         const aiRes = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Please give me an outline suggestion based on the uploaded document." }),
+          headers: { "Content-Type": "application/json", "x-locale": locale },
+          body: JSON.stringify({ content: t.brainstorm.uploadPrompt }),
         });
         const aiData = await aiRes.json();
         if (aiData.success && aiData.data.marker) {
@@ -109,11 +111,11 @@ export function useBrainstormChat({
         }
         fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
       } else {
-        setMessages((prev) => [...prev.filter((m) => m.id !== optId), systemMsg(`Upload failed: ${d.error}`)]);
+        setMessages((prev) => [...prev.filter((m) => m.id !== optId), systemMsg(`${t.brainstorm.uploadFailed} ${d.error || ""}`.trim())]);
         setLoading(false);
       }
     } catch {
-      setMessages((prev) => [...prev.filter((m) => m.id !== optId), systemMsg("Upload failed, please try again.")]);
+      setMessages((prev) => [...prev.filter((m) => m.id !== optId), systemMsg(t.brainstorm.uploadFailed)]);
       setLoading(false);
     }
   }

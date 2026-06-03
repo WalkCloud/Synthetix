@@ -1,6 +1,7 @@
 import {
   Plus, Trash2, X, GripVertical,
 } from "lucide-react";
+import { useLocale } from "@/lib/i18n";
 import type { OutlineSection } from "@/lib/outline-tree";
 
 interface EditOutlineNodeProps {
@@ -13,6 +14,8 @@ interface EditOutlineNodeProps {
 }
 
 function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth }: EditOutlineNodeProps) {
+  const { locale } = useLocale();
+  const isZh = locale === "zh-CN";
   const isTop = depth === 0;
   const indent = depth > 0 ? `pl-${Math.min(depth * 4, 12)}` : "";
 
@@ -27,7 +30,7 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
           type="text"
           value={section.title}
           onChange={(e) => onUpdate(path, "title", e.target.value)}
-          placeholder={isTop ? "Section title..." : "Sub-section title..."}
+          placeholder={isZh ? (isTop ? "章节标题..." : "子章节标题...") : (isTop ? "Section title..." : "Sub-section title...")}
           className={`min-w-0 flex-1 bg-transparent text-foreground focus:outline-none ${isTop ? "text-sm font-semibold" : "text-[13px] border-b border-dashed border-border focus:border-primary-400"}`}
         />
         <input
@@ -36,7 +39,7 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
           value={section.estimatedWords || ""}
           onChange={(e) => onUpdate(path, "estimatedWords", e.target.value)}
           className={`shrink-0 rounded ${isTop               ? "w-16 rounded-lg border bg-muted/50 px-2 py-1 text-xs focus:ring-2 focus:ring-primary/20"               : "w-14 border border-border bg-card px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary/20"} text-center text-muted-foreground focus:outline-none`}
-          placeholder="words"
+          placeholder={isZh ? "字数" : "words"}
         />
         <button
           onClick={() => onRemove(path)}
@@ -62,14 +65,14 @@ function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth 
       {(isTop || (section.children && section.children.length > 0)) && (
         <div className={`${isTop ? "pl-6 pt-1 pb-1" : "pl-4 pt-0.5 pb-0.5"}`}>
           <button onClick={() => onAddChild(path)} className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-primary/60 hover:text-primary transition-colors">
-            <Plus className="h-3 w-3" /> Add Sub-section
+            <Plus className="h-3 w-3" /> {isZh ? "添加子章节" : "Add Sub-section"}
           </button>
         </div>
       )}
       {!isTop && !section.children?.length && (
         <div className="pl-4 pt-0.5 pb-0.5">
           <button onClick={() => onAddChild(path)} className="flex cursor-pointer items-center gap-1 text-[10px] font-semibold text-primary/50 hover:text-primary transition-colors">
-            <Plus className="h-2.5 w-2.5" /> Add Sub-section
+            <Plus className="h-2.5 w-2.5" /> {isZh ? "添加子章节" : "Add Sub-section"}
           </button>
         </div>
       )}

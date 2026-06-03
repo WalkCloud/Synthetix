@@ -1,6 +1,7 @@
 "use client";
 
 import { Spinner } from "@/components/shared/spinner";
+import { useLocale } from "@/lib/i18n";
 
 interface SearchHeroProps {
   searchQuery: string;
@@ -19,15 +20,16 @@ export function SearchHero({
   onSearch,
   isSearching,
 }: SearchHeroProps) {
+  const { t } = useLocale();
   return (
     <div
       className="rounded-[22px] border border-border p-8 mb-6 animate-fade-in-up bg-gradient-to-br from-violet-50 via-amber-50/50 to-white dark:from-violet-950/40 dark:via-transparent dark:to-transparent"
     >
       <h3 className="font-display text-[20px] font-bold text-foreground mb-1">
-        Search Your Knowledge Base
+        {t.library.searchHeroTitle}
       </h3>
       <p className="text-[14px] text-muted-foreground mb-5">
-        Find documents by keyword or ask questions with AI-powered semantic search
+        {t.library.searchHeroDesc}
       </p>
       <div className="flex bg-card rounded-[16px] shadow-md border-2 border-border focus-within:border-primary transition-colors">
         <svg
@@ -42,7 +44,7 @@ export function SearchHero({
         </svg>
         <input
           type="text"
-          placeholder="Search documents or ask a question..."
+          placeholder={t.library.searchHeroPlaceholder}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSearch()}
@@ -53,13 +55,13 @@ export function SearchHero({
             onClick={() => setSearchMode("keyword")}
             className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "keyword" ? "bg-card text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
           >
-            Keyword
+            {t.library.keyword}
           </button>
           <button
             onClick={() => setSearchMode("semantic")}
             className={`px-3.5 py-2 rounded-[10px] text-xs font-semibold transition-all ${searchMode === "semantic" ? "bg-card text-primary shadow-sm" : "bg-transparent text-muted-foreground"}`}
           >
-            Semantic
+            {t.library.semantic}
           </button>
         </div>
         <button
@@ -67,7 +69,7 @@ export function SearchHero({
           disabled={isSearching}
           className="btn m-1.5 px-6 py-3 bg-primary text-white font-semibold rounded-[12px] hover:bg-primary-light transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[90px]"
         >
-          {isSearching ? <Spinner size="sm" className="text-white" /> : "Search"}
+          {isSearching ? <Spinner size="sm" className="text-white" /> : t.common.actions.search}
         </button>
       </div>
     </div>

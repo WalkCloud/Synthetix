@@ -13,7 +13,7 @@ interface ModelOption {
 
 export function modelLabel(models: ModelOption[], id: string): string {
   const m = models.find((x) => x.id === id);
-  return m ? `${m.modelName} (${m.providerName})` : "Select...";
+  return m ? `${m.modelName} (${m.providerName})` : "";
 }
 
 export type { ModelOption };
@@ -46,19 +46,19 @@ export function ProcessingSettings({
   const { t } = useLocale();
 
   const splitLabels: Record<string, string> = {
-    "structure-llm": t.documents.processing.indexTargetFull,
-    "heading-only": t.documents.processing.indexTargetOriginal,
+    "structure-llm": t.documents.processing.splitOptions.structureLlm,
+    "heading-only": t.documents.processing.splitOptions.headingOnly,
   };
 
   const indexLabels: Record<string, string> = {
-    full: t.documents.processing.indexTargetFull,
-    original: t.documents.processing.indexTargetOriginal,
-    chunks: t.documents.processing.indexTargetFull,
+    full: t.documents.processing.indexOptions.full,
+    original: t.documents.processing.indexOptions.original,
+    chunks: t.documents.processing.indexOptions.chunks,
   };
 
   const graphLabels: Record<string, string> = {
-    basic: t.documents.processing.indexModeBasic,
-    graph: t.documents.processing.indexModeGraph,
+    basic: t.documents.processing.graphOptions.basic,
+    graph: t.documents.processing.graphOptions.graph,
   };
 
   return (
@@ -69,10 +69,10 @@ export function ProcessingSettings({
       <div className="p-6">
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">LLM Model</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.llmModel}</label>
             <Select value={llmModel} onValueChange={(v) => onLlmModelChange(v!)}>
               <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{modelLabel(llmModels, llmModel)}</SelectValue>
+                <SelectValue>{modelLabel(llmModels, llmModel) || t.documents.processing.selectModel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {llmModels.length === 0 ? (
@@ -84,10 +84,10 @@ export function ProcessingSettings({
             </Select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.models.capabilities.embedding}</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.embeddingModel}</label>
             <Select value={embedModel} onValueChange={(v) => onEmbedModelChange(v!)}>
               <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{modelLabel(embedModels, embedModel)}</SelectValue>
+                <SelectValue>{modelLabel(embedModels, embedModel) || t.documents.processing.selectModel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {embedModels.length === 0 ? (
@@ -99,13 +99,14 @@ export function ProcessingSettings({
             </Select>
           </div>
           <div className="col-span-2">
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Max Context Usage</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.maxContextUsage}</label>
             <div className="flex items-center gap-3">
               <input type="range" min="10" max="100" value={contextUsage}
                 className="flex-1 h-2 bg-muted rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
                 onChange={(e) => onContextUsageChange(Number(e.target.value))} />
               <span className="text-[14px] font-semibold text-primary min-w-[36px] text-right">{contextUsage}%</span>
             </div>
+            <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.maxContextUsageDesc}</p>
           </div>
           <div>
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.splitStrategy}</label>
@@ -118,6 +119,7 @@ export function ProcessingSettings({
                 <SelectItem value="heading-only">{splitLabels["heading-only"]}</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.splitStrategyDesc}</p>
           </div>
           <div>
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexTarget}</label>
@@ -131,6 +133,7 @@ export function ProcessingSettings({
                 <SelectItem value="chunks">{indexLabels.chunks}</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.indexTargetDesc}</p>
           </div>
           <div>
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexMode}</label>
@@ -141,11 +144,14 @@ export function ProcessingSettings({
               const lightragCompatible = dim >= 1536;
                 if (!selectedEmbed || !embedModel) {
                 return (
-                  <Select value="basic" onValueChange={() => {}}>
-                    <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
-                      <SelectValue>{graphLabels.basic}</SelectValue>
-                    </SelectTrigger>
-                  </Select>
+                  <>
+                    <Select value="basic" onValueChange={() => {}}>
+                      <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
+                        <SelectValue>{graphLabels.basic}</SelectValue>
+                      </SelectTrigger>
+                    </Select>
+                    <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.graphNoEmbedding}</p>
+                  </>
                 );
               }
               return (
@@ -155,21 +161,24 @@ export function ProcessingSettings({
                       <SelectValue>{graphLabels[indexMode]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="basic">{graphLabels.basic}</SelectItem>
                       <SelectItem value="graph" disabled={!probed || !lightragCompatible}>
                         {graphLabels.graph}
                       </SelectItem>
+                      <SelectItem value="basic">{graphLabels.basic}</SelectItem>
                     </SelectContent>
                   </Select>
                   {!probed && (
                     <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      {t.models.providers.testConnection}
+                      {t.documents.processing.graphDimUnknown}
                     </p>
                   )}
                   {probed && !lightragCompatible && (
                     <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      {t.models.capabilities.embedding} dim ({dim}) &lt; 1536
+                      {t.documents.processing.graphDimTooSmall.replace("{dim}", String(dim))}
                     </p>
+                  )}
+                  {probed && lightragCompatible && (
+                    <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.graphDesc}</p>
                   )}
                 </>
               );
@@ -179,6 +188,7 @@ export function ProcessingSettings({
             <div className="flex items-center justify-between">
               <div>
                 <label className="block text-[13px] font-medium text-foreground mb-0.5">{t.documents.processing.autoSplit}</label>
+                <p className="text-[12px] text-muted-foreground">{t.documents.processing.autoSplitDesc}</p>
               </div>
               <label className="relative w-11 h-6 cursor-pointer">
                 <input type="checkbox" checked={autoSplit} onChange={(e) => onAutoSplitChange(e.target.checked)} className="sr-only peer"/>
