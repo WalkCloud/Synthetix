@@ -8,7 +8,7 @@ import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { CONFIRMED_SECTION_STATUSES } from "@/lib/writing/status";
 
 const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
-const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
+const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
 const TMP_DIR = path.resolve("data/tmp");
 const ASSET_MARKER_RE = /\[(DIAGRAM|IMAGE):([a-f0-9-]+)\]/g;
 

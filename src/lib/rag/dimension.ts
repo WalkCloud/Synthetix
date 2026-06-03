@@ -51,23 +51,32 @@ export async function resolveEmbeddingDim(model: ModelWithProvider): Promise<num
     }).catch(() => {});
   }
 
-  // Heuristic: well-known model dimensions
+  // Heuristic: well-known model dimensions (fallback when probe fails)
   const modelLower = model.modelId.toLowerCase();
   if (modelLower.includes("bge") || modelLower.includes("gte") || modelLower.includes("e5")) {
+    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 1024`);
     return 1024;
   }
   if (modelLower.includes("large") || modelLower.includes("ada")) {
+    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 1536`);
     return 1536;
   }
   if (modelLower.includes("3-large") || modelLower.includes("3-small")) {
-    return modelLower.includes("3-large") ? 3072 : 1536;
+    const dim = modelLower.includes("3-large") ? 3072 : 1536;
+    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: ${dim}`);
+    return dim;
   }
   if (modelLower.includes("mxbai") || modelLower.includes("nomic")) {
+    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 768`);
     return 768;
   }
 
-  // Default: assume 768 (Ollama nomic-embed-text etc)
-  return 768;
+  throw new Error(
+    `Cannot determine embedding dimension for model "${model.modelId}". ` +
+    `API probe failed and no heuristic matches. ` +
+    `Please test the model in Model Management to auto-detect its dimension, ` +
+    `or save the model with the correct embedding dimension manually.`
+  );
 }
 
 /**

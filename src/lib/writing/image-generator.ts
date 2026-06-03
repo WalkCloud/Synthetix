@@ -166,18 +166,34 @@ export async function generateImageAsset(assetId: string, userId?: string): Prom
     }
 
     if (!imageBuffer) {
-      const fallbackCandidates = ["dall-e-3", "gpt-image-2", "flux-1", "wanx-v3"];
-      for (const candidateModel of fallbackCandidates) {
+      // Try other user-configured models with image_generation capability
+      const otherImageModels = await db.modelConfig.findMany({
+        where: {
+          id: { not: imageModel.id },
+          ...(userId ? { provider: { userId } } : {}),
+          capabilities: { contains: "image_generation" },
+        },
+        include: { provider: true },
+      });
+
+      for (const fallbackModel of otherImageModels) {
+        const fallbackProvider = {
+          apiBaseUrl: normalizeProviderBaseUrl(fallbackModel.provider.apiBaseUrl),
+          apiKey: fallbackModel.provider.apiKey ? decrypt(fallbackModel.provider.apiKey) : "",
+        };
         try {
           imageBuffer = await generateImageViaApi(
             request.prompt,
-            provider.apiBaseUrl,
-            provider.apiKey,
-            candidateModel
+            fallbackProvider.apiBaseUrl,
+            fallbackProvider.apiKey,
+            fallbackModel.modelId
           );
-          if (imageBuffer) break;
+          if (imageBuffer) {
+            console.info(`[image] Succeeded with fallback model: ${fallbackModel.modelId}`);
+            break;
+          }
         } catch (err) {
-          console.warn(`Image fallback model ${candidateModel} failed:`, err);
+          console.warn(`[image] Fallback model ${fallbackModel.modelId} failed:`, err instanceof Error ? err.message : err);
           continue;
         }
       }
