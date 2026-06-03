@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { draftStatusLabels, draftStatusColors } from "@/lib/text/status-labels";
 import type { DraftMeta } from "@/types/writing";
+import { useLocale } from "@/lib/i18n";
 
 interface DraftGenerationTask {
   id: string;
@@ -68,6 +69,7 @@ function taskColor(task?: DraftGenerationTask) {
 }
 
 export default function WritingListPage() {
+  const { t } = useLocale();
   const [drafts, setDrafts] = useState<DraftMeta[]>([]);
   const [tasks, setTasks] = useState<DraftGenerationTask[]>([]);
   const [total, setTotal] = useState(0);
@@ -142,11 +144,11 @@ export default function WritingListPage() {
 
   return (
     <div>
-      <Header title="Document Writing" />
+      <Header title={t.writing.title} />
       <div className="p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold mb-1 text-foreground">Your Drafts</h2>
+            <h2 className="text-xl font-bold mb-1 text-foreground">{t.dashboard.recent.recentDrafts}</h2>
             <p className="text-sm text-muted-foreground">
               {total} draft{total !== 1 ? "s" : ""} — continue writing or start a new draft from brainstorm.
             </p>
@@ -159,7 +161,7 @@ export default function WritingListPage() {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            New from Brainstorm
+            {t.brainstorm.title}
           </Link>
         </div>
 
@@ -167,7 +169,7 @@ export default function WritingListPage() {
           <LoadingState />
         ) : drafts.length === 0 ? (
           <div className="p-12 text-center bg-card border border-border rounded-2xl shadow-soft">
-            <p className="text-lg font-semibold text-foreground/75 mb-1">No drafts yet</p>
+            <p className="text-lg font-semibold text-foreground/75 mb-1">{t.dashboard.empty.noDrafts}</p>
             <p className="text-sm text-muted-foreground mb-5">
               Start by brainstorming an outline, then confirm it to create a draft.
             </p>
@@ -175,7 +177,7 @@ export default function WritingListPage() {
               href="/brainstorm"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-xl text-sm hover:bg-primary-700 transition-colors shadow-sm"
             >
-              Go to Brainstorm
+              {t.layout.sidebar.mindOrganization}
             </Link>
           </div>
         ) : (
