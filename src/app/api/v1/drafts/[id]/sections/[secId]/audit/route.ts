@@ -23,18 +23,18 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const section = await db.section.findFirst({
     where: { id: sectionId, draftId },
   });
   if (!section) {
-    return errorResponse("Section not found", 404);
+    return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
   }
 
   if (!section.content) {
-    return errorResponse("Section has no content to audit", 400);
+    return errorResponse({ code: "invalidInput", message: "Section has no content to audit" }, 400);
   }
 
   const result = await auditSection(section.title, section.content, section.keyPoints, user.id, sectionId);

@@ -8,7 +8,7 @@ export async function GET() {
   if (!user) return authErrorResponse();
 
   const dbUser = await db.user.findUnique({ where: { id: user.id } });
-  if (!dbUser) return errorResponse("User not found", 404);
+  if (!dbUser) return errorResponse({ code: "notFound", message: "User not found" }, 404);
 
   return successResponse({
     id: dbUser.id,

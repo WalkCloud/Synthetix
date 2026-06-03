@@ -19,7 +19,7 @@ export async function GET(
   });
 
   if (!provider) {
-    return errorResponse("Provider not found", 404);
+    return errorResponse({ code: "notFound", message: "Provider not found" }, 404);
   }
   return successResponse(toProviderDto(provider));
 }
@@ -37,7 +37,7 @@ export async function PUT(
   try {
     body = await request.json();
   } catch {
-    return errorResponse("Invalid request body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
   }
 
   const parsed = providerUpdateSchema.safeParse(body);
@@ -51,7 +51,7 @@ export async function PUT(
     where: { id, userId: user.id },
   });
   if (!existing) {
-    return errorResponse("Provider not found", 404);
+    return errorResponse({ code: "notFound", message: "Provider not found" }, 404);
   }
 
   const updateData: Record<string, unknown> = {};
@@ -101,7 +101,7 @@ export async function DELETE(
     where: { id, userId: user.id },
   });
   if (!existing) {
-    return errorResponse("Provider not found", 404);
+    return errorResponse({ code: "notFound", message: "Provider not found" }, 404);
   }
 
   await db.modelProvider.delete({ where: { id } });

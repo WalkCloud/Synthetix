@@ -470,6 +470,9 @@ const zhCN = {
     fileEmpty: "文件内容为空",
     unsupportedFormat: "暂不支持该文件格式",
     passwordIncorrect: "当前密码不正确",
+    invalidInput: "请求参数无效",
+    conflict: "资源已存在",
+    batchDeleteFailed: "批量删除失败",
     unknown: "发生未知错误",
   },
 } satisfies TranslationSchema;

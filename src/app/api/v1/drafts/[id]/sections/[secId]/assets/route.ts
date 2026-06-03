@@ -22,7 +22,7 @@ export async function GET(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const assets = await db.sectionAsset.findMany({

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const { action } = body;
 
   if (!action) {
-    return errorResponse("action required", 400);
+    return errorResponse({ code: "invalidInput", message: "action required" }, 400);
   }
 
   let ctx: Awaited<ReturnType<typeof createRagContext>>;
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     ctx = await createRagContext(user.id, { requireLlm: true });
   } catch (error) {
     if (error instanceof Error && error.message.includes("model configured")) {
-      return errorResponse("Configure embedding and LLM models first", 400);
+      return errorResponse({ code: "ragNotConfigured", message: "Configure embedding and LLM models first" }, 400);
     }
     throw error;
   }
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       case "create-entity": {
         const { entityName, entityType, description } = body;
         if (!entityName || !entityType || !description) {
-          return errorResponse("entityName, entityType, and description required", 400);
+          return errorResponse({ code: "invalidInput", message: "entityName, entityType, and description required" }, 400);
         }
         result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName, entityType, description });
         break;
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       case "delete-entity": {
         const { entityName } = body;
         if (!entityName) {
-          return errorResponse("entityName required", 400);
+          return errorResponse({ code: "invalidInput", message: "entityName required" }, 400);
         }
         result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName });
         break;
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       case "merge-entities": {
         const { sources, target } = body;
         if (!sources || !target || !Array.isArray(sources) || sources.length < 2) {
-          return errorResponse("sources (array of 2+ names) and target required", 400);
+          return errorResponse({ code: "invalidInput", message: "sources (array of 2+ names) and target required" }, 400);
         }
         result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, sources: sources.join(","), target });
         break;

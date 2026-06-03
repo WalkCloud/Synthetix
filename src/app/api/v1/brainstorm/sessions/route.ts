@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   const { title } = await request.json();
   if (!title || typeof title !== "string") {
-    return errorResponse("Title required", 400);
+    return errorResponse({ code: "invalidInput", message: "Title required" }, 400);
   }
 
   const session = await db.brainstormSession.create({

@@ -26,7 +26,7 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const section = await db.section.findFirst({
@@ -34,7 +34,7 @@ export async function POST(
     select: { id: true },
   });
   if (!section) {
-    return errorResponse("Section not found", 404);
+    return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
   }
 
   const formData = await request.formData();
@@ -42,7 +42,7 @@ export async function POST(
   const replaceAssetId = formData.get("replaceAssetId") as string | null;
 
   if (!file || !(file instanceof File)) {
-    return errorResponse("No file provided", 400);
+    return errorResponse({ code: "noFileProvided", message: "No file provided" }, 400);
   }
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -75,7 +75,7 @@ export async function POST(
       where: { id: replaceAssetId, draftId, sectionId },
     });
     if (!existing) {
-      return errorResponse("Target asset not found", 404);
+      return errorResponse({ code: "notFound", message: "Target asset not found" }, 404);
     }
 
     if (existing.path) {

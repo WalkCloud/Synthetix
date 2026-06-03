@@ -15,23 +15,23 @@ export async function POST(
 
   const { id } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
-  if (!session) return errorResponse("Not found", 404);
+  if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
   let body: { content?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    return errorResponse("Invalid request body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
   }
   const { content } = body;
-  if (!content) return errorResponse("Message required", 400);
+  if (!content) return errorResponse({ code: "invalidInput", message: "Message required" }, 400);
 
   const userMessage = await db.message.create({
     data: { sessionId: id, role: "user", content },
   });
 
   const chatModel = await resolveModel("chat", user.id);
-  if (!chatModel) return errorResponse("No chat model configured", 400);
+  if (!chatModel) return errorResponse({ code: "modelNotConfigured", message: "No chat model configured" }, 400);
 
   const existingCount = await db.message.count({
     where: { sessionId: id, role: { in: ["user", "ai"] } },

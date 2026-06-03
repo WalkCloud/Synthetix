@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import type { GenerationMode, SectionMeta } from "@/types/writing";
 import { isSectionDone } from "@/types/writing";
+import { getLocalizedError } from "@/lib/i18n";
 
 interface Reference {
   documentName: string;
@@ -123,7 +124,7 @@ export function useGeneration(
         } else {
           const data = await res.json();
           if (!data.success) {
-            toast.error(data.error || "Generation failed");
+            toast.error(getLocalizedError(data));
           } else if (data.data && data.data.references) {
             setReferences(data.data.references);
           }
@@ -131,7 +132,7 @@ export function useGeneration(
         }
       } catch (err) {
         console.error("Generation failed:", err);
-        toast.error(err instanceof Error ? err.message : "Generation failed");
+        toast.error(getLocalizedError({ error: err instanceof Error ? err.message : undefined }));
       } finally {
         setIsGenerating(false);
         setGeneratingSectionId(null);
@@ -181,7 +182,7 @@ export function useGeneration(
         { method: "POST" },
       );
       const data = await res.json();
-      if (!data.success) toast.error(data.error || "Humanize failed");
+      if (!data.success) toast.error(getLocalizedError(data));
       await loadDraft();
     } catch (err) {
       console.error("Humanize failed:", err);
@@ -204,10 +205,10 @@ export function useGeneration(
         await loadDraft();
       } else {
         const data = await res.json().catch(() => ({} as Record<string, unknown>));
-        toast.error((data.error as string) || "Failed to unlock section");
+        toast.error(getLocalizedError(data));
       }
     } catch {
-      toast.error("Unlock request failed");
+      toast.error(getLocalizedError({ code: "serverError" }));
     }
   }, [activeSectionId, id, loadDraft]);
 

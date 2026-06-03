@@ -47,7 +47,7 @@ export async function GET(
     });
 
     if (!draft) {
-      return errorResponse("Draft not found", 404);
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     const now = Date.now();
@@ -114,7 +114,7 @@ export async function DELETE(
     });
 
     if (!draft) {
-      return errorResponse("Draft not found", 404);
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     await db.draft.delete({ where: { id: draft.id } });

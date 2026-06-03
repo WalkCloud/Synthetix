@@ -14,7 +14,7 @@ export async function DELETE(
   const { id, tag: tagName } = await params;
   const tag = await db.tag.findUnique({ where: { name: tagName } });
   if (!tag) {
-    return errorResponse("Tag not found", 404);
+    return errorResponse({ code: "notFound", message: "Tag not found" }, 404);
   }
 
   await db.documentTag.deleteMany({ where: { documentId: id, tagId: tag.id } });

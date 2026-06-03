@@ -16,7 +16,7 @@ export async function POST(
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   let options: ProcessingOptions = {};

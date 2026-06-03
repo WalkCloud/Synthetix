@@ -16,12 +16,12 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return errorResponse("Invalid JSON body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid JSON body" }, 400);
   }
 
   try {
     const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id }, select: { id: true } });
-    if (!draft) return errorResponse("Draft not found", 404);
+    if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
 
     const updated = await patchOutline(draftId, body as { sections?: SectionInput[]; outline?: string });
     return successResponse(updated);

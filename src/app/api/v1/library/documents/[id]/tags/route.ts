@@ -14,12 +14,12 @@ export async function POST(
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   const { name } = await request.json();
   if (!name || typeof name !== "string") {
-    return errorResponse("Tag name required", 400);
+    return errorResponse({ code: "invalidInput", message: "Tag name required" }, 400);
   }
 
   const tag = await db.tag.upsert({
