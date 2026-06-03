@@ -5,12 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "@/lib/user-context";
 import { useLocale, type Locale } from "@/lib/i18n";
-import type { TranslationKeys } from "@/lib/i18n/types";
+import type { TranslationSchema } from "@/lib/i18n/types";
 import { useTheme } from "next-themes";
 import { logout } from "@/lib/auth/logout";
 import { AboutDialog } from "@/components/layout/about-dialog";
 
-type SidebarKeys = keyof TranslationKeys["sidebar"];
+type SidebarKeys = keyof TranslationSchema["layout"]["sidebar"];
 
 interface NavItem {
   readonly href: string;
@@ -177,7 +177,7 @@ export function Sidebar() {
         {navGroups.map((group) => (
           <div key={group.groupKey} className="mb-6">
             <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70 px-3 mb-1.5">
-              {t.sidebar[group.groupKey]}
+              {t.layout.sidebar[group.groupKey]}
             </div>
             {group.items.map((item) => {
               const isActive =
@@ -204,7 +204,7 @@ export function Sidebar() {
                   >
                     {item.icon}
                   </svg>
-                  {t.sidebar[item.labelKey]}
+                  {t.layout.sidebar[item.labelKey]}
                 </Link>
               );
             })}
@@ -255,7 +255,7 @@ function UserMenuTrigger({
   setTheme: (t: string) => void;
   locale: Locale;
   setLocale: (l: Locale) => void;
-  t: TranslationKeys;
+  t: TranslationSchema;
   onAbout: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -322,7 +322,7 @@ function UserMenuTrigger({
               <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            {t.userMenu.userSettings}
+            {t.layout.userMenu.userSettings}
           </button>
 
           <button
@@ -343,7 +343,7 @@ function UserMenuTrigger({
                 <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
               </svg>
             )}
-            {theme === "dark" ? t.userMenu.lightMode : t.userMenu.darkMode}
+            {theme === "dark" ? t.layout.userMenu.lightMode : t.layout.userMenu.darkMode}
           </button>
 
           <div className="relative">
@@ -357,7 +357,7 @@ function UserMenuTrigger({
                 <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
                 <path d="M2 12h20" />
               </svg>
-              {t.userMenu.language}
+              {t.layout.userMenu.language}
               <svg className="size-3 ml-auto shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
@@ -391,7 +391,7 @@ function UserMenuTrigger({
               <path d="M12 16v-4" />
               <path d="M12 8h.01" />
             </svg>
-            {t.userMenu.about}
+            {t.layout.userMenu.about}
           </button>
 
           <div className="my-1 h-px bg-border" />
@@ -406,7 +406,7 @@ function UserMenuTrigger({
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            {t.userMenu.logout}
+            {t.layout.userMenu.logout}
           </button>
         </div>
       )}
