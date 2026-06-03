@@ -6,9 +6,11 @@ import { Header } from "@/components/layout/header";
 import type { DocumentMeta } from "@/types/documents";
 import { StatsRibbon } from "@/components/library/stats-ribbon";
 import { DocumentTable } from "@/components/library/document-table";
+import { useLocale } from "@/lib/i18n";
 
 export default function LibraryPage() {
   const router = useRouter();
+  const { t, format } = useLocale();
 
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [total, setTotal] = useState(0);
@@ -46,7 +48,7 @@ export default function LibraryPage() {
   }, [documents, page, fetchDocs]);
 
   async function handleDelete(docId: string) {
-    if (!confirm("Delete this document and all its chunks?")) return;
+    if (!confirm(t.library.deleteConfirm)) return;
     try {
       const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
       if (!res.ok) return;
@@ -54,7 +56,7 @@ export default function LibraryPage() {
       const data = text ? JSON.parse(text) : {};
       if (data.success) {
         setDocuments((prev) => prev.filter((d) => d.id !== docId));
-        setTotal((t) => t - 1);
+        setTotal((prev) => prev - 1);
       }
     } catch (e) {
       console.error("Delete failed:", e);
@@ -62,7 +64,7 @@ export default function LibraryPage() {
   }
 
   async function handleBatchDelete(ids: string[]) {
-    if (!confirm(`Delete ${ids.length} selected documents and all their chunks?`)) return;
+    if (!confirm(format.template(t.library.batchDeleteConfirm, { count: ids.length }))) return;
     try {
       const res = await fetch("/api/v1/documents/batch", {
         method: "DELETE",
@@ -97,7 +99,7 @@ export default function LibraryPage() {
 
   return (
     <div>
-      <Header title="Document Library" />
+      <Header title={t.library.title} />
       <div className="p-8">
         <StatsRibbon
           docCount={statDocs}

@@ -10,8 +10,10 @@ import { UploadQueue } from "@/components/documents/upload-queue-panel";
 import type { UploadItem } from "@/components/documents/upload-queue-panel";
 import { ProcessingSettings, modelLabel, type ModelOption } from "@/components/documents/processing-settings";
 import { SUPPORTED_FORMATS } from "@/types/documents";
+import { useLocale } from "@/lib/i18n";
 
 export default function DocumentsPage() {
+  const { t } = useLocale();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [llmModels, setLlmModels] = useState<ModelOption[]>([]);
   const [embedModels, setEmbedModels] = useState<ModelOption[]>([]);
@@ -94,10 +96,10 @@ export default function DocumentsPage() {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: data.error } : u));
         }
       } catch {
-        setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: "Upload failed" } : u));
+        setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: t.documents.upload.uploadFailed } : u));
       }
     }
-  }, [llmModel, embedModel, contextUsage, splitStrategy, indexTarget, indexMode, autoSplit]);
+  }, [llmModel, embedModel, contextUsage, splitStrategy, indexTarget, indexMode, autoSplit, t.documents.upload.uploadFailed]);
 
   function removeUpload(id: string) {
     setUploads((prev) => prev.filter((u) => u.id !== id));
@@ -106,7 +108,7 @@ export default function DocumentsPage() {
   async function handleProcess() {
     const ready = uploads.filter((u) => u.status === "complete" && u.docId);
     if (ready.length === 0) {
-      toast.error("No completed uploads to process");
+      toast.error(t.documents.upload.noFileProvided);
       return;
     }
     setProcessing(true);
@@ -141,15 +143,15 @@ export default function DocumentsPage() {
     }
     setProcessing(false);
     if (fail === 0) {
-      toast.success(`${success} document(s) queued for processing`);
+      toast.success(`${success} ${t.documents.upload.queued}`);
     } else {
-      toast.warning(`${success} queued, ${fail} failed`);
+      toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
     }
   }
 
   return (
     <div>
-      <Header title="Document Initialization" />
+      <Header title={t.documents.title} />
       <div className="p-8">
         <UploadZone onFiles={handleFiles} />
         <UploadQueue items={uploads} onRemove={removeUpload} />
@@ -173,14 +175,14 @@ export default function DocumentsPage() {
               {processing ? (
                 <>
                   <Spinner size="sm" className="text-white" />
-                  Processing...
+                  {t.common.states.processing}...
                 </>
               ) : (
                 <>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                   </svg>
-                  Start Processing
+                  {t.documents.processing.startProcessing}
                 </>
               )}
             </button>
