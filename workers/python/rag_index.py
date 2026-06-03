@@ -53,9 +53,9 @@ async def index_document(
     user_id: str,
     chunks_dir: str,
     index_mode: str = "basic",
-    embed_api_base: str = "http://localhost:11434/v1",
-    embed_api_key: str = "ollama",
-    embed_model: str = "nomic-embed-text",
+    embed_api_base: str = "",
+    embed_api_key: str = "",
+    embed_model: str = "",
     embed_dim: int = 0,
     llm_api_base: str = "",
     llm_api_key: str = "",
@@ -266,9 +266,9 @@ def main() -> None:
     parser.add_argument("--index-mode", choices=["basic", "graph"], default="basic")
     parser.add_argument("--embeddings-file", default="",
                         help="Path to pre-computed embeddings binary file (skips embedding API)")
-    parser.add_argument("--embed-api-base", default="http://localhost:11434/v1")
-    parser.add_argument("--embed-api-key", default="ollama")
-    parser.add_argument("--embed-model", default="nomic-embed-text")
+    parser.add_argument("--embed-api-base", default="")
+    parser.add_argument("--embed-api-key", default="")
+    parser.add_argument("--embed-model", default="")
     parser.add_argument("--embed-dim", type=int, default=0,
                         help="Embedding vector dimension (0=auto-detect from model name)")
     parser.add_argument("--llm-api-base", default="")

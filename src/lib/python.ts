@@ -5,7 +5,7 @@ export interface PythonSpawnOptions {
   parseJson?: boolean;
 }
 
-const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
+const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
 
 export function spawnPython(
   script: string,

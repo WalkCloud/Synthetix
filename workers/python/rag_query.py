@@ -33,13 +33,13 @@ async def query_rag(
     limit: int = 20,
     return_entities: bool = False,
     return_relations: bool = False,
-    embed_api_base: str = "http://localhost:11434/v1",
-    embed_api_key: str = "ollama",
-    embed_model: str = "nomic-embed-text",
+    embed_api_base: str = "",
+    embed_api_key: str = "",
+    embed_model: str = "",
     embed_dim: int = 0,
-    llm_api_base: str = "http://localhost:11434/v1",
-    llm_api_key: str = "ollama",
-    llm_model: str = "llama3.2",
+    llm_api_base: str = "",
+    llm_api_key: str = "",
+    llm_model: str = "",
     rerank_api_base: str = "",
     rerank_api_key: str = "",
     rerank_model: str = "",
@@ -239,14 +239,14 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--return-entities", action="store_true")
     parser.add_argument("--return-relations", action="store_true")
-    parser.add_argument("--embed-api-base", default="http://localhost:11434/v1")
-    parser.add_argument("--embed-api-key", default="ollama")
-    parser.add_argument("--embed-model", default="nomic-embed-text")
+    parser.add_argument("--embed-api-base", default="")
+    parser.add_argument("--embed-api-key", default="")
+    parser.add_argument("--embed-model", default="")
     parser.add_argument("--embed-dim", type=int, default=0,
                         help="Embedding vector dimension (0=auto-detect)")
-    parser.add_argument("--llm-api-base", default="http://localhost:11434/v1")
-    parser.add_argument("--llm-api-key", default="ollama")
-    parser.add_argument("--llm-model", default="llama3.2")
+    parser.add_argument("--llm-api-base", default="")
+    parser.add_argument("--llm-api-key", default="")
+    parser.add_argument("--llm-model", default="")
     parser.add_argument("--rerank-api-base", default="")
     parser.add_argument("--rerank-api-key", default="")
     parser.add_argument("--rerank-model", default="")

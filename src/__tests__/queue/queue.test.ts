@@ -199,23 +199,10 @@ describe("TaskQueue", () => {
     expect(result).toBe(false);
   });
 
-  it("should mark task as failed when no worker is registered", async () => {
-    const taskId = await queue.submit(
-      "outline_generate",
-      {},
-      TEST_USER_ID,
-    );
-
-    await vi.waitFor(
-      async () => {
-        const info = await queue.getStatus(taskId);
-        expect(info?.status).toBe("failed");
-      },
-      { timeout: 3000 },
-    );
-
-    const info = await queue.getStatus(taskId);
-    expect(info!.error).toContain("No worker registered");
+  it("should reject submit when no worker is registered", async () => {
+    await expect(
+      queue.submit("outline_generate", {}, TEST_USER_ID)
+    ).rejects.toThrow("No worker registered for task type: outline_generate");
   });
 
   it("should drain pending tasks on startup", async () => {

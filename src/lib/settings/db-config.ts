@@ -46,8 +46,9 @@ function decrypt(encoded: string): string {
 }
 
 export function readDbGlobalConfig(): DbGlobalConfig | null {
+  if (!fs.existsSync(CONFIG_PATH)) return null;
+
   try {
-    if (!fs.existsSync(CONFIG_PATH)) return null;
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
     if (raw.dbType !== "postgresql") return null;
     if (!raw.pgHost || !raw.pgDatabase) return null;
@@ -55,8 +56,11 @@ export function readDbGlobalConfig(): DbGlobalConfig | null {
       ...raw,
       pgPassword: raw.pgPassword ? decrypt(raw.pgPassword) : "",
     };
-  } catch {
-    return null;
+  } catch (err) {
+    throw new Error(
+      `Database config file exists at ${CONFIG_PATH} but could not be read. ` +
+      `Fix or delete the file to use default SQLite. Error: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
