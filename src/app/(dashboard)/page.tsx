@@ -8,6 +8,7 @@ import { getDashboardDocumentStatusDisplay } from "@/lib/dashboard/document-stat
 import { draftStatusLabels as statusLabels, draftStatusColors as statusColors } from "@/lib/text/status-labels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/lib/i18n";
 
 interface DraftSummary {
   id: string;
@@ -31,18 +32,6 @@ interface DashboardStats {
   activeTasks: number;
 }
 
-function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  return `${days} days ago`;
-}
-
 function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -51,6 +40,7 @@ function formatTokenCount(n: number): string {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { t, format } = useLocale();
   const [stats, setStats] = useState<DashboardStats>({
     docCount: 0,
     draftCount: 0,
@@ -96,7 +86,7 @@ export default function DashboardPage() {
               setStats((prev) => ({
                 ...prev,
                 activeTasks: d.data.filter(
-                  (t: { status: string }) => t.status === "running" || t.status === "pending"
+                  (task: { status: string }) => task.status === "running" || task.status === "pending"
                 ).length,
               }));
             }
@@ -116,26 +106,26 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <Header title="Dashboard" />
+      <Header title={t.dashboard.title} />
 
       <div className="p-8 max-w-7xl mx-auto space-y-8">
         {/* Welcome Hero */}
         <div className="bg-mesh border border-border rounded-2xl p-8 relative overflow-hidden shadow-soft flex items-center justify-between animate-fade-in-up">
           {/* Decorative glow */}
           <div className="absolute top-0 right-0 w-64 h-64 bg-primary-400/10 blur-[80px] rounded-full pointer-events-none"></div>
-          
+
           <div className="relative z-10 max-w-md">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-card border border-border rounded-full text-xs font-semibold text-primary mb-4 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              AI Workspace Active
+              {t.dashboard.aiWorkspaceActive}
             </div>
-            <h2 className="text-3xl font-bold text-foreground mb-2">Welcome back 👋</h2>
+            <h2 className="text-3xl font-bold text-foreground mb-2">{t.dashboard.welcomeBack} 👋</h2>
             <p className="text-muted-foreground text-sm mb-6">
               {draftsInProgress > 0
-                ? `You have ${draftsInProgress} draft${draftsInProgress > 1 ? "s" : ""} in progress. Here's your workspace overview.`
-                : "Here's your workspace overview."}
+                ? `${draftsInProgress} ${t.dashboard.draftsInProgress}. ${t.dashboard.workspaceOverview}`
+                : t.dashboard.workspaceOverview}
             </p>
-            
+
             <Link
               href="/documents"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors shadow-md font-medium text-sm"
@@ -143,15 +133,15 @@ export default function DashboardPage() {
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M5 12h14M12 5v14" />
               </svg>
-              Upload New Document
+              {t.dashboard.uploadNewDocument}
             </Link>
           </div>
 
           <div className="relative z-10 flex gap-4">
-            <StatCard value={String(stats.docCount)} label="Documents" />
-            <StatCard value={String(stats.draftCount)} label="Drafts" />
-            <StatCard value={formatTokenCount(stats.totalTokens)} label="Tokens" />
-            <StatCard value={String(stats.activeTasks)} label="Active Tasks" isPrimary />
+            <StatCard value={String(stats.docCount)} label={t.dashboard.stats.documents} />
+            <StatCard value={String(stats.draftCount)} label={t.dashboard.stats.drafts} />
+            <StatCard value={formatTokenCount(stats.totalTokens)} label={t.dashboard.stats.tokens} />
+            <StatCard value={String(stats.activeTasks)} label={t.dashboard.stats.activeTasks} isPrimary />
           </div>
         </div>
 
@@ -159,8 +149,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-4 gap-4">
           <QuickAction
             href="/documents"
-            label="Upload Docs"
-            desc="Import & convert files"
+            label={t.dashboard.quickActions.uploadDocs}
+            desc={t.dashboard.quickActions.uploadDocsDesc}
             iconBg="bg-muted/50 group-hover:bg-primary-50"
             iconColor="text-muted-foreground group-hover:text-primary"
             hoverBorderClass="hover:border-primary-200"
@@ -174,8 +164,8 @@ export default function DashboardPage() {
           </QuickAction>
           <QuickAction
             href="/brainstorm"
-            label="Brainstorm"
-            desc="Organize ideas with AI"
+            label={t.dashboard.quickActions.brainstorm}
+            desc={t.dashboard.quickActions.brainstormDesc}
             iconBg="bg-muted/50 group-hover:bg-blue-50"
             iconColor="text-muted-foreground group-hover:text-blue-600"
             hoverBorderClass="hover:border-blue-200"
@@ -189,8 +179,8 @@ export default function DashboardPage() {
           </QuickAction>
           <QuickAction
             href="/writing"
-            label="New Draft"
-            desc="Start writing a document"
+            label={t.dashboard.quickActions.newDraft}
+            desc={t.dashboard.quickActions.newDraftDesc}
             iconBg="bg-muted/50 group-hover:bg-green-50"
             iconColor="text-muted-foreground group-hover:text-green-600"
             hoverBorderClass="hover:border-green-200"
@@ -205,8 +195,8 @@ export default function DashboardPage() {
           </QuickAction>
           <QuickAction
             href="/library"
-            label="Browse Library"
-            desc="Search your knowledge"
+            label={t.dashboard.quickActions.browseLibrary}
+            desc={t.dashboard.quickActions.browseLibraryDesc}
             iconBg="bg-muted/50 group-hover:bg-orange-50"
             iconColor="text-muted-foreground group-hover:text-orange-600"
             hoverBorderClass="hover:border-orange-200"
@@ -224,16 +214,16 @@ export default function DashboardPage() {
           {/* Recent Documents */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg text-foreground">Recent Documents</h3>
+              <h3 className="font-semibold text-lg text-foreground">{t.dashboard.recent.recentDocuments}</h3>
               <Link href="/library" className="text-sm font-medium text-primary hover:text-primary-700">
-                View all &rarr;
+                &rarr;
               </Link>
             </div>
             <div className="bg-card border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
                 <LoadingState />
               ) : recentDocs.length === 0 ? (
-                <EmptyState title="No documents yet" description="Upload your first document to get started." />
+                <EmptyState title={t.dashboard.empty.noDocuments} description={t.dashboard.empty.noDocumentsDesc} />
               ) : (
                 recentDocs.map((doc, i) => {
                   const sc = getDashboardDocumentStatusDisplay(doc.status);
@@ -253,7 +243,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-foreground text-sm truncate">{doc.originalName}</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">{formatTimeAgo(doc.createdAt)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{format.relativeTime(doc.createdAt)}</p>
                       </div>
                       <div className={`flex items-center gap-1.5 px-2 py-0.5 ${sc.bg} ${sc.text} rounded-md text-[10px] font-semibold border ${sc.border}`}>
                         <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} ${doc.status === 'converting' ? 'animate-pulse' : ''}`}></div>
@@ -269,16 +259,16 @@ export default function DashboardPage() {
           {/* Recent Drafts */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg text-foreground">Recent Drafts</h3>
+              <h3 className="font-semibold text-lg text-foreground">{t.dashboard.recent.recentDrafts}</h3>
               <Link href="/writing" className="text-sm font-medium text-primary hover:text-primary-700">
-                View all &rarr;
+                &rarr;
               </Link>
             </div>
             <div className="bg-card border border-border rounded-2xl shadow-soft overflow-hidden">
               {loading ? (
                 <LoadingState />
               ) : recentDrafts.length === 0 ? (
-                <EmptyState title="No drafts yet" description="Start by brainstorming an outline." />
+                <EmptyState title={t.dashboard.empty.noDrafts} description={t.dashboard.empty.noDraftsDesc} />
               ) : (
                 recentDrafts.map((draft, i) => {
                   const progress = draft.progress ?? { completed: 0, total: 0 };
@@ -309,7 +299,7 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {progress.completed}/{progress.total} sections · {formatTimeAgo(draft.updatedAt)}
+                          {progress.completed}/{progress.total} · {format.relativeTime(draft.updatedAt)}
                         </p>
                         {draft.status === "drafting" && progress.total > 0 && (
                           <div className="w-full h-1 bg-secondary rounded-full overflow-hidden mt-1.5">

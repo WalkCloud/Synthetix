@@ -1,6 +1,7 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLocale } from "@/lib/i18n";
 
 interface ModelOption {
   id: string;
@@ -15,23 +16,6 @@ export function modelLabel(models: ModelOption[], id: string): string {
   return m ? `${m.modelName} (${m.providerName})` : "Select...";
 }
 
-const SPLIT_LABELS: Record<string, string> = {
-  "structure-llm": "Structure first + LLM semantic review (Recommended)",
-  "heading-only": "Heading and page boundaries only",
-};
-
-const INDEX_LABELS: Record<string, string> = {
-  full: "Original + chunks + LightRAG graph (Recommended)",
-  original: "Original Markdown only",
-  chunks: "Chunks only",
-};
-
-const GRAPH_LABELS: Record<string, string> = {
-  basic: "Chunk storage only (fast)",
-  graph: "Entity extraction + knowledge graph (Recommended)",
-};
-
-export { SPLIT_LABELS, INDEX_LABELS, GRAPH_LABELS };
 export type { ModelOption };
 
 interface ProcessingSettingsProps {
@@ -59,10 +43,28 @@ export function ProcessingSettings({
   onLlmModelChange, onEmbedModelChange, onContextUsageChange,
   onSplitStrategyChange, onIndexTargetChange, onIndexModeChange, onAutoSplitChange,
 }: ProcessingSettingsProps) {
+  const { t } = useLocale();
+
+  const splitLabels: Record<string, string> = {
+    "structure-llm": t.documents.processing.indexTargetFull,
+    "heading-only": t.documents.processing.indexTargetOriginal,
+  };
+
+  const indexLabels: Record<string, string> = {
+    full: t.documents.processing.indexTargetFull,
+    original: t.documents.processing.indexTargetOriginal,
+    chunks: t.documents.processing.indexTargetFull,
+  };
+
+  const graphLabels: Record<string, string> = {
+    basic: t.documents.processing.indexModeBasic,
+    graph: t.documents.processing.indexModeGraph,
+  };
+
   return (
     <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
       <div className="flex items-center justify-between px-6 py-5 border-b border-border">
-        <h3 className="font-display text-[16px] font-semibold text-foreground">Processing Settings</h3>
+        <h3 className="font-display text-[16px] font-semibold text-foreground">{t.documents.processing.processingSettings}</h3>
       </div>
       <div className="p-6">
         <div className="grid grid-cols-2 gap-6">
@@ -74,7 +76,7 @@ export function ProcessingSettings({
               </SelectTrigger>
               <SelectContent>
                 {llmModels.length === 0 ? (
-                  <SelectItem value="none" disabled>No models configured — add in Model Management</SelectItem>
+                  <SelectItem value="none" disabled>{t.errors.modelNotConfigured}</SelectItem>
                 ) : (
                   llmModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
                 )}
@@ -82,14 +84,14 @@ export function ProcessingSettings({
             </Select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Embedding Model</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.models.capabilities.embedding}</label>
             <Select value={embedModel} onValueChange={(v) => onEmbedModelChange(v!)}>
               <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
                 <SelectValue>{modelLabel(embedModels, embedModel)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {embedModels.length === 0 ? (
-                  <SelectItem value="none" disabled>No embedding models configured</SelectItem>
+                  <SelectItem value="none" disabled>{t.errors.modelNotConfigured}</SelectItem>
                 ) : (
                   embedModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
                 )}
@@ -104,37 +106,34 @@ export function ProcessingSettings({
                 onChange={(e) => onContextUsageChange(Number(e.target.value))} />
               <span className="text-[14px] font-semibold text-primary min-w-[36px] text-right">{contextUsage}%</span>
             </div>
-            <p className="text-[12px] text-muted-foreground mt-1">Token-based safety threshold. Prompt, references, and output budget remain reserved.</p>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Split Strategy</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.splitStrategy}</label>
             <Select value={splitStrategy} onValueChange={(v) => onSplitStrategyChange(v!)}>
               <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{SPLIT_LABELS[splitStrategy] ?? splitStrategy}</SelectValue>
+                <SelectValue>{splitLabels[splitStrategy] ?? splitStrategy}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="structure-llm">{SPLIT_LABELS["structure-llm"]}</SelectItem>
-                <SelectItem value="heading-only">{SPLIT_LABELS["heading-only"]}</SelectItem>
+                <SelectItem value="structure-llm">{splitLabels["structure-llm"]}</SelectItem>
+                <SelectItem value="heading-only">{splitLabels["heading-only"]}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[12px] text-muted-foreground mt-1">Uses headings, pages, tables, and then domain/topic correlation.</p>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Index Target</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexTarget}</label>
             <Select value={indexTarget} onValueChange={(v) => onIndexTargetChange(v!)}>
               <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{INDEX_LABELS[indexTarget] ?? indexTarget}</SelectValue>
+                <SelectValue>{indexLabels[indexTarget] ?? indexTarget}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="full">{INDEX_LABELS.full}</SelectItem>
-                <SelectItem value="original">{INDEX_LABELS.original}</SelectItem>
-                <SelectItem value="chunks">{INDEX_LABELS.chunks}</SelectItem>
+                <SelectItem value="full">{indexLabels.full}</SelectItem>
+                <SelectItem value="original">{indexLabels.original}</SelectItem>
+                <SelectItem value="chunks">{indexLabels.chunks}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[12px] text-muted-foreground mt-1">Stores provenance for source file, page, heading path, block, and image assets.</p>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Knowledge Graph</label>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexMode}</label>
             {(() => {
               const selectedEmbed = embedModels.find(m => m.id === embedModel);
               const dim = selectedEmbed?.embeddingDim ?? 0;
@@ -144,7 +143,7 @@ export function ProcessingSettings({
                 return (
                   <Select value="basic" onValueChange={() => {}}>
                     <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
-                      <SelectValue>{GRAPH_LABELS.basic}</SelectValue>
+                      <SelectValue>{graphLabels.basic}</SelectValue>
                     </SelectTrigger>
                   </Select>
                 );
@@ -153,27 +152,24 @@ export function ProcessingSettings({
                 <>
                   <Select value={indexMode} onValueChange={(v) => onIndexModeChange(v as "basic" | "graph")}>
                     <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                      <SelectValue>{GRAPH_LABELS[indexMode]}</SelectValue>
+                      <SelectValue>{graphLabels[indexMode]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="basic">{GRAPH_LABELS.basic}</SelectItem>
+                      <SelectItem value="basic">{graphLabels.basic}</SelectItem>
                       <SelectItem value="graph" disabled={!probed || !lightragCompatible}>
-                        {GRAPH_LABELS.graph}
+                        {graphLabels.graph}
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   {!probed && (
                     <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      Embedding dimension not verified. Test Connection in Model Management first.
+                      {t.models.providers.testConnection}
                     </p>
                   )}
                   {probed && !lightragCompatible && (
                     <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      Current model dimension ({dim}) is below the 1536 minimum required for knowledge graph extraction. Use a higher-dimension embedding model.
+                      {t.models.capabilities.embedding} dim ({dim}) &lt; 1536
                     </p>
-                  )}
-                  {probed && lightragCompatible && (
-                    <p className="text-[12px] text-muted-foreground mt-1">Graph mode extracts entities and relations for enhanced retrieval and topology.</p>
                   )}
                 </>
               );
@@ -182,8 +178,7 @@ export function ProcessingSettings({
           <div className="col-span-2">
             <div className="flex items-center justify-between">
               <div>
-                <label className="block text-[13px] font-medium text-foreground mb-0.5">Auto-split and preserve provenance</label>
-                <p className="text-[12px] text-muted-foreground">Chunks documents over the token threshold and keeps source anchors for RAG/topology.</p>
+                <label className="block text-[13px] font-medium text-foreground mb-0.5">{t.documents.processing.autoSplit}</label>
               </div>
               <label className="relative w-11 h-6 cursor-pointer">
                 <input type="checkbox" checked={autoSplit} onChange={(e) => onAutoSplitChange(e.target.checked)} className="sr-only peer"/>
