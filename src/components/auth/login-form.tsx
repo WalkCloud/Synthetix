@@ -2,68 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-
-const FEATURES = [
-  {
-    title: "Smart Drafting",
-    description: "AI generates structured drafts from your outline in seconds, not hours.",
-    icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="w-[22px] h-[22px] text-white"
-      >
-        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z" />
-        <path d="M12 6v6l4 2" />
-      </svg>
-    ),
-  },
-  {
-    title: "Reference Management",
-    description:
-      "Organize citations and references with automatic linking and formatting.",
-    icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="w-[22px] h-[22px] text-white"
-      >
-        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-      </svg>
-    ),
-  },
-  {
-    title: "Model Management",
-    description:
-      "Switch between AI models and fine-tune output to match your style.",
-    icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="w-[22px] h-[22px] text-white"
-      >
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    ),
-  },
-] as const;
+import { useLocale } from "@/lib/i18n";
+import type { TranslationSchema } from "@/lib/i18n/types";
 
 export function LoginForm() {
   const router = useRouter();
+  const { t } = useLocale();
   const [initialized, setInitialized] = useState<boolean | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -72,6 +16,63 @@ export function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const FEATURES = [
+    {
+      title: t.auth.features.smartDrafting,
+      description: t.auth.features.smartDraftingDesc,
+      icon: (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-[22px] h-[22px] text-white"
+        >
+          <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z" />
+          <path d="M12 6v6l4 2" />
+        </svg>
+      ),
+    },
+    {
+      title: t.auth.features.referenceManagement,
+      description: t.auth.features.referenceManagementDesc,
+      icon: (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-[22px] h-[22px] text-white"
+        >
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </svg>
+      ),
+    },
+    {
+      title: t.auth.features.modelManagement,
+      description: t.auth.features.modelManagementDesc,
+      icon: (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-[22px] h-[22px] text-white"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      ),
+    },
+  ] as const;
+
   useEffect(() => {
     fetch("/api/v1/system/status")
       .then((r) => r.json())
@@ -79,21 +80,21 @@ export function LoginForm() {
         setInitialized(Boolean(data.data?.initialized));
       })
       .catch(() => {
-        setError("Unable to check system status");
+        setError(t.auth.login.workspaceError);
         setInitialized(true);
       });
-  }, []);
+  }, [t.auth.login.workspaceError]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (initialized === false) {
       if (password !== confirmPassword) {
-        setError("Passwords do not match");
+        setError(t.auth.login.passwordMismatch);
         return;
       }
       if (password.length < 6) {
-        setError("Password must be at least 6 characters");
+        setError(t.auth.login.passwordTooShort);
         return;
       }
     }
@@ -116,11 +117,11 @@ export function LoginForm() {
       } else {
         setError(
           data.error ||
-            (initialized === false ? "Account creation failed" : "Login failed")
+            (initialized === false ? t.auth.login.creationFailed : t.auth.login.loginFailed)
         );
       }
     } catch {
-      setError("Network error, please try again");
+      setError(t.auth.login.networkError);
     } finally {
       setLoading(false);
     }
@@ -171,26 +172,25 @@ export function LoginForm() {
             <line x1="10" y1="9" x2="8" y2="9" />
           </svg>
           <span className="text-[26px] font-bold text-white font-display tracking-tight">
-            Synthetix
+            {t.auth.login.title}
           </span>
         </div>
 
         {/* Tagline */}
         <h2 className="relative z-10 text-[32px] font-bold text-white/90 font-display leading-tight mb-3 tracking-tight animate-fade-in-up-2">
-          AI-Powered Document Authoring
+          {t.auth.login.tagline}
         </h2>
 
         {/* Subtitle */}
         <p className="relative z-10 text-base text-white/70 mb-12 max-w-[440px] leading-relaxed animate-fade-in-up-3">
-          Write, organize, and publish professional documents with intelligent
-          assistance at every step.
+          {t.auth.login.subtitle}
         </p>
 
         {/* Features */}
         <div className="relative z-10 flex flex-col gap-6">
           {FEATURES.map((feature, index) => (
             <div
-              key={feature.title}
+              key={index}
               className={`flex items-start gap-4 animate-fade-in-up-${index + 4}`}
             >
               <div className="w-11 h-11 rounded-lg bg-white/[0.12] backdrop-blur-sm border border-white/[0.15] flex items-center justify-center shrink-0">
@@ -214,27 +214,27 @@ export function LoginForm() {
         <div className="w-full max-w-[400px]">
           <h2 className="text-2xl font-extrabold font-display mb-2 tracking-tight text-foreground animate-fade-in-up-2">
             {initialized === null
-              ? "Checking workspace"
+              ? t.auth.login.checkingWorkspace
               : initialized === false
-                ? "Create admin account"
-                : "Welcome back"}
+                ? t.auth.login.adminSetup
+                : t.auth.login.welcomeBack}
           </h2>
           <p className="text-sm text-muted-foreground mb-8 animate-fade-in-up-3">
             {initialized === null
-              ? "Loading local authentication status..."
+              ? t.auth.login.checkingWorkspace
               : initialized === false
-                ? "Set up the first local administrator for this workspace."
-                : "Sign in to your Synthetix account to continue."}
+                ? t.auth.login.adminSetup
+                : t.auth.login.signIn}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email field */}
+            {/* Username field */}
             <div className="animate-fade-in-up-4">
               <label
                 className="block text-[13px] font-medium text-muted-foreground mb-1.5"
                 htmlFor="username"
               >
-                Username
+                {t.auth.login.username}
               </label>
               <div className="relative">
                 <svg
@@ -269,7 +269,7 @@ export function LoginForm() {
                 className="block text-[13px] font-medium text-muted-foreground mb-1.5"
                 htmlFor="password"
               >
-                Password
+                {t.auth.login.password}
               </label>
               <div className="relative">
                 <svg
@@ -288,7 +288,7 @@ export function LoginForm() {
                   id="password"
                   type="password"
                   className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  placeholder="Enter your password"
+                  placeholder={t.auth.login.enterPassword}
                   autoComplete={
                     initialized === false ? "new-password" : "current-password"
                   }
@@ -306,7 +306,7 @@ export function LoginForm() {
                   className="block text-[13px] font-medium text-muted-foreground mb-1.5"
                   htmlFor="confirmPassword"
                 >
-                  Confirm Password
+                  {t.auth.login.confirmPassword}
                 </label>
                 <div className="relative">
                   <svg
@@ -325,7 +325,7 @@ export function LoginForm() {
                     id="confirmPassword"
                     type="password"
                     className="w-full pl-[42px] pr-3.5 py-2.5 border border-input rounded-lg text-sm bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    placeholder="Enter password again"
+                    placeholder={t.auth.login.enterPasswordAgain}
                     autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -350,7 +350,7 @@ export function LoginForm() {
                   htmlFor="remember"
                   className="text-[13px] text-muted-foreground cursor-pointer"
                 >
-                  Remember me
+                  {t.auth.login.rememberMe}
                 </label>
               </div>
             )}
@@ -358,7 +358,7 @@ export function LoginForm() {
             {/* Error message */}
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            {/* Login button */}
+            {/* Submit button */}
             <button
               type="submit"
               disabled={loading || initialized === null}
@@ -366,14 +366,14 @@ export function LoginForm() {
               style={{ animationDelay: "0.35s" }}
             >
               {initialized === null
-                ? "Checking..."
+                ? t.auth.login.checkingWorkspace
                 : loading
-                ? initialized === false
-                  ? "Creating..."
-                  : "Signing in..."
-                : initialized === false
-                  ? "Create Admin"
-                  : "Login"}
+                  ? initialized === false
+                    ? t.auth.login.creating
+                    : t.auth.login.signingIn
+                  : initialized === false
+                    ? t.auth.login.createAdmin
+                    : t.auth.login.signIn}
             </button>
           </form>
         </div>
