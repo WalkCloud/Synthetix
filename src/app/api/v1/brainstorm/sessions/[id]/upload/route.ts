@@ -3,6 +3,8 @@ import { getAuthUser } from "@/lib/auth/session";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { SUPPORTED_FORMATS } from "@/types/documents";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { resolveLocale } from "@/lib/i18n/server";
+import { getBrainstormMessages, isDefaultBrainstormTitle, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 import path from "path";
 import fs from "fs/promises";
 
@@ -40,6 +42,8 @@ export async function POST(
   const { id: sessionId } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id: sessionId, userId: user.id } });
   if (!session) return errorResponse({ code: "notFound", message: "Session not found" }, 404);
+  const locale = resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale();
+  const messages = getBrainstormMessages(locale);
 
   const formData = await request.formData();
   const file = formData.get("file");
@@ -63,7 +67,7 @@ export async function POST(
       data: {
         sessionId,
         role: "system",
-        content: `User uploaded document "${file.name}", content extracted.`,
+        content: messages.uploadSystem(file.name),
       },
     });
 
@@ -71,11 +75,11 @@ export async function POST(
       data: {
         sessionId,
         role: "user",
-        content: `I uploaded a document "${file.name}", please help me build a document outline based on the following content:\n\n${content}`,
+        content: messages.uploadUser(file.name, content),
       },
     });
 
-    if (session.title === "New Brainstorming Session") {
+    if (isDefaultBrainstormTitle(session.title)) {
       const baseName = file.name.replace(/\.[^.]+$/, "");
       await db.brainstormSession.update({
         where: { id: sessionId },

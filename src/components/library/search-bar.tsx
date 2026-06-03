@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLocale } from "@/lib/i18n";
 
 interface SearchBarProps {
   onSearch: (query: string, mode: "keyword" | "semantic") => void;
 }
 
 export function SearchBar({ onSearch }: SearchBarProps) {
+  const { t } = useLocale();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"keyword" | "semantic">("keyword");
 
@@ -22,25 +24,25 @@ export function SearchBar({ onSearch }: SearchBarProps) {
         </svg>
         <input
           className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-          placeholder={mode === "keyword" ? "Search by keyword..." : "Search by meaning..."}
+          placeholder={mode === "keyword" ? t.library.keywordPlaceholder : t.library.semanticPlaceholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
       <Select value={mode} onValueChange={(v) => setMode(v as "keyword" | "semantic")}>
         <SelectTrigger className="text-sm w-[130px]">
-          <SelectValue>{(v: string | null) => v === 'semantic' ? 'Semantic' : 'Keyword'}</SelectValue>
+          <SelectValue>{(v: string | null) => v === "semantic" ? t.library.semantic : t.library.keyword}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="keyword">Keyword</SelectItem>
-          <SelectItem value="semantic">Semantic</SelectItem>
+          <SelectItem value="keyword">{t.library.keyword}</SelectItem>
+          <SelectItem value="semantic">{t.library.semantic}</SelectItem>
         </SelectContent>
       </Select>
       <button
         type="submit"
         className="px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light text-sm"
       >
-        Search
+        {t.common.actions.search}
       </button>
     </form>
   );

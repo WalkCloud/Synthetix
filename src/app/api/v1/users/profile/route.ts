@@ -23,7 +23,7 @@ export async function GET() {
 
 const profileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
-  email: z.string().email().optional().nullable(),
+  email: z.string().trim().email("emailInvalid").optional().nullable(),
   avatarUrl: z.string().url().optional().nullable(),
 });
 
@@ -34,17 +34,30 @@ export async function PUT(request: Request) {
   const body = await request.json();
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) {
-    return errorResponse(parsed.error.flatten(), 400);
+    const hasEmailError = parsed.error.issues.some((issue) => issue.path[0] === "email");
+    if (hasEmailError) {
+      return errorResponse({ code: "invalidInput", message: "emailInvalid" }, 400);
+    }
+    return errorResponse({ code: "invalidInput", message: "Invalid profile input" }, 400);
   }
 
-  const updated = await db.user.update({
-    where: { id: user.id },
-    data: parsed.data,
-  });
+  let updated;
+  try {
+    updated = await db.user.update({
+      where: { id: user.id },
+      data: parsed.data,
+    });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+      return errorResponse({ code: "invalidInput", message: "emailAlreadyUsed" }, 400);
+    }
+    throw error;
+  }
 
   return successResponse({
     id: updated.id,
     username: updated.username,
+    email: updated.email,
     displayName: updated.displayName,
   });
 }

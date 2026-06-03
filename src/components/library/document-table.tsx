@@ -7,6 +7,7 @@ import { formatFileSize } from "@/lib/text/format-file-size";
 import { getFileIconClass } from "@/lib/text/file-utils";
 import { LoadingState } from "@/components/shared/loading-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useLocale } from "@/lib/i18n";
 import type { DocumentMeta } from "@/types/documents";
 
 interface DocumentTableProps {
@@ -46,6 +47,7 @@ export function DocumentTable({
   setFilterStatus,
   totalCount,
 }: DocumentTableProps) {
+  const { t, format } = useLocale();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => { setSelectedIds(new Set()); }, [documents]);
@@ -80,6 +82,21 @@ export function DocumentTable({
     filterFormat !== "All" ? filterFormat : null,
     filterStatus !== "all" ? filterStatus : null,
   ].filter(Boolean);
+  const statusLabels: Record<string, string> = {
+    all: t.library.filters.allStatuses,
+    ready: t.common.states.ready,
+    uploading: t.documents.uploadQueue.uploading,
+    converting: t.documents.uploadQueue.converting,
+    splitting: t.documents.processing.splitStrategy,
+    embedding: t.models.capabilities.embedding,
+    indexing: t.common.states.processing,
+    failed: t.common.states.failed,
+  };
+  const sortLabels: Record<string, string> = {
+    "Newest first": t.library.sort.newest,
+    "Name A-Z": t.library.sort.nameAsc,
+    Size: t.library.sort.size,
+  };
 
   return (
     <div className="animate-fade-in-up space-y-4">
@@ -90,7 +107,7 @@ export function DocumentTable({
             onClick={() => setFilterFormat(f)}
             className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f ? "border-primary text-primary bg-primary-100" : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}
           >
-            {f}
+            {f === "All" ? t.common.states.all : f}
           </button>
         ))}
       </div>
@@ -109,7 +126,7 @@ export function DocumentTable({
           </svg>
           <input
             type="text"
-            placeholder="Filter documents..."
+            placeholder={t.library.filters.search}
             value={quickSearch}
             onChange={(e) => setQuickSearch(e.target.value)}
             className="w-full py-2 pr-3 pl-9 border border-input rounded-lg shadow-sm text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
@@ -120,14 +137,14 @@ export function DocumentTable({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="ready">Ready</SelectItem>
-            <SelectItem value="uploading">Uploading</SelectItem>
-            <SelectItem value="converting">Converting</SelectItem>
-            <SelectItem value="splitting">Splitting</SelectItem>
-            <SelectItem value="embedding">Embedding</SelectItem>
-            <SelectItem value="indexing">Indexing</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="all">{statusLabels.all}</SelectItem>
+            <SelectItem value="ready">{statusLabels.ready}</SelectItem>
+            <SelectItem value="uploading">{statusLabels.uploading}</SelectItem>
+            <SelectItem value="converting">{statusLabels.converting}</SelectItem>
+            <SelectItem value="splitting">{statusLabels.splitting}</SelectItem>
+            <SelectItem value="embedding">{statusLabels.embedding}</SelectItem>
+            <SelectItem value="indexing">{statusLabels.indexing}</SelectItem>
+            <SelectItem value="failed">{statusLabels.failed}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={(v) => setSortBy(v!)}>
@@ -135,9 +152,9 @@ export function DocumentTable({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Newest first">Newest first</SelectItem>
-            <SelectItem value="Name A-Z">Name A-Z</SelectItem>
-            <SelectItem value="Size">Size</SelectItem>
+            <SelectItem value="Newest first">{sortLabels["Newest first"]}</SelectItem>
+            <SelectItem value="Name A-Z">{sortLabels["Name A-Z"]}</SelectItem>
+            <SelectItem value="Size">{sortLabels.Size}</SelectItem>
           </SelectContent>
         </Select>
         {selectedIds.size > 0 && (
@@ -145,18 +162,18 @@ export function DocumentTable({
             <button
               onClick={handleBatchDelete}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 text-[13px] font-medium whitespace-nowrap shadow-sm transition-colors cursor-pointer"
-              title="Delete selected"
+              title={t.library.actions.deleteSelected}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               </svg>
-              Delete {selectedIds.size} selected
+              {t.library.actions.deleteSelected} {selectedIds.size}
             </button>
             <button
               onClick={() => setSelectedIds(new Set())}
               className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
-              title="Clear selection"
+              title={t.library.actions.clearSelection}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -169,7 +186,7 @@ export function DocumentTable({
 
       {activeFilters.length > 0 && (
         <div className="text-xs text-muted-foreground">
-          Showing {documents.length} of {totalCount} documents
+          {documents.length} / {totalCount} {t.dashboard.stats.documents}
           <span className="ml-1">
             ({activeFilters.join(" × ")})
           </span>
@@ -187,15 +204,15 @@ export function DocumentTable({
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
               }
-              title="No documents found"
-              description={activeFilters.length > 0 ? "Try adjusting your filters to see more results." : "Upload documents to get started with your knowledge base."}
+              title={t.library.empty}
+              description={activeFilters.length > 0 ? t.library.emptyFilteredDesc : t.library.emptyUploadDesc}
               action={
                 activeFilters.length > 0 ? undefined : (
                   <Link
                     href="/documents"
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors text-sm"
                   >
-                    Upload Documents
+                    {t.documents.upload.title}
                   </Link>
                 )
               }
@@ -218,11 +235,11 @@ export function DocumentTable({
                     </label>
                   </th>
                   {[
-                    { label: "Document", style: "w-full max-w-[360px]" },
-                    { label: "Chunks", style: "w-[100px]" },
-                    { label: "Size", style: "w-[90px]" },
-                    { label: "Indexed", style: "w-[130px]" },
-                    { label: "Date", style: "w-[110px]" },
+                    { label: t.topology.nodeTypes.document, style: "w-full max-w-[360px]" },
+                    { label: t.library.table.chunks, style: "w-[100px]" },
+                    { label: t.library.table.size, style: "w-[90px]" },
+                    { label: t.library.actions.indexed, style: "w-[130px]" },
+                    { label: t.library.actions.date, style: "w-[110px]" },
                     { label: "", style: "w-[112px]" },
                   ].map((h) => (
                     <th
@@ -292,23 +309,23 @@ export function DocumentTable({
                       <td className="px-4 py-3.5">
                         {ready ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300 whitespace-nowrap">
-                            ✓ Ready
+                            {t.common.states.ready}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300 whitespace-nowrap">
-                            <span className="inline-block animate-spin">⟳</span> {doc.status}
+                            <span className="inline-block animate-spin">⟳</span> {statusLabels[doc.status] ?? doc.status}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3.5 text-sm text-muted-foreground whitespace-nowrap">
-                        {new Date(doc.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        {format.date(doc.createdAt)}
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex gap-1">
                           <button
                             onClick={() => onView(doc.id)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                            title="View"
+                            title={t.common.actions.view}
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -318,7 +335,7 @@ export function DocumentTable({
                           <button
                             onClick={() => onReindex(doc.id)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                            title="Reindex"
+                            title={t.library.reindex}
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                               <polyline points="23 4 23 10 17 10" />
@@ -328,7 +345,7 @@ export function DocumentTable({
                           <button
                             onClick={() => onDelete(doc.id)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                            title="Delete"
+                            title={t.common.actions.delete}
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                               <polyline points="3 6 5 6 21 6" />

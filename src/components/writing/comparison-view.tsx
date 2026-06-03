@@ -3,6 +3,7 @@
 import { ContentRenderer } from "./content-renderer";
 import { countWords } from "@/lib/text/count-words";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { useLocale } from "@/lib/i18n";
 
 interface ComparisonViewProps {
   contentA: string | null;
@@ -44,6 +45,8 @@ function ModelPanel({
   sectionId?: string;
   sectionTitle?: string | null;
 }) {
+  const { locale, t } = useLocale();
+  const isZh = locale === "zh-CN";
   const displayContent = content ? stripLeadingSectionTitle(content, sectionTitle) : null;
 
   return (
@@ -68,13 +71,13 @@ function ModelPanel({
             onClick={onCopy}
             className="text-[13px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer"
           >
-            Copy
+            {t.common.actions.copy}
           </button>
           <button
             onClick={onEdit}
             className="text-[13px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer"
           >
-            Edit
+            {t.common.actions.edit}
           </button>
         </div>
       </div>
@@ -87,11 +90,11 @@ function ModelPanel({
             sectionTitle={sectionTitle}
           />
         ) : (
-          <div className="text-muted-foreground italic">Waiting for generation...</div>
+          <div className="text-muted-foreground italic">{isZh ? "等待生成..." : "Waiting for generation..."}</div>
         )}
       </div>
       <div className="flex items-center justify-between px-[18px] py-3 border-t border-border bg-muted/40 text-[13px] text-muted-foreground font-medium">
-        <span>{displayContent ? `${countWords(displayContent)} words` : "—"}</span>
+        <span>{displayContent ? `${countWords(displayContent)} ${isZh ? "字" : "words"}` : "—"}</span>
         <button
           onClick={onSelect}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
@@ -109,7 +112,7 @@ function ModelPanel({
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
-          {isSelected ? "Selected" : "Select"}
+          {isSelected ? (isZh ? "已选择" : "Selected") : (isZh ? "选择" : "Select")}
         </button>
       </div>
     </div>
@@ -132,6 +135,8 @@ export function ComparisonView({
   sectionId,
   sectionTitle,
 }: ComparisonViewProps) {
+  const { locale, t } = useLocale();
+  const isZh = locale === "zh-CN";
   const displayContentA = contentA ? stripLeadingSectionTitle(contentA, sectionTitle) : null;
   const displayContentB = contentB ? stripLeadingSectionTitle(contentB, sectionTitle) : null;
 
@@ -148,13 +153,13 @@ export function ComparisonView({
               onClick={() => displayContentA && navigator.clipboard.writeText(displayContentA)}
               className="text-[13px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer"
             >
-              Copy
+              {t.common.actions.copy}
             </button>
             <button
               onClick={() => displayContentA && onEdit(displayContentA, "a")}
               className="text-[13px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer"
             >
-              Edit
+              {t.common.actions.edit}
             </button>
           </div>
         </div>
@@ -167,11 +172,11 @@ export function ComparisonView({
               sectionTitle={sectionTitle}
             />
           ) : (
-            <div className="text-muted-foreground italic">Waiting for generation...</div>
+            <div className="text-muted-foreground italic">{isZh ? "等待生成..." : "Waiting for generation..."}</div>
           )}
         </div>
         <div className="flex items-center justify-between px-[18px] py-3 border-t border-border bg-muted/40 text-[13px] text-muted-foreground font-medium">
-          <span>{displayContentA ? `${countWords(displayContentA)} words` : "—"}</span>
+          <span>{displayContentA ? `${countWords(displayContentA)} ${isZh ? "字" : "words"}` : "—"}</span>
         </div>
       </div>
     );

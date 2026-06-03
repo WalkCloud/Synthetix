@@ -13,6 +13,7 @@ import { useSectionActions } from "@/hooks/writing/use-section-actions";
 import { useExport } from "@/hooks/writing/use-export";
 import { useModelSelection } from "@/hooks/writing/use-model-selection";
 import { parseAllMarkers } from "@/lib/writing/marker-parser";
+import { useLocale } from "@/lib/i18n";
 
 export default function WritingPage({
   params,
@@ -20,6 +21,8 @@ export default function WritingPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const { locale, t } = useLocale();
+  const isZh = locale === "zh-CN";
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -107,7 +110,7 @@ export default function WritingPage({
       <div className="min-h-screen flex items-center justify-center bg-muted/40">
         <div className="text-center text-muted-foreground">
           <div className="w-10 h-10 mx-auto mb-3 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm font-medium">Loading draft...</p>
+          <p className="text-sm font-medium">{isZh ? "正在加载草稿..." : "Loading draft..."}</p>
         </div>
       </div>
     );
@@ -117,12 +120,12 @@ export default function WritingPage({
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/40">
         <div className="text-center">
-          <p className="text-lg font-medium text-muted-foreground mb-2">Draft not found</p>
+          <p className="text-lg font-medium text-muted-foreground mb-2">{t.errors.draftNotFound}</p>
           <button
             onClick={() => router.push("/writing")}
             className="text-sm font-medium text-primary-600 hover:underline cursor-pointer"
           >
-            Back to drafts
+            {isZh ? "返回草稿列表" : "Back to drafts"}
           </button>
         </div>
       </div>
@@ -150,7 +153,7 @@ export default function WritingPage({
                 ? "bg-secondary border-border text-muted-foreground hover:text-foreground"
                 : "bg-primary-50 border-primary/20 text-primary"
             }`}
-            title={outlineCollapsed ? "Expand Outline" : "Collapse Outline"}
+            title={outlineCollapsed ? (isZh ? "展开大纲" : "Expand Outline") : (isZh ? "收起大纲" : "Collapse Outline")}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -164,7 +167,7 @@ export default function WritingPage({
           </button>
           <div>
             <h2 className="text-lg font-bold font-display tracking-tight text-foreground">
-              Document Writing
+              {t.writing.title}
             </h2>
             <span className="text-xs font-medium text-muted-foreground mt-0.5 block">{draft.title}</span>
           </div>
@@ -174,7 +177,7 @@ export default function WritingPage({
               onClick={() => genAll.start(selectedModelA && selectedModelA !== "auto" ? selectedModelA : undefined)}
               disabled={genAll.isRunning || genAll.isStarting || gen.isGenerating || allCompleted}
               className="flex items-center gap-1.5 px-4 py-2 border border-primary-200 rounded-xl text-xs font-semibold text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Generate all pending sections as a reviewable first draft"
+              title={isZh ? "生成所有待处理章节，作为可审阅的一版完整草稿" : "Generate all pending sections as a reviewable first draft"}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-4 h-4 ${genAll.isStarting ? "animate-spin" : ""}`}>
                 <path d="M12 3v3" />
@@ -187,10 +190,10 @@ export default function WritingPage({
                 <path d="m17.66 6.34 2.12-2.12" />
               </svg>
               {genAll.isRunning
-                ? "Generating..."
+                ? (isZh ? "生成中..." : "Generating...")
                 : genAll.isStarting
-                  ? "Starting..."
-                  : "Generate Full Draft"}
+                  ? (isZh ? "启动中..." : "Starting...")
+                  : (isZh ? "生成完整草稿" : "Generate Full Draft")}
             </button>
             <select
               value={exp.exportFormat}
@@ -210,7 +213,7 @@ export default function WritingPage({
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Export
+              {t.common.actions.export}
             </button>
             <button
               onClick={() => setReferenceCollapsed(!referenceCollapsed)}
@@ -219,7 +222,7 @@ export default function WritingPage({
                   ? "bg-secondary border-border text-muted-foreground hover:text-foreground"
                   : "bg-primary-50 border-primary/20 text-primary"
               }`}
-              title={referenceCollapsed ? "Expand Reference Panel" : "Collapse Reference Panel"}
+              title={referenceCollapsed ? (isZh ? "展开参考资料面板" : "Expand Reference Panel") : (isZh ? "收起参考资料面板" : "Collapse Reference Panel")}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -251,22 +254,22 @@ export default function WritingPage({
                   }`} />
                   <span className="shrink-0 text-sm font-semibold text-foreground">
                     {genAll.isRunning
-                      ? "Full draft running"
+                      ? (isZh ? "完整草稿生成中" : "Full draft running")
                       : genAll.task.status === "completed"
-                        ? "Full draft ready for review"
+                        ? (isZh ? "完整草稿已生成，可审阅" : "Full draft ready for review")
                         : genAll.task.status === "cancelled"
-                          ? "Full draft stopped"
-                          : "Full draft failed"}
+                          ? (isZh ? "完整草稿已停止" : "Full draft stopped")
+                          : (isZh ? "完整草稿生成失败" : "Full draft failed")}
                   </span>
                   <span className="truncate text-sm text-muted-foreground">
                     {genAll.isRunning && fullDraftCurrent
-                      ? `Current: ${fullDraftCurrent}`
-                      : genAll.task.error || "Review generated sections before confirming them."}
+                      ? `${isZh ? "当前" : "Current"}: ${fullDraftCurrent}`
+                      : genAll.task.error || (isZh ? "确认前请先审阅已生成章节。" : "Review generated sections before confirming them.")}
                   </span>
                 </div>
                 <div className="shrink-0 text-xs font-semibold text-muted-foreground">
                   {totalSections > 0
-                    ? `${completedSections}/${totalSections} sections · ${draftProgressPercent}%`
+                    ? `${completedSections}/${totalSections} ${isZh ? "章节" : "sections"} · ${draftProgressPercent}%`
                     : `${genAll.task.progress}%`}
                 </div>
               </div>
@@ -291,12 +294,12 @@ export default function WritingPage({
                 onClick={genAll.cancel}
                 disabled={genAll.isCancelling}
                 className="flex shrink-0 items-center gap-1.5 rounded-xl border border-red-200 bg-card px-4 py-2 text-xs font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Stop after the current in-flight model call returns"
+                title={isZh ? "当前正在执行的模型调用返回后停止" : "Stop after the current in-flight model call returns"}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
                   <rect x="6" y="6" width="12" height="12" rx="1.5" />
                 </svg>
-                {genAll.isCancelling ? "Stopping..." : "Stop"}
+                {genAll.isCancelling ? (isZh ? "停止中..." : "Stopping...") : (isZh ? "停止" : "Stop")}
               </button>
             )}
           </div>

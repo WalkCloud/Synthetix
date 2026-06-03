@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useLocale } from "@/lib/i18n";
 import { useUser } from "@/lib/user-context";
 
 type Tab = "profile" | "auth" | "storage" | "database" | "rag";
 
 export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  const { t, format } = useLocale();
   const { user, refreshUser } = useUser();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -29,17 +31,27 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
+    const normalizedEmail = email.trim();
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setMessage({ type: "error", text: t.settings.profile.emailInvalid });
+      return;
+    }
     const res = await fetch("/api/v1/users/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ displayName, email: email || null }),
+      body: JSON.stringify({ displayName, email: normalizedEmail || null }),
     });
     const data = await res.json();
     if (data.success) {
-      setMessage({ type: "success", text: "Profile updated" });
+      setMessage({ type: "success", text: t.settings.profile.profileUpdated });
       refreshUser();
     } else {
-      setMessage({ type: "error", text: data.error || "Update failed" });
+      const errorText = data.code === "invalidInput" && data.error === "emailAlreadyUsed"
+        ? t.settings.profile.emailAlreadyUsed
+        : data.code === "invalidInput" && data.error === "emailInvalid"
+          ? t.settings.profile.emailInvalid
+          : data.error || t.settings.profile.updateFailed;
+      setMessage({ type: "error", text: errorText });
     }
   }
 
@@ -47,7 +59,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     e.preventDefault();
     setMessage(null);
     if (newPassword !== confirmPassword) {
-      setMessage({ type: "error", text: "Passwords do not match" });
+      setMessage({ type: "error", text: t.settings.profile.passwordsMismatch });
       return;
     }
     const res = await fetch("/api/v1/users/password", {
@@ -60,9 +72,9 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setMessage({ type: "success", text: "Password updated" });
+      setMessage({ type: "success", text: t.settings.profile.passwordUpdated });
     } else {
-      setMessage({ type: "error", text: data.error || "Update failed" });
+      setMessage({ type: "error", text: data.error || t.settings.profile.updateFailed });
     }
   }
 
@@ -71,13 +83,13 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      setMessage({ type: "error", text: "File too large. Maximum size is 5MB." });
+      setMessage({ type: "error", text: t.settings.profile.fileTooLarge });
       return;
     }
 
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!allowedTypes.includes(file.type)) {
-      setMessage({ type: "error", text: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." });
+      setMessage({ type: "error", text: t.settings.profile.invalidFileType });
       return;
     }
 
@@ -96,13 +108,13 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       const data = await res.json();
       if (data.success) {
         setAvatarUrl(data.data.avatarUrl);
-        setMessage({ type: "success", text: "Avatar updated successfully." });
+        setMessage({ type: "success", text: t.settings.profile.avatarUpdated });
         refreshUser();
       } else {
-        setMessage({ type: "error", text: data.error || "Upload failed." });
+        setMessage({ type: "error", text: data.error || t.settings.profile.avatarFailed });
       }
     } catch {
-      setMessage({ type: "error", text: "Failed to upload avatar." });
+      setMessage({ type: "error", text: t.settings.profile.avatarFailed });
     } finally {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -117,9 +129,9 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
     if (/[0-9]/.test(pw)) s++;
     if (/[^A-Za-z0-9]/.test(pw)) s++;
-    if (s <= 2) return { score: 2, label: "Weak", color: "bg-red-500" };
-    if (s <= 3) return { score: 3, label: "Medium", color: "bg-amber-500" };
-    return { score: 4, label: "Strong", color: "bg-emerald-500" };
+    if (s <= 2) return { score: 2, label: t.settings.profile.passwordStrength.weak, color: "bg-red-500" };
+    if (s <= 3) return { score: 3, label: t.settings.profile.passwordStrength.medium, color: "bg-amber-500" };
+    return { score: 4, label: t.settings.profile.passwordStrength.strong, color: "bg-emerald-500" };
   }
 
   const strength = getPasswordStrength(newPassword);
@@ -161,25 +173,25 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleAvatarUpload} />
               </div>
-              <div className="text-xl font-bold mb-1">{displayName || user?.username || "User"}</div>
-              <div className="text-sm text-muted-foreground mb-3">{email || "No email set"}</div>
+              <div className="text-xl font-bold mb-1">{displayName || user?.username || t.settings.profile.userFallback}</div>
+              <div className="text-sm text-muted-foreground mb-3">{email || t.settings.profile.noEmail}</div>
               <div className="flex flex-col items-center gap-2 mb-6">
-                <span className="inline-flex items-center gap-1 bg-primary-100 text-primary px-2.5 py-1 rounded-full text-xs font-medium">Admin</span>
+                <span className="inline-flex items-center gap-1 bg-primary-100 text-primary px-2.5 py-1 rounded-full text-xs font-medium">{t.settings.profile.admin}</span>
                 <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                   </svg>
-                  Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  {t.settings.profile.memberSince} {user?.createdAt ? format.date(user.createdAt) : "-"}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-secondary/70 transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-                  {uploadingAvatar ? "Uploading..." : "Change Avatar"}
+                  {uploadingAvatar ? t.settings.profile.uploading : t.settings.profile.changeAvatar}
                 </button>
                 <button onClick={() => setTab("auth")} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                  Change Password
+                  {t.settings.profile.changePassword}
                 </button>
               </div>
             </div>
@@ -187,36 +199,33 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
 
           <div className="bg-card border rounded-[16px]">
             <div className="p-6">
-              <div className="text-lg font-bold mb-6">Edit Profile</div>
+              <div className="text-lg font-bold mb-6">{t.settings.profile.editProfile}</div>
               <form onSubmit={handleProfileSave} className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Username</label>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.username}</label>
                     <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm bg-muted text-muted-foreground cursor-not-allowed" value={user?.username || ""} disabled />
                   </div>
                   <div>
-                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Display Name</label>
+                    <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.displayName}</label>
                     <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Email</label>
-                  <div className="relative">
-                    <input type="email" className="w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm bg-muted text-muted-foreground cursor-not-allowed" value={email} disabled />
-                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                  </div>
-                  <span className="text-xs text-muted-foreground mt-1 block">Email cannot be changed. Contact your administrator if needed.</span>
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.email}</label>
+                  <input type="email" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <span className="text-xs text-muted-foreground mt-1 block">{t.settings.profile.emailUsageHint}</span>
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bio</label>
-                  <textarea className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-y min-h-[80px]" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell us about yourself..." />
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.bio}</label>
+                  <textarea className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-y min-h-[80px]" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder={t.settings.profile.tellUsAboutYourself} />
                 </div>
                 <div className="flex gap-3 mt-2">
                   <button type="submit" className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                    Save Changes
+                    {t.settings.profile.saveChanges}
                   </button>
-                  <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors">Cancel</button>
+                  <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors">{t.common.actions.cancel}</button>
                 </div>
               </form>
             </div>
@@ -230,12 +239,12 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             <div className="flex items-center justify-between px-6 py-5 border-b">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                <h3 className="text-base font-semibold text-foreground">Local Authentication</h3>
+                <h3 className="text-base font-semibold text-foreground">{t.settings.profile.localAuth}</h3>
               </div>
             </div>
             <div className="p-6">
               <p className="text-[13px] text-muted-foreground">
-                Synthetix uses local username and password authentication for this self-hosted workspace.
+                {t.settings.profile.localAuthDesc}
               </p>
             </div>
           </div>
@@ -244,18 +253,18 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             <div className="flex items-center justify-between px-6 py-5 border-b">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                <h3 className="text-base font-semibold text-foreground">Password Settings</h3>
+                <h3 className="text-base font-semibold text-foreground">{t.settings.profile.passwordSettings}</h3>
               </div>
             </div>
             <div className="p-6">
               <form onSubmit={handlePasswordChange} className="space-y-5">
                 <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Current Password</label>
-                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" required />
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.currentPassword}</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder={t.settings.profile.enterCurrentPassword} required />
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">New Password</label>
-                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" required />
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.newPassword}</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder={t.settings.profile.enterNewPassword} required />
                   {newPassword && (
                     <div className="mt-3">
                       <div className="flex gap-1 mb-1.5">
@@ -263,16 +272,16 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                           <div key={i} className={`flex-1 h-1 rounded-full ${i <= strength.score ? strength.color : "bg-muted"}`} />
                         ))}
                       </div>
-                      <span className={`text-xs font-medium ${strength.label === "Weak" ? "text-red-600 dark:text-red-400" : strength.label === "Medium" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>{strength.label}</span>
+                      <span className={`text-xs font-medium ${strength.color === "bg-red-500" ? "text-red-600 dark:text-red-400" : strength.color === "bg-amber-500" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>{strength.label}</span>
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Confirm Password</label>
-                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" required />
+                  <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.confirmPassword}</label>
+                  <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t.settings.profile.confirmNewPassword} required />
                 </div>
                 <div className="flex gap-3 mt-2">
-                  <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">Update Password</button>
+                  <button type="submit" className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm">{t.settings.profile.updatePassword}</button>
                 </div>
               </form>
             </div>

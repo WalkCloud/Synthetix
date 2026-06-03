@@ -19,7 +19,7 @@ export default function SettingsPage() {
     { id: "auth", label: t.settings.profile.passwordSettings },
     { id: "storage", label: t.settings.storage.title },
     { id: "database", label: t.settings.database.title },
-    { id: "rag", label: "RAG" },
+    { id: "rag", label: t.settings.rag.title },
   ];
 
   return (

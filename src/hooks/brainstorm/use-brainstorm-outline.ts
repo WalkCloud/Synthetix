@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { deepClone, getByPath, updateByPath, removeByPath, addChildAtPath, renumberSections, numForPath } from "@/lib/outline-tree";
 import type { OutlineSection } from "@/lib/outline-tree";
 import type { BrainstormOutline, BrainstormSession, Phase } from "./types";
+import { useLocale } from "@/lib/i18n";
 
 const POLL_INTERVAL = 2000;
 
@@ -22,6 +23,7 @@ export function useBrainstormOutline({
   activeId, outline, setOutline, setStatus, setPhase,
   loading, setLoading, setSessions, scrollToEnd,
 }: UseBrainstormOutlineOptions) {
+  const { locale, t } = useLocale();
   const router = useRouter();
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -72,10 +74,10 @@ export function useBrainstormOutline({
           const currentActiveId = activeIdRef.current;
           if (generatedOutline) {
             setOutline(generatedOutline);
-            setStatus("Complete");
+            setStatus(t.brainstorm.status.complete);
             setPhase("ready");
             if (currentActiveId) {
-              setSessions((prev) => prev.map((s) => s.id === currentActiveId ? { ...s, title: generatedTitle || "New Brainstorming Session" } : s));
+              setSessions((prev) => prev.map((s) => s.id === currentActiveId ? { ...s, title: generatedTitle || t.brainstorm.defaultSessionTitle } : s));
             }
           }
           setIsGeneratingOutline(false);
@@ -102,7 +104,7 @@ export function useBrainstormOutline({
     if (!activeId) return;
     setLoading(true); setIsGeneratingOutline(true);
     try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST" });
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST", headers: { "x-locale": locale } });
       const d = await res.json();
       if (d.success && d.data?.taskId) {
         startPolling(d.data.taskId);
@@ -112,7 +114,7 @@ export function useBrainstormOutline({
     } catch {
       setIsGeneratingOutline(false); setLoading(false);
     }
-  }, [activeId]);
+  }, [activeId, locale]);
 
   function startPollingExternal(taskId: string) {
     setIsGeneratingOutline(true);
@@ -131,7 +133,7 @@ export function useBrainstormOutline({
         body: JSON.stringify({ action: "clearOutline" }),
       });
       const d = await res.json();
-      if (d.success) { setOutline(null); setStatus("Active"); setPhase("gathering"); setSectionNotes([]); }
+      if (d.success) { setOutline(null); setStatus(t.brainstorm.status.active); setPhase("gathering"); setSectionNotes([]); }
     } finally { setLoading(false); }
   }
 

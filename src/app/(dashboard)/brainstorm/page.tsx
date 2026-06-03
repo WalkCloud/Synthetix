@@ -8,7 +8,6 @@ import { useBrainstormChat } from "@/hooks/brainstorm/use-brainstorm-chat";
 import { useBrainstormOutline } from "@/hooks/brainstorm/use-brainstorm-outline";
 import { EditOutlineNode } from "@/components/brainstorm/edit-outline-node";
 import { DisplayOutlineNode } from "@/components/brainstorm/display-outline-node";
-import type { Phase } from "@/hooks/brainstorm/types";
 import { useLocale } from "@/lib/i18n";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
@@ -17,7 +16,7 @@ import {
 } from "lucide-react";
 
 export default function BrainstormPage() {
-  const { t, format } = useLocale();
+  const { locale, t, format } = useLocale();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
@@ -81,7 +80,7 @@ export default function BrainstormPage() {
             : t.brainstorm.outlineGenerated;
 
   function formatTime(d: string): string {
-    return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return new Date(d).toLocaleTimeString(locale === "zh-CN" ? "zh-CN" : "en-US", { hour: "numeric", minute: "2-digit" });
   }
 
   function startRenaming(s: typeof sess.sessions[number]) {
@@ -113,7 +112,7 @@ export default function BrainstormPage() {
           {/* Session History */}
           <section className="hidden w-[280px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm xl:flex">
             <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-5">
-              <h4 className="font-display text-sm font-bold text-foreground">Sessions</h4>
+              <h4 className="font-display text-sm font-bold text-foreground">{t.brainstorm.sessionListTitle}</h4>
               <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-1 rounded-[12px] bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-primary-light">
                 <Plus className="h-3 w-3" /> {t.brainstorm.newSession}
               </button>
@@ -141,12 +140,12 @@ export default function BrainstormPage() {
                       )}
                       <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
                         <div className="flex items-center gap-2">
-                          <span>{new Date(s.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                          <span>{format.date(s.updatedAt)}</span>
                           <span className="text-border">·</span>
-                          <span>{s._count?.messages || 0} msgs</span>
+                          <span>{s._count?.messages || 0} {t.brainstorm.messageCount}</span>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); sess.deleteSession(s.id); }}
-                          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 opacity-0 transition hover:text-red-500 group-hover:opacity-100" title="Delete">
+                          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 opacity-0 transition hover:text-red-500 group-hover:opacity-100" title={t.common.actions.delete}>
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -157,7 +156,7 @@ export default function BrainstormPage() {
               {sess.sessions.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
                   <Sparkles className="mb-3 h-8 w-8 opacity-25" />
-                  <span className="text-xs leading-5">No sessions yet.<br/>Start one to begin.</span>
+                  <span className="text-xs leading-5">{t.brainstorm.emptySessions}<br/>{t.brainstorm.emptySessionsDesc}</span>
                 </div>
               )}
             </div>
@@ -168,7 +167,7 @@ export default function BrainstormPage() {
             <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <MessageSquare className="h-5 w-5 shrink-0 text-primary" />
-                <h3 className="truncate font-display text-base font-bold text-foreground">{activeSession?.title || "Document Brainstorming"}</h3>
+                <h3 className="truncate font-display text-base font-bold text-foreground">{activeSession?.title || t.brainstorm.title}</h3>
               </div>
               {activeSession && (
                 <div className="flex shrink-0 items-center gap-1.5 text-[13px] font-semibold text-emerald-600">
@@ -182,22 +181,24 @@ export default function BrainstormPage() {
               {!activeSession && (
                 <div className="flex flex-1 flex-col items-center justify-center text-center">
                   <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-primary"><Sparkles className="h-8 w-8" /></div>
-                  <h2 className="mb-2 font-display text-xl font-bold text-foreground">Document Brainstorming</h2>
-                  <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">Collaborate with the AI Document Architect to structure your thoughts and generate a comprehensive document outline.</p>
+                  <h2 className="mb-2 font-display text-xl font-bold text-foreground">{t.brainstorm.title}</h2>
+                  <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">{t.brainstorm.startConversationDesc}</p>
                   <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-light">
-                    <Plus className="h-4 w-4" /> t.brainstorm.startConversation
+                    <Plus className="h-4 w-4" /> {t.brainstorm.startConversation}
                   </button>
                 </div>
               )}
 
               {activeSession && sess.messages.length === 0 && !sess.loading && (
                 <>
-                  <div className="self-center rounded-full border border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">New brainstorming session started · Socratic Skill active</div>
+                  <div className="self-center rounded-full border border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">
+                    {t.brainstorm.sessionStarted}
+                  </div>
                   <div className="flex max-w-[85%] self-start">
                     <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary"><Bot className="h-5 w-5" /></div>
                     <div>
                       <div className="rounded-[16px] rounded-tl bg-card px-4.5 py-3.5 text-sm leading-6 text-foreground shadow-sm ring-1 ring-border">
-                        Tell me what kind of document you want to write. I will ask focused questions step by step, then help you build a structured outline.
+                        {t.brainstorm.initialAssistantMessage}
                       </div>
                     </div>
                   </div>
@@ -237,22 +238,22 @@ export default function BrainstormPage() {
 
               {sess.phase === "mode_select" && !chat.isSending && (
                 <div className="flex max-w-[85%] self-start gap-3 ml-12">
-                  <button onClick={() => chat.sendQuickMessage("A, please generate the full outline directly so I can start writing.")}
+                  <button onClick={() => chat.sendQuickMessage(t.brainstorm.quickActions.directMessage)}
                     className="flex-1 rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer">
-                    <div className="text-sm font-bold text-foreground">A) Generate directly</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Create the full outline in one step and move into writing</div>
+                    <div className="text-sm font-bold text-foreground">{t.brainstorm.quickActions.directTitle}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.brainstorm.quickActions.directDesc}</div>
                   </button>
-                  <button onClick={() => chat.sendQuickMessage("B, I want to discuss each section so every part covers exactly what I need.")}
+                  <button onClick={() => chat.sendQuickMessage(t.brainstorm.quickActions.refineMessage)}
                     className="flex-1 rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm hover:border-primary hover:bg-primary-50 transition cursor-pointer">
-                    <div className="text-sm font-bold text-foreground">B) Refine section by section</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Discuss each section before generating the final outline</div>
+                    <div className="text-sm font-bold text-foreground">{t.brainstorm.quickActions.refineTitle}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.brainstorm.quickActions.refineDesc}</div>
                   </button>
                 </div>
               )}
 
               {sess.phase === "section_refine" && !sess.loading && !sess.outline && (
                 <div className="self-center rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-center text-xs text-primary font-semibold">
-                  Section-by-section mode · answer the AI questions for each section
+                  {t.brainstorm.outlinePanel.sectionRefineBanner}
                 </div>
               )}
               <div ref={messagesEnd} />
@@ -260,7 +261,7 @@ export default function BrainstormPage() {
 
             <div className="bg-muted/40 px-6 pb-6 pt-3 shrink-0">
               <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10">
-                <label className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-muted-foreground ${!sess.activeId || chat.isSending ? "pointer-events-none opacity-40" : ""}`} title="Upload Document">
+                <label className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-muted-foreground ${!sess.activeId || chat.isSending ? "pointer-events-none opacity-40" : ""}`} title={t.documents.upload.title}>
                   <Paperclip className="h-4.5 w-4.5" />
                   <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md" className="absolute inset-0 cursor-pointer opacity-0"
                     disabled={!sess.activeId || chat.isSending}
@@ -274,7 +275,7 @@ export default function BrainstormPage() {
                   className="min-h-9 max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <button onClick={chat.sendMessage} disabled={chat.isSending || !chat.input.trim() || !sess.activeId}
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40" title="Send">
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40" title={t.brainstorm.send}>
                   <Send className="h-4.5 w-4.5" />
                 </button>
               </div>
@@ -284,8 +285,8 @@ export default function BrainstormPage() {
           {/* Right Panel */}
           <section className="hidden w-[340px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm xl:flex">
             <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-6">
-              <div className="flex items-center gap-2 font-display text-base font-bold text-foreground"><LayoutList className="h-[18px] w-[18px]" /> Outline</div>
-              {sess.outline && <span className="font-sans text-xs font-semibold text-muted-foreground">~{outline.totalWords().toLocaleString()} words</span>}
+              <div className="flex items-center gap-2 font-display text-base font-bold text-foreground"><LayoutList className="h-[18px] w-[18px]" /> {t.writing.outline}</div>
+              {sess.outline && <span className="font-sans text-xs font-semibold text-muted-foreground">~{outline.totalWords().toLocaleString()} {t.brainstorm.wordUnit}</span>}
             </div>
             <div className="flex flex-1 flex-col overflow-hidden p-6">
               {sess.outline ? (
@@ -303,7 +304,7 @@ export default function BrainstormPage() {
                           <EditOutlineNode key={i} section={s} path={[i]} onUpdate={outline.updateEditNode} onRemove={outline.removeEditNode} onAddChild={outline.addEditChild} depth={0} />
                         ))}
                         <button onClick={outline.addEditSection} className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-primary-200 py-2.5 text-xs font-semibold text-primary hover:bg-primary-50">
-                          <Plus className="h-3.5 w-3.5" /> Add Section
+                          <Plus className="h-3.5 w-3.5" /> {t.brainstorm.addSection}
                         </button>
                       </div>
                     ) : (
@@ -323,12 +324,12 @@ export default function BrainstormPage() {
                       <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-foreground">Generating outline</h4>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">Structuring chapters, drafting hidden writing requirements, and preparing retrieval cues.</p>
+                      <h4 className="text-sm font-bold text-foreground">{t.brainstorm.outlinePanel.generatingTitle}</h4>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.brainstorm.outlinePanel.generatingDesc}</p>
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {["Reading confirmed requirements", "Arranging chapter hierarchy", "Writing section-level instructions", "Preparing knowledge-base search cues"].map((item, idx) => (
+                    {t.brainstorm.outlinePanel.generationSteps.map((item, idx) => (
                       <div key={item} className="rounded-xl border border-card/80 bg-card/80 p-3 shadow-sm">
                         <div className="mb-2 flex items-center gap-2">
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-100 text-[11px] font-bold text-primary">{idx + 1}</span>
@@ -341,36 +342,36 @@ export default function BrainstormPage() {
                     ))}
                   </div>
                   <div className="mt-auto rounded-xl border border-primary-100 bg-card/70 p-3 text-xs leading-5 text-muted-foreground">
-                    This step may take longer because each section receives drafting guidance that will be used later for full-document generation.
+                    {t.brainstorm.outlinePanel.generationLongHint}
                   </div>
                 </div>
               ) : sess.phase === "mode_select" ? (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><Sparkles className="h-7 w-7" /></div>
-                  <h4 className="mb-2 font-semibold text-foreground">Select Generation Mode</h4>
-                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Click <strong className="text-foreground font-semibold">A — Generate Directly</strong> or <strong className="text-foreground font-semibold">B — Refine by Section</strong> in the chat.</p>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.modeSelectTitle}</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.modeSelectDesc}</p>
                 </div>
               ) : sess.phase === "section_refine" ? (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><MessageSquare className="h-7 w-7" /></div>
-                  <h4 className="mb-2 font-semibold text-foreground">Refining Sections</h4>
-                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">Answer the AI&apos;s questions in the chat to refine each section before generating the outline.</p>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.refiningTitle}</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.refiningDesc}</p>
                 </div>
               ) : sess.phase === "ready" ? (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive"><RefreshCw className="h-7 w-7" /></div>
-                  <h4 className="mb-2 font-semibold text-foreground">Generation Failed</h4>
-                  <p className="mb-4 max-w-[240px] text-sm leading-6 text-muted-foreground">The outline could not be generated. Please try again.</p>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.generationFailedTitle}</h4>
+                  <p className="mb-4 max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.generationFailedDesc}</p>
                   <button onClick={outline.generateOutline} disabled={sess.loading}
                     className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground/75 shadow-sm transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40">
-                    <RefreshCw className="h-4 w-4" /> Retry
+                    <RefreshCw className="h-4 w-4" /> {t.common.actions.retry}
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary"><LayoutList className="h-7 w-7" /></div>
-                  <h4 className="mb-2 font-semibold text-foreground">Outline Preview</h4>
-                  <p className="max-w-[250px] text-sm leading-6 text-muted-foreground">Discuss your requirements with the AI, and an outline will appear here.</p>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.previewTitle}</h4>
+                  <p className="max-w-[250px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.previewDesc}</p>
                 </div>
               )}
             </div>
@@ -379,10 +380,10 @@ export default function BrainstormPage() {
               {outline.editing ? (
                 <div className="flex gap-3">
                   <button onClick={outline.saveEditing} className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-3 text-[13px] font-semibold text-white transition hover:bg-primary-700 shadow-sm">
-                    <Check className="h-4 w-4" /> Save
+                    <Check className="h-4 w-4" /> {t.common.actions.save}
                   </button>
                   <button onClick={outline.cancelEditing} className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 shadow-sm">
-                    <X className="h-4 w-4" /> Cancel
+                    <X className="h-4 w-4" /> {t.common.actions.cancel}
                   </button>
                 </div>
               ) : (
@@ -390,11 +391,11 @@ export default function BrainstormPage() {
                   <div className="flex gap-3">
                     <button onClick={outline.startEditing} disabled={!sess.outline}
                       className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
-                      <Edit3 className="h-4 w-4" /> Edit
+                      <Edit3 className="h-4 w-4" /> {t.common.actions.edit}
                     </button>
                     <button onClick={outline.clearOutline} disabled={sess.loading || !sess.outline}
                       className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
-                      {sess.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Regenerate
+                      {sess.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t.writing.sections.regenerate}
                     </button>
                   </div>
                   <button onClick={outline.confirmAndWrite} disabled={outline.confirming || !sess.outline}

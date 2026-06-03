@@ -2,6 +2,7 @@
 
 import type { GenerationMode, SectionMeta, ModelOption } from "@/types/writing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLocale } from "@/lib/i18n";
 
 interface ConstraintsBarProps {
   sections: SectionMeta[];
@@ -40,24 +41,31 @@ export function ConstraintsBar({
   isGenerating,
   onSaveWordLimit,
 }: ConstraintsBarProps) {
+  const { locale, t } = useLocale();
+  const isZh = locale === "zh-CN";
+  const noneLabel = t.common.states.none;
+  const autoDefault = isZh ? "自动默认" : "Auto Default";
+  const singleModel = isZh ? "单模型" : "Single model";
+  const compareModels = isZh ? "双模型对比" : "Compare two models";
+
   return (
     <div className="mb-5 p-4 bg-card border border-border rounded-2xl shadow-sm">
       <div className="flex gap-2.5 flex-wrap items-end mb-3">
         <div className="min-w-[160px] flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            Reference Section
+            {isZh ? "参考章节" : "Reference Section"}
           </label>
           <Select>
             <SelectTrigger className="w-full text-[13px]">
-              <SelectValue placeholder="None">{() => 'None'}</SelectValue>
+              <SelectValue placeholder={noneLabel}>{() => noneLabel}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">None</SelectItem>
+              <SelectItem value="">{noneLabel}</SelectItem>
               {sections
                 .filter((s) => s.status === "locked" || s.status === "summarized")
                 .map((s) => (
                   <SelectItem key={s.id} value={s.id}>
-                    Section {s.index + 1}. {s.title}
+                    {isZh ? "章节" : "Section"} {s.index + 1}. {s.title}
                   </SelectItem>
                 ))}
             </SelectContent>
@@ -66,13 +74,13 @@ export function ConstraintsBar({
 
         <div className="w-[120px]">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            Word Limit
+            {isZh ? "字数上限" : "Word Limit"}
           </label>
           <input
             type="number"
             className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             value={wordLimit}
-            placeholder={estimatedWords ? `Recommended ${estimatedWords}` : "500"}
+            placeholder={estimatedWords ? (isZh ? `建议 ${estimatedWords}` : `Recommended ${estimatedWords}`) : "500"}
             onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
             onBlur={() => onSaveWordLimit?.(wordLimit)}
           />
@@ -80,15 +88,15 @@ export function ConstraintsBar({
 
         <div className="min-w-[150px] flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            Generation Mode
+            {isZh ? "生成模式" : "Generation Mode"}
           </label>
           <Select value={generationMode} onValueChange={(v) => onGenerationModeChange(v as GenerationMode)}>
             <SelectTrigger className="w-full text-[13px]">
-              <SelectValue>{(v: string | null) => v === 'compare' ? 'Compare two models' : 'Single model'}</SelectValue>
+              <SelectValue>{(v: string | null) => v === "compare" ? compareModels : singleModel}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="single">Single model</SelectItem>
-              <SelectItem value="compare">Compare two models</SelectItem>
+              <SelectItem value="single">{singleModel}</SelectItem>
+              <SelectItem value="compare">{compareModels}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -97,18 +105,18 @@ export function ConstraintsBar({
         {generationMode === "single" && (
           <div className="min-w-[150px] flex-1">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-              Model
+              {t.models.usage.model}
             </label>
             <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
               <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                <SelectValue placeholder="Auto Default">
+                <SelectValue placeholder={autoDefault}>
                   {selectedModelA && selectedModelA !== "auto"
                     ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
-                    : "Auto Default"}
+                    : autoDefault}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto Default</SelectItem>
+                <SelectItem value="auto">{autoDefault}</SelectItem>
                 {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -120,36 +128,36 @@ export function ConstraintsBar({
           <>
             <div className="min-w-[150px] flex-1">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Model A
+                {t.models.usage.model} A
               </label>
               <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
                 <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                  <SelectValue placeholder="Auto Default">
+                  <SelectValue placeholder={autoDefault}>
                     {selectedModelA && selectedModelA !== "auto"
                       ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
-                      : "Auto Default"}
+                      : autoDefault}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Auto Default</SelectItem>
+                  <SelectItem value="auto">{autoDefault}</SelectItem>
                   {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="min-w-[150px] flex-1">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Model B
+                {t.models.usage.model} B
               </label>
               <Select value={selectedModelB || "auto"} onValueChange={(v) => { if (v) onModelBChange(v); }}>
                 <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                  <SelectValue placeholder="Auto Default">
+                  <SelectValue placeholder={autoDefault}>
                     {selectedModelB && selectedModelB !== "auto"
                       ? models.find((m) => m.id === selectedModelB)?.modelName || selectedModelB
-                      : "Auto Default"}
+                      : autoDefault}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Auto Default</SelectItem>
+                  <SelectItem value="auto">{autoDefault}</SelectItem>
                   {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -161,14 +169,14 @@ export function ConstraintsBar({
       <div className="flex gap-2.5 items-end">
         <div className="flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            Additional Requirements
+            {isZh ? "额外要求" : "Additional Requirements"}
           </label>
           <input
             type="text"
             className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             placeholder={estimatedWords
-              ? `Recommended ${estimatedWords} words, e.g., "use bullet points, include examples"...`
-              : "e.g., Include sequence diagrams..."
+              ? (isZh ? `建议 ${estimatedWords} 字，例如“使用项目符号、包含示例”...` : `Recommended ${estimatedWords} words, e.g., "use bullet points, include examples"...`)
+              : (isZh ? "例如：包含时序图..." : "e.g., Include sequence diagrams...")
             }
             value={additionalRequirements}
             onChange={(e) => onAdditionalRequirementsChange(e.target.value)}
@@ -185,7 +193,7 @@ export function ConstraintsBar({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          {isGenerating ? "Generating..." : "Generate"}
+          {isGenerating ? (isZh ? "生成中..." : "Generating...") : t.writing.sections.generate}
         </button>
       </div>
     </div>

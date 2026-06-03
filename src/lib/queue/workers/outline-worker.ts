@@ -2,20 +2,22 @@ import { db } from "@/lib/db";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import { buildOutlinePrompt, resolveDocumentLanguage } from "@/lib/prompts";
+import { buildOutlinePrompt } from "@/lib/prompts";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
+import { getBrainstormMessages, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 
 interface OutlineGeneratePayload extends TaskPayload {
   taskId: string;
   sessionId: string;
   userId: string;
+  locale?: string;
 }
 
 export async function generateOutline(
   payload: TaskPayload,
   onProgress: (progress: number) => void,
 ): Promise<TaskResult> {
-  const { sessionId, userId } = payload as OutlineGeneratePayload;
+  const { sessionId, userId, locale: payloadLocale } = payload as OutlineGeneratePayload;
 
   onProgress(5);
 
@@ -37,7 +39,8 @@ export async function generateOutline(
 
   // Detect document language from conversation content
   const hasCJK = /[一-鿿぀-ヿ가-힯]/.test(conversation);
-  const docLocale = hasCJK ? "zh-CN" as const : "en" as const;
+  const docLocale = resolveBrainstormLocale(payloadLocale) ?? (hasCJK ? "zh-CN" as const : "en" as const);
+  const messages = getBrainstormMessages(docLocale);
   const outlinePrompt = buildOutlinePrompt(docLocale);
 
   onProgress(20);
@@ -85,7 +88,7 @@ export async function generateOutline(
   }).catch((err) => { console.warn("Failed to record token usage:", err); });
 
   await db.message.create({
-    data: { sessionId, role: "system", content: "Outline generated and ready for review." },
+    data: { sessionId, role: "system", content: messages.outlineReady },
   });
 
   onProgress(100);

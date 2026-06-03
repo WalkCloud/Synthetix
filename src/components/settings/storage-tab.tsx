@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { CardSelector } from "@/components/shared/card-selector";
+import { useLocale } from "@/lib/i18n";
 
 type StorageMode = "local" | "s3";
 
@@ -50,6 +51,7 @@ function SkeletonRow() {
 }
 
 export function StorageTab() {
+  const { t } = useLocale();
   const [storageMode, setStorageMode] = useState<StorageMode>("local");
   const [storageLocalPath, setStorageLocalPath] = useState("./data/documents");
   const [storageCachePath, setStorageCachePath] = useState("./data/cache");
@@ -106,9 +108,9 @@ export function StorageTab() {
         body: JSON.stringify(body),
       });
       const d = await res.json();
-      setStorageMsg(d.success ? { type: "success", text: "Storage settings saved" } : { type: "error", text: d.error });
+      setStorageMsg(d.success ? { type: "success", text: t.settings.storage.saved } : { type: "error", text: d.error });
     } catch {
-      setStorageMsg({ type: "error", text: "Failed to save" });
+      setStorageMsg({ type: "error", text: t.settings.storage.saveFailed });
     } finally {
       setSavingStorage(false);
     }
@@ -120,11 +122,11 @@ export function StorageTab() {
           <div className="flex items-center justify-between px-6 py-5 border-b">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-            <h3 className="text-base font-semibold text-foreground">Document Storage Mode</h3>
+            <h3 className="text-base font-semibold text-foreground">{t.settings.storage.documentStorageMode}</h3>
           </div>
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${storageConfigured ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300"}`}>
             <span className={`w-2 h-2 rounded-full ${storageConfigured ? "bg-emerald-500" : "bg-amber-500"}`} />
-            {storageConfigured ? (storageMode === "s3" ? "S3 Object Storage" : "Local Storage") : "Not Configured"}
+            {storageConfigured ? (storageMode === "s3" ? t.settings.storage.s3Storage : t.settings.storage.localStorage) : t.settings.storage.notConfigured}
           </div>
         </div>
         <div className="p-6">
@@ -133,15 +135,15 @@ export function StorageTab() {
               selected={storageMode === "local"}
               onSelect={() => { setStorageMode("local"); setStorageConfigured(true); }}
               icon={<div className="w-10 h-10 rounded-lg bg-primary-100 dark:bg-primary/12 text-primary flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></div>}
-              title="Local Storage"
-              description="Store documents on your local file system. Best for offline deployment."
+              title={t.settings.storage.localStorage}
+              description={t.settings.storage.localStorageDesc}
             />
             <CardSelector
               selected={storageMode === "s3"}
               onSelect={() => { setStorageMode("s3"); setStorageConfigured(!!s3Bucket); }}
               icon={<div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/35 dark:text-blue-300 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
-              title="S3 Object Storage"
-              description="S3-compatible storage (AWS S3, MinIO). Best for cloud deployment."
+              title={t.settings.storage.s3Storage}
+              description={t.settings.storage.s3StorageDesc}
             />
           </div>
         </div>
@@ -152,23 +154,23 @@ export function StorageTab() {
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">
               <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-              <h3 className="text-base font-semibold text-foreground">Local Storage Configuration</h3>
+              <h3 className="text-base font-semibold text-foreground">{t.settings.storage.localConfig}</h3>
             </div>
           </div>
           <div className="p-6 space-y-5">
             <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Document Root Directory</label>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.documentRootDirectory}</label>
               <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageLocalPath} onChange={(e) => setStorageLocalPath(e.target.value)} />
-              <span className="text-xs text-muted-foreground mt-1 block">All converted Markdown documents and assets will be stored here.</span>
+              <span className="text-xs text-muted-foreground mt-1 block">{t.settings.storage.documentRootDesc}</span>
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Cache Directory</label>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.cacheDirectory}</label>
               <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={storageCachePath} onChange={(e) => setStorageCachePath(e.target.value)} />
-              <span className="text-xs text-muted-foreground mt-1 block">Temporary files and processing cache. Can be safely deleted.</span>
+              <span className="text-xs text-muted-foreground mt-1 block">{t.settings.storage.cacheDirectoryDesc}</span>
             </div>
             <div className="mt-5 p-4 bg-muted rounded-[16px]">
               <div className="flex justify-between items-start mb-3">
-                <span className="text-sm font-semibold text-foreground">Storage Usage</span>
+                <span className="text-sm font-semibold text-foreground">{t.settings.storage.storageUsage}</span>
                 {usage && (
                   <span className="text-sm font-semibold text-foreground">{formatBytes(usage.totalDataBytes)}</span>
                 )}
@@ -176,10 +178,10 @@ export function StorageTab() {
 
               {usage ? (
                 <div className="space-y-1.5">
-                  <Row label="Documents" bytes={usage.documentsBytes} color="bg-primary" hint="original & markdown" />
-                  <Row label="Assets" bytes={usage.assetsBytes} color="bg-blue-500" hint="images, diagrams, SVG" />
-                  <Row label="Index" bytes={usage.indexBytes} color="bg-amber-500" hint="vector embeddings" />
-                  <Row label="Other" bytes={usage.otherBytes} color="bg-muted-foreground/40" hint="tmp, settings" />
+                  <Row label={t.settings.storage.documents} bytes={usage.documentsBytes} color="bg-primary" hint={t.settings.storage.documentsHint} />
+                  <Row label={t.settings.storage.assets} bytes={usage.assetsBytes} color="bg-blue-500" hint={t.settings.storage.assetsHint} />
+                  <Row label={t.settings.storage.index} bytes={usage.indexBytes} color="bg-amber-500" hint={t.settings.storage.indexHint} />
+                  <Row label={t.settings.storage.other} bytes={usage.otherBytes} color="bg-muted-foreground/40" hint={t.settings.storage.otherHint} />
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -194,7 +196,7 @@ export function StorageTab() {
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
                   <svg className="w-3.5 h-3.5 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
                   <span className="text-[12px] text-muted-foreground">
-                    Disk free <span className="text-foreground font-medium">{formatBytes(usage.diskFreeBytes)}</span> / {formatBytes(usage.diskTotalBytes)}
+                    {t.settings.storage.diskFree} <span className="text-foreground font-medium">{formatBytes(usage.diskFreeBytes)}</span> / {formatBytes(usage.diskTotalBytes)}
                   </span>
                 </div>
               )}
@@ -206,10 +208,10 @@ export function StorageTab() {
                 </div>
               )}
               <button type="button" onClick={saveStorage} disabled={savingStorage} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
-                {savingStorage ? "Saving..." : (
+                {savingStorage ? t.common.actions.loading : (
                   <>
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                    Save Storage Settings
+                    {t.settings.storage.saveSettings}
                   </>
                 )}
               </button>
@@ -223,50 +225,50 @@ export function StorageTab() {
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">
               <svg className="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-              <h3 className="text-base font-semibold text-foreground">S3 Object Storage Configuration</h3>
+              <h3 className="text-base font-semibold text-foreground">{t.settings.storage.s3Config}</h3>
             </div>
           </div>
           <div className="p-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">S3 Endpoint</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.s3Endpoint}</label>
                 <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="https://s3.amazonaws.com" value={s3Endpoint} onChange={(e) => setS3Endpoint(e.target.value)} />
-                <span className="text-xs text-muted-foreground mt-1 block">Leave empty for AWS S3 default.</span>
+                <span className="text-xs text-muted-foreground mt-1 block">{t.settings.storage.s3EndpointDesc}</span>
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Region</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.region}</label>
                 <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={s3Region} onChange={(e) => setS3Region(e.target.value)} />
               </div>
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Bucket Name</label>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.bucketName}</label>
               <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="synthetix-documents" value={s3Bucket} onChange={(e) => setS3Bucket(e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Access Key ID</label>
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.accessKeyId}</label>
                 <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="AKIAIOSFODNN7EXAMPLE" value={s3AccessKey} onChange={(e) => setS3AccessKey(e.target.value)} />
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Secret Access Key</label>
-                <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Enter secret access key" value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)} />
+                <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.secretAccessKey}</label>
+                <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder={t.settings.storage.secretAccessKeyPlaceholder} value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)} />
               </div>
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">Path Prefix (Optional)</label>
+              <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.pathPrefix}</label>
               <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" defaultValue="documents/" />
-              <span className="text-xs text-muted-foreground mt-1 block">Subdirectory path within the bucket.</span>
+              <span className="text-xs text-muted-foreground mt-1 block">{t.settings.storage.pathPrefixDesc}</span>
             </div>
             <div className="flex gap-3 mt-5">
               <button type="button" onClick={saveStorage} disabled={savingStorage} className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all text-sm disabled:opacity-50">
-                {savingStorage ? "Saving..." : (
+                {savingStorage ? t.common.actions.loading : (
                   <>
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                    Save S3 Settings
+                    {t.settings.storage.saveS3Settings}
                   </>
                 )}
               </button>
-              <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors" onClick={() => setStorageMode("local")}>Cancel</button>
+              <button type="button" className="px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary/70 rounded-lg transition-colors" onClick={() => setStorageMode("local")}>{t.common.actions.cancel}</button>
             </div>
           </div>
         </div>

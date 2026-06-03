@@ -234,7 +234,7 @@ export function LoginForm() {
                 className="block text-[13px] font-medium text-muted-foreground mb-1.5"
                 htmlFor="username"
               >
-                {t.auth.login.username}
+                {initialized === false ? t.auth.login.username : t.auth.login.usernameOrEmail}
               </label>
               <div className="relative">
                 <svg
