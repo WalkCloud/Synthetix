@@ -1,3 +1,6 @@
+import type { DocumentLanguage } from "@/lib/prompts";
+import { buildAuditPrompts } from "@/lib/prompts";
+
 export interface AuditIssue {
   rule: string;
   severity: "critical" | "warning" | "info";
@@ -67,15 +70,12 @@ Audit the section content above. Return only the JSON result.`;
 export function buildAuditPrompt(
   title: string,
   content: string,
-  keyPoints?: string | null
+  keyPoints?: string | null,
+  docLocale: DocumentLanguage = "en",
 ): { system: string; user: string } {
-  return {
-    system: AUDIT_SYSTEM_PROMPT,
-    user: AUDIT_USER_PROMPT_TEMPLATE
-      .replace("{title}", title)
-      .replace("{content}", content.slice(0, 4000))
-      .replace("{keyPoints}", keyPoints || "Not specified"),
-  };
+  // Use localized prompts from the prompt registry
+  const localized = buildAuditPrompts(title, content.slice(0, 4000), keyPoints, docLocale);
+  return localized;
 }
 
 export function parseAuditResponse(raw: string): AuditResult {

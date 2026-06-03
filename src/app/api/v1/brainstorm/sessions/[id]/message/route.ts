@@ -4,7 +4,9 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { FACILITATOR_PROMPT, detectMarker, stripMarker, preFetchDomainKnowledge } from "@/lib/brainstorm/facilitator";
+import { detectMarker, stripMarker, preFetchDomainKnowledge } from "@/lib/brainstorm/facilitator";
+import { resolveLocale } from "@/lib/i18n/server";
+import { buildFacilitatorPrompt, resolveDocumentLanguage } from "@/lib/prompts";
 
 export async function POST(
   request: Request,
@@ -51,8 +53,11 @@ export async function POST(
     take: 20,
   });
 
+  const locale = resolveDocumentLanguage(await resolveLocale());
+  const facilitatorPrompt = buildFacilitatorPrompt(locale);
+
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    { role: "system", content: FACILITATOR_PROMPT + ragSupplement },
+    { role: "system", content: facilitatorPrompt + ragSupplement },
     ...history.filter((m) => m.role !== "system").map((m) => ({
       role: (m.role === "ai" ? "assistant" : "user") as "assistant" | "user",
       content: m.content,
