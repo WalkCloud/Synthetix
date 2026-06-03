@@ -86,21 +86,21 @@ export async function POST(
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    return errorResponse("Invalid request body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
   }
   const { prompt, existingCode } = body;
 
-  if (!prompt || !prompt.trim()) return errorResponse("Prompt is required", 400);
+  if (!prompt || !prompt.trim()) return errorResponse({ code: "invalidInput", message: "Prompt is required" }, 400);
 
   const draft = await (await import("@/lib/db")).db.draft.findFirst({
     where: { id: draftId, userId: user.id },
     select: { id: true },
   });
-  if (!draft) return errorResponse("Draft not found", 404);
+  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
 
   try {
     const writingModel = await resolveModel("writing", user.id);
-    if (!writingModel?.provider) return errorResponse("No LLM model configured", 400);
+    if (!writingModel?.provider) return errorResponse({ code: "modelNotConfigured", message: "No LLM model configured" }, 400);
 
     const provider = createLLMProvider({
       apiBaseUrl: writingModel.provider.apiBaseUrl,

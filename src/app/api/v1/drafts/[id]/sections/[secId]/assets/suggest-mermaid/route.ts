@@ -33,7 +33,7 @@ export async function POST(
   const { content } = body as { content?: string };
 
   if (!content || !content.trim()) {
-    return errorResponse("Section content is required", 400);
+    return errorResponse({ code: "invalidInput", message: "Section content is required" }, 400);
   }
 
   const draft = await db.draft.findFirst({
@@ -41,13 +41,13 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   try {
     const writingModel = await resolveModel("writing", user.id);
     if (!writingModel?.provider) {
-      return errorResponse("No LLM model configured", 400);
+      return errorResponse({ code: "modelNotConfigured", message: "No LLM model configured" }, 400);
     }
 
     const provider = createLLMProvider({

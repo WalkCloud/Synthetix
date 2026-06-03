@@ -20,11 +20,11 @@ export async function POST(request: Request) {
   const file = formData.get("file");
 
   if (!file || !(file instanceof File)) {
-    return errorResponse("No file provided", 400);
+    return errorResponse({ code: "noFileProvided", message: "No file provided" }, 400);
   }
 
   if (file.size === 0) {
-    return errorResponse("File is empty", 400);
+    return errorResponse({ code: "fileEmpty", message: "File is empty" }, 400);
   }
 
   if (file.size > MAX_UPLOAD_SIZE) {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     where: { userId: user.id, originalHash: hash },
   });
   if (existing) {
-    return errorResponse("DUPLICATE", 409);
+    return errorResponse({ code: "conflict", message: "DUPLICATE" }, 409);
   }
 
   const doc = await db.document.create({

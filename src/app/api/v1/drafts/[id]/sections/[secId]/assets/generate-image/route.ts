@@ -20,13 +20,13 @@ export async function POST(
     body = {};
   }
 
-  if (!body.prompt) return errorResponse("Prompt is required", 400);
+  if (!body.prompt) return errorResponse({ code: "invalidInput", message: "Prompt is required" }, 400);
 
   const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
-  if (!draft) return errorResponse("Draft not found", 404);
+  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
 
   const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
-  if (!section) return errorResponse("Section not found", 404);
+  if (!section) return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
 
   const asset = await db.sectionAsset.create({
     data: {

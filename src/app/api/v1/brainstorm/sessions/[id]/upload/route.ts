@@ -39,12 +39,12 @@ export async function POST(
 
   const { id: sessionId } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id: sessionId, userId: user.id } });
-  if (!session) return errorResponse("Session not found", 404);
+  if (!session) return errorResponse({ code: "notFound", message: "Session not found" }, 404);
 
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || !(file instanceof File)) {
-    return errorResponse("No file provided", 400);
+    return errorResponse({ code: "noFileProvided", message: "No file provided" }, 400);
   }
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "";

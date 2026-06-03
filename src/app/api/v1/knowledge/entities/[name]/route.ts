@@ -14,7 +14,7 @@ export async function GET(
 
   const { name } = await params;
   if (!name) {
-    return errorResponse("Entity name required", 400);
+    return errorResponse({ code: "invalidInput", message: "Entity name required" }, 400);
   }
 
   const { searchParams } = new URL(request.url);
@@ -40,7 +40,7 @@ export async function GET(
     return successResponse(result);
   } catch (error) {
     if (error instanceof Error && error.message.includes("model configured")) {
-      return errorResponse("Configure embedding and LLM models first", 400);
+      return errorResponse({ code: "ragNotConfigured", message: "Configure embedding and LLM models first" }, 400);
     }
     return errorResponse(error);
   }

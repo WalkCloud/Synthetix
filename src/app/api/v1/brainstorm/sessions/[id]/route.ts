@@ -15,7 +15,7 @@ export async function GET(
     include: { messages: { orderBy: { createdAt: "asc" } } },
   });
 
-  if (!session) return errorResponse("Not found", 404);
+  if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
   return successResponse(session);
 }
 
@@ -31,7 +31,7 @@ export async function PATCH(
 
   if (body.action === "clearOutline") {
     const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
-    if (!session) return errorResponse("Not found", 404);
+    if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
     await db.brainstormSession.update({ where: { id }, data: { outline: null } });
     return successResponse(undefined);
@@ -39,13 +39,13 @@ export async function PATCH(
 
   if (body.action === "rename" && typeof body.title === "string" && body.title.trim()) {
     const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
-    if (!session) return errorResponse("Not found", 404);
+    if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
     const updated = await db.brainstormSession.update({ where: { id }, data: { title: body.title.trim() } });
     return successResponse(updated);
   }
 
-  return errorResponse("Unknown action", 400);
+  return errorResponse({ code: "invalidInput", message: "Unknown action" }, 400);
 }
 
 export async function DELETE(

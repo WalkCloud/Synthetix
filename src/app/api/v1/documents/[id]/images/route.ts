@@ -15,7 +15,7 @@ export async function GET(
     where: { id: docId, userId: user.id },
     select: { id: true },
   });
-  if (!doc) return errorResponse("Document not found", 404);
+  if (!doc) return errorResponse({ code: "documentNotFound", message: "Document not found" }, 404);
 
   const images = await db.documentImage.findMany({
     where: { documentId: docId },

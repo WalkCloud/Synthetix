@@ -19,16 +19,16 @@ export async function GET(
   });
 
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   if (!doc.markdownPath) {
-    return errorResponse("Document not yet converted", 400);
+    return errorResponse({ code: "notFound", message: "Document not yet converted" }, 400);
   }
 
   const fs = await import("fs");
   if (!fs.existsSync(doc.markdownPath)) {
-    return errorResponse("Markdown file not found", 404);
+    return errorResponse({ code: "notFound", message: "Markdown file not found" }, 404);
   }
 
   const markdown = fs.readFileSync(doc.markdownPath, "utf-8");

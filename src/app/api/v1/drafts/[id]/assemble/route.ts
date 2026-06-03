@@ -24,7 +24,7 @@ export async function POST(
       where: { id: draftId, userId: user.id },
     });
     if (!draft) {
-      return errorResponse("Draft not found", 404);
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     const sections = await db.section.findMany({
@@ -36,7 +36,7 @@ export async function POST(
     });
 
     if (sections.length === 0) {
-      return errorResponse("No confirmed sections available to assemble", 400);
+      return errorResponse({ code: "invalidInput", message: "No confirmed sections available to assemble" }, 400);
     }
 
     const titleHeader = `# ${draft.title}\n\n`;

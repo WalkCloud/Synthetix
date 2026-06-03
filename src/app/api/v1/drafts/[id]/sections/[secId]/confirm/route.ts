@@ -41,7 +41,7 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return errorResponse("Draft not found", 404);
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     const section = await db.section.findFirst({
@@ -49,7 +49,7 @@ export async function POST(
       include: { versions: true },
     });
     if (!section) {
-      return errorResponse("Section not found", 404);
+      return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
     }
 
     if (!section.content) {
@@ -59,7 +59,7 @@ export async function POST(
           400
         );
       }
-      return errorResponse("Section has no content to confirm", 400);
+      return errorResponse({ code: "invalidInput", message: "Section has no content to confirm" }, 400);
     }
 
     const wordCount = section.content.split(/\s+/).filter(Boolean).length;

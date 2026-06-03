@@ -10,7 +10,7 @@ export async function POST(request: Request) {
 
   const { query, limit = 20, offset = 0 } = await request.json();
   if (!query || typeof query !== "string") {
-    return errorResponse("query required", 400);
+    return errorResponse({ code: "invalidInput", message: "query required" }, 400);
   }
 
   const results = await searchByKeyword(query, limit, offset);

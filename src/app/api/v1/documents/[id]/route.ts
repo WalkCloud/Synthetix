@@ -27,7 +27,7 @@ export async function GET(
   });
 
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   return successResponse({ ...doc, tags: doc.tags.map((dt) => dt.tag) });
@@ -45,7 +45,7 @@ export async function DELETE(
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return errorResponse("Not found", 404);
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
   await storage.deleteDocumentData(id, user.id);

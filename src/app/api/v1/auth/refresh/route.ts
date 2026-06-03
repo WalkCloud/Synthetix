@@ -7,7 +7,7 @@ export async function POST() {
   try {
     const result = await refreshSession();
     if (!result) {
-      return errorResponse("Invalid or expired refresh token", 401);
+      return errorResponse({ code: "unauthorized", message: "Invalid or expired refresh token" }, 401);
     }
 
     const { accessToken, refreshToken, user } = result;

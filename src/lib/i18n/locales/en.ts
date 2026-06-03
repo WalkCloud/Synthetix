@@ -470,6 +470,9 @@ const en = {
     fileEmpty: "File content is empty",
     unsupportedFormat: "Unsupported file format",
     passwordIncorrect: "Current password is incorrect",
+    invalidInput: "Invalid request",
+    conflict: "Resource already exists",
+    batchDeleteFailed: "Batch delete failed",
     unknown: "An unknown error occurred",
   },
 } satisfies TranslationSchema;

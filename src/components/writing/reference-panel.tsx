@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
+import { getLocalizedError } from "@/lib/i18n";
 
 interface RefImage {
   documentId: string;
@@ -185,7 +186,7 @@ export function ReferencePanel({
           try {
             const data = JSON.parse(line.slice(6));
             if (data.type === "error") {
-              toast.error(data.error || "Image generation failed");
+              toast.error(getLocalizedError(data));
             } else if (data.type === "complete" && data.assetId) {
               newAssetId = data.assetId;
             }
@@ -196,7 +197,7 @@ export function ReferencePanel({
       await onAssetChanged();
       if (newAssetId) setWorkspaceAssetId(newAssetId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Image generation request failed");
+      toast.error(getLocalizedError({ error: err instanceof Error ? err.message : undefined }));
     } finally {
       setGeneratingMethod(null);
     }
@@ -223,7 +224,7 @@ export function ReferencePanel({
       );
       const codeData = await codeRes.json();
       if (!codeData.success || !codeData.data?.code) {
-        toast.error(codeData.error || "Failed to generate chart code. Check the prompt and try again.");
+        toast.error(getLocalizedError(codeData));
         return;
       }
 
@@ -244,7 +245,7 @@ export function ReferencePanel({
         await onAssetChanged();
         setWorkspaceAssetId(renderData.data?.assetId);
       } else {
-        toast.error(renderData.error || "Failed to render the chart. The generated code may be invalid.");
+        toast.error(getLocalizedError(renderData));
       }
     } catch {
       toast.error("An unexpected chart generation error occurred. Please try again.");
@@ -271,7 +272,7 @@ export function ReferencePanel({
         await onAssetChanged();
         setWorkspaceAssetId(data.data?.assetId);
       } else {
-        toast.error(data.error || "Upload failed");
+        toast.error(getLocalizedError(data));
       }
     } catch {
       toast.error("Upload request failed");

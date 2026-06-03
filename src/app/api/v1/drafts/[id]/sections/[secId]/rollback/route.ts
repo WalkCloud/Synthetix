@@ -23,14 +23,14 @@ export async function POST(
     select: { id: true },
   });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const body = await request.json();
   const targetVersion = body.version;
 
   if (!targetVersion || typeof targetVersion !== "number") {
-    return errorResponse("version (number) required", 400);
+    return errorResponse({ code: "invalidInput", message: "version (number) required" }, 400);
   }
 
   try {

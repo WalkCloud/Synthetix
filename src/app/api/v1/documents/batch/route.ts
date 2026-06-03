@@ -13,7 +13,7 @@ export async function DELETE(request: Request) {
 
   const { ids }: { ids: string[] } = await request.json();
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    return errorResponse("ids required", 400);
+    return errorResponse({ code: "invalidInput", message: "ids required" }, 400);
   }
 
   const docs = await db.document.findMany({

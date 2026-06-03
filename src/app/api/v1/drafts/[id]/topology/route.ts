@@ -14,7 +14,7 @@ export async function GET(
 
   try {
     const result = await buildTopology(draftId);
-    if (!result) return errorResponse("Draft not found", 404);
+    if (!result) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     return successResponse(result);
   } catch (error: unknown) {
     return errorResponse(error);

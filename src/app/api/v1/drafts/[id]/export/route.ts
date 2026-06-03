@@ -51,9 +51,9 @@ export async function POST(
 
     if (format === "pdf") {
       await runExport(tmpMd, tmpHtml, "pdf");
-      if (!fs.existsSync(tmpHtml)) return errorResponse("PDF generation failed — ensure 'pip install markdown' is run");
+      if (!fs.existsSync(tmpHtml)) return errorResponse({ code: "exportFailed", message: "PDF generation failed — ensure 'pip install markdown' is run" });
       await renderPdfWithPlaywright(tmpHtml, tmpPdf);
-      if (!fs.existsSync(tmpPdf)) return errorResponse("PDF generation failed — ensure Playwright Chromium is installed");
+      if (!fs.existsSync(tmpPdf)) return errorResponse({ code: "exportFailed", message: "PDF generation failed — ensure Playwright Chromium is installed" });
       const pdfContent = fs.readFileSync(tmpPdf);
       cleanupFiles(tmpMd, tmpHtml, tmpPdf);
       return new Response(pdfContent, {
@@ -63,7 +63,7 @@ export async function POST(
 
     if (format === "docx") {
       await runExport(tmpMd, tmpDocx, "docx");
-      if (!fs.existsSync(tmpDocx)) return errorResponse("DOCX generation failed — ensure 'pip install python-docx' is run");
+      if (!fs.existsSync(tmpDocx)) return errorResponse({ code: "exportFailed", message: "DOCX generation failed — ensure 'pip install python-docx' is run" });
       const docxContent = fs.readFileSync(tmpDocx);
       cleanupFiles(tmpMd, tmpDocx);
       return new Response(docxContent, {

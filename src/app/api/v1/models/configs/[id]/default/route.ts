@@ -43,7 +43,7 @@ export async function PATCH(
   });
 
   if (!modelConfig || modelConfig.provider.userId !== user.id) {
-    return errorResponse("Model config not found", 404);
+    return errorResponse({ code: "notFound", message: "Model config not found" }, 404);
   }
 
   const defaultFor = normalizeDefaultSlot(body.defaultFor);

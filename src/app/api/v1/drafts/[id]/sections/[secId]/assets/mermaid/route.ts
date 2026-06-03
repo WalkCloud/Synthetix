@@ -18,13 +18,13 @@ export async function POST(
   const body = await request.json();
   const { code, title, replaceAssetId, skipAppend } = body as { code?: string; title?: string; replaceAssetId?: string; skipAppend?: boolean };
 
-  if (!code || !code.trim()) return errorResponse("Diagram code is required", 400);
+  if (!code || !code.trim()) return errorResponse({ code: "invalidInput", message: "Diagram code is required" }, 400);
 
   const draft = await db.draft.findFirst({
     where: { id: draftId, userId: user.id },
     select: { id: true },
   });
-  if (!draft) return errorResponse("Draft not found", 404);
+  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
 
   try {
     const svg = renderDiagramFromCode(code.trim(), title);
@@ -50,7 +50,7 @@ export async function POST(
       const existing = await db.sectionAsset.findFirst({
         where: { id: replaceAssetId, draftId, sectionId },
       });
-      if (!existing) return errorResponse("Target asset not found", 404);
+      if (!existing) return errorResponse({ code: "notFound", message: "Target asset not found" }, 404);
       await db.sectionAsset.update({
         where: { id: replaceAssetId },
         data: {

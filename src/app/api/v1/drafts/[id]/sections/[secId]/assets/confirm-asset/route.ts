@@ -38,28 +38,28 @@ export async function POST(
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    return errorResponse("Invalid request body", 400);
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
   }
 
   if (!body.markerId || !body.assetId) {
-    return errorResponse("markerId and assetId are required", 400);
+    return errorResponse({ code: "invalidInput", message: "markerId and assetId are required" }, 400);
   }
 
   const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
   if (!draft) {
-    return errorResponse("Draft not found", 404);
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
   if (!section) {
-    return errorResponse("Section not found", 404);
+    return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
   }
 
   const asset = await db.sectionAsset.findFirst({
     where: { id: body.assetId, draftId, sectionId },
   });
   if (!asset) {
-    return errorResponse("Asset not found", 404);
+    return errorResponse({ code: "notFound", message: "Asset not found" }, 404);
   }
 
   const content = section.content || "";
@@ -121,7 +121,7 @@ export async function POST(
     console.error("[confirm-asset] markerId:", body.markerId, "assetId:", body.assetId);
     console.error("[confirm-asset] replacement:", replacement);
     console.error("[confirm-asset] source:", source);
-    return errorResponse("Marker replacement failed", 404);
+    return errorResponse({ code: "notFound", message: "Marker replacement failed" }, 404);
   }
 
   await db.section.update({
