@@ -1,5 +1,6 @@
 import { getLLMClient } from "@/lib/llm/client";
 import { recordTokenUsage } from "@/lib/llm/usage";
+import { buildHumanizerPrompts, type DocumentLanguage } from "@/lib/prompts";
 
 /**
  * Anti-AI writing pattern detection and rewrite module.
@@ -112,15 +113,17 @@ export interface HumanizeResult {
 export async function humanizeContent(
   content: string,
   sectionTitle: string,
-  userId: string
+  userId: string,
+  docLocale: DocumentLanguage = "en",
 ): Promise<HumanizeResult> {
   const { provider, modelId, modelConfigId } = await getLLMClient("writing", userId);
+  const { audit: auditPrompt, rewrite: rewritePrompt } = buildHumanizerPrompts(docLocale);
 
   // Pass 1: Audit — detect AI patterns
   const auditResponse = await provider.chat({
     model: modelId,
     messages: [
-      { role: "system", content: AUDIT_PROMPT },
+      { role: "system", content: auditPrompt },
       {
         role: "user",
         content: `Section: "${sectionTitle}"\n\n${content}`,
@@ -133,7 +136,7 @@ export async function humanizeContent(
   const rewriteResponse = await provider.chat({
     model: modelId,
     messages: [
-      { role: "system", content: REWRITE_PROMPT },
+      { role: "system", content: rewritePrompt },
       {
         role: "user",
         content: [

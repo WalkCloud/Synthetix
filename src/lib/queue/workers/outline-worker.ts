@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import { OUTLINE_PROMPT } from "@/lib/brainstorm/outline-prompt";
+import { buildOutlinePrompt, resolveDocumentLanguage } from "@/lib/prompts";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
 
 interface OutlineGeneratePayload extends TaskPayload {
@@ -35,6 +35,11 @@ export async function generateOutline(
     .map((m) => `${m.role === "user" ? "User" : "AI"}: ${m.content}`)
     .join("\n\n");
 
+  // Detect document language from conversation content
+  const hasCJK = /[一-鿿぀-ヿ가-힯]/.test(conversation);
+  const docLocale = hasCJK ? "zh-CN" as const : "en" as const;
+  const outlinePrompt = buildOutlinePrompt(docLocale);
+
   onProgress(20);
 
   const provider = createLLMProvider(chatModel.provider);
@@ -47,7 +52,7 @@ export async function generateOutline(
   for await (const chunk of provider.chatStream({
     model: chatModel.modelId,
     messages: [
-      { role: "system", content: OUTLINE_PROMPT },
+      { role: "system", content: outlinePrompt },
       { role: "user", content: `Here is the brainstorming conversation:\n\n${conversation}\n\nGenerate the outline.` },
     ],
   })) {
