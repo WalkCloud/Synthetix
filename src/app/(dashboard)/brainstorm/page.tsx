@@ -9,21 +9,15 @@ import { useBrainstormOutline } from "@/hooks/brainstorm/use-brainstorm-outline"
 import { EditOutlineNode } from "@/components/brainstorm/edit-outline-node";
 import { DisplayOutlineNode } from "@/components/brainstorm/display-outline-node";
 import type { Phase } from "@/hooks/brainstorm/types";
+import { useLocale } from "@/lib/i18n";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
   Trash2, Check, X, FileText
 } from "lucide-react";
 
-const phaseLabels: Record<Phase, string> = {
-  gathering: "Gathering requirements",
-  direction: "Choosing outline direction",
-  mode_select: "Choosing generation mode",
-  section_refine: "Refining by section",
-  ready: "Outline ready",
-};
-
 export default function BrainstormPage() {
+  const { t, format } = useLocale();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
@@ -75,10 +69,16 @@ export default function BrainstormPage() {
 
   const activeSession = sess.sessions.find((s) => s.id === sess.activeId);
   const displayStatus = sess.outline
-    ? "Outline Ready"
+    ? t.brainstorm.outlineGenerated
     : sess.phase === "gathering"
-      ? "Deepening Phase"
-      : phaseLabels[sess.phase];
+      ? t.brainstorm.phases.exploration
+      : sess.phase === "direction"
+        ? t.brainstorm.phases.structuring
+        : sess.phase === "mode_select"
+          ? t.brainstorm.phases.structuring
+          : sess.phase === "section_refine"
+            ? t.brainstorm.phases.refinement
+            : t.brainstorm.outlineGenerated;
 
   function formatTime(d: string): string {
     return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -106,7 +106,7 @@ export default function BrainstormPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <Header title="Mind Organization" />
+      <Header title={t.brainstorm.title} />
 
       <div className="h-[calc(100vh-64px)] overflow-hidden bg-muted/40 px-6 py-6 xl:px-8">
         <div className="mx-auto flex h-full max-w-[1600px] gap-6">
@@ -115,7 +115,7 @@ export default function BrainstormPage() {
             <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-5">
               <h4 className="font-display text-sm font-bold text-foreground">Sessions</h4>
               <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-1 rounded-[12px] bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-primary-light">
-                <Plus className="h-3 w-3" /> New
+                <Plus className="h-3 w-3" /> {t.brainstorm.newSession}
               </button>
             </div>
             <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto bg-muted/50 p-4">
@@ -157,7 +157,7 @@ export default function BrainstormPage() {
               {sess.sessions.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
                   <Sparkles className="mb-3 h-8 w-8 opacity-25" />
-                  <span className="text-xs leading-5">No brainstorming sessions yet.<br />Start one to begin.</span>
+                  <span className="text-xs leading-5">No sessions yet.<br/>Start one to begin.</span>
                 </div>
               )}
             </div>
@@ -185,7 +185,7 @@ export default function BrainstormPage() {
                   <h2 className="mb-2 font-display text-xl font-bold text-foreground">Document Brainstorming</h2>
                   <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">Collaborate with the AI Document Architect to structure your thoughts and generate a comprehensive document outline.</p>
                   <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-light">
-                    <Plus className="h-4 w-4" /> Start New Session
+                    <Plus className="h-4 w-4" /> t.brainstorm.startConversation
                   </button>
                 </div>
               )}
@@ -267,7 +267,7 @@ export default function BrainstormPage() {
                     onChange={(e) => { const file = e.target.files?.[0]; if (file) chat.handleFileUpload(file); e.target.value = ""; }}
                   />
                 </label>
-                <textarea rows={1} placeholder="Answer the AI or refine the outline..." value={chat.input}
+                <textarea rows={1} placeholder={t.brainstorm.placeholder} value={chat.input}
                   onChange={(e) => chat.setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chat.sendMessage(); } }}
                   disabled={!sess.activeId}
@@ -400,7 +400,7 @@ export default function BrainstormPage() {
                   <button onClick={outline.confirmAndWrite} disabled={outline.confirming || !sess.outline}
                     className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
                     {outline.confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                    {outline.confirming ? "Preparing..." : "Confirm & Write"}
+                    {outline.confirming ? t.common.states.processing + "..." : t.brainstorm.generateOutline}
                   </button>
                 </div>
               )}
