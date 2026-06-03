@@ -4,6 +4,7 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { SYSTEM_PROMPT_CREATE, SYSTEM_PROMPT_EDIT, isCJK, translateLabels, stripCodeFences, repairJson } from "@/lib/writing/diagram-translate";
+import { buildDiagramPrompts } from "@/lib/prompts";
 import type { LLMProvider } from "@/lib/llm/types";
 
 const MAX_RETRIES = 2;
@@ -109,14 +110,16 @@ export async function POST(
 
     const hasExisting = existingCode && existingCode.trim().length > 0;
     const needChinese = isCJK(prompt.trim());
+    const diagramLocale = needChinese ? "zh-CN" as const : "en" as const;
+    const diagramPrompts = buildDiagramPrompts(diagramLocale);
 
     const messages = hasExisting
       ? [
-          { role: "system" as const, content: SYSTEM_PROMPT_EDIT },
+          { role: "system" as const, content: diagramPrompts.edit },
           { role: "user" as const, content: `Current diagram:\n${existingCode!.trim()}\n\nModification: ${prompt.trim()}` },
         ]
       : [
-          { role: "system" as const, content: SYSTEM_PROMPT_CREATE },
+          { role: "system" as const, content: diagramPrompts.create },
           { role: "user" as const, content: prompt.trim() },
         ];
 

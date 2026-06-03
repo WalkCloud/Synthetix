@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/lib/llm/types";
+import { buildWritingContext, type DocumentLanguage } from "@/lib/prompts";
 
 export interface ContextInput {
   draft: {
@@ -35,7 +36,13 @@ export interface ContextInput {
   } | null;
 }
 
-function buildSystemMessage(): ChatMessage {
+function buildSystemMessage(docLocale: DocumentLanguage = "en"): ChatMessage {
+  // Use localized prompt if available
+  const localizedContent = buildWritingContext(docLocale);
+  if (localizedContent) {
+    return { role: "system", content: localizedContent };
+  }
+
   return {
     role: "system",
     content: [
@@ -368,7 +375,7 @@ function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
   return DIAGRAM_KEYWORDS.some((kw) => new RegExp(kw, "i").test(text));
 }
 
-export function assembleContext(input: ContextInput): ChatMessage[] {
+export function assembleContext(input: ContextInput, docLocale: DocumentLanguage = "en"): ChatMessage[] {
   const userParts: string[] = [];
 
   userParts.push(buildOutlineSummary(input.draft, input.section));
@@ -426,7 +433,7 @@ export function assembleContext(input: ContextInput): ChatMessage[] {
   }
 
   return [
-    buildSystemMessage(),
+    buildSystemMessage(docLocale),
     { role: "user", content: userParts.join("\n") },
   ];
 }

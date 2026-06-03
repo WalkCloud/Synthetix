@@ -1,6 +1,7 @@
 import { resolveLLMClient } from "@/lib/llm/client";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { buildAuditPrompt, parseAuditResponse, type AuditResult } from "./audit";
+import type { DocumentLanguage } from "@/lib/prompts";
 
 export async function auditSection(
   title: string,
@@ -8,6 +9,7 @@ export async function auditSection(
   keyPoints?: string | null,
   userId?: string,
   referenceId?: string,
+  docLocale: DocumentLanguage = "en",
 ): Promise<AuditResult> {
   const client = await resolveLLMClient("writing", userId);
   if (!client) {
@@ -19,7 +21,7 @@ export async function auditSection(
     };
   }
 
-  const { system, user } = buildAuditPrompt(title, content, keyPoints);
+  const { system, user } = buildAuditPrompt(title, content, keyPoints, docLocale);
 
   try {
     const response = await client.provider.chat({

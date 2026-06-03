@@ -6,10 +6,17 @@ import {
   assembleContext,
   type ContextInput,
 } from "@/lib/writing/context";
+import type { DocumentLanguage } from "@/lib/prompts";
 
 const RAG_REFERENCE_LIMIT = 8;
 const MIN_COSINE_THRESHOLD = 0.4;
 const GENERATION_TEMPERATURE = 0.7;
+
+/** Detect document language from title/content CJK presence */
+function detectDocLocale(title: string): DocumentLanguage {
+  if (/[一-鿿぀-ヿ가-힯]/.test(title)) return "zh-CN";
+  return "en";
+}
 
 interface RagConfig {
   mode: "auto" | "manual" | "off";
@@ -235,7 +242,7 @@ export async function generateSectionFull(
     completedSections,
     ragReferences,
     constraints: effectiveConstraints,
-  });
+  }, detectDocLocale(draft.title));
 
   try {
     const response = await provider.chat({
@@ -326,7 +333,7 @@ export async function generateSectionStream(
     completedSections,
     ragReferences,
     constraints: effectiveConstraints,
-  });
+  }, detectDocLocale(draft.title));
 
   const stream = provider.chatStream({
     model: modelId,
@@ -384,7 +391,7 @@ export async function compareSection(
     completedSections,
     ragReferences,
     constraints: effectiveConstraints,
-  });
+  }, detectDocLocale(draft.title));
 
   const chatParams = {
     messages,
@@ -476,7 +483,7 @@ export async function compareSectionStream(
     completedSections,
     ragReferences,
     constraints: effectiveConstraints,
-  });
+  }, detectDocLocale(draft.title));
 
   const chatParams = {
     messages,
