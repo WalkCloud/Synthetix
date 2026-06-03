@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { useLocale } from "@/lib/i18n";
 
 const APP_VERSION = "0.5.3.0";
 
@@ -16,6 +17,8 @@ interface AboutDialogProps {
 }
 
 export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
+  const { t } = useLocale();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[380px]">
@@ -37,9 +40,9 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
               <line x1="10" y1="9" x2="8" y2="9" />
             </svg>
             <div>
-              <DialogTitle className="text-lg">Synthetix</DialogTitle>
+              <DialogTitle className="text-lg">{t.layout.about.title}</DialogTitle>
               <DialogDescription className="text-xs">
-                AI-Powered Document Authoring
+                {t.layout.about.subtitle}
               </DialogDescription>
             </div>
           </div>
@@ -47,16 +50,16 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
 
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-            <span className="text-muted-foreground">Version</span>
+            <span className="text-muted-foreground">{t.layout.about.version}</span>
             <span className="font-mono font-medium">{APP_VERSION}</span>
           </div>
 
           <div className="text-muted-foreground text-xs leading-relaxed">
-            <p>Built with Next.js, TypeScript, Prisma & SQLite.</p>
+            <p>{t.layout.about.techStack}</p>
           </div>
 
           <div className="border-t pt-3 text-center text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} Synthetix. All rights reserved.
+            &copy; {new Date().getFullYear()} Synthetix. {t.layout.about.copyright}
           </div>
         </div>
       </DialogContent>
