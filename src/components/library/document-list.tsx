@@ -4,6 +4,7 @@ import Link from "next/link";
 import { TagBadge } from "./tag-badge";
 import { formatFileSize } from "@/lib/text/format-file-size";
 import { docStatusLabels as statusLabels, docStatusColors as statusColors } from "@/lib/text/status-labels";
+import { useLocale } from "@/lib/i18n";
 import type { DocumentMeta } from "@/types/documents";
 
 interface DocumentListProps {
@@ -15,6 +16,7 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ documents, total, page, limit, onPageChange }: DocumentListProps) {
+  const { t, format } = useLocale();
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -22,19 +24,19 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
       <div className="bg-card border rounded-[16px] overflow-hidden">
         {documents.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground">
-            <p className="text-lg font-medium mb-1">No documents found</p>
-            <p className="text-sm">Upload documents to get started.</p>
+            <p className="text-lg font-medium mb-1">{t.library.empty}</p>
+            <p className="text-sm">{t.library.emptyUploadDesc}</p>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted">
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Name</th>
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Format</th>
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Size</th>
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Status</th>
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Tags</th>
-                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">Date</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.library.table.name}</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.library.table.format}</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.library.table.size}</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.library.table.status}</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.models.usage.modules["auto-tag"]}</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-4 py-3">{t.library.actions.date}</th>
               </tr>
             </thead>
             <tbody>
@@ -58,7 +60,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
-                    {new Date(doc.createdAt).toLocaleDateString()}
+                    {format.date(doc.createdAt)}
                   </td>
                 </tr>
               ))}
@@ -70,7 +72,7 @@ export function DocumentList({ documents, total, page, limit, onPageChange }: Do
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <span className="text-sm text-muted-foreground">
-            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
+            {(page - 1) * limit + 1}-{Math.min(page * limit, total)} / {total}
           </span>
           <div className="flex gap-1">
             {Array.from({ length: totalPages }, (_, i) => (

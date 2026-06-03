@@ -19,8 +19,8 @@ export default function SearchPage() {
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
   const tabItems: { id: TabId; label: string }[] = [
-    { id: "search", label: t.search.title },
-    { id: "knowledge-graph", label: t.documents.processing.indexModeGraph },
+    { id: "search", label: t.search.tabs.documentSearch },
+    { id: "knowledge-graph", label: t.search.tabs.knowledgeGraph },
   ];
 
   const [searchQuery, setSearchQuery] = useState("");

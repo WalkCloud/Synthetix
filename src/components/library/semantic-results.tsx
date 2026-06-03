@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useLocale } from "@/lib/i18n";
 import type { SearchResult } from "@/types/documents";
 
 interface SemanticResultsProps {
@@ -13,7 +14,16 @@ interface SemanticResultsProps {
 }
 
 export function SemanticResults({ results, isSearching, searchMode, searchStage, onViewDocument }: SemanticResultsProps) {
+  const { locale, t } = useLocale();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const isZh = locale === "zh-CN";
+  const semanticStages = isZh
+    ? ["初始化搜索引擎...", "正在向量化查询...", "正在扫描知识图谱...", "正在排序结果..."]
+    : ["Initializing search engine...", "Embedding your query...", "Scanning knowledge graph...", "Ranking results..."];
+  const keywordStages = isZh
+    ? ["正在分词...", "正在搜索索引...", "正在排序结果..."]
+    : ["Tokenizing query...", "Searching index...", "Ranking results..."];
+  const matchLabel = isZh ? "匹配" : "match";
 
   return (
     <div className="space-y-3 animate-fade-in-up">
@@ -46,13 +56,13 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
             <div className="text-center">
               <p className="text-[15px] font-semibold text-foreground mb-1">
                 {searchMode === "semantic"
-                  ? ["Initializing search engine...", "Embedding your query...", "Scanning knowledge graph...", "Ranking results..."][searchStage]
-                  : ["Tokenizing query...", "Searching index...", "Ranking results..."][searchStage]}
+                  ? semanticStages[searchStage]
+                  : keywordStages[searchStage]}
               </p>
               <p className="text-[13px] text-muted-foreground">
                 {searchMode === "semantic"
-                  ? "Semantic search uses AI to understand your query deeply"
-                  : "Keyword search matches exact terms in your documents"}
+                  ? (isZh ? "语义检索会使用 AI 理解你的查询意图" : "Semantic search uses AI to understand your query deeply")
+                  : (isZh ? "关键词检索会匹配文档中的精确词项" : "Keyword search matches exact terms in your documents")}
               </p>
             </div>
             {searchMode === "semantic" && (
@@ -75,8 +85,8 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           }
-          title="No search results"
-          description="Try a different query or switch to keyword search."
+          title={t.search.noResults}
+          description={t.search.noResultsDesc}
         />
       ) : (
         results.map((r, i) => {
@@ -99,19 +109,19 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
                   </svg>
                   {typeof r.score === "number" && r.score >= 0.85 ? (
                     <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300">
-                      {Math.round(r.score * 100)}% match
+                      {Math.round(r.score * 100)}% {matchLabel}
                     </span>
                   ) : typeof r.score === "number" && r.score >= 0.75 ? (
                     <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary-100 text-primary">
-                      {Math.round(r.score * 100)}% match
+                      {Math.round(r.score * 100)}% {matchLabel}
                     </span>
                   ) : typeof r.score === "number" ? (
                     <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
-                      {Math.round(r.score * 100)}% match
+                      {Math.round(r.score * 100)}% {matchLabel}
                     </span>
                   ) : (
                     <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-                      Keyword match
+                      {isZh ? "关键词匹配" : "Keyword match"}
                     </span>
                   )}
                 </div>
@@ -138,7 +148,7 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14 2 14 8 20 8" />
                       </svg>
-                      View full document
+                      {t.library.viewDocument}
                     </button>
                   )}
                   <button
@@ -146,7 +156,7 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
                     onClick={(e) => { e.stopPropagation(); setExpandedIndex(null); }}
                     className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground cursor-pointer"
                   >
-                    Collapse
+                    {isZh ? "收起" : "Collapse"}
                   </button>
                 </div>
               )}

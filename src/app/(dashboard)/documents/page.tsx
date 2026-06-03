@@ -22,7 +22,7 @@ export default function DocumentsPage() {
   const [contextUsage, setContextUsage] = useState(45);
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
-  const [indexMode, setIndexMode] = useState<"basic" | "graph">("basic");
+  const [indexMode, setIndexMode] = useState<"basic" | "graph">("graph");
   const [autoSplit, setAutoSplit] = useState(true);
   const [processing, setProcessing] = useState(false);
 

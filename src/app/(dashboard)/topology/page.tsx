@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { TopologyCanvas } from "@/components/topology/topology-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
+import { TopologyEmptyState } from "@/components/topology/topology-empty-state";
 import { TopologyStatsBar } from "@/components/topology/topology-stats";
 import type { TopologyResponse } from "@/types/topology";
 import { useLocale } from "@/lib/i18n";
@@ -72,16 +72,7 @@ export default function TopologyPage() {
             </div>
           </div>
         ) : drafts.length === 0 ? (
-          <div className="flex items-center justify-center h-[calc(100vh-var(--header-height)-96px)]">
-            <div className="text-center text-muted-foreground">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12 mx-auto mb-3 opacity-40">
-                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              <p className="text-sm">{t.topology.empty}</p>
-              <Link href="/writing" className="text-primary text-sm font-medium hover:underline mt-2 inline-block">{t.layout.sidebar.documentWriting}</Link>
-            </div>
-          </div>
+          <TopologyEmptyState variant="no-drafts" />
         ) : (
           <div>
             <TopologyControls
@@ -104,12 +95,7 @@ export default function TopologyPage() {
                 graphMode="documents"
               />
             ) : (
-              <div className="bg-muted border border-border rounded-[16px] min-h-[560px] flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <p className="text-sm">{t.topology.empty}</p>
-                  <p className="text-xs mt-1">{t.topology.emptyDesc}</p>
-                </div>
-              </div>
+              <TopologyEmptyState />
             )}
             {topology && <TopologyStatsBar stats={topology.stats} />}
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { formatFileSize } from "@/lib/text/format-file-size";
+import { useLocale } from "@/lib/i18n";
 
 interface UploadItem {
   name: string;
@@ -11,13 +12,6 @@ interface UploadItem {
   docId?: string;
 }
 
-const statusLabels: Record<UploadItem["status"], string> = {
-  uploading: "Uploading...",
-  converting: "Converting...",
-  ready: "Complete",
-  failed: "Failed",
-};
-
 const statusColors: Record<UploadItem["status"], string> = {
   uploading: "text-[#2563EB]",
   converting: "text-[#D97706]",
@@ -26,7 +20,15 @@ const statusColors: Record<UploadItem["status"], string> = {
 };
 
 export function UploadProgress({ items }: { items: UploadItem[] }) {
+  const { t } = useLocale();
   if (items.length === 0) return null;
+
+  const statusLabels: Record<UploadItem["status"], string> = {
+    uploading: t.documents.uploadQueue.uploading,
+    converting: t.documents.uploadQueue.converting,
+    ready: t.documents.uploadQueue.complete,
+    failed: t.documents.uploadQueue.failed,
+  };
 
   return (
     <div className="mt-6 space-y-3">

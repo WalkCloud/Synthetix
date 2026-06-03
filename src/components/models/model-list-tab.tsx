@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLocale } from "@/lib/i18n";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import type { Provider } from "./types";
 import { ModelCard } from "./model-card";
@@ -68,50 +69,45 @@ function filterModels(providers: Provider[], slot: ModelSlot) {
   return result;
 }
 
-const SLOT_INFO: Record<ModelSlot, { label: string; description: string; addTitle: string; addSubtitle: string; empty: string }> = {
-  llm: {
-    label: "LLM Models",
-    description: "Configure LLM models for writing, chat, brainstorming, and other generation tasks.",
-    addTitle: "Add LLM Model",
-    addSubtitle: "Ollama, OpenAI, Anthropic, or custom endpoint",
-    empty: "No LLM models configured. Click \"Add LLM Model\" to connect a provider.",
-  },
-  embedding: {
-    label: "Embedding Models",
-    description: "Configure embedding models for document indexing and semantic search retrieval. Switching embedding models requires re-indexing all documents.",
-    addTitle: "Add Embedding Model",
-    addSubtitle: "Connect an embedding service for document indexing",
-    empty: "No embedding models configured. Add a provider with embedding capability.",
-  },
-  rerank: {
-    label: "Rerank Models",
-    description: "Configure reranker models to improve LightRAG retrieval accuracy. Optional — if no reranker is configured, LightRAG uses its default retrieval.",
-    addTitle: "Add Rerank Model",
-    addSubtitle: "Jina, Cohere, TEI, or any OpenAI-compatible rerank endpoint",
-    empty: "No rerank models configured. Reranking is optional — add a provider to enhance retrieval accuracy.",
-  },
-  image: {
-    label: "Image Generation",
-    description: "Configure text-to-image models for the Gen feature in the writing panel. These models generate illustrations from text prompts via OpenAI-compatible image APIs.",
-    addTitle: "Add Image Model",
-    addSubtitle: "DALL-E, Flux, Wanx, or other OpenAI-compatible image endpoint",
-    empty: "No image generation models configured. Add a provider with an image generation model (e.g. DALL-E, Flux, Wanx).",
-  },
-};
-
 export function ModelListTab({
   providers, slot, loading, testingId, testResult, deletingId,
   onTest, onEdit, onDelete, onDeleteConfirm, onDeleteCancel,
   onToggleDefault, onAdd,
 }: ModelListTabProps) {
+  const { t } = useLocale();
   const models = useMemo(() => filterModels(providers, slot), [providers, slot]);
-  const info = SLOT_INFO[slot];
+  const info = {
+    llm: {
+      description: t.models.list.llmDesc,
+      addTitle: t.models.list.addLlmTitle,
+      addSubtitle: t.models.list.addLlmSubtitle,
+      empty: t.models.list.emptyLlm,
+    },
+    embedding: {
+      description: t.models.list.embeddingDesc,
+      addTitle: t.models.list.addEmbeddingTitle,
+      addSubtitle: t.models.list.addEmbeddingSubtitle,
+      empty: t.models.list.emptyEmbedding,
+    },
+    rerank: {
+      description: t.models.list.rerankDesc,
+      addTitle: t.models.list.addRerankTitle,
+      addSubtitle: t.models.list.addRerankSubtitle,
+      empty: t.models.list.emptyRerank,
+    },
+    image: {
+      description: t.models.list.imageDesc,
+      addTitle: t.models.list.addImageTitle,
+      addSubtitle: t.models.list.addImageSubtitle,
+      empty: t.models.list.emptyImage,
+    },
+  }[slot];
 
   return (
     <div className="animate-fade-in-up">
       <p className="text-sm text-muted-foreground mb-6 leading-relaxed">{info.description}</p>
       {loading && slot === "llm" ? (
-        <div className="text-center py-12 text-muted-foreground">Loading...</div>
+        <div className="text-center py-12 text-muted-foreground">{t.common.actions.loading}</div>
       ) : (
         <div className="space-y-4">
           {models.map(({ provider, modelIndex, iconColors }) => {

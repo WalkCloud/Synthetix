@@ -104,6 +104,7 @@ export type TranslationSchema = {
       welcomeBack: string;
       checkingWorkspace: string;
       username: string;
+      usernameOrEmail: string;
       password: string;
       confirmPassword: string;
       rememberMe: string;
@@ -187,13 +188,41 @@ export type TranslationSchema = {
       startProcessing: string;
       processingSettings: string;
       autoSplit: string;
+      autoSplitDesc: string;
+      llmModel: string;
+      embeddingModel: string;
+      selectModel: string;
+      maxContextUsage: string;
+      maxContextUsageDesc: string;
       splitStrategy: string;
+      splitStrategyDesc: string;
       indexTarget: string;
+      indexTargetDesc: string;
       indexMode: string;
-      indexTargetFull: string;
-      indexTargetOriginal: string;
-      indexModeBasic: string;
-      indexModeGraph: string;
+      splitOptions: {
+        structureLlm: string;
+        headingOnly: string;
+      };
+      indexOptions: {
+        full: string;
+        original: string;
+        chunks: string;
+      };
+      graphOptions: {
+        basic: string;
+        graph: string;
+      };
+      graphNoEmbedding: string;
+      graphDimUnknown: string;
+      graphDimTooSmall: string;
+      graphDesc: string;
+    };
+    uploadQueue: {
+      uploading: string;
+      converting: string;
+      complete: string;
+      queued: string;
+      failed: string;
     };
   };
   library: {
@@ -213,6 +242,26 @@ export type TranslationSchema = {
       search: string;
     };
     empty: string;
+    emptyFilteredDesc: string;
+    emptyUploadDesc: string;
+    searchHeroTitle: string;
+    searchHeroDesc: string;
+    searchHeroPlaceholder: string;
+    keywordPlaceholder: string;
+    semanticPlaceholder: string;
+    keyword: string;
+    semantic: string;
+    sort: {
+      newest: string;
+      nameAsc: string;
+      size: string;
+    };
+    actions: {
+      deleteSelected: string;
+      clearSelection: string;
+      indexed: string;
+      date: string;
+    };
     deleteConfirm: string;
     batchDeleteConfirm: string;
     reindex: string;
@@ -237,6 +286,10 @@ export type TranslationSchema = {
     filters: {
       allDocuments: string;
       minScore: string;
+    };
+    tabs: {
+      documentSearch: string;
+      knowledgeGraph: string;
     };
   };
   writing: {
@@ -313,6 +366,49 @@ export type TranslationSchema = {
     generateOutline: string;
     outlineGenerated: string;
     newSession: string;
+    sessionListTitle: string;
+    defaultSessionTitle: string;
+    emptySessions: string;
+    emptySessionsDesc: string;
+    messageCount: string;
+    sessionStarted: string;
+    initialAssistantMessage: string;
+    send: string;
+    addSection: string;
+    wordUnit: string;
+    uploadStatus: string;
+    uploadPrompt: string;
+    uploadFailed: string;
+    networkError: string;
+    unknownError: string;
+    errorPrefix: string;
+    status: {
+      active: string;
+      complete: string;
+    };
+    quickActions: {
+      directTitle: string;
+      directDesc: string;
+      directMessage: string;
+      refineTitle: string;
+      refineDesc: string;
+      refineMessage: string;
+    };
+    outlinePanel: {
+      sectionRefineBanner: string;
+      generatingTitle: string;
+      generatingDesc: string;
+      generationSteps: string[];
+      generationLongHint: string;
+      modeSelectTitle: string;
+      modeSelectDesc: string;
+      refiningTitle: string;
+      refiningDesc: string;
+      generationFailedTitle: string;
+      generationFailedDesc: string;
+      previewTitle: string;
+      previewDesc: string;
+    };
     phases: {
       exploration: string;
       structuring: string;
@@ -323,6 +419,12 @@ export type TranslationSchema = {
     title: string;
     empty: string;
     emptyDesc: string;
+    noDraftsDesc: string;
+    emptySteps: string[];
+    noDraftsSteps: string[];
+    goWriting: string;
+    switchDraftHint: string;
+    createDraftHint: string;
     nodeTypes: {
       document: string;
       entity: string;
@@ -346,21 +448,33 @@ export type TranslationSchema = {
       testFailed: string;
       connected: string;
       disconnected: string;
+      notConfigured: string;
     };
     models: {
       title: string;
       addModel: string;
       editModel: string;
+      modelConfiguration: string;
+      modelName: string;
       modelId: string;
       contextWindow: string;
+      contextWindowDesc: string;
       embeddingDim: string;
+      embeddingDimDesc: string;
+      embeddingDimPlaceholder: string;
       embeddingBatchSize: string;
+      embeddingBatchSizeDesc: string;
       capabilities: string;
       setDefault: string;
       removeDefault: string;
       isDefault: string;
       enabled: string;
       disabled: string;
+      tokens: string;
+      connected: string;
+      failed: string;
+      disconnected: string;
+      testing: string;
     };
     capabilities: {
       chat: string;
@@ -377,6 +491,64 @@ export type TranslationSchema = {
       outputTokens: string;
       byModel: string;
       byModule: string;
+      totalCalls: string;
+      modelsUsed: string;
+      tokenUsageTrend: string;
+      input: string;
+      output: string;
+      modelTokenRanking: string;
+      usageByModule: string;
+      recentActivity: string;
+      module: string;
+      model: string;
+      tokens: string;
+      total: string;
+      noTrendData: string;
+      noUsageData: string;
+      noModuleData: string;
+      noRecentActivity: string;
+      unknown: string;
+      today: string;
+      sevenDays: string;
+      thirtyDays: string;
+      modules: Record<string, string>;
+    };
+    tabs: {
+      llm: string;
+      embedding: string;
+      rerank: string;
+      image: string;
+      usage: string;
+    };
+    list: {
+      llmDesc: string;
+      embeddingDesc: string;
+      rerankDesc: string;
+      imageDesc: string;
+      addLlmTitle: string;
+      addEmbeddingTitle: string;
+      addRerankTitle: string;
+      addImageTitle: string;
+      addLlmSubtitle: string;
+      addEmbeddingSubtitle: string;
+      addRerankSubtitle: string;
+      addImageSubtitle: string;
+      emptyLlm: string;
+      emptyEmbedding: string;
+      emptyRerank: string;
+      emptyImage: string;
+    };
+    form: {
+      type: string;
+      saveFailed: string;
+      leaveEmptyKeepCurrent: string;
+      optionalForLocal: string;
+      enterApiKey: string;
+      addProviderTitle: string;
+      editProviderTitle: string;
+      providerNamePlaceholder: string;
+      rerankDesc: string;
+      imageDesc: string;
     };
   };
   settings: {
@@ -411,7 +583,19 @@ export type TranslationSchema = {
         medium: string;
         strong: string;
       };
-      emailCannotChange: string;
+      emailUsageHint: string;
+      emailInvalid: string;
+      emailAlreadyUsed: string;
+      tellUsAboutYourself: string;
+      saveChanges: string;
+      uploading: string;
+      admin: string;
+      userFallback: string;
+      memberSince: string;
+      localAuthDesc: string;
+      enterCurrentPassword: string;
+      enterNewPassword: string;
+      confirmNewPassword: string;
     };
     database: {
       title: string;
@@ -428,6 +612,23 @@ export type TranslationSchema = {
       saved: string;
       saveFailed: string;
       migrationRequired: string;
+      notConfigured: string;
+      sqliteLocal: string;
+      sqliteLocalDesc: string;
+      postgresqlDescConnected: string;
+      postgresqlDescConfigure: string;
+      activeConnection: string;
+      localSqliteFile: string;
+      postgresqlConfig: string;
+      saveSettings: string;
+      sqliteMonitor: string;
+      unableToLoadStats: string;
+      databaseFile: string;
+      walFile: string;
+      version: string;
+      status: string;
+      integrityVerified: string;
+      integrityFailed: string;
     };
     storage: {
       title: string;
@@ -442,6 +643,64 @@ export type TranslationSchema = {
       save: string;
       saved: string;
       saveFailed: string;
+      notConfigured: string;
+      documentStorageMode: string;
+      localStorage: string;
+      localStorageDesc: string;
+      s3Storage: string;
+      s3StorageDesc: string;
+      localConfig: string;
+      documentRootDirectory: string;
+      documentRootDesc: string;
+      cacheDirectory: string;
+      cacheDirectoryDesc: string;
+      storageUsage: string;
+      documents: string;
+      documentsHint: string;
+      assets: string;
+      assetsHint: string;
+      index: string;
+      indexHint: string;
+      other: string;
+      otherHint: string;
+      diskFree: string;
+      saveSettings: string;
+      s3Config: string;
+      s3Endpoint: string;
+      s3EndpointDesc: string;
+      bucketName: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      secretAccessKeyPlaceholder: string;
+      pathPrefix: string;
+      pathPrefixDesc: string;
+      saveS3Settings: string;
+    };
+    rag: {
+      title: string;
+      vectorDatabaseProvider: string;
+      notConfigured: string;
+      localTitle: string;
+      localDesc: string;
+      pgvectorDesc: string;
+      milvusDesc: string;
+      qdrantDesc: string;
+      postgresqlConfig: string;
+      milvusConfig: string;
+      qdrantConfig: string;
+      neo4jGraphStorage: string;
+      neo4jDesc: string;
+      saveConfiguration: string;
+      saveVectorDbSettings: string;
+      saved: string;
+      saveFailed: string;
+      tokenOptional: string;
+      usernameOptional: string;
+      passwordOptional: string;
+      databaseName: string;
+      enterPassword: string;
+      enterToken: string;
+      enterApiKey: string;
     };
     language: {
       title: string;

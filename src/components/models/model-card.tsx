@@ -1,3 +1,5 @@
+import { useLocale } from "@/lib/i18n";
+
 interface IconColors {
   bg: string;
   text: string;
@@ -43,6 +45,8 @@ export function ModelCard({
   onDeleteCancel: () => void;
   onToggleDefault: () => void;
 }) {
+  const { t } = useLocale();
+
   return (
     <div
       className={`bg-card border rounded-2xl px-6 py-5 shadow-soft hover:shadow-hover transition-all relative overflow-hidden ${isTesting ? "border-primary-300 dark:border-primary-600" : "border-border"}`}
@@ -68,29 +72,29 @@ export function ModelCard({
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                     <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" />
                   </svg>
-                  Default
+                  {t.models.models.isDefault}
                 </span>
               )}
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
-              {providerName}              {contextWindow > 0 && (<><span className="text-border mx-1.5">|</span>{parseContextWindow(contextWindow)} tokens</>)}
+              {providerName}              {contextWindow > 0 && (<><span className="text-border mx-1.5">|</span>{parseContextWindow(contextWindow)} {t.models.models.tokens}</>)}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {testResult ? (
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${testResult.connected ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/35 dark:text-green-400 dark:border-green-800/40" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/35 dark:text-red-400 dark:border-red-800/40"}`}>
-              {testResult.connected ? "Connected" : "Failed"}
+              {testResult.connected ? t.models.models.connected : t.models.models.failed}
             </span>
           ) : isActive ? (
             <span className="flex items-center gap-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/35 border border-green-100 dark:border-green-800/40 px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              Connected
+              {t.models.models.connected}
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border border-border px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
-              Disconnected
+              {t.models.models.disconnected}
             </span>
           )}
         </div>
@@ -103,16 +107,16 @@ export function ModelCard({
             <>
               <button onClick={onDeleteConfirm}
                 className="px-4 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm">
-                Confirm
+                {t.common.actions.confirm}
               </button>
               <button onClick={onDeleteCancel}
                 className="px-4 py-1.5 text-sm font-medium border border-border text-muted-foreground rounded-lg hover:bg-secondary/70 transition-colors">
-                Cancel
+                {t.common.actions.cancel}
               </button>
             </>
           ) : (
             <>
-              <button onClick={onToggleDefault} title={isDefault ? "Remove default" : "Set as default model"}
+              <button onClick={onToggleDefault} title={isDefault ? t.models.models.removeDefault : t.models.models.setDefault}
                 className={`p-2 rounded-lg transition-colors cursor-pointer ${isDefault ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30" : "text-muted-foreground/30 hover:text-amber-400 dark:hover:text-amber-300 hover:bg-secondary/70"}`}>
                 <svg viewBox="0 0 24 24" fill={isDefault ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-5 h-5">
                   <path d="M8 1l2.2 4.5L15 6.1l-3.5 3.4.8 4.9L8 12.1 3.7 14.4l.8-4.9L1 6.1l4.8-.6z" transform="translate(4,3) scale(0.85)" />
@@ -125,17 +129,17 @@ export function ModelCard({
                     <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                     </svg>
-                    Testing...
+                    {t.models.models.testing}
                   </>
-                ) : "Test Connection"}
+                ) : t.models.providers.testConnection}
               </button>
               <button onClick={onEdit}
                 className="px-4 py-1.5 text-sm font-medium text-muted-foreground rounded-lg hover:bg-secondary transition-colors">
-                Edit
+                {t.common.actions.edit}
               </button>
               <button onClick={onDelete}
                 className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
-                Delete
+                {t.common.actions.delete}
               </button>
             </>
           )}

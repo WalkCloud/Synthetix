@@ -1,10 +1,14 @@
+import { useLocale } from "@/lib/i18n";
+
 export function TopologyLegend() {
+  const { locale } = useLocale();
+  const isZh = locale === "zh-CN";
   const items = [
-    { label: "Current Document", color: "#3A2E85", shape: "square" as const },
+    { label: isZh ? "当前文档" : "Current Document", color: "#3A2E85", shape: "square" as const },
     { label: "PDF", color: "#2563EB", shape: "circle" as const },
     { label: "DOCX", color: "#EA580C", shape: "circle" as const },
     { label: "Markdown", color: "#16A34A", shape: "circle" as const },
-    { label: "Entity", color: "#7C3AED", shape: "circle" as const },
+    { label: isZh ? "实体" : "Entity", color: "#7C3AED", shape: "circle" as const },
   ] as const;
 
   return (

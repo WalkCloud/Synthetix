@@ -6,6 +6,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { detectMarker, stripMarker, preFetchDomainKnowledge } from "@/lib/brainstorm/facilitator";
 import { resolveLocale } from "@/lib/i18n/server";
+import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 import { buildFacilitatorPrompt, resolveDocumentLanguage } from "@/lib/prompts";
 
 export async function POST(
@@ -53,7 +54,7 @@ export async function POST(
     take: 20,
   });
 
-  const locale = resolveDocumentLanguage(await resolveLocale());
+  const locale = resolveDocumentLanguage(resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale());
   const facilitatorPrompt = buildFacilitatorPrompt(locale);
 
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
