@@ -50,6 +50,10 @@ export class TaskQueue {
     payload: TaskPayload,
     userId: string,
   ): Promise<string> {
+    if (!this.workers.has(type)) {
+      throw new Error(`No worker registered for task type: ${type}`);
+    }
+
     const id = uuidv4();
 
     await db.asyncTask.create({
