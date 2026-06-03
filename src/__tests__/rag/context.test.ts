@@ -17,13 +17,13 @@ describe("buildEmbedConfig", () => {
     expect(config.model).toBe("text-embedding-3-small");
   });
 
-  it("handles null apiKey by decrypting empty string", () => {
+  it("handles null apiKey by returning empty string", () => {
     const config = buildEmbedConfig({
       provider: { apiBaseUrl: "http://localhost:11434", apiKey: null },
       modelId: "nomic-embed-text",
     });
 
-    expect(config.apiKey).toBe("decrypted_");
+    expect(config.apiKey).toBe("");
     expect(config.apiBase).toBe("http://localhost:11434");
   });
 

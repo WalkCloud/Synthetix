@@ -60,10 +60,10 @@ export async function generateOutline(
 
   const raw = chunks.join("");
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  const outline = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-    title: session.title,
-    sections: [{ num: "1", title: "Introduction", keyPoints: [], estimatedWords: 500 }],
-  };
+  if (!jsonMatch) {
+    throw new Error("Failed to parse outline from LLM response: no JSON object found. Raw output: " + raw.slice(0, 500));
+  }
+  const outline = JSON.parse(jsonMatch[0]);
 
   onProgress(90);
 
