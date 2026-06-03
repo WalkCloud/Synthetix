@@ -9,17 +9,19 @@ import { SearchHero } from "@/components/library/search-hero";
 import { SemanticResults } from "@/components/library/semantic-results";
 import { TopologyCanvas } from "@/components/topology/topology-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
+import { useLocale } from "@/lib/i18n";
 
 type TabId = "search" | "knowledge-graph";
 
-const tabItems: { id: TabId; label: string }[] = [
-  { id: "search", label: "Document Search" },
-  { id: "knowledge-graph", label: "Knowledge Graph" },
-];
-
 export default function SearchPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
+
+  const tabItems: { id: TabId; label: string }[] = [
+    { id: "search", label: t.search.title },
+    { id: "knowledge-graph", label: t.documents.processing.indexModeGraph },
+  ];
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"keyword" | "semantic">("keyword");
@@ -142,8 +144,8 @@ export default function SearchPage() {
     setSearchStage(0);
     const isSemantic = searchMode === "semantic";
     const stages = isSemantic
-      ? ["Initializing search engine...", "Embedding your query...", "Scanning knowledge graph...", "Ranking results..."]
-      : ["Tokenizing query...", "Searching index...", "Ranking results..."];
+      ? [t.search.stages.semantic, t.search.stages.semantic, t.search.stages.semantic, t.search.stages.semantic]
+      : [t.search.stages.keyword, t.search.stages.keyword, t.search.stages.keyword];
     let stageIdx = 0;
     const advanceInterval = isSemantic ? 2500 : 800;
     searchTimerRef.current = setInterval(() => {
@@ -156,27 +158,27 @@ export default function SearchPage() {
       const data = await res.json();
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
       if (data.success) { setSearchResults(data.data); }
-      else { alert(data.error || "Search failed"); }
+      else { alert(data.error || t.errors.generationFailed); }
     } catch {
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
-      alert("Network error or server unavailable.");
+      alert(t.errors.networkError);
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, searchMode]);
+  }, [searchQuery, searchMode, t]);
 
   return (
     <div>
-      <Header title="Knowledge Search" />
+      <Header title={t.search.title} />
       <div className="p-8">
         <div className="flex gap-0 border-b border-border mb-6">
-          {tabItems.map((t) => (
+          {tabItems.map((tab) => (
             <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`py-3 px-5 text-sm font-medium border-b-2 -mb-px transition-colors bg-transparent border-t-0 border-l-0 border-r-0 font-sans cursor-pointer ${activeTab === t.id ? "text-primary border-primary font-semibold" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-3 px-5 text-sm font-medium border-b-2 -mb-px transition-colors bg-transparent border-t-0 border-l-0 border-r-0 font-sans cursor-pointer ${activeTab === tab.id ? "text-primary border-primary font-semibold" : "text-muted-foreground border-transparent hover:text-foreground"}`}
             >
-              {t.label}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -222,7 +224,7 @@ export default function SearchPage() {
               <div className="flex items-center justify-center min-h-[560px]">
                 <div className="text-center text-muted-foreground">
                   <div className="w-10 h-10 mx-auto mb-3 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p>Loading knowledge graph...</p>
+                  <p>{t.common.states.loading}...</p>
                 </div>
               </div>
             ) : !kgTopology || kgTopology.nodes.length === 0 ? (
@@ -232,8 +234,8 @@ export default function SearchPage() {
                     <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
                     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                   </svg>
-                  <p className="text-sm">No knowledge graph yet.</p>
-                  <p className="text-xs mt-1">Index documents with &ldquo;Entity extraction + knowledge graph&rdquo; mode enabled.</p>
+                  <p className="text-sm">{t.topology.empty}</p>
+                  <p className="text-xs mt-1">{t.topology.emptyDesc}</p>
                 </div>
               </div>
             ) : (
