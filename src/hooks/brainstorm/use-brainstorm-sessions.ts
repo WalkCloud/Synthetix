@@ -63,6 +63,7 @@ export function useBrainstormSessions() {
   }
 
   async function deleteSession(id: string) {
+    if (!window.confirm(locale === "zh-CN" ? "确定删除此会话及其所有消息？" : "Delete this session and all its messages?")) return;
     const res = await fetch(`/api/v1/brainstorm/sessions/${id}`, { method: "DELETE" });
     const d = await res.json();
     if (d.success) {
@@ -80,7 +81,7 @@ export function useBrainstormSessions() {
   return {
     sessions, setSessions, activeId, messages, setMessages,
     outline, setOutline, status, setStatus, phase, setPhase,
-    loading, setLoading, outlineTaskId,
+    loading, setLoading, outlineTaskId, setOutlineTaskId,
     loadSession, createSession, deleteSession,
   };
 }

@@ -399,7 +399,6 @@ export type TranslationSchema = {
       generatingTitle: string;
       generatingDesc: string;
       generationSteps: string[];
-      generationLongHint: string;
       modeSelectTitle: string;
       modeSelectDesc: string;
       refiningTitle: string;

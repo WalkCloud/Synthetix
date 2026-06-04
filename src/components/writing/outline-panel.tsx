@@ -27,7 +27,7 @@ interface EditableSection {
 
 function getSectionStatus(status: string): "done" | "current" | "pending" {
   if (isSectionDone(status)) return "done";
-  if (["generating", "comparing", "reviewing", "retrieving"].includes(status)) return "current";
+  if (["generating", "comparing", "reviewing", "revising", "retrieving"].includes(status)) return "current";
   return "pending";
 }
 

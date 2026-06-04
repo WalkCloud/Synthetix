@@ -1,4 +1,4 @@
-import { normalizeProviderBaseUrl, buildProviderHeaders } from "@/lib/llm/provider-endpoints";
+import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 
 const FETCH_TIMEOUT_MS = 15_000;
 

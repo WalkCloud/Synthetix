@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { EN_PROMPTS } from "@/lib/prompts/locales/en-prompts";
 import { ZH_PROMPTS } from "@/lib/prompts/locales/zh-CN-prompts";
+import { ARCHETYPE_IDS, getAllArchetypes } from "@/lib/brainstorm/archetypes";
+import { buildFacilitatorPrompt } from "@/lib/prompts/builders/facilitator";
+import { buildWritingContext } from "@/lib/prompts/builders/writing-context";
 
 /**
  * Prompt snapshot parity tests.
@@ -23,49 +26,54 @@ describe("Prompt localization parity", () => {
     }
   });
 
-  describe("Facilitator prompt markers", () => {
-    const markers = [
-      "NEEDS_GATHERED",
-      "DIRECTION_CONFIRMED",
-      "GENERATE_DIRECT",
-      "SECTION_BY_SECTION",
-      "ALL_SECTIONS_CONFIRMED",
-    ];
-
-    it("EN facilitator contains all markers", () => {
-      for (const marker of markers) {
-        expect(EN_PROMPTS.facilitator).toContain(marker);
-      }
+  describe("Runtime prompt builders", () => {
+    it("locale prompt maps no longer carry old giant runtime prompts", () => {
+      expect("facilitator" in EN_PROMPTS).toBe(false);
+      expect("facilitator" in ZH_PROMPTS).toBe(false);
+      expect("writingSystem" in EN_PROMPTS).toBe(false);
+      expect("writingSystem" in ZH_PROMPTS).toBe(false);
     });
 
-    it("ZH facilitator contains all markers", () => {
-      for (const marker of markers) {
-        expect(ZH_PROMPTS.facilitator).toContain(marker);
-      }
+    it("facilitator prompt markers are supplied by phase-specific builders", () => {
+      expect(buildFacilitatorPrompt("en", "gathering")).toContain("NEEDS_GATHERED");
+      expect(buildFacilitatorPrompt("zh-CN", "direction")).toContain("DIRECTION_CONFIRMED");
+      expect(buildFacilitatorPrompt("en", "mode_select")).toContain("GENERATE_DIRECT");
+      expect(buildFacilitatorPrompt("zh-CN", "section_refine")).toContain("ALL_SECTIONS_CONFIRMED");
+    });
+
+    it("writing prompts are supplied by conditional skill builders", () => {
+      expect(buildWritingContext("en", { needsDiagram: false })).not.toContain("DIAGRAM_REQUEST");
+      expect(buildWritingContext("zh-CN", { needsDiagram: true })).toContain("DIAGRAM_REQUEST");
+      expect(buildWritingContext("en", { isParentSection: true })).toContain("child subsections");
+      expect(buildWritingContext("zh-CN", { isParentSection: false })).toContain("叶子章节");
     });
   });
 
-  describe("Outline prompt structural elements", () => {
-    const archetypes = [
-      "technical_solution",
-      "proposal",
-      "bidding",
-      "consulting",
-      "planning",
-      "assessment",
-      "operations",
-      "general",
-    ];
-
-    it("EN outline mentions all archetypes", () => {
-      for (const archetype of archetypes) {
-        expect(EN_PROMPTS.outline).toContain(archetype);
-      }
+  describe("Outline archetype registry", () => {
+    it("locale prompt maps no longer carry old outline prompts", () => {
+      expect("outline" in EN_PROMPTS).toBe(false);
+      expect("outline" in ZH_PROMPTS).toBe(false);
+      expect("outlineRepair" in EN_PROMPTS).toBe(false);
+      expect("outlineRepair" in ZH_PROMPTS).toBe(false);
     });
 
-    it("ZH outline mentions all archetypes", () => {
-      for (const archetype of archetypes) {
-        expect(ZH_PROMPTS.outline).toContain(archetype);
+    it("registry contains all supported archetypes with bilingual text", () => {
+      expect(ARCHETYPE_IDS).toEqual([
+        "technical_solution",
+        "proposal",
+        "bidding",
+        "consulting",
+        "planning",
+        "assessment",
+        "operations",
+        "general",
+      ]);
+
+      for (const archetype of getAllArchetypes()) {
+        for (const key of ["label", "useWhen", "principle", "skeleton", "focus"] as const) {
+          expect(archetype[key].en.length, `${archetype.id}.${key}.en`).toBeGreaterThan(0);
+          expect(archetype[key]["zh-CN"].length, `${archetype.id}.${key}.zh-CN`).toBeGreaterThan(0);
+        }
       }
     });
   });
@@ -81,24 +89,6 @@ describe("Prompt localization parity", () => {
       expect(ZH_PROMPTS.auditSystem).toContain("passed");
       expect(ZH_PROMPTS.auditSystem).toContain("score");
       expect(ZH_PROMPTS.auditSystem).toContain("issues");
-    });
-  });
-
-  describe("Writing system prompt key rules", () => {
-    it("EN writing system mentions diagram syntax", () => {
-      expect(EN_PROMPTS.writingSystem).toContain("DIAGRAM_REQUEST");
-    });
-
-    it("ZH writing system mentions diagram syntax", () => {
-      expect(ZH_PROMPTS.writingSystem).toContain("DIAGRAM_REQUEST");
-    });
-
-    it("EN writing system mentions hard-banned words", () => {
-      expect(EN_PROMPTS.writingSystem).toContain("HARD-BANNED");
-    });
-
-    it("ZH writing system mentions hard-banned words", () => {
-      expect(ZH_PROMPTS.writingSystem).toContain("禁用词汇");
     });
   });
 });

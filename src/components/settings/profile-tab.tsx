@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { useLocale } from "@/lib/i18n";
 import { useUser } from "@/lib/user-context";
 
@@ -11,6 +12,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
   const { user, refreshUser } = useUser();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailLocked, setEmailLocked] = useState(true);
   const [bio, setBio] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -24,6 +26,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     if (user) {
       setDisplayName(user.displayName);
       setEmail(user.email || "");
+      setEmailLocked(!!user.email);
       setAvatarUrl(user.avatarUrl);
     }
   }, [user]);
@@ -44,6 +47,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
     const data = await res.json();
     if (data.success) {
       setMessage({ type: "success", text: t.settings.profile.profileUpdated });
+      if (normalizedEmail) setEmailLocked(true);
       refreshUser();
     } else {
       const errorText = data.code === "invalidInput" && data.error === "emailAlreadyUsed"
@@ -151,7 +155,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             <div className="p-6 text-center">
               <div className="relative w-[120px] h-[120px] mx-auto mb-5 group">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+                  <Image src={avatarUrl} alt="Avatar" fill sizes="80px" className="rounded-full object-cover" unoptimized />
                 ) : (
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-bold text-[36px] tracking-tight">
                     {initials}
@@ -213,7 +217,28 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                 </div>
                 <div>
                   <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.profile.email}</label>
-                  <input type="email" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <div className="relative">
+                    <input type="email"
+                      disabled={emailLocked}
+                      className={`w-full px-3.5 py-2.5 pr-10 border rounded-lg text-sm ${emailLocked ? "bg-muted text-muted-foreground cursor-not-allowed" : "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"}`}
+                      value={email} onChange={(e) => setEmail(e.target.value)} />
+                    <button type="button" onClick={() => setEmailLocked(!emailLocked)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      tabIndex={-1}
+                      title={emailLocked ? "Click to unlock" : "Click to lock"}>
+                      {emailLocked ? (
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                   <span className="text-xs text-muted-foreground mt-1 block">{t.settings.profile.emailUsageHint}</span>
                 </div>
                 <div>

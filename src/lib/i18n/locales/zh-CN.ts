@@ -401,7 +401,6 @@ const zhCN = {
       generatingTitle: "正在生成大纲",
       generatingDesc: "正在组织章节层级、撰写隐藏写作要求，并准备检索线索。",
       generationSteps: ["读取已确认需求", "组织章节层级", "编写章节级写作指令", "准备知识库检索线索"],
-      generationLongHint: "这一步可能需要更久，因为每个章节都会生成后续完整文档写作要用的起草指导。",
       modeSelectTitle: "选择生成模式",
       modeSelectDesc: "请在对话中选择 A 直接生成，或选择 B 逐节细化。",
       refiningTitle: "正在细化章节",

@@ -60,6 +60,7 @@ export async function GET(request: Request): Promise<Response> {
       const derivedStatus = deriveDraftStatus(draft.sections);
       const { sections: _removed, _count, ...draftData } = draft;
       void _removed;
+      void _count;
       return { ...draftData, status: derivedStatus, sectionCount, progress: { accepted: acceptedCount, completed: doneCount, total: sectionCount, wordsWritten, wordsEstimated } };
     });
 

@@ -1,7 +1,5 @@
-import { NextResponse } from "next/server";
 import { refreshSession, setAuthCookies } from "@/lib/auth/session";
 import { errorResponse, successResponse } from "@/lib/api-helpers";
-import type { AuthUser } from "@/types/auth";
 
 export async function POST() {
   try {

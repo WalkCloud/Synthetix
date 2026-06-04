@@ -179,12 +179,6 @@ function applyMerges(
   return { chunks: resultChunks, topics };
 }
 
-function extractPreview(content: string, maxLen = 600): string {
-  return content
-    .replace(/!\[.*?\]\(data:image\/[^)]+\)/g, "[image]")
-    .slice(0, maxLen);
-}
-
 function extractFirstJsonArray(text: string): string | null {
   let depth = 0;
   let start = -1;

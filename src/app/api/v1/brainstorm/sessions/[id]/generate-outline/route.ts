@@ -4,6 +4,7 @@ import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-hel
 import { getQueue } from "@/lib/queue";
 import { resolveLocale } from "@/lib/i18n/server";
 import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
+import { taskMatchesSession } from "@/lib/brainstorm/task-matching";
 
 export async function POST(
   request: Request,
@@ -19,14 +20,17 @@ export async function POST(
   });
   if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
-  const existingTask = await db.asyncTask.findFirst({
+  const activeTasks = await db.asyncTask.findMany({
     where: {
       type: "outline_generate",
       status: { in: ["pending", "running"] },
-      inputData: { contains: id },
+      userId: user.id,
     },
+    select: { id: true, status: true, progress: true, inputData: true },
   });
+  const existingTask = activeTasks.find((task) => taskMatchesSession(task.inputData, id));
   if (existingTask) {
+    getQueue();
     return successResponse({ taskId: existingTask.id, status: "pending", progress: 0 }, 201);
   }
 

@@ -4,7 +4,6 @@ import {
   authErrorResponse,
   errorResponse,
   successResponse,
-  getErrorMessage,
 } from "@/lib/api-helpers";
 
 export async function GET(

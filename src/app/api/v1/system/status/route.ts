@@ -1,10 +1,6 @@
 import { db } from "@/lib/db";
 import { errorResponse, successResponse } from "@/lib/api-helpers";
 
-interface SystemStatus {
-  initialized: boolean;
-}
-
 export async function GET() {
   try {
     const userCount = await db.user.count();

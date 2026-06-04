@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { diagramTypeLabel } from "@/lib/writing/diagram";
 import type { DiagramRequest } from "@/lib/writing/diagram";
 
@@ -79,10 +80,13 @@ export function DiagramView({
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
       >
-        <img
+        <Image
           src={serveUrl}
           alt={title || "Architecture diagram"}
-          className="w-full rounded-xl border border-border bg-card"
+          width={1200}
+          height={675}
+          className="h-auto w-full rounded-xl border border-border bg-card"
+          unoptimized
           onError={() => setError(true)}
         />
         {interactive && hovering && (

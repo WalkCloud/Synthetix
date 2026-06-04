@@ -3,7 +3,7 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import { SYSTEM_PROMPT_CREATE, SYSTEM_PROMPT_EDIT, isCJK, translateLabels, stripCodeFences, repairJson } from "@/lib/writing/diagram-translate";
+import { isCJK, translateLabels, stripCodeFences, repairJson } from "@/lib/writing/diagram-translate";
 import { buildDiagramPrompts } from "@/lib/prompts";
 import type { LLMProvider } from "@/lib/llm/types";
 

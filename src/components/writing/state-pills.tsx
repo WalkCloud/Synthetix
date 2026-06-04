@@ -20,6 +20,7 @@ function getStateIndex(status: SectionStatus): number {
     generating: 1,
     comparing: 1,
     reviewing: 2,
+    revising: 2,
     summarized: 3,
     locked: 3,
     failed: -1,

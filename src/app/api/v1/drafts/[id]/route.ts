@@ -5,7 +5,6 @@ import {
   authErrorResponse,
   errorResponse,
   successResponse,
-  getErrorMessage,
 } from "@/lib/api-helpers";
 
 const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
@@ -87,7 +86,6 @@ export async function GET(
       if (refreshed) draft = refreshed;
     }
 
-    const totalSections = draft.sections.length;
     const derivedStatus = deriveDraftStatus(draft.sections);
 
     return successResponse({ ...draft, status: derivedStatus });
