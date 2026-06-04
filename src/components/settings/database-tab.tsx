@@ -162,7 +162,7 @@ export function DatabaseTab() {
           </div>
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${configured ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300"}`}>
             <span className={`w-2 h-2 rounded-full ${configured ? "bg-emerald-500" : "bg-amber-500"}`} />
-            {configured ? (dbType === "postgresql" ? "PostgreSQL" : "SQLite") : t.settings.database.notConfigured}
+            {configured ? (dbType === "postgresql" ? "PostgreSQL" : "Local (SQLite)") : t.settings.database.notConfigured}
           </div>
         </div>
         <div className="p-6">

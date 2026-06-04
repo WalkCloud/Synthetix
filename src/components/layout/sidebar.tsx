@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "@/lib/user-context";
@@ -283,9 +284,9 @@ function UserMenuTrigger({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-secondary transition-colors text-left bg-transparent border-none"
       >
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-semibold text-xs shrink-0 overflow-hidden">
+        <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-semibold text-xs shrink-0 overflow-hidden">
           {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+            <Image src={avatarUrl} alt="" fill sizes="32px" className="object-cover" unoptimized />
           ) : (
             initials
           )}

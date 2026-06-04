@@ -1,13 +1,19 @@
 "use client";
 
 import { ThemeProvider } from "next-themes";
-import { LocaleProvider } from "@/lib/i18n";
+import { LocaleProvider, type Locale } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/sonner";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  initialLocale,
+}: {
+  children: React.ReactNode;
+  initialLocale: Locale;
+}) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-      <LocaleProvider>
+      <LocaleProvider initialLocale={initialLocale}>
         {children}
         <Toaster />
       </LocaleProvider>

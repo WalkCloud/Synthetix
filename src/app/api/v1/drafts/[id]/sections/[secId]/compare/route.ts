@@ -6,6 +6,7 @@ import { compareSectionStream } from "@/lib/writing/generator";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { persistSectionReferences } from "@/lib/writing/persist-references";
 import { resolveModelOrFallback, resolveSecondModel } from "@/lib/writing/resolve-models";
+import { mergeSectionConstraints } from "@/lib/writing/constraints";
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
@@ -71,6 +72,10 @@ export async function POST(
   const constraints = body.constraints
     ? { wordLimit: body.constraints.wordLimit, additionalRequirements: body.constraints.additionalRequirements }
     : undefined;
+  const persistedConstraints = constraints?.additionalRequirements?.trim()
+    ? mergeSectionConstraints(section.constraints, { additionalRequirements: constraints.additionalRequirements.trim() })
+    : section.constraints;
+  const sectionForGeneration = { ...section, constraints: persistedConstraints };
 
   const encoder = new TextEncoder();
   let contentA = "";
@@ -86,10 +91,10 @@ export async function POST(
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        await db.section.update({ where: { id: sectionId }, data: { status: "comparing" } });
+        await db.section.update({ where: { id: sectionId }, data: { status: "comparing", constraints: persistedConstraints } });
 
         await compareSectionStream(
-          draft, section, completedSections, user.id,
+          draft, sectionForGeneration, completedSections, user.id,
           { provider: modelAProvider, modelId: modelARecord.modelId, modelConfigId: modelARecord.id },
           { provider: modelBProvider, modelId: modelBRecord.modelId, modelConfigId: modelBRecord.id },
           constraints,

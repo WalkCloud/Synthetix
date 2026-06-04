@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { parseDiagramRequests } from "@/lib/writing/diagram";
+import { ensureRequiredDiagramRequest } from "@/lib/writing/diagram-requirements";
 import { injectMarkerIds } from "@/lib/writing/marker-parser";
+import type { ContextInput } from "@/lib/writing/context";
 
 import type { DiagramRequest, ImageRequest } from "./diagram";
 
@@ -29,8 +31,11 @@ export async function createAssetRequests(
   draftId: string,
   sectionId: string,
   rawContent: string,
+  section?: ContextInput["section"],
+  constraints?: ContextInput["constraints"],
 ): Promise<{ diagrams: ParsedAssetRequest[]; images: ParsedAssetRequest[]; contentWithIds: string }> {
-  const contentWithIds = injectMarkerIds(rawContent);
+  const contentToParse = section ? ensureRequiredDiagramRequest(rawContent, section, constraints) : rawContent;
+  const contentWithIds = injectMarkerIds(contentToParse);
   const { diagrams, images } = parseDiagramRequests(contentWithIds);
   if (diagrams.length === 0 && images.length === 0) {
     return { diagrams: normalizeDiagrams(diagrams), images: normalizeImages(images), contentWithIds };

@@ -15,7 +15,7 @@ type TabId = "search" | "knowledge-graph";
 
 export default function SearchPage() {
   const router = useRouter();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
   const tabItems: { id: TabId; label: string }[] = [
@@ -35,9 +35,16 @@ export default function SearchPage() {
   const [kgZoom, setKgZoom] = useState(1);
   const [kgSearch, setKgSearch] = useState("");
   const [kgCenter, setKgCenter] = useState("");
+  const [kgGraphNotice, setKgGraphNotice] = useState("");
   const [kgSelectedNodeId, setKgSelectedNodeId] = useState<string | null>(null);
   const [kgEntityDetailLoading, setKgEntityDetailLoading] = useState(false);
   const kgCacheRef = useRef<TopologyResponse | null>(null);
+
+  const missingEntityMessage = useCallback((entity: string) => (
+    locale === "zh-CN"
+      ? `未找到“${entity}”的关系图，已保留当前图谱。`
+      : `No relationship graph found for "${entity}". Keeping the current graph.`
+  ), [locale]);
 
   const loadKnowledgeGraph = useCallback(async (entity?: string) => {
     setKgLoading(true);
@@ -49,23 +56,30 @@ export default function SearchPage() {
       const d = await res.json();
       if (d.success && d.data?.graph) {
         const kg = d.data.graph;
+        const nodes = Array.isArray(kg.nodes) ? kg.nodes : [];
+        const edges = Array.isArray(kg.edges) ? kg.edges : [];
+        if (entity && nodes.length === 0) {
+          setKgGraphNotice(missingEntityMessage(entity));
+          setKgLoading(false);
+          return;
+        }
         const stats = {
           totalReferences: 0, uniqueDocuments: 0, sectionsWithReferences: 0, totalSections: 0,
           mostReferencedDoc: null, coverage: "",
-          totalEntities: kg.nodes?.length || 0,
-          totalRelations: kg.edges?.length || 0,
+          totalEntities: nodes.length,
+          totalRelations: edges.length,
           leafCount: d.data.leaf_count || 0,
         };
         const data: TopologyResponse = {
           draft: { id: "kg-root", title: entity || "Knowledge Graph", status: "ready" },
-          nodes: kg.nodes.map((node: { id: string; label: string; type: string; description: string }) => ({
+          nodes: nodes.map((node: { id: string; label: string; type: string; description: string }) => ({
             id: node.id, type: "entity" as const,
             label: node.label || node.id?.slice(0, 30) || "Entity",
             format: "entity", referenceCount: 0, relevanceScore: 0,
             entityType: node.type || "entity",
             description: node.description || "",
           })),
-          edges: kg.edges.map((edge: { source: string; target: string; label: string; weight: number; description: string }) => ({
+          edges: edges.map((edge: { source: string; target: string; label: string; weight: number; description: string }) => ({
             source: edge.source, target: edge.target,
             weight: edge.weight || 1, sectionIds: [], sectionLabels: [],
             description: edge.description,
@@ -73,15 +87,26 @@ export default function SearchPage() {
           stats,
         };
         setKgTopology(data);
+        setKgGraphNotice("");
         if (!entity) kgCacheRef.current = data;
       } else {
-        setKgTopology(null);
+        if (entity) {
+          setKgGraphNotice(missingEntityMessage(entity));
+        } else {
+          setKgGraphNotice("");
+          setKgTopology(null);
+        }
       }
     } catch {
-      setKgTopology(null);
+      if (entity) {
+        setKgGraphNotice(missingEntityMessage(entity));
+      } else {
+        setKgGraphNotice("");
+        setKgTopology(null);
+      }
     }
     setKgLoading(false);
-  }, []);
+  }, [missingEntityMessage]);
 
   useEffect(() => {
     if (activeTab !== "knowledge-graph" || !kgSelectedNodeId) return;
@@ -213,13 +238,33 @@ export default function SearchPage() {
               onZoomFit={() => setKgZoom(1)}
               kgSearch={kgSearch}
               onKgSearchChange={setKgSearch}
-              onKgSearchSubmit={() => { if (kgSearch.trim()) { setKgCenter(kgSearch.trim()); setKgSearch(""); }}}
+              onKgSearchSubmit={(entityName) => {
+                const nextCenter = (entityName ?? kgSearch).trim();
+                if (!nextCenter) return;
+                setKgGraphNotice("");
+                if (nextCenter === kgCenter) {
+                  loadKnowledgeGraph(nextCenter);
+                } else {
+                  setKgCenter(nextCenter);
+                }
+                setKgSearch("");
+              }}
               kgCenter={kgCenter}
-              onKgCenterClear={() => { setKgCenter(""); setKgTopology(kgCacheRef.current); }}
+              onKgCenterClear={() => {
+                setKgGraphNotice("");
+                setKgSelectedNodeId(null);
+                setKgCenter("");
+                if (kgCacheRef.current) setKgTopology(kgCacheRef.current);
+              }}
               totalEntities={kgTopology?.stats?.totalEntities}
               totalRelations={kgTopology?.stats?.totalRelations}
               leafCount={kgTopology?.stats?.leafCount}
             />
+            {kgGraphNotice && (
+              <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300">
+                {kgGraphNotice}
+              </div>
+            )}
             {kgLoading && !kgTopology ? (
               <div className="flex items-center justify-center min-h-[560px]">
                 <div className="text-center text-muted-foreground">
@@ -257,7 +302,10 @@ export default function SearchPage() {
                 }}
                 onNodeDblClick={(nodeId) => {
                   const node = kgTopology.nodes.find(n => n.id === nodeId);
-                  if (node) setKgCenter(node.label || nodeId);
+                  if (node) {
+                    setKgGraphNotice("");
+                    setKgCenter(node.label || nodeId);
+                  }
                 }}
                 entityDetailLoading={kgEntityDetailLoading}
                 graphMode="knowledge"

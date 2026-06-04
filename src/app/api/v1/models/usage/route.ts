@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     ...(usageModule && { module: usageModule }),
   };
 
-  const [usage, byModelRaw, byModuleRaw, summaryRaw, distinctModels] =
+  const [usage, byModelRaw, byModuleRaw, summaryRaw] =
     await Promise.all([
       db.tokenUsage.findMany({
         where,
@@ -50,10 +50,6 @@ export async function GET(request: Request) {
         where,
         _sum: { inputTokens: true, outputTokens: true },
         _count: true,
-      }),
-      db.tokenUsage.groupBy({
-        by: ["modelConfigId"],
-        where,
       }),
     ]);
 

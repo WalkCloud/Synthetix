@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { generateSectionFull } from "@/lib/writing/generator";
 import { generateSummary } from "@/lib/writing/summarizer";
 import { createAssetRequests } from "@/lib/writing/asset-pipeline";
+import { buildEffectiveConstraints } from "@/lib/writing/constraints";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
 
@@ -57,12 +58,26 @@ async function createAssetsFromContent(
   draftId: string,
   sectionId: string,
   rawContent: string,
+  section: {
+    title: string;
+    description?: string | null;
+    keyPoints?: string | null;
+    estimatedWords?: number | null;
+    constraints?: string | null;
+  },
+  constraints?: Parameters<typeof buildEffectiveConstraints>[1],
 ): Promise<string> {
-  const { contentWithIds } = await createAssetRequests(draftId, sectionId, rawContent);
+  const { contentWithIds } = await createAssetRequests(
+    draftId,
+    sectionId,
+    rawContent,
+    section,
+    buildEffectiveConstraints(section.constraints, constraints),
+  );
   return contentWithIds;
 }
 
-async function lockGeneratedSection(
+async function finalizeGeneratedSection(
   sectionId: string,
   content: string,
   title: string,
@@ -176,7 +191,7 @@ export async function generateDraftAll(
           return { generated, cancelled: true, errors };
         }
 
-        await lockGeneratedSection(
+        await finalizeGeneratedSection(
           section.id,
           section.content,
           section.title,
@@ -223,12 +238,13 @@ export async function generateDraftAll(
         orderBy: { index: "asc" },
       });
 
+      const sectionConstraints = section.estimatedWords ? { wordLimit: section.estimatedWords } : undefined;
       const result = await generateSectionFull(
         draft,
         section,
         completedSections,
         userId,
-        section.estimatedWords ? { wordLimit: section.estimatedWords } : undefined,
+        sectionConstraints,
         modelConfigId,
       );
 
@@ -263,7 +279,7 @@ export async function generateDraftAll(
       }
 
       const content = stripLeadingSectionTitle(
-        await createAssetsFromContent(draftId, section.id, result.content),
+        await createAssetsFromContent(draftId, section.id, result.content, section, sectionConstraints),
         section.title,
       );
 
@@ -286,7 +302,7 @@ export async function generateDraftAll(
         return { generated, cancelled: true, errors };
       }
 
-      await lockGeneratedSection(
+      await finalizeGeneratedSection(
         section.id,
         content,
         section.title,

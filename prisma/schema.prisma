@@ -123,7 +123,7 @@ model Document {
 
   user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   children Document[]   @relation("DocumentSplit")
-  parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id])
+  parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id], onDelete: Cascade)
   chunks   DocumentChunk[]
   tags     DocumentTag[]
   images   DocumentImage[]
@@ -244,7 +244,7 @@ model Section {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   draft    Draft     @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  parent   Section?  @relation("SectionTree", fields: [parentId], references: [id])
+  parent   Section?  @relation("SectionTree", fields: [parentId], references: [id], onDelete: Cascade)
   children Section[] @relation("SectionTree")
   versions SectionVersion[]
   references SectionReference[]

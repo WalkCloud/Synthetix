@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import type { GenerationMode, SectionMeta } from "@/types/writing";
-import { isSectionDone } from "@/types/writing";
 import { getLocalizedError } from "@/lib/i18n";
 
 interface Reference {
@@ -190,7 +189,7 @@ export function useGeneration(
     setIsHumanizing(false);
   }, [activeSectionId, id, loadDraft]);
 
-  const handleUnlock = useCallback(async (targetStatus?: "reviewing" | "pending") => {
+  const handleUnlock = useCallback(async (targetStatus?: "reviewing" | "pending" | "revising") => {
     if (!activeSectionId) return;
     try {
       const res = await fetch(

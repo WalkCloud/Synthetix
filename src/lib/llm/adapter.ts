@@ -53,6 +53,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
+    if (params.response_format) body.response_format = params.response_format;
 
     const response = await fetchWithTimeout(url, {
       method: "POST",
@@ -91,6 +92,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     };
     if (params.temperature !== undefined) body.temperature = params.temperature;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
+    if (params.response_format) body.response_format = params.response_format;
 
     const response = await fetchWithTimeout(url, {
       method: "POST",
@@ -113,9 +115,16 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     let lastOutputTokens: number | undefined;
     let accumulatedContent = "";
 
+    const STREAM_READ_TIMEOUT_MS = 120_000; // 2 min timeout per read
+
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await Promise.race([
+          reader.read(),
+          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) =>
+            setTimeout(() => reject(new Error("Stream read timeout — LLM response stalled")), STREAM_READ_TIMEOUT_MS)
+          ),
+        ]);
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });

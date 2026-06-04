@@ -51,7 +51,7 @@ export function TopologyCanvas({
   const autoRef = useRef(true);
   const autoTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [dragTick, setDragTick] = useState(0);
+  const [, setDragTick] = useState(0);
 
   const dragCardId = useRef<string | null>(null);
   const dragStartMouse = useRef({ x: 0, y: 0 });
@@ -173,7 +173,7 @@ export function TopologyCanvas({
   const cy = size.h / 2;
   const radius = Math.min(size.w, size.h) * 0.34 * zoom;
 
-  const items = useMemo(() => {
+  const items = (() => {
     const result: {
       id: string; label: string; format: string; weight: number;
       color: string; bg: string; x: number; y: number;
@@ -196,7 +196,7 @@ export function TopologyCanvas({
       });
     }
     return result;
-  }, [refNodes, edgesByTarget, cx, cy, radius, dragTick, isKnowledge, zoom]);
+  })();
 
   const itemById = useMemo(() => {
     const m = new Map<string, { x: number; y: number; color: string }>();
@@ -205,8 +205,6 @@ export function TopologyCanvas({
   }, [items]);
 
   const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) ?? null : null;
-  const selectedEdges = selectedNodeId
-    ? edges.filter((e) => e.source === selectedNodeId || e.target === selectedNodeId) : [];
 
   const wrapperStyle: React.CSSProperties = {
     position: "absolute",
@@ -317,10 +315,9 @@ export function TopologyCanvas({
       {selectedNode && (
         <TopologyDetailPanel
           node={selectedNode}
-          edges={selectedEdges}
           loading={entityDetailLoading}
           onClose={() => onNodeClick("")}
-          onNavigate={isKnowledge ? (label) => { if (onNodeDblClick) onNodeDblClick(selectedNode.id); } : undefined}
+          onNavigate={isKnowledge ? () => { if (onNodeDblClick) onNodeDblClick(selectedNode.id); } : undefined}
         />
       )}
     </div>

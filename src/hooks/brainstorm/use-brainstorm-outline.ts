@@ -5,7 +5,7 @@ import type { OutlineSection } from "@/lib/outline-tree";
 import type { BrainstormOutline, BrainstormSession, Phase } from "./types";
 import { useLocale } from "@/lib/i18n";
 
-const POLL_INTERVAL = 2000;
+const POLL_INTERVAL = 1000;
 
 interface UseBrainstormOutlineOptions {
   activeId: string | null;
@@ -16,24 +16,30 @@ interface UseBrainstormOutlineOptions {
   loading: boolean;
   setLoading: (v: boolean) => void;
   setSessions: React.Dispatch<React.SetStateAction<BrainstormSession[]>>;
-  scrollToEnd: () => void;
+  setOutlineTaskId: (id: string | null) => void;
 }
 
 export function useBrainstormOutline({
   activeId, outline, setOutline, setStatus, setPhase,
-  loading, setLoading, setSessions, scrollToEnd,
+  loading, setLoading, setSessions, setOutlineTaskId,
 }: UseBrainstormOutlineOptions) {
   const { locale, t } = useLocale();
   const router = useRouter();
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [outlineError, setOutlineError] = useState<string | null>(null);
   const [editSections, setEditSections] = useState<OutlineSection[]>([]);
   const [editTitle, setEditTitle] = useState("");
   const [sectionNotes, setSectionNotes] = useState<{ num: string; title: string; notes: string }[]>([]);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+  const pollingTaskIdRef = useRef<string | null>(null);
+  const retryCountRef = useRef(0);
+  const backoffRef = useRef(POLL_INTERVAL);
+  const MAX_RETRIES = 3;
+  const MAX_BACKOFF = 12000;
 
   useEffect(() => {
     return () => {
@@ -50,25 +56,45 @@ export function useBrainstormOutline({
     }).catch(() => {});
   }
 
-  function stopPolling() {
+  const stopPolling = useCallback(() => {
     if (pollRef.current) {
-      clearInterval(pollRef.current);
+      clearTimeout(pollRef.current);
       pollRef.current = null;
     }
-  }
+  }, []);
 
-  function startPolling(taskId: string) {
+  const resetPolling = useCallback(() => {
     stopPolling();
+    pollingTaskIdRef.current = null;
+    retryCountRef.current = 0;
+    backoffRef.current = POLL_INTERVAL;
+  }, [stopPolling]);
 
-    pollRef.current = setInterval(async () => {
+  const startPolling = useCallback((taskId: string) => {
+    // Idempotent guard: don't start a new poll cycle for the same task
+    if (pollingTaskIdRef.current === taskId) return;
+
+    stopPolling();
+    pollingTaskIdRef.current = taskId;
+    retryCountRef.current = 0;
+    backoffRef.current = POLL_INTERVAL;
+
+    const poll = async () => {
       try {
         const res = await fetch(`/api/v1/tasks/${taskId}`);
         const d = await res.json();
-        if (!d.success) { stopPolling(); setIsGeneratingOutline(false); setLoading(false); return; }
+        if (!d.success) {
+          resetPolling();
+          setIsGeneratingOutline(false);
+          setLoading(false);
+          return;
+        }
 
         const task = d.data;
+        if (pollingTaskIdRef.current !== taskId) return;
+
         if (task.status === "completed" && task.result) {
-          stopPolling();
+          resetPolling();
           const generatedOutline = task.result.outline;
           const generatedTitle = task.result.title;
           const currentActiveId = activeIdRef.current;
@@ -82,26 +108,43 @@ export function useBrainstormOutline({
           }
           setIsGeneratingOutline(false);
           setLoading(false);
-        } else if (task.status === "failed") {
-          stopPolling();
+        } else if (task.status === "failed" || task.status === "cancelled") {
+          resetPolling();
           setIsGeneratingOutline(false);
           setLoading(false);
-          console.error("Outline generation failed:", task.error);
-        } else if (task.status === "cancelled") {
-          stopPolling();
-          setIsGeneratingOutline(false);
-          setLoading(false);
+          if (task.status === "failed") {
+            console.warn("Outline generation failed:", task.error);
+          }
+        } else {
+          // Still pending/running — schedule next poll with backoff
+          retryCountRef.current = 0; // reset retry count on success
+          backoffRef.current = Math.min(backoffRef.current * 1.3, MAX_BACKOFF);
+          pollRef.current = setTimeout(poll, backoffRef.current);
         }
       } catch {
-        stopPolling();
-        setIsGeneratingOutline(false);
-        setLoading(false);
+        // Network error — retry with backoff, up to MAX_RETRIES
+        retryCountRef.current += 1;
+        if (retryCountRef.current > MAX_RETRIES) {
+          resetPolling();
+          setIsGeneratingOutline(false);
+          setLoading(false);
+          return;
+        }
+        backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
+        pollRef.current = setTimeout(poll, backoffRef.current);
       }
-    }, POLL_INTERVAL);
-  }
+    };
+
+    pollRef.current = setTimeout(poll, POLL_INTERVAL);
+  }, [
+    setLoading, setOutline, setPhase, setSessions, setStatus,
+    stopPolling, resetPolling,
+    t.brainstorm.defaultSessionTitle, t.brainstorm.status.complete,
+  ]);
 
   const generateOutline = useCallback(async () => {
     if (!activeId) return;
+    setOutlineError(null);
     setLoading(true); setIsGeneratingOutline(true);
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST", headers: { "x-locale": locale } });
@@ -109,22 +152,27 @@ export function useBrainstormOutline({
       if (d.success && d.data?.taskId) {
         startPolling(d.data.taskId);
       } else {
+        setOutlineError("Failed to start outline generation. Please retry.");
         setIsGeneratingOutline(false); setLoading(false);
       }
     } catch {
+      setOutlineError("Network error while starting outline generation.");
       setIsGeneratingOutline(false); setLoading(false);
     }
-  }, [activeId, locale]);
+  }, [activeId, locale, setLoading, startPolling]);
 
-  function startPollingExternal(taskId: string) {
+  const startPollingExternal = useCallback((taskId: string) => {
     setIsGeneratingOutline(true);
     setLoading(true);
     startPolling(taskId);
-  }
+  }, [setLoading, startPolling]);
 
   async function clearOutline() {
     if (!activeId || loading) return;
-    stopPolling();
+    resetPolling();
+    setIsGeneratingOutline(false);
+    setOutlineTaskId(null);
+    setOutlineError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}`, {
@@ -133,8 +181,51 @@ export function useBrainstormOutline({
         body: JSON.stringify({ action: "clearOutline" }),
       });
       const d = await res.json();
-      if (d.success) { setOutline(null); setStatus(t.brainstorm.status.active); setPhase("gathering"); setSectionNotes([]); }
+      if (d.success) {
+        setOutline(null); setStatus(t.brainstorm.status.active); setPhase("gathering"); setSectionNotes([]);
+      } else {
+        setOutlineError("Failed to clear outline. Please retry.");
+      }
+    } catch {
+      setOutlineError("Network error while clearing outline.");
     } finally { setLoading(false); }
+  }
+
+  async function regenerateOutline() {
+    if (!activeId || loading) return;
+    resetPolling();
+    setOutlineTaskId(null);
+    setOutline(null);
+    setPhase("ready");
+    setOutlineError(null);
+    setIsGeneratingOutline(true);
+    setLoading(true);
+    try {
+      const clearRes = await fetch(`/api/v1/brainstorm/sessions/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearOutline" }),
+      });
+      const clearData = await clearRes.json();
+      if (!clearData.success) throw new Error("Failed to clear outline");
+
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, {
+        method: "POST",
+        headers: { "x-locale": locale },
+      });
+      const d = await res.json();
+      if (d.success && d.data?.taskId) {
+        startPolling(d.data.taskId);
+        return;
+      }
+
+      throw new Error("Failed to start outline generation");
+    } catch {
+      setOutlineError("Failed to regenerate outline. Please retry.");
+      setIsGeneratingOutline(false);
+      setLoading(false);
+      setPhase("ready");
+    }
   }
 
   async function confirmAndWrite() {
@@ -208,9 +299,9 @@ export function useBrainstormOutline({
   }
 
   return {
-    isGeneratingOutline, confirming, editing, editSections, editTitle, setEditTitle,
+    isGeneratingOutline, confirming, editing, outlineError, editSections, editTitle, setEditTitle,
     sectionNotes,
-    generateOutline, clearOutline, confirmAndWrite,
+    generateOutline, clearOutline, regenerateOutline, confirmAndWrite,
     startEditing, cancelEditing, saveEditing,
     updateEditNode, removeEditNode, addEditChild, addEditSection,
     totalWords, startPollingExternal, stopPolling,

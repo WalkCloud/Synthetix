@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
-import type { SplitChunk } from "@/lib/documents/splitter";
 import { semanticSplit } from "@/lib/documents/semantic-splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
@@ -418,7 +417,6 @@ export function indexWithLightRAG(
 
 export async function indexDocumentImages(
   ctx: ProcessingContext,
-  _storage: StorageAdapter,
 ): Promise<void> {
   const imagesDir = path.join(ctx.outputDir, "images");
   if (!fs.existsSync(imagesDir)) return;

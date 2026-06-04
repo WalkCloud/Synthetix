@@ -7,7 +7,9 @@
 
 ## 1. 头脑风暴对话提示词
 
-**源文件**：`src/app/api/v1/brainstorm/sessions/[id]/message/route.ts`（第 9-40 行，变量 `FACILITATOR_PROMPT`）
+**源文件**：`src/lib/prompts/skills/index.ts`（brainstorm prompt skills）
+
+**加载入口**：`src/lib/prompts/builders/facilitator.ts` 的 `buildFacilitatorPrompt()`；消息 API 按当前阶段调用该 builder，不再保存或加载巨型 facilitator 提示词。
 
 ```
 你是一位顶尖的文档架构师。你的目标是帮助用户构建高质量的文档大纲。
@@ -34,9 +36,9 @@
 用户会对你的大纲提出修改意见。根据反馈调整，并再次展示完整的修订版本。
 
 ## 触发条件
-当你认为大纲结构已基本就绪，或用户明确确认大纲并要求生成时，立即在回复末尾附加标记：OUTLINE_REQUESTED
+当你认为大纲结构已基本就绪，或用户明确确认大纲并要求生成时，按当前 marker system 在回复末尾附加对应标记，例如 `DIRECTION_CONFIRMED`、`GENERATE_DIRECT` 或 `ALL_SECTIONS_CONFIRMED`。
 
-如果用户确认当前大纲，直接回复：OUTLINE_REQUESTED
+如果用户确认当前大纲，进入生成方式选择或最终生成确认流程。
 
 ## 回复原则
 - 每次回复保持简洁清晰，避免冗长
@@ -48,7 +50,7 @@
 
 ## 2. 大纲生成提示词
 
-**源文件**：`src/app/api/v1/brainstorm/sessions/[id]/generate-outline/route.ts`（第 9-46 行，变量 `OUTLINE_PROMPT`）
+**源文件**：`src/lib/brainstorm/outline-prompt.ts`（`buildLightweightOutlinePrompt()`）
 
 ```
 根据上述对话，生成一份完整的文档大纲。
@@ -302,8 +304,8 @@
 
 | # | 名称 | 源文件 | 温度 | 用途 |
 |---|------|--------|------|------|
-| 1 | FACILITATOR_PROMPT | `brainstorm/sessions/[id]/message/route.ts` | 默认 | 引导用户构建大纲 |
-| 2 | OUTLINE_PROMPT | `brainstorm/sessions/[id]/generate-outline/route.ts` | 默认 | 从对话生成 JSON 大纲 |
+| 1 | Brainstorm Prompt Skills | `src/lib/prompts/skills/index.ts` | 默认 | 按阶段引导用户构建大纲 |
+| 2 | `buildLightweightOutlinePrompt()` | `src/lib/brainstorm/outline-prompt.ts` | 默认 | 从结构化摘要生成 JSON 大纲 |
 | 3 | buildSystemMessage() | `src/lib/writing/context.ts` | 0.7 | 按章节生成文档内容 |
 | 4 | buildSummaryMessages() | `src/lib/writing/summarizer.ts` | 0.3 | 为已完成章节生成摘要 |
 | 5 | AUDIT_PROMPT + REWRITE_PROMPT | `src/lib/writing/humanizer.ts` | 0.75 | 两轮拟人化（审计+重写） |

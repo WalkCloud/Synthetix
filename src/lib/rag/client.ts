@@ -1,7 +1,6 @@
-import path from "path";
 import { spawnPythonJson } from "@/lib/python";
 
-const RAG_MANAGE_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_manage.py");
+const RAG_MANAGE_SCRIPT = "workers/python/rag_manage.py";
 
 export interface EmbedConfig {
   apiBase: string;

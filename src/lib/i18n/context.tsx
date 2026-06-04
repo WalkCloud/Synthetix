@@ -54,16 +54,24 @@ function isValidLocale(value: string | null): value is Locale {
   return value !== null && (SUPPORTED_LOCALES as readonly string[]).includes(value);
 }
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+export function LocaleProvider({
+  children,
+  initialLocale = DEFAULT_LOCALE,
+}: {
+  children: ReactNode;
+  initialLocale?: Locale;
+}) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
   useEffect(() => {
     const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
     if (isValidLocale(stored)) {
       setLocaleState(stored);
       document.documentElement.lang = stored;
+    } else {
+      document.documentElement.lang = initialLocale;
     }
-  }, []);
+  }, [initialLocale]);
 
   const format = useMemo<FormatHelpers>(() => ({
     date: (date) => formatDate(date, locale),

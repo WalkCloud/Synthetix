@@ -5,7 +5,6 @@ import {
   authErrorResponse,
   errorResponse,
   successResponse,
-  getErrorMessage,
 } from "@/lib/api-helpers";
 
 async function generateSummaryBackground(sectionId: string, content: string, title: string, userId: string) {

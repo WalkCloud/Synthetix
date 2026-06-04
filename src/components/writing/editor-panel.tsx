@@ -12,12 +12,6 @@ import { ContentRenderer } from "./content-renderer";
 import { Spinner } from "@/components/shared/spinner";
 import { useLocale } from "@/lib/i18n";
 
-interface SectionConstraints {
-  wordLimit: number;
-  additionalRequirements: string;
-  generationMode: GenerationMode;
-}
-
 interface EditorPanelProps {
   section: SectionMeta | null;
   allSections: SectionMeta[];
@@ -31,7 +25,7 @@ interface EditorPanelProps {
   onSelectModel: (source: "a" | "b") => Promise<void>;
   onConfirm: () => void;
   onHumanize: () => void;
-  onUnlock: (status?: "reviewing" | "pending") => Promise<void>;
+  onUnlock: (status?: "reviewing" | "pending" | "revising") => Promise<void>;
   onSaveEdit: (content: string) => void;
   onSaveEstimatedWords?: (words: number) => void;
   isGenerating: boolean;
@@ -112,7 +106,6 @@ export function EditorPanel({
 
     if (typingRef.current) return;
 
-    let lastIdx = 0;
     const tick = () => {
       setDisplayedContent((prev) => {
         const target = targetRef.current;
@@ -122,7 +115,6 @@ export function EditorPanel({
         }
         const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
         const next = target.slice(0, Math.min(prev.length + step, target.length));
-        lastIdx = next.length;
         return next;
       });
       typingRef.current = requestAnimationFrame(tick);
@@ -198,7 +190,7 @@ export function EditorPanel({
     onGenerate(generationMode, { wordLimit, additionalRequirements, generationMode });
   }, [generationMode, wordLimit, additionalRequirements, onGenerate, onSaveEstimatedWords]);
 
-  const handleEdit = useCallback((content: string, _source: "a" | "b") => {
+  const handleEdit = useCallback((content: string) => {
     setEditingContent(content);
   }, []);
 
@@ -216,7 +208,8 @@ export function EditorPanel({
   const isComparing = section.status === "comparing";
   const isReviewing = section.status === "reviewing";
   const canGenerate = section.status === "pending" || section.status === "failed";
-  const canConfirm = isReviewing || section.status === "comparing";
+  const isRevising = section.status === "revising";
+  const canConfirm = isReviewing || isRevising || section.status === "comparing";
   const isLocked = isSectionDone(section.status);
   const isServerGenerating = !isGenerating && (section.status === "generating" || section.status === "retrieving");
 
@@ -288,7 +281,7 @@ export function EditorPanel({
                 </span>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => { onUnlock(); setEditingContent(section.content || ""); }}
+                    onClick={() => { onUnlock("revising"); setEditingContent(section.content || ""); }}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 border border-border text-muted-foreground rounded-lg text-xs font-semibold hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">

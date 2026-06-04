@@ -55,7 +55,7 @@ export async function GET() {
 
   const settings = readSettings(user.id);
   const dataRoot = settings.localPath || process.env.DOCUMENT_ROOT || "./data/documents";
-  const dataRootAbs = path.isAbsolute(dataRoot) ? dataRoot : path.join(process.cwd(), dataRoot);
+  const dataRootAbs = path.isAbsolute(dataRoot) ? dataRoot : path.join(/* turbopackIgnore: true */ process.cwd(), dataRoot);
 
   let documentsBytes = 0;
   try {

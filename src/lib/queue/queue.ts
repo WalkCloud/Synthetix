@@ -129,7 +129,7 @@ export class TaskQueue {
 
     // Atomic claim: try to update a pending task to "running" in a single query
     // This prevents race conditions when multiple workers call processNext concurrently
-    const claimed = await db.$queryRaw<{ id: string; type: string; inputData: string | null }[]>`
+    const claimed = await db.$queryRaw<{ id: string; type: string; input_data: string | null }[]>`
       UPDATE async_tasks
       SET status = 'running', updated_at = ${new Date()}
       WHERE id = (
@@ -149,7 +149,7 @@ export class TaskQueue {
     this.activeCount += 1;
 
     try {
-      await this.executeTask(task.id, task.type as TaskType, task.inputData);
+      await this.executeTask(task.id, task.type as TaskType, task.input_data);
     } finally {
       this.activeCount -= 1;
       void this.processNext();

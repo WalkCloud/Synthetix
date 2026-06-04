@@ -2,11 +2,12 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { parseDiagramRequests } from "@/lib/writing/diagram";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { createAssetRequests } from "@/lib/writing/asset-pipeline";
+import { buildEffectiveConstraints } from "@/lib/writing/constraints";
 import {
   authErrorResponse,
   errorResponse,
   successResponse,
-  getErrorMessage,
 } from "@/lib/api-helpers";
 
 interface UpdateSectionBody {
@@ -98,10 +99,18 @@ export async function PUT(
         );
       }
       const cleanedSource = stripLeadingSectionTitle(sourceContent, section.title);
-      updateData.content = cleanedSource;
+      const { contentWithIds } = await createAssetRequests(
+        draftId,
+        sectionId,
+        cleanedSource,
+        section,
+        buildEffectiveConstraints(section.constraints),
+      );
+      const finalContent = stripLeadingSectionTitle(contentWithIds, section.title);
+      updateData.content = finalContent;
       updateData.selectedModel =
         body.selectedSource === "a" ? section.modelA : section.modelB;
-      updateData.wordCount = cleanedSource.split(/\s+/).filter(Boolean).length;
+      updateData.wordCount = finalContent.split(/\s+/).filter(Boolean).length;
       updateData.status = "reviewing";
     } else if (body.content !== undefined) {
       const { cleaned, diagrams, images } = parseDiagramRequests(body.content);

@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { buildFacilitatorPrompt } from "@/lib/prompts/builders/facilitator";
+import { buildWritingContext } from "@/lib/prompts/builders/writing-context";
+
+describe("prompt skill builders", () => {
+  it("builds a discovery prompt without unrelated later-stage markers", () => {
+    const prompt = buildFacilitatorPrompt("en", "gathering");
+
+    expect(prompt).toContain("NEEDS_GATHERED");
+    expect(prompt).toContain("expected length, word count, page count, or format");
+    expect(prompt).toContain("only if it naturally belongs in the current turn");
+    expect(prompt).toContain("A. [option title]");
+    expect(prompt).toContain("D. Other");
+    expect(prompt).not.toContain("DIRECTION_CONFIRMED");
+    expect(prompt).not.toContain("ALL_SECTIONS_CONFIRMED");
+  });
+
+  it("builds a direction prompt focused on structure selection", () => {
+    const prompt = buildFacilitatorPrompt("en", "direction");
+
+    expect(prompt).toContain("outline direction selection");
+    expect(prompt).toContain("If length is still unknown");
+    expect(prompt).toContain("do not present A/B generation mode yet");
+    expect(prompt).toContain("show a full initial outline");
+    expect(prompt).toContain("A. Generate the complete outline directly");
+    expect(prompt).toContain("B. Discuss each section first");
+    expect(prompt).toContain("DIRECTION_CONFIRMED");
+    expect(prompt).not.toContain("ALL_SECTIONS_CONFIRMED");
+  });
+
+  it("builds a section refinement prompt without discovery dimensions", () => {
+    const prompt = buildFacilitatorPrompt("en", "section_refine");
+
+    expect(prompt).toContain("section-by-section refinement");
+    expect(prompt).toContain("clear Markdown line breaks");
+    expect(prompt).toContain("ALL_SECTIONS_CONFIRMED");
+    expect(prompt).not.toContain("goal and audience");
+  });
+
+  it("builds localized Chinese discovery prompts with length and option formatting rules", () => {
+    const prompt = buildFacilitatorPrompt("zh-CN", "gathering");
+
+    expect(prompt).toContain("期望篇幅、字数、页数或格式");
+    expect(prompt).toContain("仅在当前轮次自然适合时询问");
+    expect(prompt).toContain("A. 【选项标题】");
+    expect(prompt).toContain("D. 其他");
+  });
+
+  it("does not include diagram syntax for ordinary writing sections", () => {
+    const prompt = buildWritingContext("en", { needsDiagram: false, isParentSection: false });
+
+    expect(prompt).not.toContain("DIAGRAM_REQUEST");
+    expect(prompt).toContain("leaf section");
+  });
+
+  it("includes diagram syntax only when requested by section context", () => {
+    const prompt = buildWritingContext("en", { needsDiagram: true, isParentSection: false });
+
+    expect(prompt).toContain("DIAGRAM_REQUEST");
+    expect(prompt).toContain("leaf section");
+  });
+
+  it("uses parent overview rules for parent sections", () => {
+    const prompt = buildWritingContext("en", { needsDiagram: false, isParentSection: true });
+
+    expect(prompt).toContain("child subsections");
+    expect(prompt).not.toContain("leaf section");
+  });
+
+  it("builds localized Chinese writing prompts from the same skill set", () => {
+    const prompt = buildWritingContext("zh-CN", { needsDiagram: true, isParentSection: true });
+
+    expect(prompt).toContain("图表语法");
+    expect(prompt).toContain("子章节");
+    expect(prompt).toContain("参考资料处理");
+  });
+});
