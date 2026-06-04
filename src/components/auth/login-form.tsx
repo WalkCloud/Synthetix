@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n";
-import type { TranslationSchema } from "@/lib/i18n/types";
 
 export function LoginForm() {
   const router = useRouter();

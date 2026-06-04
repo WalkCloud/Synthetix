@@ -15,7 +15,11 @@ export function SearchBar({ onSearch }: SearchBarProps) {
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); query && onSearch(query, mode); }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const trimmed = query.trim();
+        if (trimmed) onSearch(trimmed, mode);
+      }}
       className="flex gap-2"
     >
       <div className="flex-1 relative">

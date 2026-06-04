@@ -7,10 +7,14 @@ import {
   type ContextInput,
 } from "@/lib/writing/context";
 import type { DocumentLanguage } from "@/lib/prompts";
+import { buildEffectiveConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
 
 const RAG_REFERENCE_LIMIT = 8;
 const MIN_COSINE_THRESHOLD = 0.4;
 const GENERATION_TEMPERATURE = 0.7;
+
+const SECTION_ENRICHMENT_PROMPT = `Given the document and section context, generate enrichment metadata as JSON. Output only:
+{"retrievalQuery": "optimized search query for knowledge base", "referenceHints": ["keyword1", "keyword2", "framework1"], "writingRequirements": "drafting instructions: what to cover, angle, tone, boundaries, what to avoid"}`;
 
 /** Detect document language from title/content CJK presence */
 function detectDocLocale(title: string): DocumentLanguage {
@@ -21,36 +25,6 @@ function detectDocLocale(title: string): DocumentLanguage {
 interface RagConfig {
   mode: "auto" | "manual" | "off";
   documentIds: string[];
-}
-
-interface HiddenSectionConstraints {
-  writingRequirements?: string;
-  retrievalQuery?: string;
-  referenceHints?: string[];
-}
-
-function parseHiddenConstraints(value?: string | null): HiddenSectionConstraints {
-  if (!value) return {};
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    const obj = parsed as Record<string, unknown>;
-    return {
-      writingRequirements:
-        typeof obj.writingRequirements === "string"
-          ? obj.writingRequirements
-          : undefined,
-      retrievalQuery:
-        typeof obj.retrievalQuery === "string"
-          ? obj.retrievalQuery
-          : undefined,
-      referenceHints: Array.isArray(obj.referenceHints)
-        ? obj.referenceHints.filter((item): item is string => typeof item === "string")
-        : undefined,
-    };
-  } catch {
-    return {};
-  }
 }
 
 function parseKeyPoints(value?: string | null): string[] {
@@ -65,31 +39,50 @@ function parseKeyPoints(value?: string | null): string[] {
   }
 }
 
-function buildEffectiveConstraints(
-  sectionConstraints?: string | null,
-  requestConstraints?: ContextInput["constraints"],
-): ContextInput["constraints"] {
-  const hidden = parseHiddenConstraints(sectionConstraints);
-  const hasHidden =
-    Boolean(hidden.writingRequirements) ||
-    Boolean(hidden.retrievalQuery) ||
-    Boolean(hidden.referenceHints?.length);
-  if (!requestConstraints && !hasHidden) {
-    return undefined;
+interface EnrichmentResult {
+  retrievalQuery?: string;
+  referenceHints?: string[];
+  writingRequirements?: string;
+}
+
+async function enrichSectionContext(
+  section: ContextInput["section"] & { constraints?: string | null },
+  draftTitle: string,
+  provider: ReturnType<typeof createLLMProvider>,
+  modelId: string,
+): Promise<EnrichmentResult> {
+  const hidden = parseSectionConstraints(section.constraints);
+  if (hidden.retrievalQuery || hidden.referenceHints) {
+    return hidden;
   }
 
-  const additionalRequirements = [
-    hidden.writingRequirements,
-    requestConstraints?.additionalRequirements,
-  ].filter(Boolean).join("\n");
+  try {
+    const keyPoints = parseKeyPoints(section.keyPoints);
+    const context = [
+      `Document: ${draftTitle}`,
+      section.title && `Section: ${section.title}`,
+      section.description && `Scope: ${section.description}`,
+      keyPoints.length && `Key points: ${keyPoints.join(", ")}`,
+    ].filter(Boolean).join("\n");
 
-  return {
-    ...requestConstraints,
-    additionalRequirements: additionalRequirements || requestConstraints?.additionalRequirements,
-    retrievalQuery: hidden.retrievalQuery,
-    referenceHints: hidden.referenceHints,
-    writingRequirements: hidden.writingRequirements,
-  };
+    const response = await provider.chat({
+      model: modelId,
+      messages: [
+        { role: "system", content: SECTION_ENRICHMENT_PROMPT },
+        { role: "user", content: context },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = JSON.parse(response.content.trim()) as Record<string, unknown>;
+    return {
+      retrievalQuery: typeof parsed.retrievalQuery === "string" ? parsed.retrievalQuery : undefined,
+      referenceHints: Array.isArray(parsed.referenceHints) ? parsed.referenceHints.filter((h): h is string => typeof h === "string") : undefined,
+      writingRequirements: typeof parsed.writingRequirements === "string" ? parsed.writingRequirements : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function fetchRagReferences(
@@ -102,7 +95,7 @@ async function fetchRagReferences(
     return [];
   }
 
-  const hidden = parseHiddenConstraints(section.constraints);
+  const hidden = parseSectionConstraints(section.constraints);
   const keyPoints = parseKeyPoints(section.keyPoints);
   const queryParts: string[] = [];
 
@@ -224,6 +217,8 @@ export async function generateSectionFull(
     modelConfigId = resolved.modelConfigId;
   }
 
+  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
+
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
@@ -231,10 +226,20 @@ export async function generateSectionFull(
     parseRagConfig(section)
   );
 
-  const effectiveConstraints = buildEffectiveConstraints(
+  const baseConstraints = buildEffectiveConstraints(
     section.constraints,
     constraints,
   );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
@@ -292,7 +297,6 @@ export async function generateSectionStream(
   let modelConfigId: string;
 
   if (customModelConfigId) {
-    // Use custom model
     const { db } = await import("@/lib/db");
     const modelConfig = await db.modelConfig.findUnique({
       where: { id: customModelConfigId },
@@ -308,12 +312,13 @@ export async function generateSectionStream(
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;
   } else {
-    // Use default writing model
     const resolved = await getLLMClient("writing", userId);
     provider = resolved.provider;
     modelId = resolved.modelId;
     modelConfigId = resolved.modelConfigId;
   }
+
+  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
 
   const ragReferences = await fetchRagReferences(
     draft.title,
@@ -322,10 +327,20 @@ export async function generateSectionStream(
     parseRagConfig(section)
   );
 
-  const effectiveConstraints = buildEffectiveConstraints(
+  const baseConstraints = buildEffectiveConstraints(
     section.constraints,
     constraints,
   );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
@@ -373,6 +388,8 @@ export async function compareSection(
     typeof createLLMProvider
   >;
 
+  const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
+
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
@@ -380,10 +397,20 @@ export async function compareSection(
     parseRagConfig(section)
   );
 
-  const effectiveConstraints = buildEffectiveConstraints(
+  const baseConstraints = buildEffectiveConstraints(
     section.constraints,
     constraints,
   );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
@@ -464,6 +491,8 @@ export async function compareSectionStream(
   const providerA = modelAConfig.provider as ReturnType<typeof createLLMProvider>;
   const providerB = modelBConfig.provider as ReturnType<typeof createLLMProvider>;
 
+  const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
+
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
@@ -472,10 +501,20 @@ export async function compareSectionStream(
   );
   callbacks.onReferences?.(ragReferences);
 
-  const effectiveConstraints = buildEffectiveConstraints(
+  const baseConstraints = buildEffectiveConstraints(
     section.constraints,
     constraints,
   );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,

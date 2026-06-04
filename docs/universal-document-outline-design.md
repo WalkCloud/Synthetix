@@ -2,11 +2,11 @@
 
 ## 背景
 
-在 Mind Organization 中，大纲生成是整个写作流的核心起点。当前的 `OUTLINE_PROMPT` 主要依赖大模型自由发挥，缺乏对特定行业和文档类型的结构约束，导致大纲生成存在以下局限：
+在 Mind Organization 中，大纲生成是整个写作流的核心起点。旧版 `OUTLINE_PROMPT` 主要依赖大模型自由发挥，缺乏对特定行业和文档类型的结构约束，曾导致以下局限：
 
 1. **结构推理缺乏引导**：仅设定了“3-8 个顶层章节”的弱约束，导致生成的大纲缺乏严密的专业逻辑。
 2. **缺乏行业常识和专业逻辑**：例如，技术方案往往需要系统架构与技术选型，投标技术方案必须包含资质响应与售后服务，而当前模型在生成时容易遗漏这些关键章节。
-3. **指令与输出的语言损耗**：现有的 `OUTLINE_PROMPT` 采用英文编写，用于生成中文大纲时，跨语言推理容易导致词不达意或生成思路偏西化。
+3. **指令与输出的语言损耗**：旧版 `OUTLINE_PROMPT` 采用英文编写，用于生成中文大纲时，跨语言推理容易导致词不达意或生成思路偏西化。
 4. **定位局限**：原设计偏向特定的“系统建设方案”，而用户的实际应用场景涵盖了各行各业技术人员的专业文档，包括立项汇报、招投标文档、咨询研究报告等，需要从“特定方案工具”升级为“通用专业文档写作工具”。
 
 为解决这些问题，本设计提出了一种**文档原型（Archetype）体系**，通过在提示词中注入不同文档类型的结构原则和骨架，引导大模型进行三步推理（识别原型 -> 应用原则 -> 结合对话适配），从而生成高质量、符合行业规范的专业文档大纲。
@@ -46,15 +46,15 @@ graph TD
 
 ## 详细设计与代码变更
 
-### 1. OUTLINE_PROMPT 重写 (src/lib/brainstorm/outline-prompt.ts)
+### 1. Outline Prompt Builder 重写 (src/lib/brainstorm/outline-prompt.ts)
 
-将 `OUTLINE_PROMPT` 完全切换为中文指令，避免跨语言损耗。在其中注入 8 种文档原型的结构原则、典型骨架和写作焦点，并设计三步推理引导模型生成。
+将 outline prompt builder 改为按语言与文档原型动态组装，避免跨语言损耗。通过 archetype skill 注册表按需注入对应文档原型的结构原则、典型骨架和写作焦点，并引导模型生成高质量大纲。
 
 大纲 JSON 返回结构中新增 `documentType` 字段，支持表示单一原型（如 `technical_solution`）或混合原型（如 `bidding+technical_solution`）。
 
-### 2. FACILITATOR_PROMPT 阶段二（Phase 2）大纲方向选项动态化 (src/lib/brainstorm/facilitator.ts)
+### 2. Facilitator Prompt 阶段二（Phase 2）大纲方向选项动态化 (`src/lib/prompts/locales/*-prompts.ts`)
 
-修改 `FACILITATOR_PROMPT`，不再输出通用的 "Thematic / Timeline / Problem-driven" 三选项，而是让 Facilitator 大脑先识别当前的文档原型，进而生成**针对该原型定制的大纲方向选项**。
+修改 localized facilitator prompt，不再输出通用的 "Thematic / Timeline / Problem-driven" 三选项，而是让 Facilitator 大脑先识别当前的文档原型，进而生成**针对该原型定制的大纲方向选项**。
 
 **示例**：
 若识别为“投标技术方案”（`bidding`）：
@@ -62,7 +62,7 @@ graph TD
 - **方向 B：方案价值驱动式** —— 从客户痛点出发，展示核心方案的价值和差异化技术优势。
 - **方向 C：全生命周期式** —— 按规划、建设、运维、优化的全流程组织，展示全局视野。
 
-### 3. FACILITATOR_PROMPT 阶段一（Phase 1）问题维度扩展 (src/lib/brainstorm/facilitator.ts)
+### 3. Facilitator Prompt 阶段一（Phase 1）问题维度扩展 (`src/lib/prompts/locales/*-prompts.ts`)
 
 为了使 Facilitator 在第一阶段的提问能够全面覆盖各类专业文档的需求，扩展其提问的维度，包含项目可行性、招投标指标、评估标准等：
 

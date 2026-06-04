@@ -4,7 +4,7 @@ import type { TopologyNode, TopologyEdge, TopologyStats } from "@/types/topology
 interface ReferenceGroup {
   documentName: string;
   documentId: string | null;
-  refs: { relevanceScore: number }[];
+  refs: { relevanceScore: number; sectionId: string; sectionTitle: string; sourceAnchor?: string | null }[];
   sections: { id: string; title: string }[];
 }
 
@@ -35,7 +35,7 @@ export async function buildTopology(draftId: string) {
       const groupKey = ref.documentName || `id:${ref.documentId || "unknown"}`;
       const existing = groupMap.get(groupKey);
       if (existing) {
-        existing.refs.push({ relevanceScore: ref.relevanceScore });
+        existing.refs.push({ relevanceScore: ref.relevanceScore, sectionId: section.id, sectionTitle: section.title, sourceAnchor: ref.sourceAnchor });
         if (!existing.sections.some((s) => s.id === section.id)) {
           existing.sections.push({ id: section.id, title: section.title });
         }
@@ -43,7 +43,7 @@ export async function buildTopology(draftId: string) {
         groupMap.set(groupKey, {
           documentName: ref.documentName,
           documentId: ref.documentId,
-          refs: [{ relevanceScore: ref.relevanceScore }],
+          refs: [{ relevanceScore: ref.relevanceScore, sectionId: section.id, sectionTitle: section.title, sourceAnchor: ref.sourceAnchor }],
           sections: [{ id: section.id, title: section.title }],
         });
       }
@@ -65,6 +65,11 @@ export async function buildTopology(draftId: string) {
       id: groupKey, type: "reference", label: group.documentName,
       format: inferFormatFromExtension(group.documentName),
       referenceCount: totalRefs, relevanceScore: Math.round(avgScore * 1000) / 1000,
+      referenceChunks: group.refs.map((r) => ({
+        sourceAnchor: r.sourceAnchor,
+        sectionTitle: r.sectionTitle,
+        relevanceScore: r.relevanceScore,
+      })),
     });
     edges.push({
       source: draftId, target: groupKey, weight: totalRefs,

@@ -6,6 +6,7 @@ import { auditSection } from "@/lib/writing/auditor";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { persistSectionReferences } from "@/lib/writing/persist-references";
 import { createAssetRequests } from "@/lib/writing/asset-pipeline";
+import { buildEffectiveConstraints, mergeSectionConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
@@ -34,6 +35,10 @@ export async function POST(
   const constraints = body.constraints
     ? { wordLimit: body.constraints.wordLimit, additionalRequirements: body.constraints.additionalRequirements }
     : undefined;
+  const persistedConstraints = constraints?.additionalRequirements?.trim()
+    ? mergeSectionConstraints(section.constraints, { additionalRequirements: constraints.additionalRequirements.trim() })
+    : section.constraints;
+  const sectionForGeneration = { ...section, constraints: persistedConstraints };
 
   const encoder = new TextEncoder();
   let fullContent = "";
@@ -44,7 +49,7 @@ export async function POST(
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        await db.section.update({ where: { id: sectionId }, data: { status: "retrieving" } });
+        await db.section.update({ where: { id: sectionId }, data: { status: "retrieving", constraints: persistedConstraints } });
 
         const completedSections = await db.section.findMany({
           where: { draftId, status: { in: ["locked", "summarized"] } },
@@ -53,7 +58,7 @@ export async function POST(
         });
 
         const result = await generateSectionStream(
-          draft, section, completedSections, user.id, constraints, body.modelAConfigId,
+          draft, sectionForGeneration, completedSections, user.id, constraints, body.modelAConfigId,
         );
         modelConfigId = result.modelConfigId;
 
@@ -73,8 +78,15 @@ export async function POST(
           if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
 
-        const cleanContent = stripLeadingSectionTitle(fullContent, section.title);
-        const { diagrams, images, contentWithIds } = await createAssetRequests(draftId, sectionId, fullContent);
+        const contentWithRequiredDiagram = stripLeadingSectionTitle(fullContent, section.title);
+        const { diagrams, images, contentWithIds } = await createAssetRequests(
+          draftId,
+          sectionId,
+          contentWithRequiredDiagram,
+          sectionForGeneration,
+          buildEffectiveConstraints(sectionForGeneration.constraints, constraints),
+        );
+        const cleanContent = stripLeadingSectionTitle(contentWithRequiredDiagram, section.title);
 
         const finalContent = stripLeadingSectionTitle(contentWithIds, section.title);
 
@@ -101,10 +113,9 @@ export async function POST(
           try {
             const auditResult = await auditSection(section.title, cleanContent, section.keyPoints, user.id, sectionId);
             const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
-            const existing = current?.constraints ? JSON.parse(current.constraints) : {};
             await db.section.update({
               where: { id: sectionId },
-              data: { constraints: JSON.stringify({ ...existing, _audit: auditResult }) },
+              data: { constraints: JSON.stringify({ ...parseSectionConstraints(current?.constraints), _audit: auditResult }) },
             });
           } catch (err) {
             console.error(`Background audit failed for section ${sectionId}:`, err);

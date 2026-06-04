@@ -29,6 +29,7 @@ interface DraftGenerationTask {
 const statusLabels = draftStatusLabels;
 const statusColors: Record<string, string> = {
   drafting: `${draftStatusColors.drafting} border border-orange-200`,
+  modifying: `${draftStatusColors.modifying} border border-amber-200`,
   completed: `${draftStatusColors.completed} border border-green-200`,
 };
 
@@ -38,19 +39,11 @@ function generationColor(
   total: number,
 ) {
   if (task?.status === "pending" || task?.status === "running") return "text-primary-600";
+  if (task?.status === "completed") return "text-green-600";
   if (total > 0 && completed < total) return "text-orange-600";
   if (total > 0 && completed >= total) return "text-green-600";
   if (task?.status === "failed") return "text-red-600";
   if (task?.status === "cancelled") return "text-muted-foreground";
-  return "text-muted-foreground";
-}
-
-function taskColor(task?: DraftGenerationTask) {
-  if (!task) return "text-muted-foreground";
-  if (task.status === "pending" || task.status === "running") return "text-primary-600";
-  if (task.status === "completed") return "text-green-600";
-  if (task.status === "failed") return "text-red-600";
-  if (task.status === "cancelled") return "text-muted-foreground";
   return "text-muted-foreground";
 }
 
@@ -101,10 +94,11 @@ export default function WritingListPage() {
 
   const handleDelete = useCallback(
     async (id: string) => {
+      if (!window.confirm(isZh ? "确定删除此草稿及其所有章节？此操作不可恢复。" : "Delete this draft and all its sections? This cannot be undone.")) return;
       const res = await fetch(`/api/v1/drafts/${id}`, { method: "DELETE" });
       if (res.ok) fetchPageData(false);
     },
-    [fetchPageData]
+    [fetchPageData, isZh]
   );
 
   const handleStopTask = useCallback(async (taskId: string) => {
@@ -135,6 +129,7 @@ export default function WritingListPage() {
   ) => {
     if (task?.status === "pending") return t.common.states.pending;
     if (task?.status === "running") return t.writing.status.generating;
+    if (task?.status === "completed") return t.common.states.completed;
     if (totalSections > 0 && completed < totalSections) return isZh ? "进行中" : "In Progress";
     if (totalSections > 0 && completed >= totalSections) return t.common.states.completed;
     if (task?.status === "failed") return t.common.states.failed;
@@ -143,6 +138,7 @@ export default function WritingListPage() {
   };
   const draftLabel = (status: string) => {
     if (status === "drafting") return isZh ? "草稿中" : (statusLabels[status] || status);
+    if (status === "modifying") return isZh ? "修改中" : (statusLabels[status] || status);
     if (status === "completed") return t.common.states.completed;
     return statusLabels[status] || status;
   };
@@ -187,30 +183,39 @@ export default function WritingListPage() {
           </div>
         ) : (
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-soft">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {isZh ? "标题" : "Title"}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {t.library.table.status}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {isZh ? "章节" : "Sections"}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {isZh ? "生成状态" : "Generation"}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {isZh ? "最后更新" : "Last Updated"}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-4">
-                    {t.library.table.actions}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[190px]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {isZh ? "标题" : "Title"}
+                    </th>
+                    <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {t.library.table.status}
+                    </th>
+                    <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {isZh ? "章节" : "Sections"}
+                    </th>
+                    <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {isZh ? "生成状态" : "Generation"}
+                    </th>
+                    <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {isZh ? "最后更新" : "Last Updated"}
+                    </th>
+                    <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                      {t.library.table.actions}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
                 {drafts.map((draft) => {
                   const progress = draft.progress || { completed: 0, total: 0 };
                   const completed = progress.completed;
@@ -220,27 +225,27 @@ export default function WritingListPage() {
                   const isTaskActive = activeDraftIds.has(draft.id);
 
                   return (
-                    <tr key={draft.id} className="border-b border-border last:border-0 hover:bg-secondary/70 transition-colors">
-                      <td className="px-5 py-4">
+                    <tr key={draft.id} className="border-b border-border last:border-0 hover:bg-secondary/60 transition-colors">
+                      <td className="px-5 py-5 align-middle">
                         <button
                           onClick={() => router.push(`/writing/${draft.id}`)}
-                          className="text-sm font-semibold text-primary-600 hover:text-primary-700 hover:underline cursor-pointer transition-colors"
+                          className="block max-w-full whitespace-normal break-words text-left text-sm font-semibold leading-relaxed text-primary-600 hover:text-primary-700 hover:underline cursor-pointer transition-colors"
                         >
                           {draft.title}
                         </button>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-5 align-middle text-center">
                         <span
-                          className={`inline-flex px-2.5 py-1 rounded-md text-xs font-semibold ${
+                          className={`inline-flex whitespace-nowrap px-2.5 py-1 rounded-md text-xs font-semibold ${
                             statusColors[draft.status] || ""
                           }`}
                         >
                           {draftLabel(draft.status)}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-sm font-medium text-muted-foreground">
-                        <div>{completed}/{totalSections} {isZh ? "已完成" : "done"}</div>
-                        <div className="mt-1 h-1.5 max-w-[180px] overflow-hidden rounded-full bg-secondary">
+                      <td className="px-5 py-5 align-middle text-center text-sm font-medium text-muted-foreground">
+                        <div className="whitespace-nowrap">{completed}/{totalSections} {isZh ? "已完成" : "done"}</div>
+                        <div className="mx-auto mt-1 h-1.5 w-full max-w-[120px] overflow-hidden rounded-full bg-secondary">
                           <div
                             className="h-full rounded-full bg-primary-600 transition-all duration-500"
                             style={{
@@ -249,12 +254,12 @@ export default function WritingListPage() {
                           />
                         </div>
                       </td>
-                      <td className="px-5 py-4">
-                        <div className={`text-xs font-semibold ${generationColor(task, completed, totalSections)}`}>
+                      <td className="px-5 py-5 align-middle text-center">
+                        <div className={`whitespace-nowrap text-xs font-semibold ${generationColor(task, completed, totalSections)}`}>
                           {generationLabel(task, completed, totalSections)}
                           {isTaskActive ? ` · ${task?.progress ?? 0}%` : ""}
                         </div>
-                        <div className="mt-1 max-w-[240px] truncate text-xs text-muted-foreground">
+                        <div className="mt-1 max-w-full truncate text-xs text-muted-foreground">
                           {task?.status === "failed" && task.error
                             ? task.error
                             : taskResult.currentSectionTitle
@@ -264,11 +269,11 @@ export default function WritingListPage() {
                                 : (isZh ? "打开草稿以审阅已生成章节" : "Open the draft to review generated sections")}
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-muted-foreground">
+                      <td className="px-5 py-5 align-middle text-center text-sm text-muted-foreground whitespace-nowrap">
                         {format.date(draft.updatedAt)}
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
+                      <td className="px-5 py-5 align-middle">
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
                           <button
                             onClick={() => router.push(`/writing/${draft.id}`)}
                             className="text-sm font-medium text-foreground/75 hover:text-foreground hover:bg-secondary px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
@@ -297,7 +302,8 @@ export default function WritingListPage() {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         )}
       </div>

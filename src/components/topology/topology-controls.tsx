@@ -15,7 +15,7 @@ interface TopologyControlsProps {
   readonly onZoomFit: () => void;
   readonly kgSearch?: string;
   readonly onKgSearchChange?: (val: string) => void;
-  readonly onKgSearchSubmit?: () => void;
+  readonly onKgSearchSubmit?: (entityName?: string) => void;
   readonly kgCenter?: string;
   readonly onKgCenterClear?: () => void;
   readonly totalEntities?: number;
@@ -90,16 +90,14 @@ export function TopologyControls({
     setShowDropdown(false);
     setSuggestions([]);
     onKgSearchChange?.(name);
-    if (onKgSearchSubmit) {
-      setTimeout(() => onKgSearchSubmit(), 0);
-    }
+    onKgSearchSubmit?.(name);
   }
 
   return (
     <div className="flex items-center gap-2.5 mb-4 flex-wrap h-8">
       {mode === "documents" && drafts && onDraftChange && (
         <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
-          <SelectTrigger size="sm" className="w-[200px] text-[13px] bg-card cursor-pointer">
+          <SelectTrigger size="sm" className="w-[280px] text-[13px] bg-card cursor-pointer">
             <SelectValue placeholder={isZh ? "选择草稿..." : "Select a draft..."}>
               {(v: string | null) => drafts.find(d => d.id === v)?.title ?? (isZh ? "选择草稿..." : "Select a draft...")}
             </SelectValue>
@@ -123,7 +121,7 @@ export function TopologyControls({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && kgSearch?.trim()) {
                   setShowDropdown(false);
-                  onKgSearchSubmit?.();
+                  onKgSearchSubmit?.(kgSearch);
                 }
                 if (e.key === "Escape") setShowDropdown(false);
               }}
@@ -140,7 +138,7 @@ export function TopologyControls({
                   key={name}
                   type="button"
                   className="w-full text-left px-3 py-1.5 text-[12px] text-foreground hover:bg-secondary truncate cursor-pointer"
-                  onMouseDown={(e) => { e.preventDefault(); handleSelectSuggestion(name); }}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleSelectSuggestion(name)}
                 >
                   {name}
@@ -148,9 +146,25 @@ export function TopologyControls({
               ))}
             </div>
           )}
-          {kgCenter && (
-            <button onClick={onKgCenterClear} className="text-[12px] text-primary font-medium hover:underline whitespace-nowrap cursor-pointer ml-2">{isZh ? "返回" : "Back"}</button>
-          )}
+        </div>
+      )}
+
+      {mode === "knowledge" && kgCenter && (
+        <div className={`inline-flex max-w-[320px] items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-[12px] font-medium text-primary ${BAR_H}`}>
+          <span className="shrink-0">{isZh ? "聚焦" : "Focused"}:</span>
+          <span className="truncate">{kgCenter}</span>
+          <button
+            type="button"
+            onClick={onKgCenterClear}
+            className="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-primary/80 transition hover:bg-primary/15 hover:text-primary"
+            aria-label={isZh ? "返回核心图谱" : "Back to core graph"}
+            title={isZh ? "返回核心图谱" : "Back to core graph"}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
       )}
 

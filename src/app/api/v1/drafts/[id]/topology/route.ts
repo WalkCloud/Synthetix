@@ -1,4 +1,3 @@
-import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { buildTopology } from "@/lib/writing/topology-builder";

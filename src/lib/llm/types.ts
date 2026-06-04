@@ -10,6 +10,7 @@ export interface ChatParams {
   maxTokens?: number;
   stream?: boolean;
   streamOptions?: Record<string, unknown>;
+  response_format?: { type: "json_object" } | { type: "json_schema"; json_schema: { name: string; schema: Record<string, unknown> } };
 }
 
 export interface ChatChunk {

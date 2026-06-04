@@ -79,7 +79,7 @@ export async function POST(
     }
 
     if (existing.path) {
-      const oldPath = path.join(process.cwd(), existing.path);
+      const oldPath = path.join(/* turbopackIgnore: true */ process.cwd(), existing.path);
       await fs.unlink(oldPath).catch(() => {});
     }
 

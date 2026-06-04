@@ -1,3 +1,9 @@
+export interface ReferenceChunk {
+  sourceAnchor?: string | null;
+  sectionTitle: string;
+  relevanceScore: number;
+}
+
 export interface TopologyNode {
   id: string;
   type: "draft" | "reference" | "entity";
@@ -10,6 +16,8 @@ export interface TopologyNode {
   entityType?: string;
   /** Entity description from knowledge graph */
   description?: string;
+  /** Reference chunks: source anchor → writing section mapping with scores */
+  referenceChunks?: ReferenceChunk[];
 }
 
 export interface TopologyEdge {

@@ -17,11 +17,11 @@ export async function POST(
 
   const { id: draftId, secId: sectionId } = await params;
 
-  let targetStatus: "reviewing" | "pending" = "reviewing";
+  let targetStatus: "reviewing" | "pending" | "revising" = "reviewing";
   try {
     const body = await request.json();
-    if (body.targetStatus === "pending") {
-      targetStatus = "pending";
+    if (body.targetStatus === "pending" || body.targetStatus === "revising") {
+      targetStatus = body.targetStatus;
     }
   } catch {}
 

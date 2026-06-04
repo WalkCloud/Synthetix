@@ -28,7 +28,7 @@ export async function POST(
     return authErrorResponse();
   }
 
-  const { id: draftId, secId: sectionId } = await params;
+  const { id: draftId } = await params;
   const body = await request.json();
   const { content } = body as { content?: string };
 

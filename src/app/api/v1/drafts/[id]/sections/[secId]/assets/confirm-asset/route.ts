@@ -104,7 +104,8 @@ export async function POST(
     }
   }
 
-  const { id: _id, ...restFields } = preservedFields;
+  const restFields = { ...preservedFields };
+  delete restFields.id;
   const fieldParts = Object.entries({ id: body.markerId, ...restFields })
     .map(([k, v]) => `${k}=${v}`)
     .join("|");

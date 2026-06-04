@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { getLocalizedError, useLocale } from "@/lib/i18n";
 
@@ -69,7 +70,6 @@ export function ReferencePanel({
   onSectionNotesChange,
   draftId,
   sectionId,
-  sectionContent,
   sectionRagMode,
   sectionRagDocumentIds,
   assets,
@@ -95,7 +95,6 @@ export function ReferencePanel({
   const [renderVer, setRenderVer] = useState(0);
 
   const readyAssets = assets.filter((a) => a.status === "ready");
-  const generatingAssets = assets.filter((a) => a.status === "generating" || a.status === "pending");
 
   useEffect(() => {
     setRenderVer((v) => v + 1);
@@ -114,7 +113,7 @@ export function ReferencePanel({
       setImagePrompt(parts.join(". "));
       setWorkspaceAssetId(null);
     }
-  }, [activeMarker?.markerId]);
+  }, [activeMarker]);
 
   useEffect(() => {
     setSelectedDocIds(new Set(sectionRagDocumentIds));
@@ -439,11 +438,14 @@ export function ReferencePanel({
             {allRefImages.map((img, idx) => (
               <div key={idx} className="rounded border border-border overflow-hidden">
                 <div className="aspect-square bg-secondary flex items-center justify-center">
-                  <img
+                  <Image
                     src={img.url}
                     alt={img.altText || ""}
-                    className="max-w-full max-h-full object-contain"
+                    width={160}
+                    height={160}
+                    className="max-h-full max-w-full object-contain"
                     loading="lazy"
+                    unoptimized
                   />
                 </div>
                 <div className="p-1.5">
@@ -499,7 +501,7 @@ export function ReferencePanel({
                   className={`w-full rounded-xl overflow-hidden border border-border bg-muted/50 ${isReady ? "cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all" : "cursor-default"}`}
                 >
                   {isReady ? (
-                    <img src={serveUrl} alt={previewTarget.title} className="w-full max-h-[200px] object-contain bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px]" />
+                    <Image src={serveUrl} alt={previewTarget.title} width={600} height={320} className="h-auto max-h-[200px] w-full object-contain bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px]" unoptimized />
                   ) : (
                     <div className="h-[120px] flex flex-col items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -622,7 +624,7 @@ export function ReferencePanel({
                       onClick={() => setPreviewAsset(asset)}
                       className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-card border border-border cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all"
                     >
-                      <img src={serveUrl} alt={asset.title} className="w-full h-full object-contain p-0.5" />
+                      <Image src={serveUrl} alt={asset.title} width={40} height={40} className="h-full w-full object-contain p-0.5" unoptimized />
                     </button>
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-medium text-foreground/75 truncate">{asset.title}</p>
@@ -719,10 +721,13 @@ export function ReferencePanel({
             </div>
             {/* Image */}
             <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px]">
-              <img
+              <Image
                 src={`/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${previewAsset.id}/serve?v=${renderVer}`}
                 alt={previewAsset.title}
-                className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-lg"
+                width={1200}
+                height={800}
+                className="max-h-[65vh] max-w-full object-contain rounded-lg shadow-lg"
+                unoptimized
               />
             </div>
           </div>

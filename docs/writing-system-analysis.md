@@ -247,8 +247,8 @@ Anti-AI writing rules (produce human-quality output):
 
 ### 5.1 头脑风暴对话提示词
 
-**文件**：`src/app/api/v1/brainstorm/sessions/[id]/message/route.ts`
-**变量名**：`FACILITATOR_PROMPT`
+**文件**：`src/lib/prompts/locales/*-prompts.ts`
+**加载入口**：`src/lib/prompts/builders/facilitator.ts` 的 `buildFacilitatorPrompt()`
 
 **原文**：
 ```
@@ -276,9 +276,9 @@ Once you fully understand the requirements, provide an initial outline suggestio
 The user will suggest modifications to your outline. Adjust based on their feedback and show the complete revised version again.
 
 ## Trigger Condition
-When you feel the outline structure is essentially ready, or the user explicitly confirms the outline and asks you to generate it, immediately append the marker at the end of your reply: OUTLINE_REQUESTED
+When the workflow reaches a transition point, append the corresponding marker at the end of your reply, such as `NEEDS_GATHERED`, `DIRECTION_CONFIRMED`, `GENERATE_DIRECT`, `SECTION_BY_SECTION`, or `ALL_SECTIONS_CONFIRMED`.
 
-If the user confirms the current outline, reply directly: OUTLINE_REQUESTED
+If the user confirms the current outline, proceed to generation mode selection or final generation confirmation.
 
 ## Response Principles
 - Keep each reply concise and clear, avoid lengthy responses
@@ -286,14 +286,14 @@ If the user confirms the current outline, reply directly: OUTLINE_REQUESTED
 - Always reply in the SAME LANGUAGE as the user's input. If the user speaks Chinese, you MUST reply in Chinese. If English, reply in English. Maintain a professional and efficient tone.
 ```
 
-**触发机制**：当 AI 回复包含 `OUTLINE_REQUESTED` 标记时，前端自动触发大纲生成。
+**触发机制**：当 AI 回复包含 `GENERATE_DIRECT` 或 `ALL_SECTIONS_CONFIRMED` 标记时，前端自动触发大纲生成；其他 marker 用于切换头脑风暴阶段。
 
 ---
 
 ### 5.2 大纲生成提示词
 
 **文件**：`src/app/api/v1/brainstorm/sessions/[id]/generate-outline/route.ts`
-**变量名**：`OUTLINE_PROMPT`
+**入口**：`buildLightweightOutlinePrompt()`
 
 **原文**：
 ```
@@ -538,11 +538,11 @@ Produce the rewritten text only — no meta-commentary, no explanations of what 
 ```
 用户上传文档 → 文档分块 → 向量化 → RAG索引
                                     ↓
-用户创建头脑风暴会话 ←→ FACILITATOR_PROMPT 对话（Phase 1-3）
+用户创建头脑风暴会话 ←→ localized facilitator prompt 对话（Phase 1-3）
                                     ↓
-                        触发 OUTLINE_REQUESTED
+                        触发 GENERATE_DIRECT / ALL_SECTIONS_CONFIRMED
                                     ↓
-                    OUTLINE_PROMPT 生成 JSON 大纲
+                    buildLightweightOutlinePrompt() 生成 JSON 大纲
                                     ↓
                     大纲展平 → 创建 Draft + Section 记录
                                     ↓

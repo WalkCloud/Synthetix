@@ -4,10 +4,66 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { detectMarker, stripMarker, preFetchDomainKnowledge } from "@/lib/brainstorm/facilitator";
+import { preFetchDomainKnowledge } from "@/lib/brainstorm/domain-context";
+import { buildLengthRequirementQuestion, conversationHasLengthRequirement } from "@/lib/brainstorm/length-requirement";
+import { detectMarker, stripMarker } from "@/lib/brainstorm/markers";
 import { resolveLocale } from "@/lib/i18n/server";
 import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 import { buildFacilitatorPrompt, resolveDocumentLanguage } from "@/lib/prompts";
+import type { ChatResponse } from "@/lib/llm/types";
+
+type ClientMarker = "GENERATE_DIRECT" | "SECTION_BY_SECTION" | "ALL_SECTIONS_CONFIRMED";
+type BrainstormPhase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready";
+
+const BRAINSTORM_HISTORY_LIMIT = 16;
+const BRAINSTORM_MESSAGE_CHAR_LIMIT = 6_000;
+const BRAINSTORM_MAX_OUTPUT_TOKENS = 1600;
+
+function isClientMarker(value: unknown): value is ClientMarker {
+  return value === "GENERATE_DIRECT"
+    || value === "SECTION_BY_SECTION"
+    || value === "ALL_SECTIONS_CONFIRMED";
+}
+
+function isBrainstormPhase(value: unknown): value is BrainstormPhase {
+  return value === "gathering"
+    || value === "direction"
+    || value === "mode_select"
+    || value === "section_refine"
+    || value === "ready";
+}
+
+function trimMessageContent(content: string): string {
+  if (content.length <= BRAINSTORM_MESSAGE_CHAR_LIMIT) return content;
+  return `${content.slice(0, BRAINSTORM_MESSAGE_CHAR_LIMIT)}\n\n[Earlier content truncated to keep the brainstorming context responsive.]`;
+}
+
+function isTransientLLMError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|terminated|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timeout|aborted/i.test(message);
+}
+
+async function runBrainstormCompletion(
+  provider: ReturnType<typeof createLLMProvider>,
+  model: string,
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+): Promise<ChatResponse> {
+  try {
+    return await provider.chat({
+      model,
+      messages,
+      maxTokens: BRAINSTORM_MAX_OUTPUT_TOKENS,
+    });
+  } catch (error) {
+    if (!isTransientLLMError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return provider.chat({
+      model,
+      messages,
+      maxTokens: BRAINSTORM_MAX_OUTPUT_TOKENS,
+    });
+  }
+}
 
 export async function POST(
   request: Request,
@@ -20,7 +76,7 @@ export async function POST(
   const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
   if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
-  let body: { content?: string };
+  let body: { content?: string; clientMarker?: unknown; phase?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -28,10 +84,22 @@ export async function POST(
   }
   const { content } = body;
   if (!content) return errorResponse({ code: "invalidInput", message: "Message required" }, 400);
+  if (body.clientMarker !== undefined && !isClientMarker(body.clientMarker)) {
+    return errorResponse({ code: "invalidInput", message: "Invalid client marker" }, 400);
+  }
+  if (body.phase !== undefined && !isBrainstormPhase(body.phase)) {
+    return errorResponse({ code: "invalidInput", message: "Invalid brainstorm phase" }, 400);
+  }
+  const clientMarker = body.clientMarker;
+  const phase = isBrainstormPhase(body.phase) ? body.phase : "gathering";
 
   const userMessage = await db.message.create({
     data: { sessionId: id, role: "user", content },
   });
+
+  if (clientMarker === "GENERATE_DIRECT" || clientMarker === "ALL_SECTIONS_CONFIRMED") {
+    return successResponse({ userMessage, message: null, marker: clientMarker });
+  }
 
   const chatModel = await resolveModel("chat", user.id);
   if (!chatModel) return errorResponse({ code: "modelNotConfigured", message: "No chat model configured" }, 400);
@@ -48,57 +116,59 @@ export async function POST(
     }
   }
 
-  const history = await db.message.findMany({
+  const historyDesc = await db.message.findMany({
     where: { sessionId: id },
-    orderBy: { createdAt: "asc" },
-    take: 20,
+    orderBy: { createdAt: "desc" },
+    take: BRAINSTORM_HISTORY_LIMIT,
   });
+  const history = historyDesc.reverse();
 
   const locale = resolveDocumentLanguage(resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale());
-  const facilitatorPrompt = buildFacilitatorPrompt(locale);
+  const facilitatorPrompt = buildFacilitatorPrompt(locale, phase);
 
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: facilitatorPrompt + ragSupplement },
     ...history.filter((m) => m.role !== "system").map((m) => ({
       role: (m.role === "ai" ? "assistant" : "user") as "assistant" | "user",
-      content: m.content,
+      content: trimMessageContent(m.content),
     })),
   ];
 
   try {
     const provider = createLLMProvider(chatModel.provider);
-    const chunks: string[] = [];
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    for await (const chunk of provider.chatStream({
-      model: chatModel.modelId,
-      messages: llmMessages,
-    })) {
-      chunks.push(chunk.content || "");
-      if (chunk.inputTokens) inputTokens = chunk.inputTokens;
-      if (chunk.outputTokens) outputTokens = chunk.outputTokens;
-    }
-
-    const rawContent = chunks.join("");
+    const response = await runBrainstormCompletion(provider, chatModel.modelId, llmMessages);
+    const rawContent = response.content;
     const marker = detectMarker(rawContent);
     const cleanContent = stripMarker(rawContent, marker);
+    let effectiveMarker = clientMarker ?? marker;
+    let effectiveContent = cleanContent;
+
+    if (phase === "direction" && marker === "DIRECTION_CONFIRMED" && !conversationHasLengthRequirement(history)) {
+      effectiveMarker = null;
+      effectiveContent = buildLengthRequirementQuestion(locale);
+    }
 
     const msg = await db.message.create({
-      data: { sessionId: id, role: "ai", content: cleanContent },
+      data: { sessionId: id, role: "ai", content: effectiveContent },
     });
 
     await recordTokenUsage({
       userId: user.id,
       modelConfigId: chatModel.id,
       module: "brainstorm",
-      inputTokens,
-      outputTokens,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
       referenceId: id,
     }).catch(() => {});
 
-    return successResponse({ userMessage, message: msg, marker });
+    return successResponse({ userMessage, message: msg, marker: effectiveMarker });
   } catch (error) {
+    if (isTransientLLMError(error)) {
+      return errorResponse({
+        code: "generationFailed",
+        message: "Brainstorm response generation failed because the model service connection was interrupted. Please retry this message.",
+      }, 502);
+    }
     return errorResponse(error);
   }
 }

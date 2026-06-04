@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/lib/llm/types";
 import { buildWritingContext, type DocumentLanguage } from "@/lib/prompts";
+import { sectionNeedsDiagram } from "@/lib/writing/diagram-requirements";
 
 export interface ContextInput {
   draft: {
@@ -36,103 +37,20 @@ export interface ContextInput {
   } | null;
 }
 
-function buildSystemMessage(docLocale: DocumentLanguage = "en"): ChatMessage {
-  // Use localized prompt if available
-  const localizedContent = buildWritingContext(docLocale);
-  if (localizedContent) {
-    return { role: "system", content: localizedContent };
-  }
+const COMPLETED_SUMMARIES_TOTAL_CHAR_LIMIT = 6_000;
+const RAG_REFERENCE_CONTENT_CHAR_LIMIT = 2_500;
+const RAG_REFERENCES_TOTAL_CHAR_LIMIT = 12_000;
 
-  return {
-    role: "system",
-    content: [
-      "You are a professional document writer. Your task is to write complete sections for normal business, technical, research, or analytical documents.",
-      "",
-      "The reference material is provided only to help you understand the topic, facts, terminology, and background. Do not expose the existence of the reference material in the final text.",
-      "",
-      "Writing goals:",
-      "- Write as if this section belongs naturally inside the user's final document.",
-      "- Produce polished, reader-facing document content, not notes, commentary, or an explanation of how you used references.",
-      "- Match the target section title, key points, estimated word count, and additional user requirements.",
-      "- Maintain logical continuity with previously completed sections.",
-      "- Use paragraphs and concise local sub-headings only when they improve readability.",
-      "- Prefer clear, specific, direct writing over generic summaries.",
-      "- Keep the same language as the draft, section title, or user requirements.",
-      "",
-      "Reference handling rules:",
-      "- Treat retrieved references as background material, not as content to quote mechanically.",
-      "- Do not write phrases such as \"according to the reference material\", \"based on the provided document\", \"the source mentions\", \"the uploaded file says\", \"as shown in Reference 1\", or similar wording.",
-      "- Do not introduce a reference document by name unless the target document explicitly requires naming that document.",
-      "- Do not include customer names, company names, personal names, project names, file names, internal labels, or case-specific identifiers from the reference material unless they are directly relevant to the target section.",
-      "- If a reference contains examples, customers, names, or scenarios that are unrelated to the user's document, generalize the useful idea and omit the identifying details.",
-      "- If a fact is useful but tied to an irrelevant named entity, rewrite it at the concept level.",
-      "- Do not fabricate facts, numbers, dates, organizations, or citations. If the references do not support a specific claim, write at the appropriate level of generality.",
-      "- Use only information that helps complete the target section. Ignore unrelated retrieved content.",
-      "",
-      "Content quality rules:",
-      "- Start directly with the substance of the section. Do not begin with meta phrases like \"This section will introduce...\" or \"This chapter mainly discusses...\".",
-      "- Avoid empty framing such as \"with the continuous development of...\", \"in today's era...\", or \"it is worth noting that...\".",
-      "- Do not write phrases like \"introduce XXXX\", \"cite XXXX\", \"reference XXXX\", or \"according to XXXX\" unless the user explicitly asks for a literature-review or citation-heavy style.",
-      "- Do not make the document sound like an AI-generated answer. It should read like final edited document prose.",
-      "- Use concrete concepts, mechanisms, requirements, process descriptions, and conclusions where appropriate.",
-      "- Vary paragraph length. Avoid repetitive paragraph structures.",
-      "- Avoid unnecessary three-item lists when a paragraph would read better.",
-      "- Avoid vague filler such as \"various methods\", \"multiple aspects\", \"comprehensive improvement\", \"robust support\", or \"empowering users\" unless made specific.",
-      "- Do not over-explain obvious concepts.",
-      "- Do not end with a generic inspirational summary or call to action.",
-      "",
-      "## HARD-BANNED WORDS (never use these):",
-      "- additionally / tapestry / landscape / indelible mark / marks a milestone / undoubtedly / pivotal",
-      "- vividly / synergistic / legacy / forge ahead / masterpiece / ingenious",
-      "- spectacular / diverse and vibrant / leading the trend / revolutionary / leapfrog development",
-      "- If you catch yourself using any of the above, rephrase immediately.",
-      "",
-      "## SOFT-CONSTRAINT WORDS (max 2 occurrences per paragraph without concrete evidence):",
-      "- crucial / key / core / empower / enable / drive / lead / build",
-      "- efficient / intelligent / comprehensive / one-stop / end-to-end / seamless",
-      "- Each occurrence must be backed by specific data, metrics, or concrete examples.",
-      "",
-      "## PARAGRAPH RULES:",
-      "- Each paragraph should be concise and substantive, roughly 80-300 words or the natural equivalent for the user's language.",
-      "- Every paragraph must have a clear topic sentence or transitional phrase.",
-      "- Avoid forced three-part structures.",
-      "- Avoid repeated negative parallelisms such as \"not X but Y, not A but B\".",
-      "- Avoid em-dash overuse. Use at most 1 em-dash per 500 characters.",
-      "",
-      "Structure rules:",
-      "- Follow the target section scope. Do not write content for other chapters.",
-      "- Do not repeat the target section title at the beginning of the output.",
-      "- Do not output chapter numbers such as \"1\", \"1.2\", \"1.2.1\", or numbered Markdown headings.",
-      "- Do not invent, rebuild, or renumber the document outline.",
-      "- If local sub-headings are useful, write short unnumbered sub-headings that are not the target section title.",
-      "- If the section is a parent or overview section, write a concise overview and avoid duplicating details that belong in child sections.",
-      "- If the section is a leaf section, write the complete substantive content for that section.",
-      "- Do not force a fixed template.",
-      "- Preserve consistency with previous section summaries, but do not repeat them.",
-      "",
-      "Output rules:",
-      "- Output only the final section content.",
-      "- Start directly with the first paragraph of the section body.",
-      "- Do not mention prompts, references, retrieval, RAG, context, source chunks, or model limitations.",
-      "- Do not include analysis notes or explanations of writing choices.",
-      "- Do not include a bibliography, citation list, or reference list unless the user explicitly requests one.",
-      "- Produce output as plain text with Markdown formatting for structure.",
-      "- Match the estimated word count as closely as possible without sacrificing quality.",
-      "",
-      "## DIAGRAM SYNTAX (use ONLY when explicitly instructed below)",
-      "If the user message below explicitly asks you to include a diagram, embed it inline using this syntax:",
-      "[DIAGRAM_REQUEST:",
-      "type=<architecture|flowchart|data-flow|deployment|component|sequence|comparison|timeline|security>",
-      "title=<diagram title>",
-      "purpose=<what the diagram shows>",
-      "placement=after_current_paragraph",
-      "nodes=<comma-separated key entities>",
-      "flows=<comma-separated relationships using ->>",
-      "]",
-      "Place the diagram block immediately after the paragraph that describes the relevant concept.",
-      "Do NOT include a diagram unless the user message explicitly asks you to.",
-    ].join("\n"),
-  };
+function truncateText(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, Math.max(0, limit - 72)).trimEnd()}\n[Content truncated to keep section generation focused.]`;
+}
+
+function buildSystemMessage(
+  docLocale: DocumentLanguage = "en",
+  options: { needsDiagram?: boolean; isParentSection?: boolean } = {},
+): ChatMessage {
+  return { role: "system", content: buildWritingContext(docLocale, options) };
 }
 
 function buildOutlineSummary(
@@ -261,9 +179,16 @@ function buildCompletedSectionsSummary(
     return "";
   }
 
-  const entries = completed.map(
-    (s) => `### ${s.title}\n${s.summary}`
-  );
+  const entries: string[] = [];
+  let used = 0;
+  for (const section of completed) {
+    const header = `### ${section.title}\n`;
+    const remaining = COMPLETED_SUMMARIES_TOTAL_CHAR_LIMIT - used - header.length;
+    if (remaining <= 0) break;
+    const entry = `${header}${truncateText(section.summary || "", remaining)}`;
+    entries.push(entry);
+    used += entry.length;
+  }
 
   return [
     "## Previously Completed Sections (for continuity)",
@@ -281,18 +206,24 @@ function buildRagReferencesSection(
 
   const sorted = [...references].sort((a, b) => b.score - a.score);
 
-  const entries = sorted.map(
-    (ref, index) => {
-      const docId = ref.documentId;
-      const rewrittenContent = docId
-        ? ref.content.replace(
-            /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
-            (_, alt, filename) => `![${alt}](/api/v1/documents/${docId}/images/${filename})`
-          )
-        : ref.content;
-      return `### Reference ${index + 1} [Source: ${ref.documentName}, Relevance: ${(ref.score * 100).toFixed(0)}%]\n${rewrittenContent}`;
-    }
-  );
+  const entries: string[] = [];
+  let used = 0;
+  for (const [index, ref] of sorted.entries()) {
+    const docId = ref.documentId;
+    const rewrittenContent = docId
+      ? ref.content.replace(
+          /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
+          (_, alt, filename) => `![${alt}](/api/v1/documents/${docId}/images/${filename})`
+        )
+      : ref.content;
+    const header = `### Reference ${index + 1} [Source: ${ref.documentName}, Relevance: ${(ref.score * 100).toFixed(0)}%]\n`;
+    const remaining = RAG_REFERENCES_TOTAL_CHAR_LIMIT - used - header.length;
+    if (remaining <= 0) break;
+    const contentLimit = Math.min(RAG_REFERENCE_CONTENT_CHAR_LIMIT, remaining);
+    const entry = `${header}${truncateText(rewrittenContent, contentLimit)}`;
+    entries.push(entry);
+    used += entry.length;
+  }
 
   return ["## Reference Material", "", ...entries].join("\n");
 }
@@ -321,9 +252,14 @@ function buildTargetSectionBlock(section: ContextInput["section"], effectiveWord
 }
 
 function buildConstraintsBlock(
-  constraints: NonNullable<ContextInput["constraints"]>
+  constraints: NonNullable<ContextInput["constraints"]>,
+  docLocale: DocumentLanguage,
 ): string {
-  const parts: string[] = ["## Additional Constraints"];
+  const parts: string[] = [
+    docLocale === "zh-CN"
+      ? "## \u672c\u7ae0\u8282\u5f3a\u5236\u8981\u6c42"
+      : "## Mandatory Section-Specific Requirements",
+  ];
 
   if (constraints.referenceSections && constraints.referenceSections.length > 0) {
     parts.push(
@@ -332,47 +268,14 @@ function buildConstraintsBlock(
   }
 
   if (constraints.additionalRequirements) {
-    parts.push(`Requirements: ${constraints.additionalRequirements}`);
+    parts.push(
+      docLocale === "zh-CN"
+        ? `\u4ee5\u4e0b\u8981\u6c42\u7531\u7528\u6237\u9488\u5bf9\u5f53\u524d\u7ae0\u8282\u63d0\u4f9b\uff0c\u5fc5\u987b\u9075\u5b88\uff1a\n${constraints.additionalRequirements}`
+        : `The following requirements are user-provided and must be followed for this section:\n${constraints.additionalRequirements}`
+    );
   }
 
   return parts.join("\n");
-}
-
-const DIAGRAM_KEYWORDS = [
-  "architecture",
-  "topology",
-  "deployment architecture",
-  "flowchart",
-  "flow diagram",
-  "data flow",
-  "component diagram",
-  "sequence",
-  "layered architecture",
-  "network model",
-  "network topology",
-  "microservice",
-  "cluster deployment",
-  "high availability",
-  "disaster recovery",
-  "end-to-end",
-  "pipeline",
-  "phased",
-  "milestone timeline",
-  "toolchain",
-  "multi-tenant",
-];
-
-function sectionNeedsDiagram(section: ContextInput["section"]): boolean {
-  const text = [
-    section.title,
-    section.description,
-    section.keyPoints,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return DIAGRAM_KEYWORDS.some((kw) => new RegExp(kw, "i").test(text));
 }
 
 export function assembleContext(input: ContextInput, docLocale: DocumentLanguage = "en"): ChatMessage[] {
@@ -410,7 +313,7 @@ export function assembleContext(input: ContextInput, docLocale: DocumentLanguage
 
   if (input.constraints) {
     userParts.push("");
-    userParts.push(buildConstraintsBlock(input.constraints));
+    userParts.push(buildConstraintsBlock(input.constraints, docLocale));
   }
 
   if (isParent) {
@@ -425,15 +328,19 @@ export function assembleContext(input: ContextInput, docLocale: DocumentLanguage
     );
   }
 
-  if (sectionNeedsDiagram(input.section)) {
+  const needsDiagram = sectionNeedsDiagram(input.section, input.constraints);
+
+  if (needsDiagram) {
     userParts.push("");
     userParts.push(
-      "The system has detected that this section covers a structural or visual topic. Please include ONE [DIAGRAM_REQUEST:...] block in your output after the paragraph that best describes the architecture/flow/topology. Use the syntax documented in the system prompt. If the section content ends up being conceptual rather than structural, you may skip the diagram."
+      docLocale === "zh-CN"
+        ? "\u5f53\u524d\u7ae0\u8282\u9700\u8981\u56fe\u8868\u3002\u8bf7\u5728\u6700\u80fd\u8bf4\u660e\u67b6\u6784\u3001\u6d41\u7a0b\u3001\u62d3\u6251\u6216\u65f6\u5e8f\u7684\u6bb5\u843d\u540e\uff0c\u51c6\u786e\u63d2\u5165\u4e00\u4e2a [DIAGRAM_REQUEST:...] \u5757\u3002\u5fc5\u987b\u4f7f\u7528\u7cfb\u7edf\u63d0\u793a\u4e2d\u5b9a\u4e49\u7684\u8bed\u6cd5\u3002"
+        : "This section requires a diagram. Include exactly one [DIAGRAM_REQUEST:...] block after the paragraph that best describes the architecture, flow, topology, or sequence. Use the syntax documented in the system prompt."
     );
   }
 
   return [
-    buildSystemMessage(docLocale),
+    buildSystemMessage(docLocale, { needsDiagram, isParentSection: isParent }),
     { role: "user", content: userParts.join("\n") },
   ];
 }

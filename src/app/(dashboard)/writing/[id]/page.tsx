@@ -30,6 +30,7 @@ export default function WritingPage({
   const { models, selectedModelA, selectedModelB, setSelectedModelA, setSelectedModelB } = useModelSelection();
   const genAll = useGenerateAll(id, setActiveSectionId, loadDraft);
   const gen = useGeneration(id, activeSectionId, loadDraft, selectedModelA, selectedModelB);
+  const { setReferences } = gen;
   const actions = useSectionActions(id, activeSectionId, loadDraft);
   const exp = useExport(id, draft?.title);
 
@@ -50,12 +51,12 @@ export default function WritingPage({
 
   useEffect(() => {
     if (!draft || !activeSectionId) {
-      gen.setReferences([]);
+      setReferences([]);
       return;
     }
     const section = draft.sections?.find((s) => s.id === activeSectionId);
     if (section?.references?.length) {
-      gen.setReferences(
+      setReferences(
         section.references.map((ref) => ({
           documentName: ref.documentName,
           content: ref.content || "",
@@ -65,9 +66,9 @@ export default function WritingPage({
         })),
       );
     } else {
-      gen.setReferences([]);
+      setReferences([]);
     }
-  }, [activeSectionId, draft]);
+  }, [activeSectionId, draft, setReferences]);
 
   useEffect(() => {
     if (!draft) return;
@@ -82,11 +83,6 @@ export default function WritingPage({
   const handleConfirm = useCallback(async () => {
     await gen.handleConfirm(setActiveSectionId);
   }, [gen, setActiveSectionId]);
-
-  const handleAssemble = useCallback(async () => {
-    await fetch(`/api/v1/drafts/${id}/assemble`, { method: "POST" });
-    await loadDraft();
-  }, [id, loadDraft]);
 
   const handleMarkerClick = useCallback((markerId: string, kind: "image" | "diagram") => {
     if (!activeSection?.content) return;

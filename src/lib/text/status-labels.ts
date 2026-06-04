@@ -20,10 +20,12 @@ export const docStatusColors: Record<string, string> = {
 
 export const draftStatusLabels: Record<string, string> = {
   drafting: "In Progress",
+  modifying: "Revising",
   completed: "Completed",
 };
 
 export const draftStatusColors: Record<string, string> = {
   drafting: "bg-orange-50 text-orange-600 dark:bg-orange-950/35 dark:text-orange-300",
+  modifying: "bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300",
   completed: "bg-green-50 text-green-600 dark:bg-green-950/35 dark:text-green-300",
 };

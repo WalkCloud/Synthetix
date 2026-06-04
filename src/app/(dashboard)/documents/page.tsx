@@ -8,7 +8,7 @@ import { Spinner } from "@/components/shared/spinner";
 import { UploadZone } from "@/components/documents/upload-zone";
 import { UploadQueue } from "@/components/documents/upload-queue-panel";
 import type { UploadItem } from "@/components/documents/upload-queue-panel";
-import { ProcessingSettings, modelLabel, type ModelOption } from "@/components/documents/processing-settings";
+import { ProcessingSettings, type ModelOption } from "@/components/documents/processing-settings";
 import { SUPPORTED_FORMATS } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
 

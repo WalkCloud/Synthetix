@@ -21,6 +21,7 @@ describe("isSectionDone", () => {
     "generating",
     "comparing",
     "reviewing",
+    "revising",
     "failed",
   ];
 
@@ -72,6 +73,15 @@ describe("deriveDraftStatus", () => {
       { status: "reviewing" },
     ];
     expect(deriveDraftStatus(sections)).toBe("drafting");
+  });
+
+  it("returns modifying when any section is revising", () => {
+    const sections = [
+      { status: "locked" },
+      { status: "revising" },
+      { status: "locked" },
+    ];
+    expect(deriveDraftStatus(sections)).toBe("modifying");
   });
 
   it("returns drafting for empty sections", () => {

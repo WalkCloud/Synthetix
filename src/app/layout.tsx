@@ -33,7 +33,7 @@ export default async function RootLayout({
   return (
     <html lang={locale} className={cn(plusJakartaSans.variable, inter.variable)} suppressHydrationWarning>
       <body className="font-sans antialiased bg-background text-foreground">
-        <Providers>{children}</Providers>
+        <Providers initialLocale={locale}>{children}</Providers>
       </body>
     </html>
   );

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import Image from "next/image";
 
 interface ChunkContentProps {
   content: string;
@@ -9,8 +10,6 @@ export function ChunkContent({ content, docId }: ChunkContentProps) {
   const segments = useMemo(() => {
     const segs: Array<{ type: "text" | "image"; content: string; src?: string; alt?: string }> = [];
     let remaining = content;
-    let imgIndex = 0;
-
     while (remaining.length > 0) {
       const imgMatch = remaining.match(/!\[([^\]]*)\]\(([^)]+)\)/);
       if (!imgMatch || imgMatch.index === undefined) {
@@ -39,7 +38,6 @@ export function ChunkContent({ content, docId }: ChunkContentProps) {
         alt: alt || filename,
       });
 
-      imgIndex++;
       remaining = remaining.slice(imgMatch.index + imgMatch[0].length);
     }
 
@@ -51,11 +49,14 @@ export function ChunkContent({ content, docId }: ChunkContentProps) {
       {segments.map((seg, i) =>
         seg.type === "image" && seg.src ? (
           <div key={i} className="my-3">
-            <img
+            <Image
               src={seg.src}
-              alt={seg.alt}
-              className="max-w-full rounded-lg border border-slate-200"
+              alt={seg.alt || ""}
+              width={800}
+              height={450}
+              className="h-auto max-w-full rounded-lg border border-slate-200"
               loading="lazy"
+              unoptimized
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}

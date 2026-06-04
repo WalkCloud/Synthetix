@@ -401,7 +401,6 @@ const en = {
       generatingTitle: "Generating outline",
       generatingDesc: "Structuring chapters, drafting hidden writing requirements, and preparing retrieval cues.",
       generationSteps: ["Reading confirmed requirements", "Arranging chapter hierarchy", "Writing section-level instructions", "Preparing knowledge-base search cues"],
-      generationLongHint: "This step may take longer because each section receives drafting guidance that will be used later for full-document generation.",
       modeSelectTitle: "Select Generation Mode",
       modeSelectDesc: "Click A - Generate Directly or B - Refine by Section in the chat.",
       refiningTitle: "Refining Sections",
@@ -612,7 +611,7 @@ const en = {
       confirmNewPassword: "Confirm new password",
     },
     database: {
-      title: "Database",
+      title: "Database Settings",
       type: "Database Type",
       sqlite: "SQLite",
       postgresql: "PostgreSQL",
@@ -691,7 +690,7 @@ const en = {
       saveS3Settings: "Save S3 Settings",
     },
     rag: {
-      title: "Vector Database",
+      title: "Vector Database Settings",
       vectorDatabaseProvider: "Vector Database Provider",
       notConfigured: "Not Configured",
       localTitle: "Local (NanoVectorDB)",

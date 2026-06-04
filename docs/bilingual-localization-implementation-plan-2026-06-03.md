@@ -83,7 +83,7 @@ API 多数直接返回英文字符串，例如：
 
 运行时 prompt 主要在：
 
-- `src/lib/brainstorm/facilitator.ts`
+- `src/lib/prompts/locales/*-prompts.ts`（facilitator prompt）
 - `src/lib/brainstorm/outline-prompt.ts`
 - `src/lib/writing/context.ts`
 - `src/lib/writing/audit.ts`
