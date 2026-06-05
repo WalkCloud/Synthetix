@@ -252,9 +252,10 @@ export function TopologyCanvas({
           return (
             <div key={it.id}
               data-card-id={it.id}
-              className="absolute bg-card rounded-xl flex items-center gap-2 px-2.5"
+              title={it.label}
+              className="absolute bg-card rounded-xl flex items-center gap-2 px-2.5 overflow-hidden"
               style={{
-                left: it.x - 70, top: it.y - 26, width: 140, height: 52,
+                left: it.x - 75, top: it.y - 26, width: 150, height: 52,
                 borderWidth: 1.5, borderStyle: "solid",
                 borderColor: sel ? it.color : "var(--border)",
                 backgroundColor: sel ? it.bg : undefined,
@@ -275,8 +276,8 @@ export function TopologyCanvas({
               </div>
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-[10px] font-semibold leading-tight line-clamp-1 text-foreground">{it.label}</span>
-                <span className="text-[8px] font-medium mt-px" style={{ color: it.color }}>
-                  {it.format.toUpperCase()} · {it.weight} ref{it.weight !== 1 ? "s" : ""}
+                <span className="text-[8px] font-medium mt-px truncate" style={{ color: it.color }}>
+                  ·{it.weight}
                 </span>
               </div>
             </div>
@@ -304,7 +305,12 @@ export function TopologyCanvas({
             </svg>
           </div>
           <span className="text-[13px] font-bold leading-tight line-clamp-2 px-4">{draftNode.label}</span>
-          <span className="text-[10px] text-white/60 mt-0.5">{refNodes.length} ref{refNodes.length !== 1 ? "s" : ""}</span>
+          <span className="text-[10px] text-white/60 mt-0.5">
+            {draftNode.totalReferences ?? refNodes.length} refs
+            {draftNode.sectionsWithReferences !== undefined && draftNode.totalSections !== undefined
+              ? ` · ${draftNode.sectionsWithReferences}/${draftNode.totalSections} sections`
+              : ""}
+          </span>
         </div>
       )}
 
