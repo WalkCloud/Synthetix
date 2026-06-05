@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isSectionDone } from "@/lib/writing/status";
 import type { TopologyNode, TopologyEdge, TopologyStats } from "@/types/topology";
 
 interface ReferenceGroup {
@@ -50,13 +51,27 @@ export async function buildTopology(draftId: string) {
     }
   }
 
-  const draftNode: TopologyNode = {
-    id: draftId, type: "draft", label: draft.title,
-    format: "draft", referenceCount: 0, relevanceScore: 0,
-  };
-
   const referenceNodes: TopologyNode[] = [];
   const edges: TopologyEdge[] = [];
+
+  const totalReferences = sections.reduce((sum, s) => sum + s.references.length, 0);
+  const uniqueDocuments = groupMap.size;
+  const sectionsWithReferences = sections.filter((s) => s.references.length > 0).length;
+  const totalSections = sections.length;
+  const completedSections = sections.filter((s) => isSectionDone(s.status)).length;
+
+  let mostReferencedDoc: string | null = null;
+  let maxRefCount = 0;
+  for (const [, group] of groupMap) {
+    if (group.refs.length > maxRefCount) { maxRefCount = group.refs.length; mostReferencedDoc = group.documentName; }
+  }
+
+  const draftNode: TopologyNode = {
+    id: draftId, type: "draft", label: draft.title,
+    format: "draft", referenceCount: totalReferences, relevanceScore: 0,
+    draftStatus: draft.status, totalSections, completedSections,
+    sectionsWithReferences, totalReferences, uniqueDocuments, mostReferencedDoc,
+  };
 
   for (const [groupKey, group] of groupMap) {
     const totalRefs = group.refs.length;
@@ -79,16 +94,6 @@ export async function buildTopology(draftId: string) {
   }
 
   const nodes = [draftNode, ...referenceNodes];
-  const totalReferences = sections.reduce((sum, s) => sum + s.references.length, 0);
-  const uniqueDocuments = groupMap.size;
-  const sectionsWithReferences = sections.filter((s) => s.references.length > 0).length;
-  const totalSections = sections.length;
-
-  let mostReferencedDoc: string | null = null;
-  let maxRefCount = 0;
-  for (const [, group] of groupMap) {
-    if (group.refs.length > maxRefCount) { maxRefCount = group.refs.length; mostReferencedDoc = group.documentName; }
-  }
 
   const stats: TopologyStats = {
     totalReferences, uniqueDocuments, sectionsWithReferences, totalSections,

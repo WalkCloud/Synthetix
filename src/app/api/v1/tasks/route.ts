@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   if (type) {
     where.type = type;
   }
+  const includeResultData = type === "draft_generate_all";
 
   const tasks = await db.asyncTask.findMany({
     where,
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
       status: true,
       progress: true,
       inputData: true,
-      resultData: true,
+      resultData: includeResultData,
       errorMessage: true,
       createdAt: true,
       updatedAt: true,
@@ -43,9 +44,11 @@ export async function GET(request: Request) {
       try {
         input = t.inputData ? JSON.parse(t.inputData) as Record<string, unknown> : null;
       } catch {}
-      try {
-        result = t.resultData ? JSON.parse(t.resultData) : null;
-      } catch {}
+      if (includeResultData) {
+        try {
+          result = t.resultData ? JSON.parse(t.resultData) : null;
+        } catch {}
+      }
 
       return {
         id: t.id,
