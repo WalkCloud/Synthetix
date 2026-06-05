@@ -51,13 +51,17 @@ export async function POST(
       return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
     }
 
+    const hasComparisonCandidates = Boolean(section.contentA || section.contentB);
+    const hasSelectedComparison = Boolean(section.selectedModel && section.content);
+
+    if (hasComparisonCandidates && !hasSelectedComparison) {
+      return errorResponse(
+        "Please select a source (A or B) before confirming",
+        400
+      );
+    }
+
     if (!section.content) {
-      if (section.contentA || section.contentB) {
-        return errorResponse(
-          "Please select a source (A or B) before confirming",
-          400
-        );
-      }
       return errorResponse({ code: "invalidInput", message: "Section has no content to confirm" }, 400);
     }
 
@@ -65,8 +69,11 @@ export async function POST(
     const nextVersion = section.versions.length + 1;
 
     const versionSource = section.selectedModel
-      ? section.selectedModel === "a" ? "generated_a" : "generated_b"
-      : section.contentA || section.contentB ? "generated"
+      ? section.selectedModel === section.modelA
+        ? "generated_a"
+        : section.selectedModel === section.modelB
+          ? "generated_b"
+          : "edited"
       : "edited";
 
     await db.sectionVersion.create({

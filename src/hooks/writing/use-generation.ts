@@ -152,11 +152,12 @@ export function useGeneration(
         `/api/v1/drafts/${id}/sections/${activeSectionId}/confirm`,
         { method: "POST" },
       );
-      if (res.ok) {
+      const data = await res.json().catch(() => ({ error: "Confirm failed" }));
+      if (res.ok && data.success) {
         const refresh = await fetch(`/api/v1/drafts/${id}`);
-        const data = await refresh.json();
-        if (data.success) {
-          const freshSections: SectionMeta[] = data.data.sections;
+        const refreshData = await refresh.json();
+        if (refreshData.success) {
+          const freshSections: SectionMeta[] = refreshData.data.sections;
           await loadDraft();
           const currentIdx = freshSections.findIndex((s) => s.id === activeSectionId);
           const nextPending = freshSections
@@ -166,6 +167,8 @@ export function useGeneration(
             setActiveSectionId(nextPending.id);
           }
         }
+      } else {
+        toast.error(getLocalizedError(data));
       }
     } finally {
       setIsConfirming(false);
@@ -185,8 +188,10 @@ export function useGeneration(
       await loadDraft();
     } catch (err) {
       console.error("Humanize failed:", err);
+      toast.error(getLocalizedError({ error: err instanceof Error ? err.message : "Humanize failed" }));
+    } finally {
+      setIsHumanizing(false);
     }
-    setIsHumanizing(false);
   }, [activeSectionId, id, loadDraft]);
 
   const handleUnlock = useCallback(async (targetStatus?: "reviewing" | "pending" | "revising") => {

@@ -116,6 +116,11 @@ export async function PUT(
       const { cleaned, diagrams, images } = parseDiagramRequests(body.content);
       updateData.content = cleaned;
       updateData.wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+      updateData.contentA = null;
+      updateData.contentB = null;
+      updateData.modelA = null;
+      updateData.modelB = null;
+      updateData.selectedModel = null;
       if (diagrams.length > 0 || images.length > 0) {
         console.warn(`PUT section ${sectionId}: ${diagrams.length} DIAGRAM_REQUEST + ${images.length} IMAGE_REQUEST blocks found in edited content — stripped but not persisted as assets. Re-generate the section to create assets.`);
       }
