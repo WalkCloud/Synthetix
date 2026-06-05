@@ -1,6 +1,6 @@
 {
   "name": "synthetix",
-  "version": "0.10.1",
+  "version": "0.10.9",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {

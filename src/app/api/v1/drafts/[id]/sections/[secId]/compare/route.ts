@@ -47,7 +47,12 @@ export async function POST(
   }
 
   const modelARecord = await resolveModelOrFallback(body.modelAConfigId, "writing", user.id);
-  const modelBRecord = await resolveSecondModel(modelARecord.id, user.id);
+  const modelBRecord = body.modelBConfigId
+    ? await resolveModelOrFallback(body.modelBConfigId, "writing", user.id)
+    : await resolveSecondModel(modelARecord.id, user.id);
+  if (modelBRecord.id === modelARecord.id) {
+    return errorResponse("Please select two different models for comparison", 400);
+  }
 
   await db.section.update({
     where: { id: sectionId },
@@ -140,10 +145,13 @@ export async function POST(
           await db.section.update({
             where: { id: sectionId },
             data: {
+              content: null,
               contentA: stripLeadingSectionTitle(contentA, section.title),
               contentB: stripLeadingSectionTitle(contentB, section.title),
               modelA,
               modelB,
+              selectedModel: null,
+              wordCount: null,
               status: "reviewing",
             },
           });

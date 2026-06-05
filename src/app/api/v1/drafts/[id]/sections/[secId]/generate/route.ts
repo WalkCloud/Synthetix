@@ -94,6 +94,11 @@ export async function POST(
           where: { id: sectionId },
           data: {
             content: finalContent,
+            contentA: null,
+            contentB: null,
+            modelA: null,
+            modelB: null,
+            selectedModel: null,
             wordCount: finalContent.split(/\s+/).filter(Boolean).length,
             status: "reviewing",
           },

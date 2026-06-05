@@ -11,9 +11,11 @@ import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
 const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
+const LIGHTRAG_NO_DATA_COOLDOWN_MS = 30 * 60 * 1000;
+const LIGHTRAG_INDEXING_COOLDOWN_MS = 5 * 60 * 1000;
 const MIN_COSINE_THRESHOLD = 0.4;
 
-let lightRagDisabledUntil = 0;
+const lightRagCooldowns = new Map<string, number>();
 
 interface RagChunkResult {
   chunk_id: string;
@@ -154,7 +156,7 @@ export async function semanticSearch(
 
   let semanticResults: SearchResult[] = [];
 
-  if (ctx.llmConfig && lightRagDisabledUntil <= Date.now()) {
+  if (ctx.llmConfig && (lightRagCooldowns.get(userId) ?? 0) <= Date.now()) {
     try {
       const ragResults = await searchViaLightRAG(
         query,
@@ -205,10 +207,17 @@ export async function semanticSearch(
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("404")) {
-        lightRagDisabledUntil = Date.now() + LIGHTRAG_404_COOLDOWN_MS;
-        console.warn("[semantic] LightRAG unavailable (404); using direct embedding fallback for 5 minutes.");
+      if (message.includes("data unavailable") || message.includes("no data indexed") || message.includes("empty index")) {
+        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_NO_DATA_COOLDOWN_MS);
+        console.warn(`[semantic] LightRAG data not ready for user ${userId}; using fallback for 30m.`);
+      } else if (message.includes("indexing in progress")) {
+        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_INDEXING_COOLDOWN_MS);
+        console.warn(`[semantic] LightRAG indexing in progress for user ${userId}; using fallback for 5m.`);
+      } else if (message.includes("404")) {
+        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
+        console.warn(`[semantic] LightRAG query failed (404) for user ${userId}; using fallback for 5m.`);
       } else {
+        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
         console.error("[semantic] LightRAG failed:", err instanceof Error ? err.stack : err);
       }
     }

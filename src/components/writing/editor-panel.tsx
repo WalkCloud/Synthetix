@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { SectionMeta, GenerationMode, ModelOption } from "@/types/writing";
 import { isSectionDone } from "@/lib/writing/status";
+import { getReviewDisplayState } from "@/lib/writing/display-content";
 import { getOutlineNumber } from "@/lib/writing/outline-utils";
 import { countWords } from "@/lib/text/count-words";
 import { StatePills } from "./state-pills";
@@ -212,6 +213,9 @@ export function EditorPanel({
   const canConfirm = isReviewing || isRevising || section.status === "comparing";
   const isLocked = isSectionDone(section.status);
   const isServerGenerating = !isGenerating && (section.status === "generating" || section.status === "retrieving");
+  const reviewDisplay = getReviewDisplayState(section);
+  const requiresModelSelection = reviewDisplay.requiresModelSelection;
+  const shouldShowReviewContent = (isComparing || isReviewing || isRevising) && !isGenerating;
 
   const modelAName = section.modelA || `${t.models.usage.model} A`;
   const modelBName = section.modelB || `${t.models.usage.model} B`;
@@ -305,7 +309,7 @@ export function EditorPanel({
           )}
 
       {isServerGenerating && (
-        <div className="bg-card border border-primary-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="mb-5 bg-card border border-primary-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="px-5 pt-5 pb-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="relative w-9 h-9 flex items-center justify-center">
@@ -358,10 +362,10 @@ export function EditorPanel({
         </div>
       )}
 
-      {(isComparing || isReviewing) && editingContent === null && !isGenerating && (
+      {shouldShowReviewContent && editingContent === null && (
         <ComparisonView
-          contentA={section.contentA || section.content}
-          contentB={section.contentB}
+          contentA={reviewDisplay.contentA}
+          contentB={reviewDisplay.contentB}
           modelAName={modelAName}
           modelBName={modelBName}
           modelA={section.modelA}
@@ -373,7 +377,7 @@ export function EditorPanel({
           draftId={section.draftId}
           sectionId={section.id}
           sectionTitle={section.title}
-          mode={isComparing && section.contentB ? "compare" : "single"}
+          mode={reviewDisplay.mode}
         />
       )}
 
@@ -409,9 +413,9 @@ export function EditorPanel({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isConfirming}
+            disabled={isConfirming || requiresModelSelection}
             className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer shadow-sm ${
-              isConfirming
+              isConfirming || requiresModelSelection
                 ? "bg-primary-400 text-white cursor-not-allowed"
                 : "bg-primary-600 text-white hover:bg-primary-700"
             }`}
@@ -420,18 +424,18 @@ export function EditorPanel({
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 animate-spin">
                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
               </svg>
-            ) : (
+            ) : requiresModelSelection ? null : (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
-            {isConfirming ? (isZh ? "确认中..." : "Confirming...") : (isZh ? "确认章节" : "Confirm Section")}
+            {isConfirming ? (isZh ? "确认中..." : "Confirming...") : requiresModelSelection ? (isZh ? "请先选择模型内容" : "Select a model first") : (isZh ? "确认章节" : "Confirm Section")}
           </button>
         </div>
       )}
 
       {isGenerating && !streamingContent && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+        <div className="mb-5 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
           <div className="px-5 pt-5 pb-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="relative w-9 h-9 flex items-center justify-center">
@@ -499,7 +503,7 @@ export function EditorPanel({
       )}
 
       {isGenerating && streamingContent && (
-        <div className="bg-card border border-primary-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="mt-5 bg-card border border-primary-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="h-1 bg-primary-100">
             <div className="h-full bg-gradient-to-r from-primary-400 via-primary-500 to-primary-400 bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite]" style={{ width: "100%" }} />
           </div>
@@ -518,7 +522,7 @@ export function EditorPanel({
       )}
 
       {isCompareStreaming && (displayContentA || displayContentB) && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="bg-card border border-emerald-200 rounded-2xl overflow-hidden shadow-sm">
             <div className="h-1 bg-emerald-100">
               <div className="h-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400 bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite]" style={{ width: "100%" }} />
