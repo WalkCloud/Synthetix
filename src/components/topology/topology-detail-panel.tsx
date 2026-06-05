@@ -56,7 +56,7 @@ export function TopologyDetailPanel({
   };
 
   return (
-    <div className="absolute right-4 top-4 z-30 w-[280px] max-h-[calc(100%-32px)] bg-card/95 backdrop-blur-sm border border-border rounded-xl shadow-xl flex flex-col">
+    <div className="absolute right-4 top-4 z-30 w-[280px] max-h-[calc(100%-16px)] bg-card/95 backdrop-blur-sm border border-border rounded-xl shadow-xl flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
         <span className="text-[12px] font-semibold text-foreground">{isZh ? "详情" : "Details"}</span>
         <button
@@ -71,7 +71,7 @@ export function TopologyDetailPanel({
       </div>
       <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-foreground truncate flex-1">{node.label}</span>
+          <span className="text-[13px] font-semibold text-foreground break-all flex-1">{node.label}</span>
           <span className="shrink-0 rounded-md px-1.5 py-px text-[10px] font-medium" style={{ color: tc, backgroundColor: `${tc}15` }}>{etype}</span>
         </div>
 
@@ -123,7 +123,7 @@ export function TopologyDetailPanel({
               <span className="text-[11px] text-muted-foreground block mb-1">{isZh ? "资料覆盖洞察" : "Coverage Insight"}</span>
               <p className="text-[11px] text-foreground/80 leading-relaxed">{coverageInsight()}</p>
               {node.mostReferencedDoc && (
-                <p className="mt-1.5 text-[10px] text-muted-foreground truncate">{isZh ? "最常引用" : "Most referenced"}: {node.mostReferencedDoc}</p>
+                <p className="mt-1.5 text-[10px] text-muted-foreground break-all">{isZh ? "最常引用" : "Most referenced"}: {node.mostReferencedDoc}</p>
               )}
             </div>
 
@@ -153,14 +153,14 @@ export function TopologyDetailPanel({
             <span className="text-[11px] text-muted-foreground block mb-1.5">
               {isZh ? "引用来源" : "Reference Sources"} ({node.referenceChunks.length})
             </span>
-            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+            <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
               {node.referenceChunks.map((chunk, i) => (
                 <div key={i} className="rounded-lg bg-secondary/50 px-2.5 py-1.5">
                   {chunk.sourceAnchor && (
-                    <p className="text-[11px] text-foreground font-medium truncate">{chunk.sourceAnchor}</p>
+                    <p className="text-[11px] text-foreground font-medium break-all">{chunk.sourceAnchor}</p>
                   )}
                   <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground truncate flex-1">{chunk.sectionTitle}</span>
+                    <span className="text-[10px] text-muted-foreground break-all flex-1">{chunk.sectionTitle}</span>
                     <span className="text-[10px] text-primary font-semibold shrink-0">{Math.round(chunk.relevanceScore * 100)}%</span>
                   </div>
                 </div>

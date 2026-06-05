@@ -51,6 +51,31 @@ async def query_rag(
         print(json.dumps({"chunks": [], "mode": mode}))
         return
 
+    # Quick health check — fail fast when data is clearly unusable
+    import time as _time
+
+    def _quick_health_check(wd: str) -> tuple:
+        lock_file = os.path.join(wd, ".indexing.lock")
+        if os.path.exists(lock_file):
+            lock_age = _time.time() - os.path.getmtime(lock_file)
+            if lock_age < 1800:
+                return False, "indexing in progress"
+            else:
+                os.remove(lock_file)
+
+        kv_file = os.path.join(wd, "kv_store_full_docs.json")
+        if not os.path.exists(kv_file):
+            return False, "no data indexed yet"
+        if os.path.getsize(kv_file) == 0:
+            return False, "empty index"
+
+        return True, "ok"
+
+    ok, reason = _quick_health_check(working_dir)
+    if not ok:
+        print(json.dumps({"chunks": [], "mode": mode, "warning": f"data unavailable: {reason}"}))
+        return
+
     from lightrag import LightRAG, QueryParam
     from lightrag.llm.openai import openai_embed
     from lightrag.utils import EmbeddingFunc
@@ -227,7 +252,17 @@ async def query_rag(
 
         print(json.dumps(output, ensure_ascii=False))
     except Exception as e:
-        print(json.dumps({"error": str(e), "mode": mode}))
+        print(json.dumps({
+            "error": str(e),
+            "mode": mode,
+            "context": {
+                "working_dir_exists": os.path.exists(working_dir),
+                "has_graphml": os.path.exists(os.path.join(working_dir, "graph_chunk_entity_relation.graphml")),
+                "has_kv": os.path.exists(os.path.join(working_dir, "kv_store_full_docs.json")),
+                "has_vdb": os.path.exists(os.path.join(working_dir, "vdb_chunks.json")),
+                "has_lock": os.path.exists(os.path.join(working_dir, ".indexing.lock")),
+            },
+        }))
 
 
 def main() -> None:
