@@ -156,22 +156,33 @@ async def query_rag(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
-    rag = LightRAG(
-        working_dir=working_dir,
-        llm_model_func=llm_func,
-        embedding_func=EmbeddingFunc(
-            embedding_dim=eff_dim,
-            max_token_size=8192,
-            func=embedding_func,
-            send_dimensions=True,
-        ),
-        kv_storage=kv_storage,
-        vector_storage=vector_storage,
-        graph_storage=graph_storage,
-        doc_status_storage=doc_status_storage,
-        **storage_kwargs,
-        **rerank_kwargs,
-    )
+    try:
+        rag = LightRAG(
+            working_dir=working_dir,
+            llm_model_func=llm_func,
+            embedding_func=EmbeddingFunc(
+                embedding_dim=eff_dim,
+                max_token_size=8192,
+                func=embedding_func,
+                send_dimensions=True,
+            ),
+            kv_storage=kv_storage,
+            vector_storage=vector_storage,
+            graph_storage=graph_storage,
+            doc_status_storage=doc_status_storage,
+            **storage_kwargs,
+            **rerank_kwargs,
+        )
+    except Exception as e:
+        err = str(e)
+        if "Embedding dim mismatch" in err or "expected:" in err:
+            print(json.dumps({
+                "error": err,
+                "mode": mode,
+                "warning": "Embedding dimension mismatch — the stored index was created with a different embedding model. Re-index documents with the current model to resolve.",
+            }))
+            return
+        raise
 
     fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()

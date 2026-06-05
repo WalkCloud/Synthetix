@@ -188,30 +188,42 @@ async def index_document(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
-    rag = LightRAG(
-        working_dir=working_dir,
-        llm_model_func=llm_func,
-        embedding_func=EmbeddingFunc(
-            embedding_dim=embed_dim,
-            max_token_size=8192,
-            func=embedding_func,
-            send_dimensions=True,
-        ),
-        kv_storage=kv_storage,
-        vector_storage=vector_storage,
-        graph_storage=graph_storage,
-        doc_status_storage=doc_status_storage,
-        addon_params={
-            "entity_types": [
-                "Technology", "Framework", "Architecture", "Protocol",
-                "Pattern", "Concept", "Algorithm", "Component",
-                "Service", "Platform", "Module", "Interface",
-                "Strategy", "Mechanism", "Pipeline", "Workflow",
-            ],
-        },
-        **storage_kwargs,
-        **rerank_kwargs,
-    )
+    try:
+        rag = LightRAG(
+            working_dir=working_dir,
+            llm_model_func=llm_func,
+            embedding_func=EmbeddingFunc(
+                embedding_dim=embed_dim,
+                max_token_size=8192,
+                func=embedding_func,
+                send_dimensions=True,
+            ),
+            kv_storage=kv_storage,
+            vector_storage=vector_storage,
+            graph_storage=graph_storage,
+            doc_status_storage=doc_status_storage,
+            addon_params={
+                "entity_types": [
+                    "Technology", "Framework", "Architecture", "Protocol",
+                    "Pattern", "Concept", "Algorithm", "Component",
+                    "Service", "Platform", "Module", "Interface",
+                    "Strategy", "Mechanism", "Pipeline", "Workflow",
+                ],
+            },
+            **storage_kwargs,
+            **rerank_kwargs,
+        )
+    except Exception as e:
+        err = str(e)
+        if "Embedding dim mismatch" in err or "expected:" in err:
+            import shutil
+            shutil.rmtree(working_dir, ignore_errors=True)
+            os.makedirs(working_dir, exist_ok=True)
+            return {
+                "status": "rebuilt",
+                "reason": f"Embedding dimension changed — existing data cleared. Re-upload to reindex. ({err.split(chr(10))[0]})",
+            }
+        raise
 
     fix_corrupted_json_files(working_dir)
     await rag.initialize_storages()
