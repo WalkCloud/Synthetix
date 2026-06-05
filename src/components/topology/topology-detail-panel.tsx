@@ -28,9 +28,32 @@ export function TopologyDetailPanel({
 }: TopologyDetailPanelProps) {
   const { locale } = useLocale();
   const isZh = locale === "zh-CN";
-  const etype = node.entityType || "entity";
+  const isDraft = node.type === "draft";
+  const totalSections = node.totalSections ?? 0;
+  const completedSections = node.completedSections ?? 0;
+  const sectionsWithReferences = node.sectionsWithReferences ?? 0;
+  const totalReferences = node.totalReferences ?? node.referenceCount ?? 0;
+  const uniqueDocuments = node.uniqueDocuments ?? 0;
+  const coveragePercent = totalSections > 0 ? Math.round((sectionsWithReferences / totalSections) * 100) : 0;
+  const etype = isDraft ? (isZh ? "主文档" : "draft") : node.entityType || "entity";
   const tc = typeColor(etype);
   const hasDescription = !!node.description;
+  const draftStatusLabel = (status?: string) => {
+    if (status === "completed") return isZh ? "已完成" : "Completed";
+    if (status === "modifying") return isZh ? "修改中" : "Modifying";
+    return isZh ? "草稿中" : "Drafting";
+  };
+  const coverageInsight = () => {
+    if (totalSections === 0) return isZh ? "暂无章节可分析。" : "No sections to analyze yet.";
+    if (coveragePercent >= 75) return isZh ? "参考资料覆盖较充分，可继续审阅章节内容。" : "Reference coverage is strong. Continue reviewing section content.";
+    if (coveragePercent >= 40) return isZh ? "部分章节缺少参考资料，建议补充关键章节引用。" : "Some sections lack references. Add sources for key gaps.";
+    return isZh ? "当前资料覆盖偏低，生成前建议补充更多参考文档。" : "Reference coverage is low. Add more source material before generating.";
+  };
+  const nextStep = () => {
+    if (completedSections < totalSections) return isZh ? "继续生成或审阅未完成章节。" : "Continue generating or reviewing unfinished sections.";
+    if (coveragePercent < 40) return isZh ? "优先补充缺少参考资料的章节。" : "Prioritize sections that lack references.";
+    return isZh ? "进入写作页检查最终章节内容。" : "Open the writing page to review the final content.";
+  };
 
   return (
     <div className="absolute right-4 top-4 z-30 w-[280px] max-h-[calc(100%-32px)] bg-card/95 backdrop-blur-sm border border-border rounded-xl shadow-xl flex flex-col">
@@ -67,6 +90,57 @@ export function TopologyDetailPanel({
           </div>
         )}
 
+        {isDraft && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
+              <span className="text-[11px] text-muted-foreground block mb-1">{isZh ? "文档状态" : "Document Status"}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] font-semibold text-foreground">{draftStatusLabel(node.draftStatus)}</span>
+                <span className="rounded-md bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">{coveragePercent}% {isZh ? "覆盖" : "covered"}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground block">{isZh ? "章节进度" : "Sections"}</span>
+                <span className="text-[13px] font-semibold text-foreground">{completedSections}/{totalSections}</span>
+              </div>
+              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground block">{isZh ? "参考覆盖" : "Coverage"}</span>
+                <span className="text-[13px] font-semibold text-foreground">{sectionsWithReferences}/{totalSections}</span>
+              </div>
+              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground block">{isZh ? "引用总数" : "References"}</span>
+                <span className="text-[13px] font-semibold text-foreground">{totalReferences}</span>
+              </div>
+              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground block">{isZh ? "资料来源" : "Sources"}</span>
+                <span className="text-[13px] font-semibold text-foreground">{uniqueDocuments}</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
+              <span className="text-[11px] text-muted-foreground block mb-1">{isZh ? "资料覆盖洞察" : "Coverage Insight"}</span>
+              <p className="text-[11px] text-foreground/80 leading-relaxed">{coverageInsight()}</p>
+              {node.mostReferencedDoc && (
+                <p className="mt-1.5 text-[10px] text-muted-foreground truncate">{isZh ? "最常引用" : "Most referenced"}: {node.mostReferencedDoc}</p>
+              )}
+            </div>
+
+            <div className="rounded-lg bg-primary/5 px-2.5 py-2">
+              <span className="text-[11px] text-primary font-semibold block mb-1">{isZh ? "下一步" : "Next Step"}</span>
+              <p className="text-[11px] text-foreground/80 leading-relaxed">{nextStep()}</p>
+            </div>
+
+            <a
+              href={`/writing/${node.id}`}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-primary/30 text-primary text-[11px] font-medium hover:bg-primary/5 transition-colors cursor-pointer"
+            >
+              {isZh ? "打开文档编写页" : "Open Writing Page"}
+            </a>
+          </div>
+        )}
+
         {hasDescription && (
           <div>
             <span className="text-[11px] text-muted-foreground block mb-1">{isZh ? "描述" : "Description"}</span>
@@ -95,7 +169,7 @@ export function TopologyDetailPanel({
           </div>
         )}
 
-        {!hasDescription && !node.referenceChunks?.length && !loading && (
+        {!isDraft && !hasDescription && !node.referenceChunks?.length && !loading && (
           <p className="text-[11px] text-muted-foreground italic">{isZh ? "暂无更多信息。" : "No additional information available."}</p>
         )}
 

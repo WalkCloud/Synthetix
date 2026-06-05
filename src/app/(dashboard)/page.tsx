@@ -79,7 +79,7 @@ export default function DashboardPage() {
         });
 
         // Fetch running tasks count
-        fetch("/api/v1/tasks")
+        fetch("/api/v1/tasks?status=pending,running&limit=50")
           .then((r) => r.json())
           .then((d) => {
             if (d.success) {

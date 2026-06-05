@@ -36,7 +36,7 @@ export function useGenerateAll(
     let stopped = false;
     async function findRunning() {
       try {
-        const res = await fetch("/api/v1/tasks?status=pending,running&limit=50");
+        const res = await fetch("/api/v1/tasks?type=draft_generate_all&status=pending,running&limit=50");
         const data = await res.json();
         if (!data.success || stopped) return;
         const found = (data.data || []).find(

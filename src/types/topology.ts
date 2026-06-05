@@ -18,6 +18,14 @@ export interface TopologyNode {
   description?: string;
   /** Reference chunks: source anchor → writing section mapping with scores */
   referenceChunks?: ReferenceChunk[];
+  /** Draft-specific summary fields for the central document node */
+  draftStatus?: string;
+  totalSections?: number;
+  completedSections?: number;
+  sectionsWithReferences?: number;
+  totalReferences?: number;
+  uniqueDocuments?: number;
+  mostReferencedDoc?: string | null;
 }
 
 export interface TopologyEdge {

@@ -83,6 +83,8 @@ model AsyncTask {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, type, createdAt])
+  @@index([userId, createdAt])
   @@map("async_tasks")
 }
 

@@ -61,7 +61,7 @@ export default function WritingListPage() {
     if (showLoading) setLoading(true);
     const [draftRes, taskRes] = await Promise.all([
       fetch("/api/v1/drafts"),
-      fetch("/api/v1/tasks?limit=100"),
+      fetch("/api/v1/tasks?type=draft_generate_all&limit=100"),
     ]);
     const draftData = await draftRes.json();
     const taskData = await taskRes.json();
@@ -244,7 +244,7 @@ export default function WritingListPage() {
                         </span>
                       </td>
                       <td className="px-5 py-5 align-middle text-center text-sm font-medium text-muted-foreground">
-                        <div className="whitespace-nowrap">{completed}/{totalSections} {isZh ? "已完成" : "done"}</div>
+                        <div className="whitespace-nowrap">{completed}/{totalSections}{completed === totalSections ? ` ${isZh ? "已完成" : "done"}` : ""}</div>
                         <div className="mx-auto mt-1 h-1.5 w-full max-w-[120px] overflow-hidden rounded-full bg-secondary">
                           <div
                             className="h-full rounded-full bg-primary-600 transition-all duration-500"
