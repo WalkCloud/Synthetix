@@ -260,6 +260,13 @@ async def index_document(
                 os.remove(_fp)
         await rag.initialize_storages()
 
+        if index_mode == "graph":
+            try:
+                await rag.adelete_by_doc_id(doc_id)
+                print(f"Cleaned existing LightRAG data for doc {doc_id} before graph indexing", file=sys.stderr)
+            except Exception:
+                pass
+
         chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
         if not chunk_files:
             return {"status": "skipped", "reason": "no chunks found", "doc_id": doc_id}
