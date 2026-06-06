@@ -19,7 +19,7 @@ export default function DocumentsPage() {
   const [embedModels, setEmbedModels] = useState<ModelOption[]>([]);
   const [llmModel, setLlmModel] = useState("");
   const [embedModel, setEmbedModel] = useState("");
-  const [contextUsage, setContextUsage] = useState(45);
+  const [contextUsage, setContextUsage] = useState(30);
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
   const [indexMode, setIndexMode] = useState<"basic" | "graph">("graph");

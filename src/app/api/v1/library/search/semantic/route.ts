@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     return authErrorResponse();
   }
 
-  const { query, limit = 20, mode = "hybrid" } = await request.json();
+  const { query, limit = 20, mode = "mix" } = await request.json();
   if (!query || typeof query !== "string") {
     return errorResponse({ code: "invalidInput", message: "query required" }, 400);
   }

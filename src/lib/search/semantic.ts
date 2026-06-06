@@ -13,7 +13,7 @@ const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/pytho
 const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
 const LIGHTRAG_NO_DATA_COOLDOWN_MS = 30 * 60 * 1000;
 const LIGHTRAG_INDEXING_COOLDOWN_MS = 5 * 60 * 1000;
-const MIN_COSINE_THRESHOLD = 0.4;
+const MIN_COSINE_THRESHOLD = 0.55;
 
 const lightRagCooldowns = new Map<string, number>();
 
@@ -93,6 +93,13 @@ async function searchViaDirectEmbedding(
   const embedTokens = embedResult.inputTokens ?? 0;
   const queryEmbedding = new Float32Array(embedResult.embeddings[0]);
 
+  const totalCount = await db.documentChunk.count({
+    where: {
+      embedding: { not: null },
+      document: { userId },
+    },
+  });
+  const take = Math.min(totalCount, 2000);
   const chunks = await db.documentChunk.findMany({
     where: {
       embedding: { not: null },
@@ -103,7 +110,7 @@ async function searchViaDirectEmbedding(
       embedding: true,
       document: { select: { id: true, originalName: true } },
     },
-    take: 500,
+    take,
   });
 
   if (chunks.length === 0) return { results: [], inputTokens: embedTokens };
@@ -143,7 +150,7 @@ export async function semanticSearch(
   query: string,
   userId: string,
   limit = 20,
-  mode: QueryMode = "hybrid",
+  mode: QueryMode = "mix",
 ): Promise<SearchResult[]> {
   let ctx: Awaited<ReturnType<typeof createRagContext>>;
   try {
@@ -237,7 +244,7 @@ export async function semanticSearch(
     }
   }
 
-  let keywordResults = await searchByKeyword(query, limit * 2).catch(() => [] as SearchResult[]);
+  let keywordResults = await searchByKeyword(query, userId, limit * 2).catch(() => [] as SearchResult[]);
 
   if (keywordResults.length > 0) {
     const ids = keywordResults.map((r) => r.chunkId);
@@ -286,41 +293,24 @@ function rrfFuse(
   keyword: SearchResult[],
   limit: number,
 ): SearchResult[] {
-  const K = 60;
+  const K = 20;
   const chunkScore = new Map<string, { result: SearchResult; score: number }>();
 
-  semantic.forEach((r, i) => {
-    const key = r.chunkId;
-    const existing = chunkScore.get(key);
-    const rrf = 1 / (K + i + 1);
-    if (existing) {
-      existing.score += rrf;
-      if (rrf > existing.score * 0.5) existing.result = r;
-    } else {
-      chunkScore.set(key, { result: r, score: rrf });
+  for (const results of [semantic, keyword]) {
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const key = r.chunkId;
+      const rrfRank = 1 / (K + i + 1);
+      const weighted = r.score * rrfRank;
+      const existing = chunkScore.get(key);
+      if (!existing || existing.score < weighted) {
+        chunkScore.set(key, { result: r, score: weighted });
+      }
     }
-  });
-
-  keyword.forEach((r, i) => {
-    const key = r.chunkId;
-    const existing = chunkScore.get(key);
-    const rrf = 1 / (K + i + 1);
-    if (existing) {
-      existing.score += rrf;
-    } else {
-      chunkScore.set(key, { result: r, score: rrf });
-    }
-  });
+  }
 
   return Array.from(chunkScore.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((entry, _i, arr) => {
-      const maxScore = arr[0].score;
-      const normalizedScore = maxScore > 0 ? entry.score / maxScore : 0;
-      return {
-        ...entry.result,
-        score: Math.round(normalizedScore * 1000) / 1000,
-      };
-    });
+    .map((entry) => entry.result);
 }

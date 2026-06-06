@@ -25,6 +25,149 @@ export function buildLightweightOutlinePrompt(archetype: string, locale: Documen
   return buildOutlinePromptEN(primarySkeleton, primary, secondarySkeleton, effectiveSecondary);
 }
 
+export function buildSkeletonOutlinePrompt(archetype: string, locale: DocumentLanguage = "en"): string {
+  const [rawPrimary, rawSecondary] = archetype.split("+");
+  const primary = normalizeArchetypeId(rawPrimary) ?? "general";
+  const secondary = normalizeArchetypeId(rawSecondary);
+  const archetypeKey = composeArchetypeKey(primary, secondary);
+  const effectiveSecondary = archetypeKey.includes("+") ? archetypeKey.split("+")[1] : null;
+
+  const primarySkeleton = getArchetypeSkeleton(primary, locale) ?? getArchetypeSkeleton("general", locale);
+  if (!primarySkeleton) {
+    throw new Error("General archetype skeleton is not registered");
+  }
+  const secondarySkeleton = effectiveSecondary ? getArchetypeSkeleton(effectiveSecondary, locale) ?? null : null;
+
+  if (locale === "zh-CN") {
+    return buildSkeletonPromptZH(primarySkeleton, primary, secondarySkeleton, effectiveSecondary);
+  }
+  return buildSkeletonPromptEN(primarySkeleton, primary, secondarySkeleton, effectiveSecondary);
+}
+
+export function buildEnrichmentPrompt(locale: DocumentLanguage = "en"): string {
+  if (locale === "zh-CN") return ENRICHMENT_PROMPT_ZH;
+  return ENRICHMENT_PROMPT_EN;
+}
+
+const ENRICHMENT_PROMPT_EN = `You are a professional document writing analyst. Fill in the detail fields for the outline chapter branch below.
+
+## Instructions
+For each leaf node (node with no children or empty children), add these fields:
+1. "keyPoints": [2-4 core writing points as strings]
+2. "writingRequirements": "Concise hidden drafting instruction covering scope, angle, boundaries, style, and diagram needs"
+3. "retrievalQuery": "Knowledge base retrieval query string"
+4. "referenceHints": [entity/standard/framework keywords]
+
+## Rules
+- Keep all existing fields (num, title, description, estimatedWords, children) unchanged.
+- Only add missing fields to leaf nodes. Do NOT modify non-leaf nodes.
+- Return the COMPLETE chapter branch JSON, identical structure, with fields filled in.
+
+## Output
+Strictly output JSON only (no other text).`;
+
+const ENRICHMENT_PROMPT_ZH = `你是专业的文档撰写分析师。为下方的大纲章节分支补充细节字段。
+
+## 指令
+对每个叶子节点（没有 children 或 children 为空的节点）添加以下字段：
+1. "keyPoints": [2-4 个核心写作要点]
+2. "writingRequirements": "隐藏撰写指令：覆盖范围、角度、边界、风格、图表需求"
+3. "retrievalQuery": "知识库检索查询"
+4. "referenceHints": [实体/标准/框架关键词]
+
+## 规则
+- 保持所有已有字段（num, title, description, estimatedWords, children）不变
+- 只对叶子节点添加缺失字段，不要修改非叶子节点
+- 返回完整章节分支 JSON，结构一致，字段已填充
+
+## 输出
+严格输出 JSON（不要添加其他文字）。`;
+
+function buildSkeletonPromptEN(
+  primary: ArchetypeSkeleton,
+  primaryType: string,
+  secondary: ArchetypeSkeleton | null,
+  secondaryType: string | null,
+): string {
+  const secondaryBlock = secondary
+    ? `\nThis is a hybrid document. Also embed key sections from the secondary archetype "${secondaryType}":\n- Principle: ${secondary.principle}\n- Skeleton: ${secondary.skeleton}\n- Focus: ${secondary.focus}\n`
+    : "";
+
+  return `Generate a document outline skeleton based on the structured requirements summary.
+
+## Document Archetype: ${primaryType}
+
+- **Principle:** ${primary.principle}
+- **Skeleton:** ${primary.skeleton}
+- **Focus:** ${primary.focus}
+${secondaryBlock}
+## Generation Instructions
+
+1. Use the skeleton above as the structural foundation.
+2. Adapt based on the requirements summary.
+3. Aim for a comprehensive outline with 2-3 levels of hierarchy, 4-8 top-level sections, 15-30 leaf sections.
+4. Use a FLAT JSON format with dotted numbering. Do NOT nest children inside parents.
+5. Use "num" field to express hierarchy: "1", "1.1", "1.1.1", etc.
+6. Each section must include: "num", "title", "description", "estimatedWords".
+7. Do NOT include keyPoints, writingRequirements, retrievalQuery, or referenceHints.
+
+## Output JSON Schema
+
+Output a flat JSON array (no other text):
+{
+  "title": "Document Title",
+  "documentType": "${primaryType}${secondaryType ? "+" + secondaryType : ""}",
+  "sections": [
+    { "num": "1", "title": "Chapter Name", "description": "Scope in one sentence", "estimatedWords": 1500 },
+    { "num": "1.1", "title": "Sub-section", "description": "Scope", "estimatedWords": 500 },
+    { "num": "1.2", "title": "Sub-section", "description": "Scope", "estimatedWords": 500 },
+    { "num": "2", "title": "Next Chapter", "description": "Scope", "estimatedWords": 2000 }
+  ]
+}`;
+}
+
+function buildSkeletonPromptZH(
+  primary: ArchetypeSkeleton,
+  primaryType: string,
+  secondary: ArchetypeSkeleton | null,
+  secondaryType: string | null,
+): string {
+  const secondaryBlock = secondary
+    ? `\n这是混合型文档。还需嵌入次要原型"${secondaryType}"的关键章节：\n- 原则：${secondary.principle}\n- 骨架：${secondary.skeleton}\n- 重点：${secondary.focus}\n`
+    : "";
+
+  return `根据结构化需求摘要生成文档大纲骨架。
+
+## 文档原型：${primaryType}
+
+- **原则：** ${primary.principle}
+- **骨架：** ${primary.skeleton}
+- **重点：** ${primary.focus}
+${secondaryBlock}
+## 生成指令
+
+1. 以以上骨架作为结构基础，根据需求摘要调整。
+2. 目标为全面的大纲：2-3 层级深度，4-8 个一级章节，15-30 个叶子章节。
+3. 使用扁平 JSON 格式配合点号编号，不要使用嵌套 children 结构。
+4. 用 "num" 字段表示层级："1"、"1.1"、"1.1.1" 等。
+5. 每个章节必须包含："num"、"title"、"description"、"estimatedWords"。
+6. 不要包含 keyPoints、writingRequirements、retrievalQuery、referenceHints 字段。
+
+## 输出 JSON 格式
+
+严格输出扁平 JSON 数组（不要添加其他文字）：
+{
+  "title": "文档标题",
+  "documentType": "${primaryType}${secondaryType ? "+" + secondaryType : ""}",
+  "sections": [
+    { "num": "1", "title": "章节名称", "description": "一句话描述范围", "estimatedWords": 1500 },
+    { "num": "1.1", "title": "子章节", "description": "范围", "estimatedWords": 500 },
+    { "num": "1.2", "title": "子章节", "description": "范围", "estimatedWords": 500 },
+    { "num": "2", "title": "下一章", "description": "范围", "estimatedWords": 2000 }
+  ]
+}`;
+}
+
 function buildOutlinePromptEN(
   primary: ArchetypeSkeleton,
   primaryType: string,

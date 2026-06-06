@@ -9,7 +9,6 @@ import {
   testConnectivity,
   detectContextWindows,
   detectEmbeddingDim,
-  validateEmbeddingDim,
 } from "@/lib/llm/provider-probe";
 
 export async function POST(
@@ -69,19 +68,12 @@ export async function POST(
     const embeddingDims: Record<string, number> = {};
     const embedDimErrors: string[] = [];
     for (const m of embedModels) {
-      if (m.embeddingDim && m.embeddingDim > 0) {
-        const valid = await validateEmbeddingDim(baseUrl, headers, { modelId: m.modelId }, provider.apiBaseUrl, m.embeddingDim);
-        if (valid) {
-          embeddingDims[m.modelId] = m.embeddingDim;
-        } else {
-          embedDimErrors.push(`${m.modelId}: specified dimension ${m.embeddingDim} not accepted by API`);
-        }
+      const dim = await detectEmbeddingDim(baseUrl, headers, { modelId: m.modelId }, provider.apiBaseUrl);
+      if (dim !== null) {
+        embeddingDims[m.modelId] = dim;
+        await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: dim } }).catch(() => {});
       } else {
-        const dim = await detectEmbeddingDim(baseUrl, headers, { modelId: m.modelId }, provider.apiBaseUrl);
-        if (dim !== null) {
-          embeddingDims[m.modelId] = dim;
-          await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: dim } }).catch(() => {});
-        }
+        embedDimErrors.push(`${m.modelId}: unable to detect embedding dimension`);
       }
     }
 

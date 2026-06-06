@@ -45,6 +45,10 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
+    return this.chatWithRetry(params, 3);
+  }
+
+  private async chatWithRetry(params: ChatParams, remaining: number): Promise<ChatResponse> {
     const url = buildChatCompletionsUrl(this.normalizedBase);
     const body: Record<string, unknown> = {
       model: params.model,
@@ -62,6 +66,11 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     });
 
     if (!response.ok) {
+      if (response.status === 429 && remaining > 0) {
+        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.chatWithRetry(params, remaining - 1);
+      }
       const errorText = await response.text().catch(() => "");
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
     }
@@ -83,6 +92,13 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<ChatChunk> {
+    const generator = this.chatStreamWithRetry(params, 3);
+    for await (const chunk of generator) {
+      yield chunk;
+    }
+  }
+
+  private async *chatStreamWithRetry(params: ChatParams, remaining: number): AsyncGenerator<ChatChunk> {
     const url = buildChatCompletionsUrl(this.normalizedBase);
     const body: Record<string, unknown> = {
       model: params.model,
@@ -101,6 +117,15 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     });
 
     if (!response.ok) {
+      if (response.status === 429 && remaining > 0) {
+        const delay = Math.pow(2, 4 - remaining) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        const retry = this.chatStreamWithRetry(params, remaining - 1);
+        for await (const chunk of retry) {
+          yield chunk;
+        }
+        return;
+      }
       const errorText = await response.text().catch(() => "");
       throw new Error(`Chat stream request failed (${response.status}): ${errorText || response.statusText}`);
     }
