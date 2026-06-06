@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
@@ -43,7 +44,10 @@ export async function POST(request: Request) {
     where: { userId: user.id, originalHash: hash },
   });
   if (existing) {
-    return errorResponse({ code: "conflict", message: "DUPLICATE" }, 409);
+    return NextResponse.json(
+      { success: false, error: "DUPLICATE", code: "conflict", existingId: existing.id },
+      { status: 409 },
+    );
   }
 
   const doc = await db.document.create({
