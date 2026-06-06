@@ -26,6 +26,15 @@ export async function GET(
     orderBy: { createdAt: "desc" },
   });
 
+  const graphTask = await db.asyncTask.findFirst({
+    where: {
+      userId: user.id,
+      type: "rag_index",
+      inputData: { contains: doc.id },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
   return successResponse({
     documentId: doc.id,
     status: doc.status,
@@ -33,5 +42,12 @@ export async function GET(
     taskStatus: task?.status,
     progress: task?.progress || 0,
     error: task?.errorMessage,
+    graph: {
+      requested: Boolean(graphTask),
+      taskId: graphTask?.id,
+      status: graphTask?.status || "not_requested",
+      progress: graphTask?.progress || 0,
+      error: graphTask?.errorMessage,
+    },
   });
 }

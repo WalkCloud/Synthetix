@@ -22,11 +22,43 @@ import os
 import struct
 import argparse
 import asyncio
+from contextlib import contextmanager
 
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+
+
+@contextmanager
+def indexing_lock(working_dir: str, doc_id: str):
+    """Create the lock that rag_query.py already treats as indexing-in-progress."""
+    lock_path = os.path.join(working_dir, ".indexing.lock")
+    with open(lock_path, "w", encoding="utf-8") as fp:
+        fp.write(doc_id)
+    try:
+        yield lock_path
+    finally:
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+
+
+async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20) -> int:
+    """Insert chunks with bounded bulk calls, falling back only for unsupported APIs."""
+    indexed = 0
+    for i in range(0, len(chunk_records), batch_size):
+        batch = chunk_records[i:i + batch_size]
+        contents = [item["content"] for item in batch]
+        ids = [item["id"] for item in batch]
+        paths = [item["path"] for item in batch]
+        try:
+            await rag.ainsert(contents, ids=ids, file_paths=paths)
+            indexed += len(batch)
+        except TypeError:
+            for item in batch:
+                await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
+                indexed += 1
+    return indexed
 
 
 def load_cached_embeddings(file_path: str):
@@ -205,29 +237,35 @@ async def index_document(
             }
         raise
 
-    fix_corrupted_json_files(working_dir)
-    # v1.5.0 fix: aggressively remove any still-corrupt JSON files before LightRAG loads them
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
-    await rag.initialize_storages()
+    with indexing_lock(working_dir, doc_id):
+        fix_corrupted_json_files(working_dir)
+        # v1.5.0 fix: aggressively remove any still-corrupt JSON files before LightRAG loads them
+        import glob as _glob
+        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+            try:
+                with open(_fp, "r", encoding="utf-8") as _f:
+                    json.load(_f)
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                os.remove(_fp)
+        await rag.initialize_storages()
 
-    chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
-    if not chunk_files:
-        return {"status": "skipped", "reason": "no chunks found", "doc_id": doc_id}
+        chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
+        if not chunk_files:
+            return {"status": "skipped", "reason": "no chunks found", "doc_id": doc_id}
 
-    indexed = 0
-    for f in chunk_files:
-        chunk_path = os.path.join(chunks_dir, f)
-        with open(chunk_path, "r", encoding="utf-8") as fp:
-            content = fp.read()
-        chunk_id = f"{doc_id}/{f.replace('.md', '')}"
-        await rag.ainsert(content, ids=chunk_id, file_paths=chunk_path)
-        indexed += 1
+        chunk_records = []
+        for f in chunk_files:
+            chunk_path = os.path.join(chunks_dir, f)
+            with open(chunk_path, "r", encoding="utf-8") as fp:
+                content = fp.read()
+            chunk_records.append({
+                "content": content,
+                "id": f"{doc_id}/{f.replace('.md', '')}",
+                "path": chunk_path,
+            })
+
+        batch_size = int(os.environ.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size)
 
     if index_mode == "graph" and llm_api_base and llm_model:
         try:
