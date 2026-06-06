@@ -62,6 +62,21 @@ class RagIndexHelperTests(unittest.TestCase):
             ("b", "doc/chunk_001", "chunk_001.md"),
         ])
 
+    def test_insert_chunks_uses_serial_when_force_serial_is_true(self):
+        rag = FakeRag()
+        chunks = [
+            {"content": "a", "id": "doc/chunk_000", "path": "chunk_000.md"},
+            {"content": "b", "id": "doc/chunk_001", "path": "chunk_001.md"},
+        ]
+
+        indexed = asyncio.run(insert_chunks(rag, chunks, batch_size=2, force_serial=True))
+
+        self.assertEqual(indexed, 2)
+        self.assertEqual(rag.calls, [
+            ("a", "doc/chunk_000", "chunk_000.md"),
+            ("b", "doc/chunk_001", "chunk_001.md"),
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
