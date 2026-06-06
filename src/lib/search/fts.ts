@@ -105,6 +105,7 @@ export async function syncFtsIndexForDocument(docId: string): Promise<void> {
 
 export async function searchByKeyword(
   query: string,
+  userId: string,
   limit = 20,
   offset = 0
 ): Promise<SearchResult[]> {
@@ -126,10 +127,12 @@ export async function searchByKeyword(
      FROM document_fts f
      JOIN document_chunks dc ON dc.rowid = f.rowid
      JOIN documents d ON d.id = dc.document_id
-     WHERE document_fts MATCH ?
-     ORDER BY f.rank
-     LIMIT ? OFFSET ?`,
+      WHERE document_fts MATCH ?
+        AND d.user_id = ?
+      ORDER BY f.rank
+      LIMIT ? OFFSET ?`,
     tokenized,
+    userId,
     limit,
     offset
   );

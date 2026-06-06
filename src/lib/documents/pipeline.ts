@@ -33,8 +33,7 @@ async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, conc
 
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
-const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.5");
-const DEFAULT_CHUNK_TARGET_TOKENS = parseInt(process.env.CHUNK_TARGET_TOKENS || "800", 10);
+const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.30");
 const RAG_INDEX_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_index.py");
 
 export interface ProcessingContext {
@@ -111,10 +110,10 @@ export async function resolveProcessingModels(ctx: ProcessingContext): Promise<v
 
   const contextWindow = writingModel?.contextWindow || 4096;
   const splitRatio = options.contextUsage ? options.contextUsage / 100 : DEFAULT_SPLIT_RATIO;
-  const splitThreshold = Math.floor(contextWindow * splitRatio);
 
   const embedContext = embedModel?.contextWindow || 8192;
-  const chunkMaxTokens = Math.min(DEFAULT_CHUNK_TARGET_TOKENS, Math.floor(embedContext * 0.75));
+  const chunkMaxTokens = Math.floor(embedContext * splitRatio);
+  const splitThreshold = chunkMaxTokens * 2;
 
   ctx.writingModel = writingModel;
   ctx.embedModel = embedModel;
@@ -242,13 +241,17 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const validChunks: typeof allChunks = [];
   const validTexts: string[] = [];
   const maxChunkTokens = embedModel.contextWindow || 8192;
+  let skippedCount = 0;
   for (let i = 0; i < allChunks.length; i++) {
     if (estimateTokens(texts[i]) <= maxChunkTokens) {
       validChunks.push(allChunks[i]);
       validTexts.push(texts[i]);
     } else {
-      console.warn(`Skipping embedding for chunk ${allChunks[i].id}: ${estimateTokens(texts[i])} tokens exceeds model limit ${maxChunkTokens}`);
+      skippedCount += 1;
     }
+  }
+  if (skippedCount > 0) {
+    console.warn(`Skipped embedding for ${skippedCount}/${allChunks.length} chunks that exceed model limit ${maxChunkTokens} tokens`);
   }
 
   const baseBatchSize = embedModel.embeddingBatchSize || 10;
@@ -265,7 +268,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
       if (start >= validTexts.length) break;
       const end = Math.min(start + baseBatchSize, validTexts.length);
       offsets.push(start);
-      requests.push(provider.embed(validTexts.slice(start, end), embedModel.modelId));
+      requests.push(provider.embed(validTexts.slice(start, end), embedModel.modelId, embedModel.embeddingDim ?? undefined));
     }
 
     const results = await Promise.all(requests);
@@ -411,7 +414,7 @@ export function indexWithLightRAG(
     );
   }
   return spawnPythonJson(RAG_INDEX_SCRIPT, args, {
-    timeout: indexMode === "graph" ? 600_000 : 120_000,
+    timeout: indexMode === "graph" ? 900_000 : 120_000,
   });
 }
 

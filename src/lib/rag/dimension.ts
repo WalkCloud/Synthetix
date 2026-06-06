@@ -10,72 +10,26 @@ type ModelWithProvider = ModelConfig & { provider: ModelProvider };
  * Returns the dimension, and sets lightragCompatible = false if probing fails.
  */
 export async function resolveEmbeddingDim(model: ModelWithProvider): Promise<number> {
-  // Return cached dimension if already known
   if (model.embeddingDim && model.embeddingDim > 0) {
     return model.embeddingDim;
   }
 
   try {
     const provider = createLLMProvider(model.provider);
-
-    // Try 1536 first — LightRAG graph mode requires this dimension
-    try {
-      const result1536 = await provider.embed(["dimension probe"], model.modelId, 1536);
-      const dim1536 = result1536.embeddings[0]?.length;
-      if (dim1536 === 1536) {
-        await db.modelConfig.update({
-          where: { id: model.id },
-          data: { embeddingDim: 1536 },
-        }).catch(() => {});
-        return 1536;
-      }
-    } catch {
-      // 1536 not supported, fall through to auto-detect
-    }
-
-    // Auto-detect default dimension
     const result = await provider.embed(["dimension probe"], model.modelId);
     const dim = result.embeddings[0]?.length;
     if (dim && dim > 0) {
       await db.modelConfig.update({
         where: { id: model.id },
         data: { embeddingDim: dim },
-      }).catch((err) => { console.warn("Failed to cache embedding dim:", err); });
+      }).catch(() => {});
       return dim;
     }
-  } catch {
-    // Probe failed — fall through to heuristics, mark as potentially incompatible
-    await db.modelConfig.update({
-      where: { id: model.id },
-      data: { embeddingDim: 0 },
-    }).catch(() => {});
-  }
-
-  // Heuristic: well-known model dimensions (fallback when probe fails)
-  const modelLower = model.modelId.toLowerCase();
-  if (modelLower.includes("bge") || modelLower.includes("gte") || modelLower.includes("e5")) {
-    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 1024`);
-    return 1024;
-  }
-  if (modelLower.includes("large") || modelLower.includes("ada")) {
-    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 1536`);
-    return 1536;
-  }
-  if (modelLower.includes("3-large") || modelLower.includes("3-small")) {
-    const dim = modelLower.includes("3-large") ? 3072 : 1536;
-    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: ${dim}`);
-    return dim;
-  }
-  if (modelLower.includes("mxbai") || modelLower.includes("nomic")) {
-    console.warn(`[dimension] Probe failed for ${model.modelId}, using heuristic: 768`);
-    return 768;
-  }
+  } catch {}
 
   throw new Error(
-    `Cannot determine embedding dimension for model "${model.modelId}". ` +
-    `API probe failed and no heuristic matches. ` +
-    `Please test the model in Model Management to auto-detect its dimension, ` +
-    `or save the model with the correct embedding dimension manually.`
+    `Cannot determine embedding dimension for "${model.modelId}". ` +
+    `Click "Test Connection" in Model Management to auto-detect it.`
   );
 }
 

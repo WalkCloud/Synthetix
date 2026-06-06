@@ -13,6 +13,6 @@ export async function POST(request: Request) {
     return errorResponse({ code: "invalidInput", message: "query required" }, 400);
   }
 
-  const results = await searchByKeyword(query, limit, offset);
+  const results = await searchByKeyword(query, user.id, limit, offset);
   return successResponse(results);
 }

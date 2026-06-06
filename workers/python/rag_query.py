@@ -83,13 +83,19 @@ async def query_rag(
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    async def embedding_func(texts: list[str]):
-        return await openai_embed(
+    import numpy as np
+
+    async def embedding_func(texts: list[str], **kwargs):
+        result = await openai_embed(
             texts,
             model=embed_model,
             base_url=embed_api_base,
             api_key=embed_api_key,
+            **kwargs,
         )
+        if isinstance(result, list) and len(result) > 0:
+            return np.array([list(v) if hasattr(v, '__iter__') and not isinstance(v, list) else v for v in result], dtype=np.float32)
+        return result
 
     _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
 
@@ -185,6 +191,13 @@ async def query_rag(
         raise
 
     fix_corrupted_json_files(working_dir)
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
     await rag.initialize_storages()
 
     # Resolve mode aliases
@@ -194,7 +207,7 @@ async def query_rag(
 
     param = QueryParam(
         mode=mode,
-        chunk_top_k=limit,
+        chunk_top_k=max(limit * 3, 50),
         only_need_context=True,
     )
 
@@ -233,14 +246,19 @@ async def query_rag(
                         title = m.group(2)
                         break
 
-            raw_score = cosine_map.get(chunk_id)
-            if raw_score is not None:
-                score = max(0.0, min(1.0, raw_score))
-            elif len(chunks) > 1:
+            # LightRAG's own ranking order is the primary signal
+            if len(chunks) > 1:
                 t = i / (len(chunks) - 1)
-                score = 1.0 - t * t * 0.3
+                rag_score = max(0.3, 1.0 - t * 0.6)
             else:
-                score = 1.0
+                rag_score = 1.0
+
+            # VDB cosine is auxiliary (30% weight)
+            vdb_score = cosine_map.get(chunk_id)
+            if vdb_score is not None:
+                score = rag_score * 0.7 + vdb_score * 0.3
+            else:
+                score = rag_score
 
             output_chunks.append({
                 "chunk_id": chunk_id,

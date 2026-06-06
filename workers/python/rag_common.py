@@ -7,21 +7,77 @@ import json
 import os
 import glob as glob_mod
 
+# ── JSON safety ──────────────────────────────────────────────────────────────
+
+DEFAULT_STRUCTURES: dict[str, dict] = {
+    # LightRAG KV storage files — empty structures that won't crash LightRAG on load
+    "kv_store_full_docs.json": {},
+    "kv_store_doc_status.json": {},
+    "kv_store_text_chunks.json": {},
+    "kv_store_full_entities.json": {},
+    "kv_store_full_relations.json": {},
+    "kv_store_entity_chunks.json": {},
+    "kv_store_relation_chunks.json": {},
+    "kv_store_llm_response_cache.json": {},
+}
+
+
+def safe_json_dump(filepath: str, data: object) -> None:
+    """Atomically write JSON via tmp + rename to prevent partial-write corruption."""
+    tmp = filepath + ".tmp." + os.urandom(4).hex()
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, filepath)
+
+
+def validate_json_structure(filepath: str, required_top_keys: list[str]) -> None:
+    """Verify JSON file has expected top-level keys before LightRAG loads it."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{filepath}: expected dict, got {type(data).__name__}"
+        )
+    missing = [k for k in required_top_keys if k not in data]
+    if missing:
+        raise ValueError(
+            f"{filepath}: missing required keys {missing}"
+        )
+
 
 def fix_corrupted_json_files(working_dir: str) -> None:
-    """Scan working directory for empty or corrupted JSON files and reset them."""
+    """Scan working directory for empty or corrupted JSON files and reset them
+    to the correct empty structure for each file type."""
+    # Clean orphaned .tmp files left by failed atomic writes (Windows file locks)
+    for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.tmp.*"), recursive=True):
+        try:
+            os.remove(fp)
+        except OSError:
+            pass
+
     for fp in glob_mod.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
         if os.path.getsize(fp) == 0:
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
+            _reset_json(fp)
             continue
         try:
             with open(fp, "r", encoding="utf-8") as f:
                 json.load(f)
         except (json.JSONDecodeError, UnicodeDecodeError):
             print(f"Resetting corrupted JSON file: {fp}", file=sys.stderr)
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write("{}")
+            _reset_json(fp)
+
+
+def _reset_json(filepath: str) -> None:
+    """Replace a corrupted JSON file with the correct empty structure."""
+    basename = os.path.basename(filepath)
+    empty_data = DEFAULT_STRUCTURES.get(basename, {})
+    try:
+        safe_json_dump(filepath, empty_data)
+    except PermissionError:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(empty_data, f, ensure_ascii=False)
 
 
 def load_storage_config():
@@ -112,20 +168,10 @@ def build_rerank_func(rerank_api_base: str, rerank_api_key: str, rerank_model: s
 
 
 def resolve_embed_dim(embed_model: str, embed_dim: int = 0) -> int:
-    """Resolve embedding dimension from explicit value or model name heuristics."""
+    """Return the embedding dimension. The caller must provide --embed-dim."""
     if embed_dim and embed_dim > 0:
         return embed_dim
-
-    model_lower = embed_model.lower()
-    if any(x in model_lower for x in ("bge-m3", "bge-large", "text-embedding-3-large", "text-embedding-ada")):
-        return 1536
-    elif any(x in model_lower for x in ("bge", "gte", "e5")):
-        return 1024
-    elif "text-embedding-3-small" in model_lower:
-        return 1536
-    elif "text-embedding-v4" in model_lower:
-        return 1024
-    elif any(x in model_lower for x in ("mxbai", "nomic")):
-        return 768
-    else:
-        return 768
+    raise ValueError(
+        f"No embedding dimension for model '{embed_model}'. "
+        "Click 'Test Connection' in Model Management to auto-detect it."
+    )

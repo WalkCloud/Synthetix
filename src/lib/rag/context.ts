@@ -24,8 +24,11 @@ export function buildEmbedConfig(model: {
   modelId: string;
 }): EmbedConfig {
   const apiKey = model.provider.apiKey;
+  const raw = model.provider.apiBaseUrl;
+  const ver = raw.match(/\/v(\d+)(?:\/|$)/);
+  const versionPrefix = ver ? `/v${ver[1]}` : "/v1";
   return {
-    apiBase: normalizeProviderBaseUrl(model.provider.apiBaseUrl),
+    apiBase: normalizeProviderBaseUrl(raw) + versionPrefix,
     apiKey: apiKey ? decrypt(apiKey) : "",
     model: model.modelId,
   };

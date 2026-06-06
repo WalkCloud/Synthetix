@@ -102,18 +102,6 @@ export async function GET(request: Request) {
       };
     });
 
-  const nullRecords = byModelRaw.filter((r) => r.modelConfigId === null);
-  if (nullRecords.length > 0) {
-    byModel.push({
-      modelConfigId: "__deleted__",
-      modelName: "Deleted Model",
-      providerName: "-",
-      totalInputTokens: nullRecords.reduce((s, r) => s + (r._sum.inputTokens ?? 0), 0),
-      totalOutputTokens: nullRecords.reduce((s, r) => s + (r._sum.outputTokens ?? 0), 0),
-      totalCalls: nullRecords.reduce((s, r) => s + r._count, 0),
-    });
-  }
-
   byModel.sort(
     (a, b) =>
       b.totalInputTokens +
