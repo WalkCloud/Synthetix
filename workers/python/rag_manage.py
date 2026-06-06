@@ -133,9 +133,12 @@ async def action_graph_summary(rag) -> dict:
             return {"entities": [], "total_entities": 0, "total_relations": 0, "top": []}
 
         # Count degrees from the subgraph of each major entity (concurrent)
+        sem = asyncio.Semaphore(2)
+
         async def _get_degree(label: str) -> dict | None:
             try:
-                kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
+                async with sem:
+                    kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
                 degree = len(kg.edges or [])
                 return {"name": label, "degree": degree} if degree > 0 else None
             except Exception:
@@ -156,48 +159,52 @@ async def action_graph_summary(rag) -> dict:
 
 async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> dict:
     """Return a clean core graph: only nodes with degree >= min_degree, hiding leaf nodes."""
-    labels = await rag.get_graph_labels()
-    if not labels:
-        return {"entity": "", "graph": {"nodes": [], "edges": []}}
+    try:
+        labels = await rag.get_graph_labels()
+        if not labels:
+            return {"entity": "", "graph": {"nodes": [], "edges": []}}
 
-    # Pick the most central entity as root (concurrent)
-    async def _get_degree_pair(label: str) -> tuple[str, int]:
-        try:
-            kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
-            return (label, len(kg.edges or []))
-        except Exception:
-            return (label, 0)
+        sem = asyncio.Semaphore(2)
 
-    degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in labels[:20]])
-    best_label, best_degree = max(degree_pairs, key=lambda x: x[1])
+        async def _get_degree_pair(label: str) -> tuple[str, int]:
+            try:
+                async with sem:
+                    kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
+                return (label, len(kg.edges or []))
+            except Exception:
+                return (label, 0)
 
-    # Get subgraph from the central entity
-    kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
+        degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in labels[:20]])
+        best_label, best_degree = max(degree_pairs, key=lambda x: x[1])
 
-    # Filter out leaf nodes (degree 1, only connected to the center)
-    edge_count = {}
-    for edge in (kg.edges or []):
-        edge_count[edge.source] = edge_count.get(edge.source, 0) + 1
-        edge_count[edge.target] = edge_count.get(edge.target, 0) + 1
+        kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
 
-    core_node_ids = {n.id for n in (kg.nodes or []) if edge_count.get(n.id, 0) >= min_degree}
-    core_node_ids.add(best_label)  # Always keep center
+        edge_count = {}
+        for edge in (kg.edges or []):
+            edge_count[edge.source] = edge_count.get(edge.source, 0) + 1
+            edge_count[edge.target] = edge_count.get(edge.target, 0) + 1
 
-    filtered_nodes = [n for n in (kg.nodes or []) if n.id in core_node_ids]
-    filtered_edges = [
-        e for e in (kg.edges or [])
-        if e.source in core_node_ids and e.target in core_node_ids
-    ]
+        core_node_ids = {n.id for n in (kg.nodes or []) if edge_count.get(n.id, 0) >= min_degree}
+        core_node_ids.add(best_label)
 
-    return {
-        "entity": best_label,
-        "graph": {
-            "nodes": [_flatten_node(n) for n in filtered_nodes],
-            "edges": [_flatten_edge(e) for e in filtered_edges],
-        },
-        "total_entities": len(labels),
-        "leaf_count": len(labels) - len(filtered_nodes),
-    }
+        filtered_nodes = [n for n in (kg.nodes or []) if n.id in core_node_ids]
+        filtered_edges = [
+            e for e in (kg.edges or [])
+            if e.source in core_node_ids and e.target in core_node_ids
+        ]
+
+        return {
+            "entity": best_label,
+            "graph": {
+                "nodes": [_flatten_node(n) for n in filtered_nodes],
+                "edges": [_flatten_edge(e) for e in filtered_edges],
+            },
+            "total_entities": len(labels),
+            "leaf_count": len(labels) - len(filtered_nodes),
+        }
+    except Exception as e:
+        print(f"action_core_graph error: {e}", file=sys.stderr)
+        return {"error": str(e), "entity": "", "graph": {"nodes": [], "edges": []}}
 
 
 async def action_delete_entity(rag, entity_name: str) -> dict:
@@ -219,13 +226,19 @@ async def main_async(args) -> None:
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    async def embedding_func(texts: list[str]):
-        return await openai_embed(
+    import numpy as np
+
+    async def embedding_func(texts: list[str], **kwargs):
+        result = await openai_embed(
             texts,
             model=args.embed_model,
             base_url=args.embed_api_base,
             api_key=args.embed_api_key,
+            **kwargs,
         )
+        if isinstance(result, list) and len(result) > 0:
+            return np.array([list(v) if hasattr(v, '__iter__') and not isinstance(v, list) else v for v in result], dtype=np.float32)
+        return result
 
     _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
 
@@ -297,6 +310,13 @@ async def main_async(args) -> None:
         rag.rerank_model_func = rerank_fn
 
     fix_corrupted_json_files(working_dir)
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
     await rag.initialize_storages()
 
     action = args.action

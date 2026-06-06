@@ -120,7 +120,7 @@ export async function detectEmbeddingDim(
   };
 
   for (const url of [actualBase, normalizedBase]) {
-    for (const dim of [1536, 1024, 768]) {
+    for (const dim of [3072, 1536, 1024, 768]) {
       const result = await tryProbe(url, { input: ["dimension probe"], model: model.modelId, dimensions: dim });
       if (result === dim) return dim;
     }

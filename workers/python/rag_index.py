@@ -83,38 +83,16 @@ async def index_document(
     embedding_iter = None
     if embeddings_file and os.path.exists(embeddings_file):
         cached_embeddings, probed_dim = load_cached_embeddings(embeddings_file)
-        embed_dim = probed_dim
+        embed_dim = embed_dim if embed_dim > 0 else probed_dim
         embedding_iter = iter(cached_embeddings)
         print(f"Loaded {len(cached_embeddings)} cached embeddings dim={embed_dim} from {embeddings_file}", file=sys.stderr)
 
     # Auto-probe embedding dimension if not already known
-    if (not embed_dim or embed_dim <= 0) and not cached_embeddings:
-        try:
-            probe_result = openai_embed(
-                ["dimension probe"],
-                model=embed_model,
-                base_url=embed_api_base,
-                api_key=embed_api_key,
-            )
-            if isinstance(probe_result, list) and len(probe_result) > 0:
-                if isinstance(probe_result[0], list):
-                    embed_dim = len(probe_result[0])
-                elif hasattr(probe_result[0], '__len__'):
-                    embed_dim = len(probe_result[0])
-            print(f"Probed embedding dimension: {embed_dim}", file=sys.stderr)
-        except Exception as e:
-            print(f"Embedding probe failed: {e}, falling back to heuristics", file=sys.stderr)
-            model_lower = embed_model.lower()
-            if any(x in model_lower for x in ("bge-m3", "bge-large", "gte-large", "e5-large", "text-embedding-3-large", "text-embedding-ada")):
-                embed_dim = 1536 if "bge-m3" in model_lower else 1024
-            elif "text-embedding-3-small" in model_lower:
-                embed_dim = 1536
-            elif "text-embedding-v4" in model_lower:
-                embed_dim = 1024
-            elif any(x in model_lower for x in ("mxbai", "nomic")):
-                embed_dim = 768
-            else:
-                embed_dim = 768
+    if not embed_dim or embed_dim <= 0:
+        raise ValueError(
+            "Cannot determine embedding dimension. "
+            "Ensure --embed-dim is provided or an embeddings.bin cache file exists."
+        )
 
     # embedding_func: use cached embeddings when available, otherwise call API
     if embedding_iter is not None:
@@ -127,7 +105,8 @@ async def index_document(
                     result.append(emb)
                 else:
                     result.append([0.0] * embed_dim)
-            return result
+            import numpy as np
+            return np.array(result, dtype=np.float32)
     else:
 
         async def embedding_func(texts: list[str], **kwargs):
@@ -138,8 +117,9 @@ async def index_document(
                 api_key=embed_api_key,
                 **kwargs,
             )
+            import numpy as np
             if isinstance(result, list) and len(result) > 0:
-                return [list(v) if hasattr(v, '__iter__') and not isinstance(v, list) else v for v in result]
+                return np.array([list(v) if hasattr(v, '__iter__') and not isinstance(v, list) else v for v in result], dtype=np.float32)
             return result
 
     entity_stats: dict = {}
@@ -226,6 +206,14 @@ async def index_document(
         raise
 
     fix_corrupted_json_files(working_dir)
+    # v1.5.0 fix: aggressively remove any still-corrupt JSON files before LightRAG loads them
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
     await rag.initialize_storages()
 
     chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])

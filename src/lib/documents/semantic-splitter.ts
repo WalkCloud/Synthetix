@@ -32,6 +32,11 @@ interface MergeDecision {
   topic?: string;
 }
 
+function isRateLimitError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("429") || msg.includes("Too many requests");
+}
+
 export async function semanticSplit(
   structuralChunks: SplitChunk[],
   modelConfig: SemanticModelConfig,
@@ -42,7 +47,10 @@ export async function semanticSplit(
 
   const provider = createLLMProvider(modelConfig.provider);
   const BATCH_SIZE = 20;
-  const CONCURRENCY = 3;
+  const MIN_CONCURRENCY = 1;
+  const BACKOFF_FACTOR = 2;
+
+  let concurrency = 5;
 
   let totalInput = 0;
   let totalOutput = 0;
@@ -53,8 +61,9 @@ export async function semanticSplit(
     batches.push({ offset: b, chunks: structuralChunks.slice(b, b + BATCH_SIZE) });
   }
 
-  for (let i = 0; i < batches.length; i += CONCURRENCY) {
-    const slice = batches.slice(i, i + CONCURRENCY);
+  let i = 0;
+  while (i < batches.length) {
+    const slice = batches.slice(i, i + concurrency);
     const results = await Promise.allSettled(
       slice.map(async ({ offset, chunks: batchChunks }) => {
         const titleList = batchChunks.map((c, j) =>
@@ -92,13 +101,27 @@ Rules:
       }),
     );
 
+    let rateLimited = false;
+
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) {
         allDecisions.push(...r.value);
       } else if (r.status === "rejected") {
+        if (isRateLimitError(r.reason)) {
+          rateLimited = true;
+          break;
+        }
         console.warn(`Semantic batch failed:`, r.reason);
       }
     }
+
+    if (rateLimited && concurrency > MIN_CONCURRENCY) {
+      concurrency = Math.max(MIN_CONCURRENCY, Math.floor(concurrency / BACKOFF_FACTOR));
+      console.warn(`Semantic split rate limited — reduced concurrency to ${concurrency}`);
+      continue; // retry same slice with lower concurrency
+    }
+
+    i += rateLimited ? 1 : concurrency;
   }
 
   // No merge decisions: keep structural chunks as-is

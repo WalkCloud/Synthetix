@@ -100,7 +100,7 @@ model TokenUsage {
   createdAt     DateTime @default(now()) @map("created_at")
 
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+  modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@map("token_usage")
