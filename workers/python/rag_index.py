@@ -43,8 +43,19 @@ def indexing_lock(working_dir: str, doc_id: str):
             os.remove(lock_path)
 
 
-async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20) -> int:
-    """Insert chunks with bounded bulk calls, falling back only for unsupported APIs."""
+async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False) -> int:
+    """Insert chunks with bounded bulk calls, falling back only for unsupported APIs.
+
+    When force_serial is True (graph mode), always use serial inserts so
+    LightRAG's entity/relation extraction processes each chunk individually.
+    """
+    if force_serial:
+        indexed = 0
+        for item in chunk_records:
+            await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
+            indexed += 1
+        return indexed
+
     indexed = 0
     for i in range(0, len(chunk_records), batch_size):
         batch = chunk_records[i:i + batch_size]
@@ -265,7 +276,7 @@ async def index_document(
             })
 
         batch_size = int(os.environ.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size)
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=(index_mode == "graph"))
 
     if index_mode == "graph" and llm_api_base and llm_model:
         try:
