@@ -10,8 +10,17 @@ import {
   indexDocument,
 } from "@/lib/documents/pipeline";
 import { autoTagDocument } from "@/lib/documents/auto-tagger";
+import type { ProcessingOptions } from "@/lib/queue/types";
 
 const storage = new LocalStorageAdapter();
+
+export function getInitialIndexMode(options: Pick<ProcessingOptions, "indexMode">): "basic" {
+  return options.indexMode === "graph" ? "basic" : "basic";
+}
+
+export function shouldEnqueueGraphIndex(options: Pick<ProcessingOptions, "indexMode" | "indexTarget">): boolean {
+  return options.indexMode === "graph" && (options.indexTarget || "full") === "full";
+}
 
 export async function processDocument(taskId: string): Promise<{ ok: boolean; rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string }> {
   await db.asyncTask.update({
@@ -91,14 +100,10 @@ export async function processDocument(taskId: string): Promise<{ ok: boolean; ra
       data: { progress: 85 },
     });
 
+    const originalIndexMode = ctx.options.indexMode;
+    ctx.options.indexMode = getInitialIndexMode(ctx.options);
     const indexResult = await indexDocument(ctx);
-
-    if (ctx.options.indexMode === "graph") {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: { progress: 87 },
-      });
-    }
+    ctx.options.indexMode = originalIndexMode;
 
     await db.asyncTask.update({
       where: { id: taskId },
@@ -120,6 +125,11 @@ export async function processDocument(taskId: string): Promise<{ ok: boolean; ra
       where: { id: taskId },
       data: { status: "completed", progress: 100 },
     });
+
+    if (shouldEnqueueGraphIndex(ctx.options)) {
+      const { getQueue } = await import("@/lib/queue");
+      await getQueue().submit("rag_index", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+    }
 
     return {
       ok: true,

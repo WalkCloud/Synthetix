@@ -1,5 +1,6 @@
 import { TaskQueue } from "./queue";
 import { processDocument } from "./workers/document-worker";
+import { processDocumentGraph } from "./workers/document-graph-worker";
 import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import type { TaskPayload, TaskResult } from "./types";
@@ -8,6 +9,7 @@ let queue: TaskQueue | null = null;
 
 const LONG_DRAFT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const OUTLINE_GENERATE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const GRAPH_INDEX_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 let draining = false;
 
@@ -19,6 +21,7 @@ export function getQueue(): TaskQueue {
       taskTimeoutMs: {
         draft_generate_all: LONG_DRAFT_TIMEOUT_MS,
         outline_generate: OUTLINE_GENERATE_TIMEOUT_MS,
+        rag_index: GRAPH_INDEX_TIMEOUT_MS,
       },
     });
 
@@ -29,6 +32,14 @@ export function getQueue(): TaskQueue {
       if (!taskId) throw new Error("Missing taskId in payload");
       const result = await processDocument(taskId);
       return result;
+    });
+
+    queue.registerWorker("rag_index", async (
+      payload: TaskPayload,
+    ): Promise<TaskResult> => {
+      const taskId = payload.taskId as string;
+      if (!taskId) throw new Error("Missing taskId in payload");
+      return processDocumentGraph(taskId);
     });
 
     queue.registerWorker("draft_generate_all", async (
