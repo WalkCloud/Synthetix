@@ -377,11 +377,11 @@ export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { s
   }
 
   const ragChunksDir = outputDir;
-  const ragEmbedConfig = embedModel.provider.apiKey
+  const ragEmbedConfig = embedModel.provider.apiBaseUrl
     ? buildEmbedConfig(embedModel)
     : undefined;
 
-  const ragLlmConfig = writingModel?.provider.apiKey
+  const ragLlmConfig = writingModel?.provider.apiBaseUrl
     ? buildEmbedConfig(writingModel)
     : undefined;
 
