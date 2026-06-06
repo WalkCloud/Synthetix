@@ -37,15 +37,22 @@ export async function DELETE(request: Request) {
 }
 
 async function deleteLightRagData(docId: string, userId: string) {
-  const ctx = await createRagContext(userId, { requireLlm: true }).catch(() => null);
-  if (!ctx?.llmConfig) return;
-  await manageRag({
+  const ctx = await createRagContext(userId).catch((err) => {
+    console.error(`Failed to resolve RAG context for doc ${docId} deletion:`, err);
+    return null;
+  });
+  if (!ctx?.embedConfig) {
+    console.warn(`Cannot clean LightRAG for doc ${docId} — no embedding config available`);
+    return;
+  }
+  const result = await manageRag({
     userId,
     action: "delete-by-doc",
     embedConfig: ctx.embedConfig,
-    llmConfig: ctx.llmConfig,
+    llmConfig: ctx.llmConfig || { apiBase: "", apiKey: "", model: "" },
     rerankConfig: ctx.rerankConfig,
     embedDim: ctx.embedDim,
     docId,
-  });
+  }).catch((err) => { console.error(`LightRAG cleanup error for doc ${docId}:`, err); return null; });
+  if (result) console.log(`LightRAG cleanup completed for doc ${docId}`, result);
 }

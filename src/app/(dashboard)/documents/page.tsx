@@ -91,7 +91,7 @@ export default function DocumentsPage() {
         if (data.success) {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "complete", progress: 100, docId: data.data.document.id } : u));
         } else if (data.error === "DUPLICATE") {
-          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "complete", progress: 100, docId: data.data.existingId } : u));
+          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "complete", progress: 100, docId: data.existingId } : u));
         } else {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: data.error } : u));
         }
