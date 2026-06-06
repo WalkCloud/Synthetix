@@ -367,6 +367,9 @@ export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { s
   const needRag = indexTarget === "full";
   if (!needRag || !embedModel) return null;
 
+  const ragEmbedDim = await resolveEmbeddingDim(embedModel).catch(() => 768);
+  embedModel.embeddingDim = ragEmbedDim;
+
   let indexMode = options.indexMode || "basic";
   if (indexMode === "graph" && !isLightRAGCompatible(embedModel)) {
     console.warn(`Embedding model ${embedModel.modelId} (dim=${embedModel.embeddingDim}) not compatible with LightRAG graph mode (requires >= 1536), downgrading to basic`);
@@ -381,8 +384,6 @@ export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { s
   const ragLlmConfig = writingModel?.provider.apiKey
     ? buildEmbedConfig(writingModel)
     : undefined;
-
-  const ragEmbedDim = await resolveEmbeddingDim(embedModel).catch(() => 768);
 
   let ragRerankConfig: EmbedConfig | undefined;
   try {
