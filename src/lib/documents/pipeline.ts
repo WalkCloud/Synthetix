@@ -6,6 +6,7 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
+import { buildEmbeddingManifest } from "@/lib/documents/embedding-manifest";
 import type { StorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim, isLightRAGCompatible } from "@/lib/rag/dimension";
 import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
@@ -35,6 +36,7 @@ type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
 const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.30");
 const RAG_INDEX_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_index.py");
+const EMBEDDING_UPDATE_BATCH_SIZE = Number(process.env.EMBEDDING_UPDATE_BATCH_SIZE || 200);
 
 export interface ProcessingContext {
   taskId: string;
@@ -54,6 +56,34 @@ export interface SplitPlan {
   shouldSplit: boolean;
   tokenCount: number;
   wordCount: number;
+}
+
+interface EmbeddingUpdateDb {
+  documentChunk: {
+    update: (args: {
+      where: { id: string };
+      data: { embedding: Uint8Array; embedModel: string };
+    }) => unknown;
+  };
+  $transaction: (operations: unknown[]) => Promise<unknown>;
+}
+
+export async function persistEmbeddingUpdates(
+  updates: Array<{ chunkId: string; embedding: Uint8Array; embedModel: string }>,
+  options: { db?: EmbeddingUpdateDb; batchSize?: number } = {},
+): Promise<void> {
+  const targetDb: EmbeddingUpdateDb = options.db ?? (db as unknown as EmbeddingUpdateDb);
+  const batchSize = options.batchSize ?? EMBEDDING_UPDATE_BATCH_SIZE;
+
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize);
+    await targetDb.$transaction(
+      batch.map((u) => targetDb.documentChunk.update({
+        where: { id: u.chunkId },
+        data: { embedding: u.embedding, embedModel: u.embedModel },
+      })),
+    );
+  }
 }
 
 export async function loadProcessingTask(taskId: string): Promise<ProcessingContext> {
@@ -234,6 +264,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
 
   const allChunks = await db.documentChunk.findMany({
     where: { documentId: docId },
+    orderBy: { index: "asc" },
   });
 
   const texts = allChunks.map((c) => c.content);
@@ -282,15 +313,9 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
         const embBuf = float32ToBuffer(new Float32Array(emb));
         const chunkId = validChunks[start + ei].id;
         writtenEmbeddings.set(chunkId, embBuf);
-        return { chunkId, embedding: embBuf };
+        return { chunkId, embedding: embBuf, embedModel: embedModel.modelId };
       });
-      await boundedAll(updates, (u) =>
-        db.documentChunk.update({
-          where: { id: u.chunkId },
-          data: { embedding: u.embedding, embedModel: embedModel.modelId },
-        }),
-        5,
-      );
+      await persistEmbeddingUpdates(updates);
     }
   }
 
@@ -309,6 +334,18 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
     header.writeInt32LE(validEmbeddings.length, 0);
     header.writeInt32LE(embedDim, 4);
     fs.writeFileSync(embeddingsBinPath, Buffer.concat([header, ...validEmbeddings]));
+
+    const manifest = buildEmbeddingManifest({
+      documentId: docId,
+      embedModel: embedModel.modelId,
+      embeddingDim: embedDim,
+      chunks: validChunks.filter((chunk) => writtenEmbeddings.has(chunk.id)),
+    });
+    fs.writeFileSync(
+      path.join(ctx.outputDir, "embedding_manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf-8",
+    );
   }
 
   await recordTokenUsage({
