@@ -22,6 +22,7 @@ Output (stdout JSON):
 }
 """
 
+import argparse
 import json
 import os
 import sys
@@ -114,7 +115,12 @@ def find_boundaries(
 
 
 def main():
-    data = json.loads(sys.stdin.read())
+    parser = argparse.ArgumentParser(description="Local ONNX semantic chunker")
+    parser.add_argument("--input-file", required=True, help="Path to JSON input file")
+    args = parser.parse_args()
+
+    with open(args.input_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
     batches = data["batches"]
     threshold = data.get("threshold", 0.55)
 

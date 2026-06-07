@@ -18,7 +18,7 @@ export function spawnPython(
     const proc = spawn(PYTHON_PATH, [script, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       timeout,
-      env: { ...process.env, PYTHONUTF8: "1" },
+      env: { ...process.env, PYTHONUTF8: "1", ORT_DISABLE_ALL: process.env.ORT_DISABLE_ALL || "1", LOCAL_EMBED_MODEL_PATH: process.env.LOCAL_EMBED_MODEL_PATH || "" },
     });
 
     let stdout = "";
