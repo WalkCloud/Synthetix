@@ -35,8 +35,14 @@ export class TaskQueue {
   }
 
   async drain(): Promise<void> {
+    // Only reset tasks that were running in the last hour — stale tasks
+    // from earlier sessions shouldn't be re-executed
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     await db.asyncTask.updateMany({
-      where: { status: "running" },
+      where: {
+        status: "running",
+        updatedAt: { gte: oneHourAgo },
+      },
       data: { status: "pending", updatedAt: new Date() },
     });
 
