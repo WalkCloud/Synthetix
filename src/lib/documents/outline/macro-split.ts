@@ -9,6 +9,42 @@ export interface MacroChunk {
   isAtomic: boolean;
 }
 
+export function coalesceMacroChunks(chunks: MacroChunk[], minTokens: number): MacroChunk[] {
+  if (chunks.length <= 1) return chunks;
+
+  const merged: MacroChunk[] = [];
+  let current: MacroChunk | null = null;
+
+  for (const chunk of chunks) {
+    if (chunk.isAtomic) {
+      if (current) { merged.push(current); current = null; }
+      merged.push(chunk);
+      continue;
+    }
+
+    if (!current) {
+      current = { ...chunk };
+      continue;
+    }
+
+    const combinedTokens = current.tokenCount + chunk.tokenCount;
+    if (combinedTokens <= minTokens) {
+      current.content += "\n\n" + chunk.content;
+      current.tokenCount = combinedTokens;
+      if (chunk.h2) {
+        current.h2 = chunk.h2;
+        current.headingPath = [current.h1, current.h2].filter(Boolean).join(" > ");
+      }
+    } else {
+      merged.push(current);
+      current = { ...chunk };
+    }
+  }
+
+  if (current) merged.push(current);
+  return merged;
+}
+
 function isPlainTextTitle(line: string, prevEmpty: boolean, nextEmpty: boolean): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
