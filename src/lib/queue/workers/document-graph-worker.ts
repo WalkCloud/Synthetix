@@ -17,6 +17,16 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
   const ctx = await loadProcessingTask(taskId);
   await resolveProcessingModels(ctx);
 
+  // Check if document still exists before starting graph extraction
+  const currentDoc = await db.document.findUnique({ where: { id: ctx.docId } });
+  if (!currentDoc || currentDoc.status === "failed") {
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { status: "cancelled", errorMessage: "Document no longer exists", progress: 0 },
+    });
+    return { ok: false };
+  }
+
   ctx.outputDir = storage.getDocumentDir(ctx.docId, ctx.doc.userId);
   ctx.markdownPath = ctx.doc.markdownPath || `${ctx.outputDir}/full.md`;
   ctx.options.indexMode = "graph";

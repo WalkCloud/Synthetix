@@ -50,15 +50,10 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
 
     const remaining = await deps.countDocuments(userId);
     if (remaining === 0) {
-      try {
-        await deps.resetUserRag(userId);
-        if (ragStatus !== "failed") ragStatus = "reset";
-      } catch (error) {
-        ragStatus = "failed";
-        issues.push(error instanceof Error ? error.message : String(error));
-      }
+      // Always reset when no documents remain, even if deleteRagDocument failed
+      await deps.resetUserRag(userId).catch(() => {});
+      if (ragStatus !== "failed") ragStatus = "reset";
     } else {
-      // Clean up any orphaned RAG entries (dup-* etc) that remain after doc removal
       try {
         const docs = await db.document.findMany({ where: { userId }, select: { id: true } });
         await deps.cleanupRagOrphans(userId, docs.map((d) => d.id));
