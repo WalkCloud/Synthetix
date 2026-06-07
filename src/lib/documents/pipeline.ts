@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { convertToMarkdown } from "@/lib/documents/converter";
-import { splitMarkdown, estimateTokens } from "@/lib/documents/splitter";
+import { splitMarkdown, estimateTokens, type SplitChunk } from "@/lib/documents/splitter";
 import { semanticSplit } from "@/lib/documents/semantic-splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
@@ -14,6 +14,11 @@ import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/client";
+import { buildAtomicSpans } from "@/lib/documents/outline/spans";
+import { induceDocumentOutline } from "@/lib/documents/outline/induction";
+import { validateAndRepairSegmentationPlan } from "@/lib/documents/outline/segmentation";
+import { executeSegmentationPlan } from "@/lib/documents/outline/executor";
+import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
 import fs from "fs";
 import path from "path";
 
@@ -163,6 +168,32 @@ export function calculateSplitPlan(
   return { shouldSplit, tokenCount, wordCount };
 }
 
+async function splitViaOutlineDriven(
+  ctx: ProcessingContext,
+  markdown: string,
+  writingModel: NonNullable<ProcessingContext["writingModel"]>,
+  chunkMaxTokens: number,
+): Promise<SplitChunk[]> {
+  const docTitle = markdown.match(/^#\s+(.+)$/m)?.[1] || ctx.doc.originalName;
+  const safeLimit = Math.min(chunkMaxTokens, Math.floor((writingModel.contextWindow || 8192) * 0.85));
+
+  const spans = buildAtomicSpans(markdown);
+  if (spans.length === 0) return [];
+
+  const outline = await induceDocumentOutline({
+    spans,
+    writingModel,
+    documentTitle: docTitle,
+    maxSegmentationTokens: safeLimit,
+  });
+
+  const validated = validateAndRepairSegmentationPlan(outline, spans, safeLimit);
+  const chunks = executeSegmentationPlan(validated, spans);
+  const safeChunks = enforceEmbeddingSafeChunks(chunks, safeLimit);
+
+  return safeChunks;
+}
+
 export async function splitAndPersistChunks(
   ctx: ProcessingContext,
   markdown: string,
@@ -172,9 +203,33 @@ export async function splitAndPersistChunks(
   const { docId, options, chunkMaxTokens, writingModel } = ctx;
 
   if (plan.shouldSplit) {
+    const splitStrategy = options.splitStrategy || "structure-llm";
+
+    if (splitStrategy === "structure-llm" && writingModel) {
+      const chunks = await splitViaOutlineDriven(ctx, markdown, writingModel, chunkMaxTokens);
+      chunks.forEach((c, i) => { c.index = i; });
+
+      await db.documentChunk.deleteMany({ where: { documentId: docId } });
+      await db.documentChunk.createMany({
+        data: chunks.map((chunk) => ({
+          documentId: docId,
+          index: chunk.index,
+          title: chunk.title,
+          content: chunk.content,
+          tokenCount: chunk.tokenCount,
+          headingPath: chunk.headingPath,
+        })),
+      });
+      await boundedAll(
+        chunks,
+        (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
+        8,
+      );
+      return;
+    }
+
     let chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });
 
-    const splitStrategy = options.splitStrategy || "structure-llm";
     if (splitStrategy !== "heading-only" && writingModel && chunks.length > 1) {
       try {
         const splitTimeout = Math.min(60_000 + chunks.length * 5_000, 300_000);
@@ -272,17 +327,15 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const validChunks: typeof allChunks = [];
   const validTexts: string[] = [];
   const maxChunkTokens = embedModel.contextWindow || 8192;
-  let skippedCount = 0;
   for (let i = 0; i < allChunks.length; i++) {
-    if (estimateTokens(texts[i]) <= maxChunkTokens) {
-      validChunks.push(allChunks[i]);
-      validTexts.push(texts[i]);
-    } else {
-      skippedCount += 1;
+    if (estimateTokens(texts[i]) > maxChunkTokens) {
+      throw new Error(
+        `Chunk ${allChunks[i].id} (${estimateTokens(texts[i])} tokens) exceeds embedding limit ${maxChunkTokens} tokens. ` +
+        `Split safety check failed — the document should have been split into smaller chunks before embedding.`
+      );
     }
-  }
-  if (skippedCount > 0) {
-    console.warn(`Skipped embedding for ${skippedCount}/${allChunks.length} chunks that exceed model limit ${maxChunkTokens} tokens`);
+    validChunks.push(allChunks[i]);
+    validTexts.push(texts[i]);
   }
 
   const baseBatchSize = embedModel.embeddingBatchSize || 10;
