@@ -9,6 +9,25 @@ export interface MacroChunk {
   isAtomic: boolean;
 }
 
+function isPlainTextTitle(line: string, prevEmpty: boolean, nextEmpty: boolean): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (trimmed.length < 4 || trimmed.length > 80) return false;
+  if (trimmed.startsWith("![") || trimmed.startsWith("|") || trimmed.startsWith("```")) return false;
+  if (trimmed.startsWith("#")) return false; // already handled
+  // Not ending with Chinese/English sentence punctuation
+  if (/[。！？.!?，,；;：:）\)》>、]$/.test(trimmed)) return false;
+  // Must be bracketed by empty lines (at least one side)
+  if (!prevEmpty && !nextEmpty) return false;
+  return true;
+}
+
+function isMarkdownHeading(line: string): { level: number; text: string } | null {
+  const match = line.match(/^(#{1,6})\s+(.+)/);
+  if (match) return { level: match[1].length, text: match[2].trim() };
+  return null;
+}
+
 export function splitByMacroAST(markdown: string): MacroChunk[] {
   const lines = markdown.split("\n");
   const chunks: MacroChunk[] = [];
@@ -25,7 +44,7 @@ export function splitByMacroAST(markdown: string): MacroChunk[] {
     }
     const headingParts = [currentH1];
     if (currentH2) headingParts.push(currentH2);
-    const headingPath = headingParts.join(" > ");
+    const headingPath = headingParts.filter(Boolean).join(" > ") || "";
     chunks.push({
       headingPath,
       h1: currentH1,
@@ -35,6 +54,10 @@ export function splitByMacroAST(markdown: string): MacroChunk[] {
       isAtomic: false,
     });
     currentLines = [];
+  }
+
+  function isEmpty(line: string): boolean {
+    return line.trim() === "";
   }
 
   function isTableLine(line: string): boolean {
@@ -58,10 +81,10 @@ export function splitByMacroAST(markdown: string): MacroChunk[] {
         codeLines.push(lines[i]);
         i++;
       }
-      if (i < lines.length) i++; // closing fence
+      if (i < lines.length) i++;
       const content = fence + "\n" + codeLines.join("\n") + "\n```";
       chunks.push({
-        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "Code",
+        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "",
         h1: currentH1,
         h2: currentH2,
         content,
@@ -80,7 +103,7 @@ export function splitByMacroAST(markdown: string): MacroChunk[] {
         i++;
       }
       chunks.push({
-        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "Table",
+        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "",
         h1: currentH1,
         h2: currentH2,
         content: tableLines.join("\n"),
@@ -90,34 +113,52 @@ export function splitByMacroAST(markdown: string): MacroChunk[] {
       continue;
     }
 
-    // Headings
-    const h1Match = line.match(/^#\s+(.+)/);
-    const h2Match = line.match(/^##\s+(.+)/);
-    const h3Match = line.match(/^###\s+(.+)/);
-
-    if (h1Match && !h2Match) {
+    // Markdown headings (# ##)
+    const mdHeading = isMarkdownHeading(line);
+    if (mdHeading) {
       flush();
-      currentH1 = h1Match[1].trim();
-      currentH2 = null;
+      if (mdHeading.level === 1) {
+        currentH1 = mdHeading.text;
+        currentH2 = null;
+      } else {
+        if (!currentH1) currentH1 = mdHeading.text;
+        currentH2 = mdHeading.text;
+      }
       i++;
       continue;
     }
 
-    if (h2Match) {
-      flush();
-      if (!currentH1) currentH1 = h2Match[1].trim();
-      currentH2 = h2Match[1].trim();
-      i++;
-      continue;
+    // Plain-text title detection (for DOCX without markdown headings)
+    const prevEmpty = i === 0 || isEmpty(lines[i - 1] || "");
+    const nextEmpty = i + 1 < lines.length && isEmpty(lines[i + 1]);
+
+    if (isPlainTextTitle(line, prevEmpty, nextEmpty)) {
+      const trimmed = line.trim();
+      // Verify there's content ahead (not just another heading)
+      let hasContentAhead = false;
+      let j = i + 1;
+      while (j < lines.length && !hasContentAhead) {
+        const nl = lines[j].trim();
+        if (!nl || nl.startsWith("![")) { j++; continue; }
+        // Skip if it looks like another heading
+        if (!isPlainTextTitle(lines[j], isEmpty(lines[j - 1] || ""), j + 1 < lines.length && isEmpty(lines[j + 1]))) {
+          hasContentAhead = nl.length >= 8;
+        }
+        j++;
+      }
+      if (hasContentAhead) {
+        flush();
+        if (!currentH1) {
+          currentH1 = trimmed;
+        } else {
+          currentH2 = trimmed;
+        }
+        i++;
+        continue;
+      }
     }
 
-    // H3+: attach to current H2 section
-    if (h3Match) {
-      currentLines.push(line);
-      i++;
-      continue;
-    }
-
+    // Regular line: accumulate
     currentLines.push(line);
     i++;
   }
