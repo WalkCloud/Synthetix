@@ -175,7 +175,7 @@ async function splitViaLocalPipeline(
   const macros = splitByMacroAST(clean);
   if (macros.length === 0) return [];
 
-  const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.55);
+  const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.42);
   const withBreadcrumbs = injectBreadcrumbs(chunks);
   const safeChunks = enforceEmbeddingSafeChunks(withBreadcrumbs, chunkMaxTokens);
 
