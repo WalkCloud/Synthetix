@@ -8,6 +8,7 @@ export interface StorageAdapter {
   readMarkdown(docId: string, userId: string): Promise<string>;
   readChunk(docId: string, chunkIndex: number, userId: string): Promise<string>;
   deleteDocument(docId: string, userId: string): Promise<void>;
+  deleteUserRagData(userId: string): Promise<void>;
   getDocumentDir(docId: string, userId: string): string;
   getImagesDir(docId: string, userId: string): string;
   listImages(docId: string, userId: string): string[];
@@ -73,7 +74,13 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async deleteDocument(docId: string, userId: string): Promise<void> {
     const dir = this.getDocumentDir(docId, userId);
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  async deleteUserRagData(userId: string): Promise<void> {
+    const dir = path.join(process.env.RAG_ROOT || "./data/rag", userId);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
   }
 
   async deleteDocumentData(docId: string, userId: string): Promise<void> {

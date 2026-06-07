@@ -92,10 +92,45 @@ async def action_entity_detail(rag, entity_name: str, max_depth: int = 2, max_no
 
 async def action_delete_by_doc(rag, doc_id: str) -> dict:
     try:
-        await rag.adelete_by_doc_id(doc_id)
-        return {"status": "deleted", "doc_id": doc_id}
+        deleted_ids = []
+        target_ids = {doc_id}
+
+        try:
+            from lightrag.base import DocStatus
+            all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
+        except Exception:
+            all_docs = await rag.doc_status.get_all()
+
+        for key, value in (all_docs or {}).items():
+            if key == doc_id or key.startswith(doc_id + "/"):
+                target_ids.add(key)
+                continue
+
+            metadata = (value or {}).get("metadata", {}) if isinstance(value, dict) else {}
+            original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
+            file_path = (value or {}).get("file_path", "") if isinstance(value, dict) else ""
+            if original_doc_id == doc_id or original_doc_id.startswith(doc_id + "/") or f"{doc_id}" in file_path:
+                target_ids.add(key)
+
+        for target_id in sorted(target_ids):
+            try:
+                await rag.adelete_by_doc_id(target_id)
+                deleted_ids.append(target_id)
+            except Exception as delete_err:
+                print(f"Warning deleting LightRAG doc {target_id}: {delete_err}", file=sys.stderr)
+        
+        # Check if any documents are left. If not, wipe the graph entirely to remove orphaned entities.
+        remaining = await rag.doc_status.get_all()
+        if not remaining:
+            import shutil
+            shutil.rmtree(rag.working_dir, ignore_errors=True)
+            os.makedirs(rag.working_dir, exist_ok=True)
+            return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids, "wiped_all": True}
+             
+        return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids}
     except Exception as e:
         return {"error": str(e), "doc_id": doc_id}
+
 
 
 async def action_create_entity(rag, entity_name: str, entity_type: str, description: str) -> dict:
@@ -280,35 +315,7 @@ async def main_async(args) -> None:
     # Resolve effective embedding dimension
     eff_dim = resolve_embed_dim(args.embed_model, args.embed_dim)
 
-    rag = LightRAG(
-    working_dir=working_dir,
-    llm_model_func=llm_func,
-    embedding_func=EmbeddingFunc(
-        embedding_dim=eff_dim,
-        max_token_size=8192,
-        func=embedding_func,
-        send_dimensions=True,
-    ),
-    kv_storage=kv_storage,
-    vector_storage=vector_storage,
-    graph_storage=graph_storage,
-    doc_status_storage=doc_status_storage,
-    addon_params={
-        "entity_types": [
-            "Technology", "Framework", "Architecture", "Protocol",
-            "Pattern", "Concept", "Algorithm", "Component",
-            "Service", "Platform", "Module", "Interface",
-            "Strategy", "Mechanism", "Pipeline", "Workflow",
-        ],
-    },
-    **storage_kwargs,
-    )
-
-    # Configure rerank if available
-    rerank_fn = build_rerank_func(args.rerank_api_base, args.rerank_api_key, args.rerank_model)
-    if rerank_fn:
-        rag.rerank_model_func = rerank_fn
-
+    # Pre-check for corruption before initializing
     fix_corrupted_json_files(working_dir)
     import glob as _glob
     for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
@@ -317,6 +324,54 @@ async def main_async(args) -> None:
                 json.load(_f)
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             os.remove(_fp)
+            
+    # Also check graphml for corruption
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
+        try:
+            import xml.etree.ElementTree as ET
+            ET.parse(_fp)
+        except (ET.ParseError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
+
+    import time
+    max_retries = 5
+    rag = None
+    for attempt in range(max_retries):
+        try:
+            rag = LightRAG(
+                working_dir=working_dir,
+                llm_model_func=llm_func,
+                embedding_func=EmbeddingFunc(
+                    embedding_dim=eff_dim,
+                    max_token_size=8192,
+                    func=embedding_func,
+                    send_dimensions=True,
+                ),
+                kv_storage=kv_storage,
+                vector_storage=vector_storage,
+                graph_storage=graph_storage,
+                doc_status_storage=doc_status_storage,
+                addon_params={
+                    "entity_types": [
+                        "Technology", "Framework", "Architecture", "Protocol",
+                        "Pattern", "Concept", "Algorithm", "Component",
+                        "Service", "Platform", "Module", "Interface",
+                        "Strategy", "Mechanism", "Pipeline", "Workflow",
+                    ],
+                },
+                **storage_kwargs,
+            )
+            break
+        except Exception as e:
+            if "no element found" in str(e) and attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+            raise
+
+    # Configure rerank if available
+    rerank_fn = build_rerank_func(args.rerank_api_base, args.rerank_api_key, args.rerank_model)
+    if rerank_fn:
+        rag.rerank_model_func = rerank_fn
     await rag.initialize_storages()
 
     action = args.action
