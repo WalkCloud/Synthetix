@@ -162,23 +162,51 @@ async def query_rag(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
+    fix_corrupted_json_files(working_dir)
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
+            
+    # Also check graphml for corruption
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
+        try:
+            import xml.etree.ElementTree as ET
+            ET.parse(_fp)
+        except (ET.ParseError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
+
     try:
-        rag = LightRAG(
-            working_dir=working_dir,
-            llm_model_func=llm_func,
-            embedding_func=EmbeddingFunc(
-                embedding_dim=eff_dim,
-                max_token_size=8192,
-                func=embedding_func,
-                send_dimensions=True,
-            ),
-            kv_storage=kv_storage,
-            vector_storage=vector_storage,
-            graph_storage=graph_storage,
-            doc_status_storage=doc_status_storage,
-            **storage_kwargs,
-            **rerank_kwargs,
-        )
+        import time
+        max_retries = 5
+        rag = None
+        for attempt in range(max_retries):
+            try:
+                rag = LightRAG(
+                    working_dir=working_dir,
+                    llm_model_func=llm_func,
+                    embedding_func=EmbeddingFunc(
+                        embedding_dim=eff_dim,
+                        max_token_size=8192,
+                        func=embedding_func,
+                        send_dimensions=True,
+                    ),
+                    kv_storage=kv_storage,
+                    vector_storage=vector_storage,
+                    graph_storage=graph_storage,
+                    doc_status_storage=doc_status_storage,
+                    **storage_kwargs,
+                    **rerank_kwargs,
+                )
+                break
+            except Exception as e:
+                if "no element found" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                raise
     except Exception as e:
         err = str(e)
         if "Embedding dim mismatch" in err or "expected:" in err:
@@ -190,14 +218,6 @@ async def query_rag(
             return
         raise
 
-    fix_corrupted_json_files(working_dir)
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
     await rag.initialize_storages()
 
     # Resolve mode aliases

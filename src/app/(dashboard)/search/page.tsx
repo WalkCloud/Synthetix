@@ -113,11 +113,11 @@ export default function SearchPage() {
     const node = kgTopology?.nodes.find(n => n.id === kgSelectedNodeId);
     if (!node) return;
     setKgEntityDetailLoading(true);
-    fetch(`/api/v1/knowledge/entities/${encodeURIComponent(node.label || kgSelectedNodeId)}?depth=2&max_nodes=100`)
+    fetch(`/api/v1/knowledge/entities/${encodeURIComponent(node.id)}?depth=2&max_nodes=100`)
       .then(r => r.json())
       .then(d => {
         if (d.success && d.data?.graph?.nodes) {
-          const matchId = node.label || kgSelectedNodeId;
+          const matchId = node.id;
           const detailNode = d.data.graph.nodes.find((n: { id: string }) => n.id === matchId);
           const detailEdges = d.data.graph.edges || [];
           setKgTopology(prev => {
@@ -304,7 +304,7 @@ export default function SearchPage() {
                   const node = kgTopology.nodes.find(n => n.id === nodeId);
                   if (node) {
                     setKgGraphNotice("");
-                    setKgCenter(node.label || nodeId);
+                    setKgCenter(node.id);
                   }
                 }}
                 entityDetailLoading={kgEntityDetailLoading}

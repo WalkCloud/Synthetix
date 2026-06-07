@@ -170,30 +170,24 @@ async def index_document(
     _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
 
     if index_mode == "graph" and llm_api_base and llm_model:
+        import asyncio
+        llm_sem = asyncio.Semaphore(2)
         async def llm_func(
             prompt: str,
             system_prompt: str | None = None,
             history_messages: list | None = None,
             **kwargs,
         ) -> str:
-            if history_messages is None:
-                history_messages = []
-            clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
-            try:
-                return await openai_complete_if_cache(
-                    model=llm_model,
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    history_messages=history_messages,
-                    base_url=llm_api_base,
-                    api_key=llm_api_key,
-                    **clean_kwargs,
-                )
-            except Exception as e:
-                err_msg = str(e).lower()
-                if "response_format" in err_msg or "invalid_request" in err_msg:
-                    for bad_key in ("response_format", "keyword_extraction"):
-                        clean_kwargs.pop(bad_key, None)
+            async with llm_sem:
+                if history_messages is None:
+                    history_messages = []
+                lang_instruction = "\n\nIMPORTANT: All extracted entity names, types, relationships, and descriptions MUST be in the PRIMARY LANGUAGE of the original text. If the text is mainly Chinese, output in Chinese. If English, output in English. Descriptions MUST be concise summaries of the entity, DO NOT output step-by-step processes or 'phase1 phase2' raw chunks."
+                if system_prompt:
+                    system_prompt += lang_instruction
+                else:
+                    prompt += lang_instruction
+                clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+                try:
                     return await openai_complete_if_cache(
                         model=llm_model,
                         prompt=prompt,
@@ -203,7 +197,21 @@ async def index_document(
                         api_key=llm_api_key,
                         **clean_kwargs,
                     )
-                raise
+                except Exception as e:
+                    err_msg = str(e).lower()
+                    if "response_format" in err_msg or "invalid_request" in err_msg:
+                        for bad_key in ("response_format", "keyword_extraction"):
+                            clean_kwargs.pop(bad_key, None)
+                        return await openai_complete_if_cache(
+                            model=llm_model,
+                            prompt=prompt,
+                            system_prompt=system_prompt,
+                            history_messages=history_messages,
+                            base_url=llm_api_base,
+                            api_key=llm_api_key,
+                            **clean_kwargs,
+                        )
+                    raise
     else:
         async def llm_func(*args, **kwargs) -> str:
             return ""
@@ -211,31 +219,59 @@ async def index_document(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
+    fix_corrupted_json_files(working_dir)
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
+            
+    # Also check graphml for corruption
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
+        try:
+            import xml.etree.ElementTree as ET
+            ET.parse(_fp)
+        except (ET.ParseError, UnicodeDecodeError, OSError):
+            os.remove(_fp)
+
     try:
-        rag = LightRAG(
-            working_dir=working_dir,
-            llm_model_func=llm_func,
-            embedding_func=EmbeddingFunc(
-                embedding_dim=embed_dim,
-                max_token_size=8192,
-                func=embedding_func,
-                send_dimensions=True,
-            ),
-            kv_storage=kv_storage,
-            vector_storage=vector_storage,
-            graph_storage=graph_storage,
-            doc_status_storage=doc_status_storage,
-            addon_params={
-                "entity_types": [
-                    "Technology", "Framework", "Architecture", "Protocol",
-                    "Pattern", "Concept", "Algorithm", "Component",
-                    "Service", "Platform", "Module", "Interface",
-                    "Strategy", "Mechanism", "Pipeline", "Workflow",
-                ],
-            },
-            **storage_kwargs,
-            **rerank_kwargs,
-        )
+        import time
+        max_retries = 5
+        rag = None
+        for attempt in range(max_retries):
+            try:
+                rag = LightRAG(
+                    working_dir=working_dir,
+                    llm_model_func=llm_func,
+                    embedding_func=EmbeddingFunc(
+                        embedding_dim=embed_dim,
+                        max_token_size=8192,
+                        func=embedding_func,
+                        send_dimensions=True,
+                    ),
+                    kv_storage=kv_storage,
+                    vector_storage=vector_storage,
+                    graph_storage=graph_storage,
+                    doc_status_storage=doc_status_storage,
+                    addon_params={
+                        "entity_types": [
+                            "Technology/技术", "Framework/框架", "Architecture/架构", "Protocol/协议",
+                            "Pattern/模式", "Concept/概念", "Algorithm/算法", "Component/组件",
+                            "Service/服务", "Platform/平台", "Module/模块", "Interface/接口",
+                            "Strategy/策略", "Mechanism/机制", "Pipeline/管道", "Workflow/工作流",
+                        ],
+                    },
+                    **storage_kwargs,
+                    **rerank_kwargs,
+                )
+                break
+            except Exception as e:
+                if "no element found" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                raise
     except Exception as e:
         err = str(e)
         if "Embedding dim mismatch" in err or "expected:" in err:
@@ -243,21 +279,13 @@ async def index_document(
             shutil.rmtree(working_dir, ignore_errors=True)
             os.makedirs(working_dir, exist_ok=True)
             return {
-                "status": "rebuilt",
-                "reason": f"Embedding dimension changed — existing data cleared. Re-upload to reindex. ({err.split(chr(10))[0]})",
+                "error": err,
+                "status": "failed",
+                "message": "Embedding dimension mismatch — index automatically reset. Please retry the upload."
             }
         raise
 
     with indexing_lock(working_dir, doc_id):
-        fix_corrupted_json_files(working_dir)
-        # v1.5.0 fix: aggressively remove any still-corrupt JSON files before LightRAG loads them
-        import glob as _glob
-        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-            try:
-                with open(_fp, "r", encoding="utf-8") as _f:
-                    json.load(_f)
-            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-                os.remove(_fp)
         await rag.initialize_storages()
 
         if index_mode == "graph":
