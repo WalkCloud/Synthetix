@@ -10,6 +10,7 @@ function createDeps(options?: { remainingDocuments?: number }) {
     cancelDocumentTasks: vi.fn(async () => { events.push("cancel-tasks"); }),
     deleteRagDocument: vi.fn(async () => { events.push("delete-rag-doc"); }),
     resetUserRag: vi.fn(async () => { events.push("reset-rag"); }),
+    cleanupRagOrphans: vi.fn(async () => { events.push("cleanup-orphans"); }),
     deleteDocumentFiles: vi.fn(async () => { events.push("delete-files"); }),
     deleteDocumentRows: vi.fn(async () => { events.push("delete-db"); }),
     verifyDocumentDeleted: vi.fn(async () => { events.push("verify"); return { ok: true, issues: [] }; }),

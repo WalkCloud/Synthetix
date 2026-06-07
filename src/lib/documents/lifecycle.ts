@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
+import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 
 export type DocumentDeleteResult =
   | { deleted: null; notFound: true }
@@ -22,6 +23,7 @@ export interface DocumentLifecycleDeps {
   cancelDocumentTasks(userId: string, docId: string): Promise<void>;
   deleteRagDocument(userId: string, docId: string): Promise<void>;
   resetUserRag(userId: string): Promise<void>;
+  cleanupRagOrphans(userId: string, activeDocIds: string[]): Promise<void>;
   deleteDocumentFiles(userId: string, docId: string): Promise<void>;
   deleteDocumentRows(userId: string, docId: string): Promise<void>;
   verifyDocumentDeleted(userId: string, docId: string): Promise<{ ok: boolean; issues: string[] }>;
@@ -54,6 +56,14 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
       } catch (error) {
         ragStatus = "failed";
         issues.push(error instanceof Error ? error.message : String(error));
+      }
+    } else {
+      // Clean up any orphaned RAG entries (dup-* etc) that remain after doc removal
+      try {
+        const docs = await db.document.findMany({ where: { userId }, select: { id: true } });
+        await deps.cleanupRagOrphans(userId, docs.map((d) => d.id));
+      } catch (error) {
+        issues.push("RAG orphan cleanup skipped: " + (error instanceof Error ? error.message : String(error)));
       }
     }
 
@@ -119,6 +129,36 @@ export const documentLifecycle = createDocumentLifecycleService({
   },
   async resetUserRag(userId) {
     await storage.deleteUserRagData(userId);
+  },
+  async cleanupRagOrphans(userId, activeDocIds) {
+    const health = await scanKnowledgeHealth({ userId, activeDocumentIds: activeDocIds });
+    if (health.status === "healthy") return;
+
+    // If there are stale doc_status entries for docs that don't exist in DB, clean them
+    if (health.staleRagDocIds.length > 0) {
+      for (const staleId of health.staleRagDocIds) {
+        const docId = staleId.split("/")[0];
+        try {
+          const ctx = await createRagContext(userId);
+          await manageRag({
+            userId,
+            action: "delete-by-doc",
+            embedConfig: ctx.embedConfig,
+            llmConfig: ctx.llmConfig || { apiBase: "", apiKey: "", model: "" },
+            rerankConfig: ctx.rerankConfig,
+            embedDim: ctx.embedDim,
+            docId,
+          });
+        } catch {
+          // If individual RAG cleanup fails, try workspace reset
+        }
+      }
+    }
+
+    // If no active documents and graph still dirty, reset entirely
+    if (activeDocIds.length === 0 && health.hasGraph) {
+      await storage.deleteUserRagData(userId);
+    }
   },
   async deleteDocumentFiles(userId, docId) {
     await storage.deleteDocument(docId, userId);
