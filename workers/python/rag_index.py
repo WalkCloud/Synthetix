@@ -261,11 +261,17 @@ async def index_document(
         await rag.initialize_storages()
 
         if index_mode == "graph":
+            from lightrag.base import DocStatus
+            print(f"Cleaning existing RAG chunks for document {doc_id} to prevent duplicate skipping...", file=sys.stderr)
             try:
-                await rag.adelete_by_doc_id(doc_id)
-                print(f"Cleaned existing LightRAG data for doc {doc_id} before graph indexing", file=sys.stderr)
-            except Exception:
-                pass
+                all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
+                to_delete = [k for k in all_docs.keys() if k == doc_id or k.startswith(doc_id + "/")]
+                if to_delete:
+                    for chunk_id in to_delete:
+                        await rag.adelete_by_doc_id(chunk_id)
+                    print(f"Successfully cleaned {len(to_delete)} existing chunks.", file=sys.stderr)
+            except Exception as cleanup_err:
+                print(f"Warning during pre-indexing cleanup: {cleanup_err}", file=sys.stderr)
 
         chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
         if not chunk_files:
@@ -283,7 +289,7 @@ async def index_document(
             })
 
         batch_size = int(os.environ.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=(index_mode == "graph"))
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=False)
 
     if index_mode == "graph" and llm_api_base and llm_model:
         try:
