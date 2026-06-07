@@ -14,7 +14,7 @@ import { spawnPythonJson } from "@/lib/python";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/client";
 import { sanitizeMarkdown } from "@/lib/documents/outline/sanitize";
-import { splitByMacroAST } from "@/lib/documents/outline/macro-split";
+import { splitByMacroAST, coalesceMacroChunks } from "@/lib/documents/outline/macro-split";
 import { microSplitByLocalSemantic } from "@/lib/documents/outline/micro-split";
 import { injectBreadcrumbs } from "@/lib/documents/outline/breadcrumb";
 import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
@@ -172,8 +172,11 @@ async function splitViaLocalPipeline(
   chunkMaxTokens: number,
 ): Promise<SplitChunk[]> {
   const clean = sanitizeMarkdown(markdown);
-  const macros = splitByMacroAST(clean);
+  let macros = splitByMacroAST(clean);
   if (macros.length === 0) return [];
+
+  // Merge small adjacent chunks before micro-splitting
+  macros = coalesceMacroChunks(macros, Math.max(400, Math.floor(chunkMaxTokens * 0.4)));
 
   const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.35);
   const withBreadcrumbs = injectBreadcrumbs(chunks);
