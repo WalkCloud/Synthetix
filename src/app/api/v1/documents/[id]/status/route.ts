@@ -17,14 +17,16 @@ export async function GET(
     return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  const task = await db.asyncTask.findFirst({
-    where: {
-      userId: user.id,
-      type: "document_convert",
-      inputData: { contains: doc.id },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // Use raw query for precise inputData match — Prisma's JSON contains
+  // can match old tasks whose inputData happens to contain a similar UUID
+  const task = await db.$queryRawUnsafe<{ id: string; status: string; progress: number; error_message: string | null }[]>(
+    `SELECT id, status, progress, error_message FROM async_tasks
+     WHERE user_id = ? AND type = 'document_convert'
+       AND input_data LIKE ?
+     ORDER BY created_at DESC LIMIT 1`,
+    user.id,
+    `%${doc.id}%`,
+  ).then((rows) => rows[0] || null);
 
   const graphTask = await db.asyncTask.findFirst({
     where: {
