@@ -4,6 +4,18 @@ import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/api-helpers";
 import type { DocumentListParams } from "@/types/documents";
 
+const FORMAT_ALIASES: Record<string, string> = {
+  markdown: "md",
+  md: "md",
+  txt: "txt",
+  word: "docx",
+  powerpoint: "pptx",
+};
+
+function normalizeFormatFilter(raw: string): string {
+  return FORMAT_ALIASES[raw] || raw;
+}
+
 export async function GET(request: Request) {
   const user = await getAuthUser();
   if (!user) {
@@ -15,7 +27,8 @@ export async function GET(request: Request) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20")));
   const sort = (searchParams.get("sort") || "createdAt") as NonNullable<DocumentListParams["sort"]>;
   const order = (searchParams.get("order") || "desc") as "asc" | "desc";
-  const format = searchParams.get("format") || undefined;
+  const rawFormat = searchParams.get("format") || undefined;
+  const format = rawFormat ? normalizeFormatFilter(rawFormat) : undefined;
   const status = searchParams.get("status") || undefined;
   const tag = searchParams.get("tag") || undefined;
   const tagsParam = searchParams.get("tags") || undefined;
