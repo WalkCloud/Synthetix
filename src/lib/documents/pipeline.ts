@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens, type SplitChunk } from "@/lib/documents/splitter";
-import { semanticSplit } from "@/lib/documents/semantic-splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
@@ -14,10 +13,10 @@ import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/client";
-import { buildAtomicSpans } from "@/lib/documents/outline/spans";
-import { induceDocumentOutline } from "@/lib/documents/outline/induction";
-import { validateAndRepairSegmentationPlan } from "@/lib/documents/outline/segmentation";
-import { executeSegmentationPlan } from "@/lib/documents/outline/executor";
+import { sanitizeMarkdown } from "@/lib/documents/outline/sanitize";
+import { splitByMacroAST } from "@/lib/documents/outline/macro-split";
+import { microSplitByLocalSemantic } from "@/lib/documents/outline/micro-split";
+import { injectBreadcrumbs } from "@/lib/documents/outline/breadcrumb";
 import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
 import fs from "fs";
 import path from "path";
@@ -168,28 +167,17 @@ export function calculateSplitPlan(
   return { shouldSplit, tokenCount, wordCount };
 }
 
-async function splitViaOutlineDriven(
-  ctx: ProcessingContext,
+async function splitViaLocalPipeline(
   markdown: string,
-  writingModel: NonNullable<ProcessingContext["writingModel"]>,
   chunkMaxTokens: number,
 ): Promise<SplitChunk[]> {
-  const docTitle = markdown.match(/^#\s+(.+)$/m)?.[1] || ctx.doc.originalName;
-  const safeLimit = Math.min(chunkMaxTokens, Math.floor((writingModel.contextWindow || 8192) * 0.85));
+  const clean = sanitizeMarkdown(markdown);
+  const macros = splitByMacroAST(clean);
+  if (macros.length === 0) return [];
 
-  const spans = buildAtomicSpans(markdown);
-  if (spans.length === 0) return [];
-
-  const outline = await induceDocumentOutline({
-    spans,
-    writingModel,
-    documentTitle: docTitle,
-    maxSegmentationTokens: safeLimit,
-  });
-
-  const validated = validateAndRepairSegmentationPlan(outline, spans, safeLimit);
-  const chunks = executeSegmentationPlan(validated, spans);
-  const safeChunks = enforceEmbeddingSafeChunks(chunks, safeLimit);
+  const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.55);
+  const withBreadcrumbs = injectBreadcrumbs(chunks);
+  const safeChunks = enforceEmbeddingSafeChunks(withBreadcrumbs, chunkMaxTokens);
 
   return safeChunks;
 }
@@ -200,78 +188,21 @@ export async function splitAndPersistChunks(
   plan: SplitPlan,
   storage: StorageAdapter,
 ): Promise<void> {
-  const { docId, options, chunkMaxTokens, writingModel } = ctx;
+  const { docId, options, chunkMaxTokens } = ctx;
 
   if (plan.shouldSplit) {
     const splitStrategy = options.splitStrategy || "structure-llm";
 
-    if (splitStrategy === "structure-llm" && writingModel) {
-      const chunks = await splitViaOutlineDriven(ctx, markdown, writingModel, chunkMaxTokens);
-      chunks.forEach((c, i) => { c.index = i; });
+    let chunks: SplitChunk[];
 
-      await db.documentChunk.deleteMany({ where: { documentId: docId } });
-      await db.documentChunk.createMany({
-        data: chunks.map((chunk) => ({
-          documentId: docId,
-          index: chunk.index,
-          title: chunk.title,
-          content: chunk.content,
-          tokenCount: chunk.tokenCount,
-          headingPath: chunk.headingPath,
-        })),
-      });
-      await boundedAll(
-        chunks,
-        (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
-        8,
-      );
-      return;
+    if (splitStrategy === "structure-llm") {
+      chunks = await splitViaLocalPipeline(markdown, chunkMaxTokens);
+    } else {
+      // heading-only fallback
+      chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });
     }
 
-    let chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });
-
-    if (splitStrategy !== "heading-only" && writingModel && chunks.length > 1) {
-      try {
-        const splitTimeout = Math.min(60_000 + chunks.length * 5_000, 300_000);
-        const result = await Promise.race([
-          semanticSplit(chunks, writingModel),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`Semantic split timed out after ${splitTimeout / 1000}s`)), splitTimeout);
-          }),
-        ]);
-        chunks = result.chunks;
-
-        if (result.inputTokens > 0 || result.outputTokens > 0) {
-          await recordTokenUsage({
-            userId: ctx.doc.userId,
-            modelConfigId: writingModel.id,
-            module: "chunking",
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            referenceId: ctx.docId,
-          }).catch(() => {});
-        }
-
-        const subChunks: typeof chunks = [];
-        for (const chunk of chunks) {
-          if (chunk.tokenCount <= chunkMaxTokens) {
-            subChunks.push(chunk);
-          } else {
-            const parts = splitByLinesInternal(chunk.content, chunkMaxTokens, chunk.title);
-            for (const part of parts) {
-              subChunks.push({
-                ...part,
-                headingPath: chunk.headingPath,
-              });
-            }
-          }
-        }
-        chunks = subChunks;
-        chunks.forEach((c, i) => { c.index = i; });
-      } catch (err) {
-        console.warn("Semantic split failed, using structural chunks:", err);
-      }
-    }
+    chunks.forEach((c, i) => { c.index = i; });
 
     await db.documentChunk.deleteMany({ where: { documentId: docId } });
 
