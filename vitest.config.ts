@@ -11,6 +11,8 @@ export default defineConfig({
       DATABASE_URL: "file:./dev.db",
       JWT_SECRET: "test-jwt-secret-for-vitest",
       ENCRYPTION_KEY: "test-encryption-key-for-vitest-32c",
+      ORT_DISABLE_ALL: "1",
+      LOCAL_EMBED_MODEL_PATH: "data/models/bge-small-zh-v1.5",
     },
   },
   resolve: {
