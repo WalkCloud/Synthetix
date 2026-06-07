@@ -2,6 +2,8 @@ import { spawnPythonJson } from "@/lib/python";
 import type { SplitChunk } from "@/lib/documents/splitter";
 import type { MacroChunk } from "@/lib/documents/outline/macro-split";
 import { splitSentences } from "@/lib/documents/outline/sentences";
+import fs from "fs";
+import path from "path";
 
 const LOCAL_CHUNK_SCRIPT = "workers/python/local_chunk.py";
 const BREADCRUMB_BUFFER = 80;
@@ -58,11 +60,22 @@ export async function microSplitByLocalSemantic(
     }));
   }
 
+  // Write batch data to temp file (stdin is ignored by spawnPython)
+  const tempDir = path.join(process.env.TEMP || "/tmp", "synthetix-chunk");
+  fs.mkdirSync(tempDir, { recursive: true });
+  const inputFile = path.join(tempDir, `chunk-batch-${Date.now()}.json`);
+  fs.writeFileSync(inputFile, JSON.stringify({
+    batches: batches.map((b) => ({ id: b.id, sentences: b.sentences, maxTokens: b.maxTokens })),
+    threshold,
+  }), "utf-8");
+
   const data = await spawnPythonJson<{ results: MicroSplitBatchResult[] }>(
     LOCAL_CHUNK_SCRIPT,
-    [],
-    { input: JSON.stringify({ batches: batches.map((b) => ({ id: b.id, sentences: b.sentences, maxTokens: b.maxTokens })), threshold }) },
-  );
+    ["--input-file", inputFile],
+    { timeout: 120_000 },
+  ).finally(() => {
+    fs.unlink(inputFile, () => {});
+  });
 
   // Build result map: seg_id → boundaries
   const boundaryMap = new Map<string, number[]>();
