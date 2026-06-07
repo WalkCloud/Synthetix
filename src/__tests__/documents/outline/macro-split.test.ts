@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitByMacroAST } from "@/lib/documents/outline/macro-split";
+import { splitByMacroAST, coalesceMacroChunks, type MacroChunk } from "@/lib/documents/outline/macro-split";
 
 const sampleMd = `# Introduction
 
@@ -100,5 +100,41 @@ describe("splitByMacroAST", () => {
     const withPath = chunks.filter((c) => c.headingPath.length > 0);
     expect(withPath.length).toBeGreaterThan(0);
     expect(withPath.some((c) => c.headingPath.includes("项目总体概述"))).toBe(true);
+  });
+});
+
+describe("coalesceMacroChunks", () => {
+  it("merges adjacent small non-atomic chunks", () => {
+    const chunks: MacroChunk[] = [
+      { headingPath: "H1", h1: "H1", h2: null, content: "a".repeat(20), tokenCount: 15, isAtomic: false },
+      { headingPath: "H1 > A", h1: "H1", h2: "A", content: "b".repeat(20), tokenCount: 15, isAtomic: false },
+      { headingPath: "H1 > B", h1: "H1", h2: "B", content: "c".repeat(20), tokenCount: 15, isAtomic: false },
+    ];
+
+    const merged = coalesceMacroChunks(chunks, 50);
+    expect(merged.length).toBe(1); // all 3 merged since 15*3=45 <= 50
+  });
+
+  it("does not merge atomic chunks", () => {
+    const chunks: MacroChunk[] = [
+      { headingPath: "H1", h1: "H1", h2: null, content: "a".repeat(20), tokenCount: 15, isAtomic: false },
+      { headingPath: "H1", h1: "H1", h2: null, content: "| table |", tokenCount: 15, isAtomic: true },
+      { headingPath: "H1 > A", h1: "H1", h2: "A", content: "b".repeat(20), tokenCount: 15, isAtomic: false },
+    ];
+
+    const merged = coalesceMacroChunks(chunks, 50);
+    expect(merged.length).toBe(3); // atomic prevents merge
+    expect(merged[1].isAtomic).toBe(true);
+  });
+
+  it("stops merging when combined exceeds minTokens", () => {
+    const chunks: MacroChunk[] = [
+      { headingPath: "H1", h1: "H1", h2: null, content: "a".repeat(100), tokenCount: 50, isAtomic: false },
+      { headingPath: "H1 > A", h1: "H1", h2: "A", content: "b".repeat(100), tokenCount: 50, isAtomic: false },
+      { headingPath: "H1 > B", h1: "H1", h2: "B", content: "c".repeat(100), tokenCount: 50, isAtomic: false },
+    ];
+
+    const merged = coalesceMacroChunks(chunks, 80);
+    expect(merged.length).toBe(3);
   });
 });
