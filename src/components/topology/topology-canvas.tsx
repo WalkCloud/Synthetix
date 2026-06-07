@@ -95,6 +95,7 @@ export function TopologyCanvas({
     const onDown = (e: MouseEvent) => {
       const target = (e.target as HTMLElement).closest("[data-card-id]");
       if (target) {
+        e.preventDefault();
         const cardId = target.getAttribute("data-card-id")!;
         dragCardId.current = cardId;
         dragStartMouse.current = { x: e.clientX, y: e.clientY };
@@ -102,6 +103,7 @@ export function TopologyCanvas({
         dragAngle.current = angleRef.current * rotMul;
         e.stopPropagation();
       } else {
+        e.preventDefault();
         rotating.current = true;
         lastX.current = e.clientX;
       }
