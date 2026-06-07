@@ -127,7 +127,7 @@ export const documentLifecycle = createDocumentLifecycleService({
     await db.documentChunk.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
     await db.documentTag.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
     await db.documentImage.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
-    await db.document.delete({ where: { id: docId, userId } });
+    await db.document.delete({ where: { id: docId, userId } }).catch(() => undefined);
   },
   async verifyDocumentDeleted() {
     return { ok: true, issues: [] };
