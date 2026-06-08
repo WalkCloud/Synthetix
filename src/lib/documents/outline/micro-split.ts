@@ -92,14 +92,45 @@ export async function microSplitByLocalSemantic(
     const boundaries = boundaryMap.get(`seg_${i}`);
 
     if (!boundaries || boundaries.length === 0) {
-      // No splitting needed or atomic
-      chunks.push({
-        index: chunkIdx++,
-        title: macro.headingPath || "Untitled",
-        content: macro.content,
-        tokenCount: macro.tokenCount,
-        headingPath: macro.headingPath,
-      });
+      // Even atomic/single-sentence chunks must be split if they exceed the max
+      if (macro.tokenCount > safeMaxTokens) {
+        const lines = macro.content.split("\n");
+        let segLines: string[] = [];
+        let segTokens = 0;
+        for (const line of lines) {
+          const lt = Math.max(1, line.length / 2);
+          if (segTokens + lt > safeMaxTokens && segLines.length > 0) {
+            chunks.push({
+              index: chunkIdx++,
+              title: macro.headingPath || "Untitled",
+              content: segLines.join("\n"),
+              tokenCount: segTokens,
+              headingPath: macro.headingPath,
+            });
+            segLines = [];
+            segTokens = 0;
+          }
+          segLines.push(line);
+          segTokens += lt;
+        }
+        if (segLines.length > 0) {
+          chunks.push({
+            index: chunkIdx++,
+            title: macro.headingPath || "Untitled",
+            content: segLines.join("\n"),
+            tokenCount: segTokens,
+            headingPath: macro.headingPath,
+          });
+        }
+      } else {
+        chunks.push({
+          index: chunkIdx++,
+          title: macro.headingPath || "Untitled",
+          content: macro.content,
+          tokenCount: macro.tokenCount,
+          headingPath: macro.headingPath,
+        });
+      }
       continue;
     }
 
