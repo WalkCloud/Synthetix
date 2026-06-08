@@ -137,6 +137,7 @@ export async function processDocument(taskId: string): Promise<{ ok: boolean; ra
       indexMode: indexResult?.indexMode,
     };
   } catch (error) {
+    const msg = error instanceof Error ? error.message : "Document processing failed";
     await db.document.update({
       where: { id: ctx.docId },
       data: { status: "failed" },
