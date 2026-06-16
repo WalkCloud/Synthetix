@@ -3,23 +3,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
+import type { RagReferenceView } from "@/lib/writing/reference-view";
 import { getLocalizedError, useLocale } from "@/lib/i18n";
 
-interface RefImage {
-  documentId: string;
-  filename: string;
-  url: string;
-  altText: string | null;
-}
-
-interface Reference {
-  documentName: string;
-  content: string;
-  score: number;
-  title?: string | null;
-  sourceInfo?: string;
-  images?: RefImage[];
-}
+type Reference = RagReferenceView;
 
 interface GroupedReferences {
   documentName: string;
@@ -283,12 +270,6 @@ export function ReferencePanel({
     }
   }
 
-  const ragModes: { value: string; label: string }[] = [
-    { value: "auto", label: t.writing.documentLanguage.auto },
-    { value: "manual", label: isZh ? "手动" : "Manual" },
-    { value: "off", label: isZh ? "关闭" : "Off" },
-  ];
-
   const groupedReferences: GroupedReferences[] = useMemo(() => {
     const map = new Map<string, (Reference & { _originalIndex: number })[]>();
     references.forEach((ref, i) => {
@@ -302,6 +283,27 @@ export function ReferencePanel({
   const allRefImages = useMemo(() => references.flatMap((ref) => ref.images || []), [references]);
   const referencesWithImages = useMemo(() => references.filter((ref) => ref.images && ref.images.length > 0), [references]);
 
+  const ragModes: { value: string; label: string }[] = [
+    { value: "auto", label: t.writing.documentLanguage.auto },
+    { value: "manual", label: isZh ? "手动" : "Manual" },
+    { value: "off", label: isZh ? "关闭" : "Off" },
+  ];
+
+  function referenceBadge(ref: Reference) {
+    if (ref.sourceType === "rag_graph") {
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-600 border border-amber-100">
+          Graph
+        </span>
+      );
+    }
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-600 border border-blue-100">
+        RAG
+      </span>
+    );
+  }
+
   return (
     <div className="bg-card border-l border-border h-full flex flex-col">
       <div className="p-5 overflow-y-auto flex-1">
@@ -309,20 +311,14 @@ export function ReferencePanel({
       {/* References */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-bold flex items-center gap-2 text-foreground">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] text-primary-600">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
-            {t.writing.referencePanel.title}
-            {sectionRagMode === "auto" && (
-              <span className="text-[11px] px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded-full font-bold">
-                {references.length}
-              </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-foreground">
+              {isZh ? "RAG 参考资料" : "RAG References"}
+            </span>
+            {references.length > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-600">{references.length}</span>
             )}
-          </h4>
-
-          {/* RAG Mode Toggle */}
+          </div>
           <div className="flex bg-secondary rounded-lg p-0.5">
             {ragModes.map((m) => (
               <button
@@ -330,7 +326,7 @@ export function ReferencePanel({
                 onClick={() => handleRagModeChange(m.value)}
                 className={`px-2 py-1 text-[10px] font-semibold rounded-md transition-all ${
                   sectionRagMode === m.value
-                    ? "bg-card text-primary-600 shadow-sm"
+                    ? "bg-card text-blue-600 shadow-sm"
                     : "text-muted-foreground hover:text-muted-foreground"
                 }`}
               >
@@ -340,7 +336,6 @@ export function ReferencePanel({
           </div>
         </div>
 
-        {/* Manual mode: document selector */}
         {sectionRagMode === "manual" && (
           <div className="mb-3 p-2.5 border border-border rounded-xl bg-muted/50 max-h-48 overflow-y-auto">
             <p className="text-[11px] text-muted-foreground mb-2">{isZh ? "选择要用作参考资料的文档：" : "Select documents to use as references:"}</p>
@@ -353,7 +348,7 @@ export function ReferencePanel({
                     type="checkbox"
                     checked={selectedDocIds.has(doc.id)}
                     onChange={() => handleDocToggle(doc.id)}
-                    className="w-3.5 h-3.5 rounded border-border text-primary-600 focus:ring-primary-500"
+                    className="w-3.5 h-3.5 rounded border-border text-blue-600 focus:ring-blue-500"
                   />
                   <span className="text-xs text-foreground/75 truncate">{doc.originalName}</span>
                 </label>
@@ -362,22 +357,20 @@ export function ReferencePanel({
           </div>
         )}
 
-        {/* Off mode: hint */}
         {sectionRagMode === "off" && (
           <div className="mb-3 px-3 py-2 bg-muted/50 border border-border rounded-xl">
             <p className="text-[11px] text-muted-foreground">{isZh ? "该章节已关闭 RAG，生成时不会检索参考资料。" : "RAG is disabled for this section. No references will be retrieved during generation."}</p>
           </div>
         )}
 
-        {/* Auto mode: grouped references */}
-        {sectionRagMode === "auto" && (
+        {sectionRagMode !== "off" && (
           references.length === 0 ? (
             <div className="text-xs text-muted-foreground py-4 text-center">
               {t.writing.referencePanel.noReferencesDesc}
             </div>
           ) : (
             <div className="border border-border rounded-xl bg-muted/50 overflow-hidden">
-              <div className="max-h-[calc(100vh-420px)] min-h-[80px] overflow-y-auto">
+              <div className="max-h-[calc(100vh-460px)] min-h-[80px] overflow-y-auto">
                 {groupedReferences.map((group, gi) => (
                   <div key={gi} className={gi > 0 ? "border-t border-border/60" : ""}>
                     {groupedReferences.length > 1 && (
@@ -394,13 +387,16 @@ export function ReferencePanel({
                       {group.refs.map((ref) => (
                         <div
                           key={ref._originalIndex}
-                          className="p-2 border border-border rounded-lg cursor-pointer hover:border-primary-400 transition-colors bg-card"
+                          className="p-2 border border-border rounded-lg cursor-pointer hover:border-blue-400 transition-colors bg-card"
                         >
                           <div className="flex justify-between items-center">
-                            <span className="text-xs font-semibold text-foreground truncate max-w-[70%]">
-                              {ref.title || ref.sourceInfo || ref.documentName}
-                            </span>
-                            <span className="text-[10px] text-primary-600 font-bold flex-shrink-0">{Math.round(ref.score * 100)}%</span>
+                            <div className="min-w-0 flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-foreground truncate">
+                                {ref.title || ref.sourceInfo || ref.documentName}
+                              </span>
+                              {referenceBadge(ref)}
+                            </div>
+                            <span className="text-[10px] text-blue-600 font-bold flex-shrink-0 ml-2">{Math.round(ref.score * 100)}%</span>
                           </div>
                           {ref.content && (
                             <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 line-clamp-2">

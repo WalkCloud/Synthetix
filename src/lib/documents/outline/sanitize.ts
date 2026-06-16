@@ -4,8 +4,11 @@ export function sanitizeMarkdown(text: string): string {
   // Compress 3+ consecutive newlines to double newline
   result = result.replace(/\n{3,}/g, "\n\n");
 
-  // Strip meaningless short image placeholders (no alt text, no useful info)
-  result = result.replace(/!\[.{0,10}\]\([^)]+\)/g, "");
+  // Keep image anchors searchable while removing links to local binary files.
+  result = result.replace(/!\[([^\]]*)\]\([^)]+\)/g, (_match, alt: string) => {
+    const trimmedAlt = alt.trim();
+    return trimmedAlt ? `[Image: ${trimmedAlt}]` : "";
+  });
 
   return result;
 }

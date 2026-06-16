@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
 import { resolveLLMClient } from "@/lib/llm/client";
+import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { estimateTokens } from "@/lib/documents/splitter";
 import type { ProcessingContext } from "@/lib/documents/pipeline";
+import type { LLMClient } from "@/lib/llm/client";
 
 const TAG_PROMPT = `You are a document classification assistant. Analyze the following document content and extract 3-5 relevant topic tags.
 
@@ -58,7 +60,21 @@ export async function autoTagDocument(
   ctx: ProcessingContext,
   markdown: string,
 ): Promise<string[]> {
-  const client = await resolveLLMClient("writing", ctx.doc.userId);
+  let client: LLMClient | null = null;
+
+  if (ctx.writingModel?.provider) {
+    client = {
+      provider: createLLMProvider({
+        apiBaseUrl: ctx.writingModel.provider.apiBaseUrl,
+        apiKey: ctx.writingModel.provider.apiKey,
+      }),
+      modelId: ctx.writingModel.modelId,
+      modelConfigId: ctx.writingModel.id,
+    };
+  } else {
+    client = await resolveLLMClient("writing", ctx.doc.userId);
+  }
+
   if (!client) return [];
 
   const truncated = truncateToTokens(markdown, MAX_INPUT_TOKENS);

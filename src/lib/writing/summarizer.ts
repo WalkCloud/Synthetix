@@ -1,5 +1,5 @@
 import { getLLMClient } from "@/lib/llm/client";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import type { ChatMessage } from "@/lib/llm/types";
 
 const SUMMARY_MAX_TOKENS = 300;
@@ -64,14 +64,14 @@ export async function generateSummary(
     }
 
     if (userId) {
-      await recordTokenUsage({
+      await recordTokenUsageSafely({
         userId,
         modelConfigId,
         module: "summary",
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         referenceId,
-      }).catch((err) => { console.warn("Failed to record summary token usage:", err); });
+      });
     }
 
     return summary;

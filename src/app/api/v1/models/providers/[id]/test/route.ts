@@ -10,6 +10,7 @@ import {
   detectContextWindows,
   detectEmbeddingDim,
 } from "@/lib/llm/provider-probe";
+import { lookupEmbeddingDim, lookupContextWindow, lookupMaxOutputTokens } from "@/lib/models/model-catalog";
 
 export async function POST(
   _request: Request,
@@ -60,6 +61,25 @@ export async function POST(
         await db.modelConfig.update({ where: { id: config.id }, data: { contextWindow: ctx } });
       }
     }
+    // Catalog fallback for models whose context window wasn't auto-detected
+    for (const m of provider.models) {
+      if ((m.contextWindow ?? 0) === 0 && !contextWindows[m.modelId]) {
+        const ctx = await lookupContextWindow(m.modelId);
+        if (ctx > 0) {
+          contextWindows[m.modelId] = ctx;
+          await db.modelConfig.update({ where: { id: m.id }, data: { contextWindow: ctx } }).catch(() => {});
+        }
+      }
+    }
+    // Catalog fallback for max output tokens
+    for (const m of provider.models) {
+      if (!m.maxOutputTokens) {
+        const mot = await lookupMaxOutputTokens(m.modelId);
+        if (mot) {
+          await db.modelConfig.update({ where: { id: m.id }, data: { maxOutputTokens: mot } }).catch(() => {});
+        }
+      }
+    }
 
     const embedModels = provider.models.filter((m) => {
       const caps = parseCapabilities(m.capabilities);
@@ -73,7 +93,14 @@ export async function POST(
         embeddingDims[m.modelId] = dim;
         await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: dim } }).catch(() => {});
       } else {
-        embedDimErrors.push(`${m.modelId}: unable to detect embedding dimension`);
+        // Fallback to LiteLLM catalog
+        const catalogDim = await lookupEmbeddingDim(m.modelId);
+        if (catalogDim) {
+          embeddingDims[m.modelId] = catalogDim;
+          await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: catalogDim } }).catch(() => {});
+        } else {
+          embedDimErrors.push(`${m.modelId}: unable to detect embedding dimension`);
+        }
       }
     }
 

@@ -1,6 +1,6 @@
 import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
 import {
   assembleContext,
@@ -124,6 +124,7 @@ async function fetchRagReferences(
         title: result.title,
         content: result.content,
         score: result.score,
+        sourceType: (result.source === "lightrag" ? "rag_graph" : "rag_chunk") as "rag_graph" | "rag_chunk",
       }));
 
     if (ragConfig?.mode === "manual" && ragConfig.documentIds.length > 0) {
@@ -161,7 +162,7 @@ function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | n
   return { mode, documentIds };
 }
 
-export async function generateSection(
+async function generateSection(
   draft: ContextInput["draft"],
   section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
@@ -262,13 +263,13 @@ export async function generateSectionFull(
       );
     }
 
-    await recordTokenUsage({
+    await recordTokenUsageSafely({
       userId,
       modelConfigId,
       module: "writing",
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
-    }).catch((err) => { console.warn("Failed to record token usage:", err); });
+    });
 
     return {
       content: response.content,
@@ -372,7 +373,7 @@ export interface ComparisonResult {
   ragReferences: ContextInput["ragReferences"];
 }
 
-export async function compareSection(
+async function compareSection(
   draft: ContextInput["draft"],
   section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
@@ -499,6 +500,7 @@ export async function compareSectionStream(
     userId,
     parseRagConfig(section),
   );
+
   callbacks.onReferences?.(ragReferences);
 
   const baseConstraints = buildEffectiveConstraints(

@@ -13,8 +13,8 @@ export async function GET(request: Request) {
   const entityName = searchParams.get("entity") || "";
   const depth = parseInt(searchParams.get("depth") || "3", 10);
   const maxNodes = parseInt(searchParams.get("max_nodes") || "200", 10);
-  const mode = searchParams.get("mode") || "graph";
-  const minDegree = parseInt(searchParams.get("min_degree") || "2", 10);
+  const mode = searchParams.get("mode") || "core";
+  const minDegree = parseInt(searchParams.get("min_degree") || "1", 10);
 
   try {
     const ctx = await createRagContext(user.id, { requireLlm: true });

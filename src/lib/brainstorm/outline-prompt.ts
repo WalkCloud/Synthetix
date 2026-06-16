@@ -49,39 +49,132 @@ export function buildEnrichmentPrompt(locale: DocumentLanguage = "en"): string {
   return ENRICHMENT_PROMPT_EN;
 }
 
-const ENRICHMENT_PROMPT_EN = `You are a professional document writing analyst. Fill in the detail fields for the outline chapter branch below.
+// ── Part-level markdown expansion (adaptive depth) ──
+// One LLM call per part emits that part's full markdown outline. Heading depth
+// (##/###/####/#####) is decided by the model per chapter based on content
+// complexity — NOT a fixed depth. Parsed back into an OutlineSection tree by
+// outline-markdown.ts. Sibling-part titles are injected into the user message
+// (by the worker) to prevent cross-part duplication.
+export function buildPartExpansionPrompt(locale: DocumentLanguage = "en"): string {
+  if (locale === "zh-CN") return PART_EXPANSION_PROMPT_ZH;
+  return PART_EXPANSION_PROMPT_EN;
+}
 
-## Instructions
-For each leaf node (node with no children or empty children), add these fields:
-1. "keyPoints": [2-4 core writing points as strings]
-2. "writingRequirements": "Concise hidden drafting instruction covering scope, angle, boundaries, style, and diagram needs"
-3. "retrievalQuery": "Knowledge base retrieval query string"
-4. "referenceHints": [entity/standard/framework keywords]
+const PART_EXPANSION_PROMPT_EN = `You are a document architect. Expand ONE part (篇) of a document outline into its full markdown outline (chapters, sections, subsections, and finer levels as the content requires).
+
+## Output format
+Emit pure markdown using heading levels. The number of '#' sets the depth:
+- ## = chapter (first level under this part)
+- ### = section
+- #### = subsection
+- ##### = finer level (use only when the content truly warrants it)
+
+Right after each heading, put a "keyPoints:" line with 2-4 writing points separated by semicolons.
+
+Example:
+## Chapter Title
+keyPoints: point 1; point 2; point 3
+### Section Title
+keyPoints: ...
+#### Subsection Title
+keyPoints: ...
 
 ## Rules
-- Keep all existing fields (num, title, description, estimatedWords, children) unchanged.
-- Only add missing fields to leaf nodes. Do NOT modify non-leaf nodes.
-- Return the COMPLETE chapter branch JSON, identical structure, with fields filled in.
+1. Decide the depth PER chapter by its content complexity — do NOT force a uniform depth across the whole part. A simple chapter may only need ## + ###; a complex core chapter may legitimately go to #### or #####. Follow what each topic needs.
+2. ## = chapter under this part; ### = section; #### = subsection; ##### = finer.
+3. Every heading needs a keyPoints line (2-4 points).
+4. The headings together must cover the part's scope and total roughly its estimatedWords.
+5. Avoid duplicating topics already covered by other parts (their titles are given as context).
+6. Output ONLY markdown headings + keyPoints lines. No prose, no JSON, no leading numbers (the system renumbers).`;
 
-## Output
-Strictly output JSON only (no other text).`;
+const PART_EXPANSION_PROMPT_ZH = `你是文档架构师。将一篇（part）展开为它的完整 markdown 大纲（章、节、小节以及更细的层级，按内容需要）。
 
-const ENRICHMENT_PROMPT_ZH = `你是专业的文档撰写分析师。为下方的大纲章节分支补充细节字段。
+## 输出格式
+只输出 markdown，用标题级别表示层级，'#' 的数量决定深度：
+- ## = 章（本篇下的第一级）
+- ### = 节
+- #### = 小节
+- ##### = 更细（仅在内容确实需要时使用）
 
-## 指令
-对每个叶子节点（没有 children 或 children 为空的节点）添加以下字段：
-1. "keyPoints": [2-4 个核心写作要点]
-2. "writingRequirements": "隐藏撰写指令：覆盖范围、角度、边界、风格、图表需求"
-3. "retrievalQuery": "知识库检索查询"
-4. "referenceHints": [实体/标准/框架关键词]
+每个标题下方紧跟一行 "keyPoints:"，给 2-4 个写作要点，用分号分隔。
+
+示例：
+## 章标题
+keyPoints: 要点1；要点2；要点3
+### 节标题
+keyPoints: ...
+#### 小节标题
+keyPoints: ...
 
 ## 规则
-- 保持所有已有字段（num, title, description, estimatedWords, children）不变
-- 只对叶子节点添加缺失字段，不要修改非叶子节点
-- 返回完整章节分支 JSON，结构一致，字段已填充
+1. 每一章的深度由它的内容复杂度决定 —— 不要在整个篇里强制统一深度。简单章节可能只需 ## + ###；复杂核心章节可以合理地到 #### 甚至 #####。跟随每个主题的实际需要。
+2. ## = 本篇下的章；### = 节；#### = 小节；##### = 更细。
+3. 每个标题都要有 keyPoints 行（2-4 个要点）。
+4. 所有标题合起来要覆盖本篇范围，总字数大致达到本篇的 estimatedWords。
+5. 避免与其他篇重复（其他篇的标题会作为上下文给出）。
+6. 只输出 markdown 标题 + keyPoints 行。不要散文、不要 JSON、不要标题前缀编号（系统会重新编号）。`;
 
-## 输出
-严格输出 JSON（不要添加其他文字）。`;
+// ── Expansion prompt (generic, recursive): expand ONE parent node into its
+// next-level children. Called once per non-leaf node at every depth (parts →
+// chapters → sections → subsections). Each call emits only that node's children
+// (~1-2K tokens), so output never truncates regardless of total outline size —
+// this STORM-style hierarchical decomposition replaces the old "emit the entire
+// outline in one JSON" approach that truncated at 4096 tokens.
+const ENRICHMENT_PROMPT_EN = `You are a professional document architect. Expand ONE parent node of a document outline into its next-level children, each with full writing detail.
+
+## Input
+You receive: the document's requirements + ONE parent node (its "num", title, scope, and estimated word count).
+
+## Instructions
+1. Decompose the parent node into 3-5 cohesive children. Each child must be a single coherent topic at the next level down.
+2. Child "num" = the parent's "num" + ".N". Examples: parent "1" -> "1.1","1.2"; parent "1.1" -> "1.1.1","1.1.2"; parent "1.1.1" -> "1.1.1.1","1.1.1.2".
+3. The children together must cover the parent's scope and total roughly the parent's estimatedWords.
+4. For EACH child provide:
+   - "num": as described above (parent num + ".N")
+   - "title": concise title
+   - "description": one-sentence scope
+   - "keyPoints": [2-4 core writing points]
+   - "estimatedWords": target word count
+   - "writingRequirements": concise hidden drafting instruction (coverage, angle, boundaries, style, diagram needs)
+   - "retrievalQuery": a knowledge-base retrieval query string
+   - "referenceHints": [entity / standard / framework keywords]
+5. Do NOT include the parent node itself in the output. Output only its children.
+
+## Output JSON Schema
+Output JSON only (no other text):
+{
+  "sections": [
+    { "num": "1.1", "title": "Child Title", "description": "Scope", "keyPoints": ["Point 1","Point 2"], "estimatedWords": 500, "writingRequirements": "Hidden drafting instruction", "retrievalQuery": "Search query", "referenceHints": ["keyword"] }
+  ]
+}`;
+
+const ENRICHMENT_PROMPT_ZH = `你是专业的文档架构师。将文档大纲中的【一个父节点】展开为它的下一级子节点，并为每个子节点补充完整的撰写细节。
+
+## 输入
+你会收到：文档的整体需求 + 一个父节点（"num"、标题、范围、预估字数）。
+
+## 指令
+1. 将父节点拆解为 3-5 个连贯的子节点，每个是下一层级的一个独立主题。
+2. 子节点 "num" = 父 "num" + ".N"。例：父 "1" → "1.1"、"1.2"；父 "1.1" → "1.1.1"、"1.1.2"；父 "1.1.1" → "1.1.1.1"、"1.1.1.2"。
+3. 所有子节点合起来应完整覆盖父节点范围，总字数大致达到父节点的 estimatedWords。
+4. 为【每个子节点】提供：
+   - "num"：如上（父 num + ".N"）
+   - "title"：简洁标题
+   - "description"：一句话描述范围
+   - "keyPoints"：[2-4 个核心写作要点]
+   - "estimatedWords"：目标字数
+   - "writingRequirements"：简洁的隐藏撰写指令（覆盖范围、论述角度、边界、风格、图表需求）
+   - "retrievalQuery"：知识库检索查询
+   - "referenceHints"：[实体/标准/框架关键词]
+5. 输出中不要包含父节点本身，只输出它的子节点。
+
+## 输出 JSON 格式
+严格输出 JSON（不要添加其他文字）：
+{
+  "sections": [
+    { "num": "1.1", "title": "子节点标题", "description": "范围", "keyPoints": ["要点 1","要点 2"], "estimatedWords": 500, "writingRequirements": "隐藏撰写指令", "retrievalQuery": "检索查询", "referenceHints": ["关键词"] }
+  ]
+}`;
 
 function buildSkeletonPromptEN(
   primary: ArchetypeSkeleton,
@@ -93,7 +186,7 @@ function buildSkeletonPromptEN(
     ? `\nThis is a hybrid document. Also embed key sections from the secondary archetype "${secondaryType}":\n- Principle: ${secondary.principle}\n- Skeleton: ${secondary.skeleton}\n- Focus: ${secondary.focus}\n`
     : "";
 
-  return `Generate a document outline skeleton based on the structured requirements summary.
+  return `Generate the TOP-LEVEL part skeleton (level 1 = parts / 篇) for a document based on the structured requirements summary. The final outline is 4 levels deep: parts (1) -> chapters (1.1) -> sections (1.1.1) -> subsections (1.1.1.1). You generate ONLY level 1 (parts) here.
 
 ## Document Archetype: ${primaryType}
 
@@ -103,25 +196,21 @@ function buildSkeletonPromptEN(
 ${secondaryBlock}
 ## Generation Instructions
 
-1. Use the skeleton above as the structural foundation.
-2. Adapt based on the requirements summary.
-3. Aim for a comprehensive outline with 2-3 levels of hierarchy, 4-8 top-level sections, 15-30 leaf sections.
-4. Use a FLAT JSON format with dotted numbering. Do NOT nest children inside parents.
-5. Use "num" field to express hierarchy: "1", "1.1", "1.1.1", etc.
-6. Each section must include: "num", "title", "description", "estimatedWords".
-7. Do NOT include keyPoints, writingRequirements, retrievalQuery, or referenceHints.
+1. Use the skeleton above as the structural foundation; adapt based on the requirements summary.
+2. Generate ONLY top-level parts — exactly 4 to 8 parts. Each part is a major division that will later be expanded into chapters (1.1), sections (1.1.1), and subsections (1.1.1.1) by a separate process.
+3. Do NOT generate any lower levels. No dotted numbers (no "1.1"), no "children", no nested nodes. Lower levels are expanded separately in a later stage — emitting them here causes the JSON to truncate against the token limit.
+4. Use "num" with plain integers only: "1", "2", "3", ...
+5. Each part must include: "num", "title", "description" (one-sentence scope), "estimatedWords" (the combined total of its future chapters/sections/subsections — for a long plan each part is typically several thousand words).
 
 ## Output JSON Schema
 
-Output a flat JSON array (no other text):
+Output JSON only (no other text):
 {
   "title": "Document Title",
   "documentType": "${primaryType}${secondaryType ? "+" + secondaryType : ""}",
   "sections": [
-    { "num": "1", "title": "Chapter Name", "description": "Scope in one sentence", "estimatedWords": 1500 },
-    { "num": "1.1", "title": "Sub-section", "description": "Scope", "estimatedWords": 500 },
-    { "num": "1.2", "title": "Sub-section", "description": "Scope", "estimatedWords": 500 },
-    { "num": "2", "title": "Next Chapter", "description": "Scope", "estimatedWords": 2000 }
+    { "num": "1", "title": "Part Name", "description": "Scope in one sentence", "estimatedWords": 5000 },
+    { "num": "2", "title": "Next Part", "description": "Scope in one sentence", "estimatedWords": 6000 }
   ]
 }`;
 }
@@ -136,7 +225,7 @@ function buildSkeletonPromptZH(
     ? `\n这是混合型文档。还需嵌入次要原型"${secondaryType}"的关键章节：\n- 原则：${secondary.principle}\n- 骨架：${secondary.skeleton}\n- 重点：${secondary.focus}\n`
     : "";
 
-  return `根据结构化需求摘要生成文档大纲骨架。
+  return `根据结构化需求摘要，生成文档的【篇/部分骨架】（第1级 = 篇/部分）。最终大纲为4级：篇(1) → 章(1.1) → 节(1.1.1) → 小节(1.1.1.1)。这里只生成第1级（篇）。
 
 ## 文档原型：${primaryType}
 
@@ -147,23 +236,20 @@ ${secondaryBlock}
 ## 生成指令
 
 1. 以以上骨架作为结构基础，根据需求摘要调整。
-2. 目标为全面的大纲：2-3 层级深度，4-8 个一级章节，15-30 个叶子章节。
-3. 使用扁平 JSON 格式配合点号编号，不要使用嵌套 children 结构。
-4. 用 "num" 字段表示层级："1"、"1.1"、"1.1.1" 等。
-5. 每个章节必须包含："num"、"title"、"description"、"estimatedWords"。
-6. 不要包含 keyPoints、writingRequirements、retrievalQuery、referenceHints 字段。
+2. 只生成篇/部分 —— 恰好 4 到 8 个篇。每一篇是一个主要划分，后续会单独展开为章(1.1)、节(1.1.1)、小节(1.1.1.1)。
+3. 不要生成任何下级。不要用点号编号（不要 "1.1"），不要 "children"，不要嵌套。下级会在后续阶段单独展开 —— 在这里输出下级会导致 JSON 超出 token 上限被截断。
+4. "num" 只用纯整数："1"、"2"、"3"……
+5. 每篇必须包含："num"、"title"、"description"（一句话范围）、"estimatedWords"（其未来章/节/小节的合计字数 —— 长方案中每篇通常数千字）。
 
 ## 输出 JSON 格式
 
-严格输出扁平 JSON 数组（不要添加其他文字）：
+严格输出 JSON（不要添加其他文字）：
 {
   "title": "文档标题",
   "documentType": "${primaryType}${secondaryType ? "+" + secondaryType : ""}",
   "sections": [
-    { "num": "1", "title": "章节名称", "description": "一句话描述范围", "estimatedWords": 1500 },
-    { "num": "1.1", "title": "子章节", "description": "范围", "estimatedWords": 500 },
-    { "num": "1.2", "title": "子章节", "description": "范围", "estimatedWords": 500 },
-    { "num": "2", "title": "下一章", "description": "范围", "estimatedWords": 2000 }
+    { "num": "1", "title": "篇名称", "description": "一句话描述范围", "estimatedWords": 5000 },
+    { "num": "2", "title": "下一篇", "description": "一句话描述范围", "estimatedWords": 6000 }
   ]
 }`;
 }

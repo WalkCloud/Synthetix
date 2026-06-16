@@ -1,4 +1,5 @@
 import fs from "fs";
+import { promises as fsp } from "fs";
 import path from "path";
 
 export interface StorageAdapter {
@@ -29,44 +30,44 @@ export class LocalStorageAdapter implements StorageAdapter {
     return path.join(this.root, userId, docId);
   }
 
-  private ensureDir(dir: string): void {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  private async ensureDir(dir: string): Promise<void> {
+    await fsp.mkdir(dir, { recursive: true });
   }
 
   async saveOriginal(docId: string, file: File, userId: string): Promise<string> {
     const dir = this.getDocumentDir(docId, userId);
-    this.ensureDir(dir);
+    await this.ensureDir(dir);
     const ext = file.name.split(".").pop() || "bin";
     const filePath = path.join(dir, `original.${ext}`);
     const buffer = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
+    await fsp.writeFile(filePath, buffer);
     return filePath;
   }
 
   async saveMarkdown(docId: string, content: string, userId: string): Promise<string> {
     const dir = this.getDocumentDir(docId, userId);
-    this.ensureDir(dir);
+    await this.ensureDir(dir);
     const filePath = path.join(dir, "full.md");
-    fs.writeFileSync(filePath, content, "utf-8");
+    await fsp.writeFile(filePath, content, "utf-8");
     return filePath;
   }
 
   async saveChunk(docId: string, chunkIndex: number, content: string, userId: string): Promise<string> {
     const dir = this.getDocumentDir(docId, userId);
-    this.ensureDir(dir);
+    await this.ensureDir(dir);
     const filePath = path.join(dir, `chunk_${String(chunkIndex).padStart(3, "0")}.md`);
-    fs.writeFileSync(filePath, content, "utf-8");
+    await fsp.writeFile(filePath, content, "utf-8");
     return filePath;
   }
 
   async readMarkdown(docId: string, userId: string): Promise<string> {
     const dir = this.getDocumentDir(docId, userId);
-    return fs.readFileSync(path.join(dir, "full.md"), "utf-8");
+    return fsp.readFile(path.join(dir, "full.md"), "utf-8");
   }
 
   async readChunk(docId: string, chunkIndex: number, userId: string): Promise<string> {
     const dir = this.getDocumentDir(docId, userId);
-    return fs.readFileSync(
+    return fsp.readFile(
       path.join(dir, `chunk_${String(chunkIndex).padStart(3, "0")}.md`),
       "utf-8"
     );

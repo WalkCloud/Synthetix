@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { compareSectionStream } from "@/lib/writing/generator";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { persistSectionReferences } from "@/lib/writing/persist-references";
@@ -128,18 +128,16 @@ export async function POST(
         );
 
         if (contentA || contentB) {
-          if (ragRefs.length > 0) {
-            await persistSectionReferences(sectionId, ragRefs);
-          }
+          await persistSectionReferences(sectionId, ragRefs);
           await Promise.all([
-            recordTokenUsage({
+            recordTokenUsageSafely({
               userId: user.id, modelConfigId: modelARecord.id, module: "comparison",
               inputTokens: inputTokensA, outputTokens: outputTokensA, referenceId: sectionId,
-            }).catch((err) => { console.warn("Failed to record token usage (A):", err); }),
-            recordTokenUsage({
+            }),
+            recordTokenUsageSafely({
               userId: user.id, modelConfigId: modelBRecord.id, module: "comparison",
               inputTokens: inputTokensB, outputTokens: outputTokensB, referenceId: sectionId,
-            }).catch((err) => { console.warn("Failed to record token usage (B):", err); }),
+            }),
           ]);
 
           await db.section.update({
@@ -162,16 +160,16 @@ export async function POST(
       } catch (error) {
         const tokenPromises: Promise<void>[] = [];
         if (modelARecord.id && (inputTokensA > 0 || outputTokensA > 0)) {
-          tokenPromises.push(recordTokenUsage({
+          tokenPromises.push(recordTokenUsageSafely({
             userId: user.id, modelConfigId: modelARecord.id, module: "comparison",
             inputTokens: inputTokensA, outputTokens: outputTokensA, referenceId: sectionId,
-          }).catch(() => {}));
+          }));
         }
         if (modelBRecord.id && (inputTokensB > 0 || outputTokensB > 0)) {
-          tokenPromises.push(recordTokenUsage({
+          tokenPromises.push(recordTokenUsageSafely({
             userId: user.id, modelConfigId: modelBRecord.id, module: "comparison",
             inputTokens: inputTokensB, outputTokens: outputTokensB, referenceId: sectionId,
-          }).catch(() => {}));
+          }));
         }
         await Promise.all(tokenPromises);
         try {

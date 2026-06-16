@@ -1,5 +1,5 @@
 import { getLLMClient } from "@/lib/llm/client";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { buildHumanizerPrompts, type DocumentLanguage } from "@/lib/prompts";
 
 /**
@@ -65,13 +65,13 @@ export async function humanizeContent(
   const totalInput = auditResponse.inputTokens + rewriteResponse.inputTokens;
   const totalOutput = auditResponse.outputTokens + rewriteResponse.outputTokens;
 
-  await recordTokenUsage({
+  await recordTokenUsageSafely({
     userId,
     modelConfigId,
     module: "writing",
     inputTokens: totalInput,
     outputTokens: totalOutput,
-  }).catch((err) => { console.warn("Failed to record token usage:", err); });
+  });
 
   return {
     content: rewriteResponse.content,

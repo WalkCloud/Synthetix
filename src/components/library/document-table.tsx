@@ -86,6 +86,7 @@ export function DocumentTable({
     all: t.library.filters.allStatuses,
     ready: t.common.states.ready,
     uploading: t.documents.uploadQueue.uploading,
+    queued: t.documents.uploadQueue.queued,
     converting: t.documents.uploadQueue.converting,
     splitting: t.documents.processing.splitStrategy,
     embedding: t.models.capabilities.embedding,
@@ -140,6 +141,7 @@ export function DocumentTable({
             <SelectItem value="all">{statusLabels.all}</SelectItem>
             <SelectItem value="ready">{statusLabels.ready}</SelectItem>
             <SelectItem value="uploading">{statusLabels.uploading}</SelectItem>
+            <SelectItem value="queued">{statusLabels.queued}</SelectItem>
             <SelectItem value="converting">{statusLabels.converting}</SelectItem>
             <SelectItem value="splitting">{statusLabels.splitting}</SelectItem>
             <SelectItem value="embedding">{statusLabels.embedding}</SelectItem>
@@ -310,6 +312,18 @@ export function DocumentTable({
                         {ready ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300 whitespace-nowrap">
                             {t.common.states.ready}
+                          </span>
+                        ) : doc.status === "queued" ? (
+                          // "Queued" sits between upload-finished and convert-started.
+                          // The library API attaches queuePosition for these docs so
+                          // the user can see "Waiting · 2 / 5" — i.e. 2nd in line out
+                          // of 5 docs ahead of completion.
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300 whitespace-nowrap">
+                            <span className="inline-block">⏳</span>
+                            {statusLabels.queued}
+                            {doc.queuePosition
+                              ? ` · ${doc.queuePosition.rank} / ${doc.queuePosition.total}`
+                              : ""}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300 whitespace-nowrap">

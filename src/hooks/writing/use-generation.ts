@@ -3,15 +3,8 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import type { GenerationMode, SectionMeta } from "@/types/writing";
+import type { RagReferenceView } from "@/lib/writing/reference-view";
 import { getLocalizedError } from "@/lib/i18n";
-
-interface Reference {
-  documentName: string;
-  content: string;
-  score: number;
-  title?: string | null;
-  sourceInfo?: string;
-}
 
 export function useGeneration(
   id: string,
@@ -29,7 +22,7 @@ export function useGeneration(
   const [isThinking, setIsThinking] = useState(false);
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
-  const [references, setReferences] = useState<Reference[]>([]);
+  const [references, setReferences] = useState<RagReferenceView[]>([]);
 
   const handleGenerate = useCallback(
     async (

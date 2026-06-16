@@ -1,7 +1,7 @@
 import type { DocumentLanguage } from "@/lib/prompts";
 import { getArchetypeChoices } from "@/lib/brainstorm/archetypes";
 
-export const SUMMARY_PROMPTS = {
+const SUMMARY_PROMPTS = {
   en: `Analyze the brainstorming conversation and extract a structured requirements summary.
 
 Output JSON only (no other text):

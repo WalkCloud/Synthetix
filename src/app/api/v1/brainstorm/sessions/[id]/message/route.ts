@@ -17,7 +17,11 @@ type BrainstormPhase = "gathering" | "direction" | "mode_select" | "section_refi
 
 const BRAINSTORM_HISTORY_LIMIT = 16;
 const BRAINSTORM_MESSAGE_CHAR_LIMIT = 6_000;
-const BRAINSTORM_MAX_OUTPUT_TOKENS = 1600;
+// 1600 truncated the assistant mid-outline (a 300-page plan outline spans many
+// chapters) before it could emit the GENERATE_DIRECT marker that triggers the
+// structured outline-worker — so the outline never got generated. 8192 lets the
+// assistant finish its outline recap + emit the marker in one turn.
+const BRAINSTORM_MAX_OUTPUT_TOKENS = 8192;
 
 function isClientMarker(value: unknown): value is ClientMarker {
   return value === "GENERATE_DIRECT"
@@ -112,7 +116,7 @@ export async function POST(
   if (existingCount <= 2) {
     const ragResult = await preFetchDomainKnowledge(content, user.id);
     if (ragResult) {
-      ragSupplement = `\n\n## Domain Background Reference (internal only; never mention, cite, or imply that this material exists)\n${ragResult}`;
+      ragSupplement = `\n\n## Background Reference (internal only; never mention, cite, or imply that this material exists)\n${ragResult}`;
     }
   }
 

@@ -25,7 +25,6 @@ model User {
   documents  Document[]
   sessions   BrainstormSession[]
   drafts     Draft[]
-
   @@map("users")
 }
 
@@ -52,7 +51,7 @@ model ModelConfig {
   modelId           String   @map("model_id")
   modelName         String   @map("model_name")
   capabilities      String   @default("[]")
-  contextWindow     Int      @map("context_window") @default(4096)
+  contextWindow     Int      @map("context_window") @default(0)
   maxOutputTokens   Int?     @map("max_output_tokens")
   supportsStreaming  Boolean  @default(true) @map("supports_streaming")
   inputPrice        Float?   @map("input_price")
@@ -118,10 +117,14 @@ model Document {
   markdownSize   Int?     @map("markdown_size")
   status         String   @default("uploading")
   parentId       String?  @map("parent_id")
-  tokenEstimate  Int?     @map("token_estimate")
-  wordCount      Int?     @map("word_count")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  tokenEstimate    Int?     @map("token_estimate")
+  wordCount        Int?     @map("word_count")
+  conversionMethod String?  @map("conversion_method")
+  conversionWarning String? @map("conversion_warning")
+  structurePath    String?  @map("structure_path")
+  imageManifestPath String? @map("image_manifest_path")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   children Document[]   @relation("DocumentSplit")
@@ -240,9 +243,9 @@ model Section {
   modelA          String?  @map("model_a")
   modelB          String?  @map("model_b")
   selectedModel   String?  @map("selected_model")
-  ragMode         String   @default("auto") @map("rag_mode")
-  ragDocumentIds  String?  @map("rag_document_ids")
-  createdAt       DateTime @default(now()) @map("created_at")
+  ragMode           String   @default("auto") @map("rag_mode")
+  ragDocumentIds    String?  @map("rag_document_ids")
+  createdAt         DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   draft    Draft     @relation(fields: [draftId], references: [id], onDelete: Cascade)
@@ -282,6 +285,7 @@ model SectionReference {
   sourceAnchor    String?  @map("source_anchor")
   content         String?  @map("content")
   images          String?
+  sourceType      String   @default("rag_chunk") @map("source_type") // rag_chunk | rag_graph
   createdAt       DateTime @default(now()) @map("created_at")
 
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
@@ -289,6 +293,7 @@ model SectionReference {
   @@index([sectionId])
   @@index([documentId])
   @@index([sectionId, documentId])
+  @@index([sourceType])
   @@map("section_references")
 }
 

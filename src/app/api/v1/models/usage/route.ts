@@ -85,22 +85,34 @@ export async function GET(request: Request) {
     ]),
   );
 
-  const byModel = byModelRaw
-    .filter((r) => r.modelConfigId !== null)
-    .map((r) => {
-      const info = modelLookup.get(r.modelConfigId!) ?? {
-        modelName: "Unknown",
-        providerName: "",
-      };
+  // Keep rows whose modelConfigId is null as a synthetic "unattributed" bucket
+  // so byModel totals reconcile to the summary totals. This used to be silently
+  // discarded — Python LightRAG / legacy rows never have a modelConfigId, so
+  // dropping them made byModel sums smaller than the summary every time.
+  const byModel = byModelRaw.map((r) => {
+    if (r.modelConfigId === null) {
       return {
-        modelConfigId: r.modelConfigId!,
-        modelName: info.modelName,
-        providerName: info.providerName,
+        modelConfigId: null,
+        modelName: "Unattributed",
+        providerName: "",
         totalInputTokens: r._sum.inputTokens ?? 0,
         totalOutputTokens: r._sum.outputTokens ?? 0,
         totalCalls: r._count,
       };
-    });
+    }
+    const info = modelLookup.get(r.modelConfigId) ?? {
+      modelName: "Unknown",
+      providerName: "",
+    };
+    return {
+      modelConfigId: r.modelConfigId,
+      modelName: info.modelName,
+      providerName: info.providerName,
+      totalInputTokens: r._sum.inputTokens ?? 0,
+      totalOutputTokens: r._sum.outputTokens ?? 0,
+      totalCalls: r._count,
+    };
+  });
 
   byModel.sort(
     (a, b) =>

@@ -7,6 +7,13 @@ export interface OutlineQualityOptions {
   minTopLevelCount?: number;
   maxTopLevelCount?: number;
   lengthHint?: string;
+  /**
+   * When false, skip the per-leaf detail-field checks (missingDescription,
+   * missingKeyPoints). Use this at the skeleton stage, where the skeleton
+   * prompt deliberately omits detail fields — they are filled in later by
+   * the enrichment stage. Defaults to true (full check).
+   */
+  checkDetailFields?: boolean;
 }
 
 export interface OutlineQualityResult {
@@ -69,6 +76,7 @@ export function evaluateOutlineQuality(
   const maxTopLevelCount = options.maxTopLevelCount ?? 8;
   const minDepth = options.minDepth ?? 2;
   const minLeafCount = options.minLeafCount ?? minLeafCountForLength(options.lengthHint);
+  const checkDetailFields = options.checkDetailFields ?? true;
   const stats = collectStats(outline.sections);
   const issues: string[] = [];
 
@@ -84,10 +92,10 @@ export function evaluateOutlineQuality(
   if (stats.leafCount < minLeafCount) {
     issues.push(`Expected at least ${minLeafCount} leaf sections, got ${stats.leafCount}`);
   }
-  if (stats.missingDescription > 0) {
+  if (checkDetailFields && stats.missingDescription > 0) {
     issues.push(`${plural(stats.missingDescription, "leaf section is", "leaf sections are")} missing description`);
   }
-  if (stats.missingKeyPoints > 0) {
+  if (checkDetailFields && stats.missingKeyPoints > 0) {
     issues.push(`${plural(stats.missingKeyPoints, "leaf section is", "leaf sections are")} missing keyPoints`);
   }
 

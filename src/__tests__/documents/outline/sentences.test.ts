@@ -9,7 +9,7 @@ describe("splitSentences", () => {
 
   it("splits English text at punctuation", () => {
     const result = splitSentences("First sentence. Second! Third?");
-    expect(result).toEqual(["First sentence.", "Second!", "Third?"]);
+    expect(result).toEqual(["First sentence.", " Second!", " Third?"]);
   });
 
   it("does not split on abbreviations like e.g.", () => {

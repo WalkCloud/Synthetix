@@ -15,17 +15,7 @@ export interface ModelOption {
   capabilities: string;
 }
 
-export type VersionSource = "generated_a" | "generated_b" | "edited" | "merged";
-
-export interface SectionConstraints {
-  referenceSections: string[];
-  wordLimit: number;
-  additionalRequirements: string;
-  generationMode: GenerationMode;
-  writingRequirements?: string;
-  retrievalQuery?: string;
-  referenceHints?: string[];
-}
+export type VersionSource = "generated_a" | "generated_b" | "edited";
 
 export interface DraftProgress {
   accepted: number;
@@ -54,7 +44,9 @@ export interface SectionReferenceMeta {
   relevanceScore: number;
   sourceAnchor: string | null;
   documentId: string | null;
+  chunkId?: string | null;
   content: string | null;
+  sourceType?: string | null;
   images?: Array<{ documentId: string; filename: string; url: string; altText: string | null }>;
 }
 

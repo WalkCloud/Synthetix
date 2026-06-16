@@ -2,6 +2,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { db } from "@/lib/db";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import {
   authErrorResponse,
   errorResponse,
@@ -28,7 +29,7 @@ export async function POST(
     return authErrorResponse();
   }
 
-  const { id: draftId } = await params;
+  const { id: draftId, secId: sectionId } = await params;
   const body = await request.json();
   const { content } = body as { content?: string };
 
@@ -68,6 +69,16 @@ export async function POST(
     });
 
     const suggestion = response.content.trim();
+
+    await recordTokenUsageSafely({
+      userId: user.id,
+      modelConfigId: writingModel.id,
+      module: "mermaid",
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+      referenceId: sectionId,
+    });
+
     return successResponse({ suggestion });
   } catch (error) {
     console.error("[suggest-mermaid] error:", error);

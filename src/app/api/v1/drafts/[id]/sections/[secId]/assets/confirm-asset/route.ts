@@ -118,10 +118,7 @@ export async function POST(
   );
 
   if (updatedContent === content) {
-    console.error("[confirm-asset] Replacement didn't change content.");
-    console.error("[confirm-asset] markerId:", body.markerId, "assetId:", body.assetId);
-    console.error("[confirm-asset] replacement:", replacement);
-    console.error("[confirm-asset] source:", source);
+    console.error("[confirm-asset] marker replacement unchanged", { markerId: body.markerId, assetId: body.assetId, replacementLength: replacement.length, sourceLength: source.length });
     return errorResponse({ code: "notFound", message: "Marker replacement failed" }, 404);
   }
 

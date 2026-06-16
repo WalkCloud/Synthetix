@@ -67,6 +67,11 @@ const navGroups: readonly NavGroup[] = [
           </>
         ),
       },
+    ],
+  },
+  {
+    groupKey: "authoring",
+    items: [
       {
         href: "/brainstorm",
         labelKey: "mindOrganization",
@@ -78,11 +83,6 @@ const navGroups: readonly NavGroup[] = [
           </>
         ),
       },
-    ],
-  },
-  {
-    groupKey: "authoring",
-    items: [
       {
         href: "/writing",
         labelKey: "documentWriting",

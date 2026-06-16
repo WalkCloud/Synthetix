@@ -43,6 +43,9 @@ describe("GET /api/v1/knowledge/graph", () => {
       success: true,
       data: { entity: "", graph: { nodes: [], edges: [] }, total_entities: 0 },
     });
-    expect(manageRag).toHaveBeenCalledOnce();
+    expect(manageRag).toHaveBeenCalledWith(expect.objectContaining({
+      action: "core-graph",
+      minDegree: 1,
+    }));
   });
 });

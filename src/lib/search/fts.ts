@@ -5,6 +5,10 @@ import type { SearchResult } from "@/types/documents";
 let ftsReady = false;
 let ftsIndexed = false;
 
+export function stripFtsSnippetMarkup(value: string): string {
+  return value.replace(/<\/?mark>/g, "");
+}
+
 export async function ensureFtsTable(): Promise<void> {
   if (ftsReady) return;
   const existing = await db.$queryRawUnsafe<{ sql: string }[]>(
@@ -39,7 +43,7 @@ async function ensureFtsIndexed(): Promise<void> {
   ftsIndexed = true;
 }
 
-export async function syncFtsIndex(): Promise<void> {
+async function syncFtsIndex(): Promise<void> {
   await ensureFtsTable();
   const chunks = await db.$queryRawUnsafe<
     { rowid: number; title: string; content: string }[]
@@ -58,6 +62,11 @@ export async function syncFtsIndex(): Promise<void> {
         chunk.content ? tokenizeChinese(chunk.content) : "",
       ])
     );
+    // Yield between batches so a multi-thousand-chunk reindex doesn't
+    // hold the Next.js event loop while Jieba tokenises each row.
+    if (i + BATCH_SIZE < chunks.length) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
   }
   ftsIndexed = true;
 }
@@ -98,6 +107,12 @@ export async function syncFtsIndexForDocument(docId: string): Promise<void> {
         chunk.content ? tokenizeChinese(chunk.content) : "",
       ]),
     );
+    // Yield between batches: Jieba tokenisation is synchronous Rust
+    // (@node-rs/jieba) and a 1000-chunk doc would otherwise hold the
+    // event loop for hundreds of ms during a Phase 2 worker run.
+    if (i + BATCH_SIZE < chunks.length) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
   }
 
   ftsIndexed = true;
@@ -150,7 +165,7 @@ export async function searchByKeyword(
       documentId: r.document_id,
       documentName: r.document_name,
       title: r.title,
-      content: r.snippet,
+      content: stripFtsSnippetMarkup(r.snippet),
       score: Math.round(score * 100) / 100,
     };
   });

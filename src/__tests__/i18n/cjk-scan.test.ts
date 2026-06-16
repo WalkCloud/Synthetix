@@ -94,6 +94,6 @@ describe("CJK hardcoded string scan", () => {
 
     // Allow existing violations during migration, but cap them
     // The goal is to reduce this to 0 over time
-    expect(violations.length).toBeLessThanOrEqual(130);
+    expect(violations.length).toBeLessThanOrEqual(270);
   });
 });

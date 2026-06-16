@@ -116,8 +116,10 @@ export function ModelListTab({
               <ModelCard
                 key={`${provider.id}-${model.id}`}
                 name={model.modelName}
+                modelId={model.modelId}
                 providerName={provider.name}
                 contextWindow={model.contextWindow}
+                embeddingDim={model.embeddingDim}
                 isActive={provider.isActive}
                 isTesting={testingId === provider.id}
                 testResult={testResult?.id === provider.id ? testResult : null}
