@@ -99,6 +99,73 @@ export async function detectContextWindows(
   return result;
 }
 
+/**
+ * Extract embedding dimension from a JSON response body using any known
+ * provider format (OpenAI, Dashscope, etc).  Returns the dimension if found,
+ * null if the response does not contain a parseable embedding vector.
+ */
+function extractEmbeddingDim(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  const obj = data as Record<string, unknown>;
+
+  // OpenAI / openai-compatible  { data: [{ embedding: [...] }] }
+  const dataArr = Array.isArray(obj["data"]) ? obj["data"] : null;
+  if (dataArr && dataArr.length > 0) {
+    const emb = (dataArr[0] as Record<string, unknown>)["embedding"];
+    if (Array.isArray(emb) && emb.length > 0) return emb.length;
+  }
+
+  // Dashscope  { output: { embeddings: [{ embedding: [...] }] } }
+  const output = obj["output"] as Record<string, unknown> | undefined;
+  if (output) {
+    const embeddings = Array.isArray(output["embeddings"]) ? output["embeddings"] : null;
+    if (embeddings && embeddings.length > 0) {
+      const emb = (embeddings[0] as Record<string, unknown>)["embedding"];
+      if (Array.isArray(emb) && emb.length > 0) return emb.length;
+    }
+  }
+
+  // Deep recursive scan — walk the object tree looking for the first
+  // array property named "embedding" with numeric elements
+  const scan = (val: unknown): number | null => {
+    if (!val || typeof val !== "object") return null;
+    const o = val as Record<string, unknown>;
+    for (const [k, v] of Object.entries(o)) {
+      if (k === "embedding" && Array.isArray(v) && v.length > 0 && typeof v[0] === "number") {
+        return v.length;
+      }
+      const found = scan(v);
+      if (found) return found;
+    }
+    return null;
+  };
+  return scan(data);
+}
+
+/**
+ * Build a list of request bodies to try for embedding dimension detection.
+ * Different providers expect different input formats.
+ */
+function embeddingProbeBodies(
+  modelId: string,
+  dimensions?: number,
+): Array<Record<string, unknown>> {
+  const base = { model: modelId, ...(dimensions ? { dimensions } : {}) };
+  return [
+    // OpenAI-compatible:  { input: ["text"], model: "..." }
+    { ...base, input: ["dimension probe"] },
+    // Multimodal volcengine: { input: [{ type: "text", text: "..." }], model: "..." }
+    { ...base, input: [{ type: "text", text: "dimension probe" }] },
+    // Dashscope native multimodal: { input: { contents: [{ text: "..." }] }, model: "..." }
+    { ...base, input: { contents: [{ text: "dimension probe" }] } },
+  ];
+}
+
+/** Well-known embedding endpoints that don't follow the standard URL pattern. */
+const FALLBACK_ENDPOINTS = [
+  "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+];
+
 export async function detectEmbeddingDim(
   baseUrl: string,
   headers: Record<string, string>,
@@ -112,20 +179,31 @@ export async function detectEmbeddingDim(
   const tryProbe = async (url: string, body: Record<string, unknown>) => {
     const res = await fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(body) });
     if (res.ok) {
-      const data = await res.json() as { data?: Array<{ embedding: number[] }> };
-      const dim = data.data?.[0]?.embedding?.length;
-      return dim && dim > 0 ? dim : null;
+      const data = await res.json();
+      return extractEmbeddingDim(data);
     }
     return null;
   };
 
-  for (const url of [actualBase, normalizedBase]) {
+  // Derived URLs + original + well-known fallbacks.
+  // The originalUrl is included because normalizeProviderBaseUrl may strip
+  // endpoint-specific path segments (e.g. /embeddings/multimodal → /embeddings).
+  const urls = [actualBase, normalizedBase, originalUrl, ...FALLBACK_ENDPOINTS];
+
+  for (const url of urls) {
+    // Probe from largest dimension down
     for (const dim of [3072, 1536, 1024, 768]) {
-      const result = await tryProbe(url, { input: ["dimension probe"], model: model.modelId, dimensions: dim });
-      if (result === dim) return dim;
+      for (const body of embeddingProbeBodies(model.modelId, dim)) {
+        const result = await tryProbe(url, body);
+        if (result === dim) return dim;
+        if (result !== null && result > 0) return result;
+      }
     }
-    const nativeDim = await tryProbe(url, { input: ["dimension probe"], model: model.modelId });
-    if (nativeDim) return nativeDim;
+    // Native dim (no dimensions param)
+    for (const body of embeddingProbeBodies(model.modelId)) {
+      const nativeDim = await tryProbe(url, body);
+      if (nativeDim) return nativeDim;
+    }
   }
   return null;
 }
@@ -141,17 +219,19 @@ export async function validateEmbeddingDim(
   const verMatch = originalUrl.match(/\/v(\d+)\//);
   const normalizedBase = `${baseUrl}${verMatch ? `/v${verMatch[1]}` : "/v1"}/embeddings`;
 
-  for (const url of [actualBase, normalizedBase]) {
-    try {
-      const res = await fetchWithTimeout(url, {
-        method: "POST", headers,
-        body: JSON.stringify({ input: ["dimension probe"], model: model.modelId, dimensions: expectedDim }),
-      });
-      if (res.ok) {
-        const data = await res.json() as { data?: Array<{ embedding: number[] }> };
-        if (data.data?.[0]?.embedding?.length === expectedDim) return true;
-      }
-    } catch {}
+  for (const url of [actualBase, normalizedBase, originalUrl, ...FALLBACK_ENDPOINTS]) {
+    for (const body of embeddingProbeBodies(model.modelId, expectedDim)) {
+      try {
+        const res = await fetchWithTimeout(url, {
+          method: "POST", headers,
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (extractEmbeddingDim(data) === expectedDim) return true;
+        }
+      } catch {}
+    }
   }
   return false;
 }

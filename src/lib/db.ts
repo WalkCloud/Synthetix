@@ -3,6 +3,7 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { readDbGlobalConfig, buildPgConnectionString } from "@/lib/settings/db-config";
+import { resolvePrismaUrl } from "@/lib/db-path";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -18,7 +19,7 @@ function createPrismaClient(): PrismaClient {
   }
 
   const adapter = new PrismaBetterSqlite3({
-    url: process.env.DATABASE_URL || "file:./dev.db",
+    url: resolvePrismaUrl(),
   });
   return new PrismaClient({ adapter });
 }

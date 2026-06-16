@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   if (type) {
     where.type = type;
   }
-  const includeResultData = type === "draft_generate_all";
+  const includeResultData = type === "draft_generate_all" || type === "rag_index";
 
   const tasks = await db.asyncTask.findMany({
     where,

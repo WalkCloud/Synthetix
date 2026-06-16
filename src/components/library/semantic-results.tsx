@@ -3,17 +3,20 @@
 import { useState } from "react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useLocale } from "@/lib/i18n";
+import { getSearchResultBadge } from "@/lib/search/result-badge";
 import type { SearchResult } from "@/types/documents";
 
 interface SemanticResultsProps {
   results: SearchResult[];
   isSearching: boolean;
   searchMode: "keyword" | "semantic";
+  resultMode?: "keyword" | "semantic";
   searchStage: number;
+  needsSearchForSelectedMode?: boolean;
   onViewDocument?: (documentId: string) => void;
 }
 
-export function SemanticResults({ results, isSearching, searchMode, searchStage, onViewDocument }: SemanticResultsProps) {
+export function SemanticResults({ results, isSearching, searchMode, resultMode = searchMode, searchStage, needsSearchForSelectedMode = false, onViewDocument }: SemanticResultsProps) {
   const { locale, t } = useLocale();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const isZh = locale === "zh-CN";
@@ -23,8 +26,6 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
   const keywordStages = isZh
     ? ["正在分词...", "正在搜索索引...", "正在排序结果..."]
     : ["Tokenizing query...", "Searching index...", "Ranking results..."];
-  const matchLabel = isZh ? "匹配" : "match";
-
   return (
     <div className="space-y-3 animate-fade-in-up">
       {isSearching ? (
@@ -77,6 +78,18 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
             )}
           </div>
         </div>
+      ) : needsSearchForSelectedMode ? (
+        <EmptyState
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m8 11 2 2 4-5" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          }
+          title={searchMode === "semantic" ? (isZh ? "已切换到语义检索" : "Semantic search selected") : (isZh ? "已切换到关键词检索" : "Keyword search selected")}
+          description={searchMode === "semantic" ? (isZh ? "点击搜索查看语义检索结果。" : "Click search to view semantic results.") : (isZh ? "点击搜索查看关键词检索结果。" : "Click search to view keyword results.")}
+        />
       ) : results.length === 0 ? (
         <EmptyState
           icon={
@@ -107,23 +120,14 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
                   >
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                  {typeof r.score === "number" && r.score >= 0.85 ? (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300">
-                      {Math.round(r.score * 100)}% {matchLabel}
-                    </span>
-                  ) : typeof r.score === "number" && r.score >= 0.75 ? (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-primary-100 text-primary">
-                      {Math.round(r.score * 100)}% {matchLabel}
-                    </span>
-                  ) : typeof r.score === "number" ? (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
-                      {Math.round(r.score * 100)}% {matchLabel}
-                    </span>
-                  ) : (
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-                      {isZh ? "关键词匹配" : "Keyword match"}
-                    </span>
-                  )}
+                  {(() => {
+                    const badge = getSearchResultBadge(r, resultMode, locale);
+                    return (
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badge.className}`}>
+                        {badge.text}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="text-sm text-muted-foreground leading-relaxed">
@@ -169,6 +173,8 @@ export function SemanticResults({ results, isSearching, searchMode, searchStage,
                     {r.chunkId}
                   </span>
                   {r.title && <span>{r.title}</span>}
+                  {r.source && <span>{isZh ? "来源" : "Source"}: {r.source}</span>}
+                  {typeof r.rank === "number" && <span>{isZh ? "排序" : "Rank"}: #{r.rank}</span>}
                 </div>
               )}
             </div>

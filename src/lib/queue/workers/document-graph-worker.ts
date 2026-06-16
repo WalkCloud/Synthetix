@@ -4,9 +4,23 @@ import {
   loadProcessingTask,
   resolveProcessingModels,
 } from "@/lib/documents/pipeline";
-import { LocalStorageAdapter } from "@/lib/documents/storage";
 
-const storage = new LocalStorageAdapter();
+export function buildGraphTaskProgressUpdate(
+  event: Record<string, unknown>,
+  now = new Date(),
+): { progress: number; resultData: string } {
+  const progress = typeof event.progress === "number" ? event.progress : 20;
+  return {
+    progress: Math.max(0, Math.min(99, progress)),
+    resultData: JSON.stringify({
+      stage: typeof event.stage === "string" ? event.stage : "indexing",
+      message: typeof event.message === "string" ? event.message : "Indexing knowledge graph",
+      processed: typeof event.processed === "number" ? event.processed : undefined,
+      total: typeof event.total === "number" ? event.total : undefined,
+      lastHeartbeatAt: now.toISOString(),
+    }),
+  };
+}
 
 export async function processDocumentGraph(taskId: string): Promise<{ ok: boolean; rag?: unknown; indexMode?: string }> {
   await db.asyncTask.update({
@@ -27,8 +41,6 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
     return { ok: false };
   }
 
-  ctx.outputDir = storage.getDocumentDir(ctx.docId, ctx.doc.userId);
-  ctx.markdownPath = ctx.doc.markdownPath || `${ctx.outputDir}/full.md`;
   ctx.options.indexMode = "graph";
 
   try {
@@ -37,7 +49,12 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
       data: { progress: 20 },
     });
 
-    const indexResult = await indexDocument(ctx);
+    const indexResult = await indexDocument(ctx, async (event) => {
+      await db.asyncTask.update({
+        where: { id: taskId },
+        data: buildGraphTaskProgressUpdate(event),
+      });
+    });
 
     await db.asyncTask.update({
       where: { id: taskId },

@@ -30,7 +30,7 @@ export function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
-export async function authOrError(): Promise<AuthUser> {
+async function authOrError(): Promise<AuthUser> {
   const user = await getAuthUser();
   if (!user) {
     throw new Error("Unauthorized");

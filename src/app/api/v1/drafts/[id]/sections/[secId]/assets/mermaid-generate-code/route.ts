@@ -2,7 +2,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { isCJK, translateLabels, stripCodeFences, repairJson } from "@/lib/writing/diagram-translate";
 import { buildDiagramPrompts } from "@/lib/prompts";
 import type { LLMProvider } from "@/lib/llm/types";
@@ -27,7 +27,7 @@ async function generateDiagramCode(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      console.warn(`[mermaid-generate-code] Retry attempt ${attempt}/${MAX_RETRIES}`);
+      console.info(`[mermaid-generate-code] Retry attempt ${attempt}/${MAX_RETRIES}`);
     }
 
     const response = await provider.chat({
@@ -56,16 +56,11 @@ async function generateDiagramCode(
         return { code, inputTokens: totalInput, outputTokens: totalOutput };
       }
       lastError = `Empty or missing nodes array (count: ${parsed.nodes?.length ?? 0})`;
-      console.error("[mermaid-generate-code] LLM returned JSON with missing/empty nodes:", {
-        keys: Object.keys(parsed),
-        nodeCount: parsed.nodes?.length ?? 0,
-      });
     } catch {
       if (code.includes("-->") || code.includes("==>") || code.includes("-.->")) {
         return { code, inputTokens: totalInput, outputTokens: totalOutput };
       }
       lastError = `Unparseable output (${code.length} chars)`;
-      console.error("[mermaid-generate-code] LLM returned unparseable output, length:", code.length);
     }
   }
 
@@ -125,14 +120,14 @@ export async function POST(
 
     const result = await generateDiagramCode(provider, writingModel.modelId, messages, needChinese);
 
-    await recordTokenUsage({
+    await recordTokenUsageSafely({
       userId: user.id,
       modelConfigId: writingModel.id,
       module: "mermaid",
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       referenceId: sectionId,
-    }).catch((err) => { console.warn("Failed to record mermaid token usage:", err); });
+    });
 
     return successResponse({ code: result.code });
   } catch (error) {

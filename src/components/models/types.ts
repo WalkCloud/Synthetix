@@ -35,7 +35,7 @@ export interface UsageEntry {
 }
 
 export interface ModelUsageAggregate {
-  modelConfigId: string;
+  modelConfigId: string | null;
   modelName: string;
   providerName: string;
   totalInputTokens: number;

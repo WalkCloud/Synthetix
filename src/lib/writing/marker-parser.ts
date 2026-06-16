@@ -1,4 +1,4 @@
-export function generateMarkerId(): string {
+function generateMarkerId(): string {
   return Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
 }
 
@@ -170,7 +170,7 @@ export function injectMarkerIds(content: string): string {
   });
 }
 
-export function findMarkerById(content: string, markerId: string): ParsedMarker | null {
+function findMarkerById(content: string, markerId: string): ParsedMarker | null {
   const markers = parseAllMarkers(content);
   return markers.find((m) => m.markerId === markerId) || null;
 }

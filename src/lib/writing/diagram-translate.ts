@@ -68,6 +68,17 @@ function applyTranslations(obj: JsonValue, translations: Record<string, string>)
   return obj;
 }
 
+/**
+ * Translate diagram labels to Chinese using the given LLM provider.
+ *
+ * Token accounting note: this helper deliberately does NOT call
+ * `recordTokenUsage` itself. It returns the input/output token counts to its
+ * caller, which is responsible for aggregating them into a single
+ * `recordTokenUsageSafely` write under the `"mermaid"` module (see
+ * src/app/api/v1/drafts/[id]/sections/[secId]/assets/mermaid-generate-code/route.ts).
+ * Recording here as well would double-count translation tokens against the
+ * Token Usage Analytics page.
+ */
 export async function translateLabels(
   code: string,
   provider: LLMProvider,

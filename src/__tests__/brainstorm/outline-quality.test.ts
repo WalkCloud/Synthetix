@@ -105,4 +105,43 @@ describe("evaluateOutlineQuality", () => {
     expect(result.issues).toContain("1 leaf section is missing description");
     expect(result.issues).toContain("2 leaf sections are missing keyPoints");
   });
+
+  it("skips detail-field checks at the skeleton stage (checkDetailFields:false)", () => {
+    // A skeleton from Stage 1: valid structure but no keyPoints/description (added later by enrichment).
+    const skeleton = {
+      title: "Container Cloud Platform Plan",
+      sections: [
+        { num: "1", title: "Background", children: [
+          { num: "1.1", title: "Drivers", estimatedWords: 400 },
+          { num: "1.2", title: "Goals", estimatedWords: 400 },
+        ]},
+        { num: "2", title: "Architecture", children: [
+          { num: "2.1", title: "Overall", estimatedWords: 500 },
+          { num: "2.2", title: "Tech Stack", estimatedWords: 500 },
+        ]},
+        { num: "3", title: "Security", children: [
+          { num: "3.1", title: "Compliance", estimatedWords: 500 },
+          { num: "3.2", title: "Isolation", estimatedWords: 500 },
+        ]},
+        { num: "4", title: "Operations", children: [
+          { num: "4.1", title: "Monitoring", estimatedWords: 500 },
+          { num: "4.2", title: "Disaster Recovery", estimatedWords: 500 },
+        ]},
+      ],
+    };
+
+    // Default (full check): skeleton has no keyPoints/description -> fails.
+    const fullResult = evaluateOutlineQuality(skeleton);
+    expect(fullResult.ok).toBe(false);
+    expect(fullResult.issues).toContain("8 leaf sections are missing description");
+    expect(fullResult.issues).toContain("8 leaf sections are missing keyPoints");
+
+    // Skeleton stage (structure only): valid structure passes despite missing detail fields.
+    const skeletonResult = evaluateOutlineQuality(skeleton, { checkDetailFields: false });
+    expect(skeletonResult.ok).toBe(true);
+    expect(skeletonResult.leafCount).toBe(8);
+    expect(skeletonResult.maxDepth).toBe(2);
+    expect(skeletonResult.issues.some((i) => i.includes("keyPoints"))).toBe(false);
+    expect(skeletonResult.issues.some((i) => i.includes("description"))).toBe(false);
+  });
 });

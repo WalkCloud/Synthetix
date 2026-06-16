@@ -279,11 +279,11 @@ export function ModelsTabs() {
                     const rankBadge = idx === 0 ? "bg-yellow-100 text-yellow-700 border border-yellow-200 dark:bg-yellow-950/35 dark:text-yellow-300 dark:border-yellow-800/40" : idx === 1 ? "bg-secondary/80 text-foreground/75 border border-border" : idx === 2 ? "bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-950/35 dark:text-orange-300 dark:border-orange-800/40" : "bg-muted/50 text-muted-foreground border border-border";
                     const rankLabel = `#${idx + 1}`;
                     return (
-                      <div key={m.modelConfigId}>
+                      <div key={m.modelConfigId ?? "__unattributed"}>
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-3">
                             <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md ${rankBadge}`}>{rankLabel}</span>
-                            <span className="text-sm font-semibold text-foreground">{m.modelName}</span>
+                            <span className="text-sm font-semibold text-foreground">{m.modelConfigId === null ? t.models.usage.unattributed : m.modelName}</span>
                             <span className="text-xs px-2 py-0.5 bg-muted/50 rounded text-muted-foreground">{m.providerName}</span>
                           </div>
                           <div className="flex items-center gap-3 text-sm">

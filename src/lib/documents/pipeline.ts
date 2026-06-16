@@ -1,24 +1,26 @@
 import { db } from "@/lib/db";
-import { convertToMarkdown } from "@/lib/documents/converter";
+import { convertDocumentFile, type ConversionResult } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens, type SplitChunk } from "@/lib/documents/splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { buildEmbeddingManifest } from "@/lib/documents/embedding-manifest";
-import type { StorageAdapter } from "@/lib/documents/storage";
+import { LocalStorageAdapter, type StorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim, isLightRAGCompatible } from "@/lib/rag/dimension";
 import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
+import { isDaemonEnabled, pythonDaemon } from "@/lib/python-daemon";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/client";
 import { sanitizeMarkdown } from "@/lib/documents/outline/sanitize";
 import { splitByMacroAST, coalesceMacroChunks } from "@/lib/documents/outline/macro-split";
-import { microSplitByLocalSemantic } from "@/lib/documents/outline/micro-split";
+import { microSplitByLocalSemantic, packChunksBySize } from "@/lib/documents/outline/micro-split";
 import { injectBreadcrumbs } from "@/lib/documents/outline/breadcrumb";
 import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
 import fs from "fs";
+import { promises as fsp } from "fs";
 import path from "path";
 
 async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, concurrency: number): Promise<void> {
@@ -38,7 +40,7 @@ async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, conc
 
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
-const DEFAULT_SPLIT_RATIO = parseFloat(process.env.SPLIT_THRESHOLD || "0.30");
+const EMBED_USAGE_RATIO = 0.9; // 90% of embedding context for chunk text, 10% tokenizer safety margin
 const RAG_INDEX_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_index.py");
 const EMBEDDING_UPDATE_BATCH_SIZE = Number(process.env.EMBEDDING_UPDATE_BATCH_SIZE || 200);
 
@@ -49,6 +51,9 @@ export interface ProcessingContext {
   options: ProcessingOptions;
   outputDir: string;
   markdownPath: string;
+  structurePath: string | null;
+  imageManifestPath: string | null;
+  conversionMethod: "docling" | null;
   writingModel: ModelWithProvider | null;
   embedModel: ModelWithProvider | null;
   contextWindow: number;
@@ -69,7 +74,6 @@ interface EmbeddingUpdateDb {
       data: { embedding: Uint8Array; embedModel: string };
     }) => unknown;
   };
-  $transaction: (operations: unknown[]) => Promise<unknown>;
 }
 
 export async function persistEmbeddingUpdates(
@@ -81,12 +85,25 @@ export async function persistEmbeddingUpdates(
 
   for (let i = 0; i < updates.length; i += batchSize) {
     const batch = updates.slice(i, i + batchSize);
-    await targetDb.$transaction(
-      batch.map((u) => targetDb.documentChunk.update({
-        where: { id: u.chunkId },
-        data: { embedding: u.embedding, embedModel: u.embedModel },
-      })),
-    );
+    // Single-row updates with P2025 ("Record to update not found") tolerated.
+    // The original $transaction(batch.map(update)) would abort the whole
+    // batch the instant any chunk row had been deleted out from under us
+    // (e.g. document deletion or reprocess racing the embedding worker).
+    // Skipping missing rows is the right behaviour here: if a chunk is gone
+    // its embedding is moot, and the surviving chunks should still get
+    // persisted. Other errors still bubble up.
+    for (const u of batch) {
+      try {
+        await targetDb.documentChunk.update({
+          where: { id: u.chunkId },
+          data: { embedding: u.embedding, embedModel: u.embedModel },
+        });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "P2025") continue;
+        throw err;
+      }
+    }
   }
 }
 
@@ -103,13 +120,24 @@ export async function loadProcessingTask(taskId: string): Promise<ProcessingCont
   const doc = await db.document.findUnique({ where: { id: docId } });
   if (!doc) throw new Error(`Document ${docId} not found`);
 
+  // Phase 1 produces these paths and persists them on the document. Phase 2
+  // workers (rag-embed-index, document-graph) reload via this function and
+  // expect outputDir/markdownPath to be ready, so we resolve them here once
+  // rather than relying on each caller to remember.
+  const storage = new LocalStorageAdapter();
+  const outputDir = storage.getDocumentDir(docId, doc.userId);
+  const markdownPath = doc.markdownPath || `${outputDir}/full.md`;
+
   return {
     taskId,
     docId,
     doc,
     options,
-    outputDir: "",
-    markdownPath: "",
+    outputDir,
+    markdownPath,
+    structurePath: doc.structurePath ?? null,
+    imageManifestPath: doc.imageManifestPath ?? null,
+    conversionMethod: (doc.conversionMethod as "docling" | null | undefined) ?? null,
     writingModel: null,
     embedModel: null,
     contextWindow: 4096,
@@ -123,13 +151,31 @@ export async function convertDocument(
   storage: StorageAdapter,
 ): Promise<string> {
   const outputDir = storage.getDocumentDir(ctx.docId, ctx.doc.userId);
-  await convertToMarkdown(ctx.doc.originalPath, outputDir);
-  const markdownPath = `${outputDir}/full.md`;
+
+  // Skip the (slow) Docling re-conversion when the source file is unchanged.
+  // The cache is keyed on originalHash + originalSize (both already on the
+  // Document row from upload) plus a version stamp. forceReconnect opts out,
+  // and we only cache when originalHash is present (a null hash was never
+  // captured, so it cannot safely identify the source).
+  const canCache =
+    !ctx.options.forceReconnect && !!ctx.doc.originalHash && ctx.doc.originalSize > 0;
+  const cacheKey = canCache
+    ? { originalHash: ctx.doc.originalHash as string, originalSize: ctx.doc.originalSize }
+    : undefined;
+
+  const result: ConversionResult = await convertDocumentFile(
+    ctx.doc.originalPath,
+    outputDir,
+    cacheKey,
+  );
 
   ctx.outputDir = outputDir;
-  ctx.markdownPath = markdownPath;
+  ctx.markdownPath = result.markdown;
+  ctx.structurePath = result.structure;
+  ctx.imageManifestPath = result.imageManifest;
+  ctx.conversionMethod = result.conversionMethod;
 
-  return fs.readFileSync(markdownPath, "utf-8");
+  return fsp.readFile(result.markdown, "utf-8");
 }
 
 export async function resolveProcessingModels(ctx: ProcessingContext): Promise<void> {
@@ -142,10 +188,12 @@ export async function resolveProcessingModels(ctx: ProcessingContext): Promise<v
     ? await db.modelConfig.findUnique({ where: { id: options.embedModelId }, include: { provider: true } })
     : await resolveModel("embedding", ctx.doc.userId);
 
-  const contextWindow = writingModel?.contextWindow || 4096;
-  const splitRatio = options.contextUsage ? options.contextUsage / 100 : DEFAULT_SPLIT_RATIO;
+  // LLM context window: 0 means unset, fall back to 200K (modern default)
+  const contextWindow = (writingModel?.contextWindow || 0) > 0 ? writingModel!.contextWindow : 200000;
+  const splitRatio = options.contextUsage ? options.contextUsage / 100 : EMBED_USAGE_RATIO;
 
-  const embedContext = embedModel?.contextWindow || 8192;
+  // Embedding max input tokens: 0 means unset, fall back to 8192 (standard embedding limit)
+  const embedContext = (embedModel?.contextWindow || 0) > 0 ? embedModel!.contextWindow : 8192;
   const chunkMaxTokens = Math.floor(embedContext * splitRatio);
   const splitThreshold = chunkMaxTokens * 2;
 
@@ -172,15 +220,18 @@ async function splitViaLocalPipeline(
   chunkMaxTokens: number,
 ): Promise<SplitChunk[]> {
   const clean = sanitizeMarkdown(markdown);
-  let macros = splitByMacroAST(clean);
+  let macros = await splitByMacroAST(clean);
   if (macros.length === 0) return [];
 
   // Merge small adjacent chunks before micro-splitting
   macros = coalesceMacroChunks(macros, Math.max(400, Math.floor(chunkMaxTokens * 0.4)));
 
-  const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.35);
-  const withBreadcrumbs = injectBreadcrumbs(chunks);
-  const safeChunks = enforceEmbeddingSafeChunks(withBreadcrumbs, chunkMaxTokens);
+  const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.55);
+  // microSplit fragments list/image-heavy sections into one-item chunks;
+  // re-pack adjacent same-section fragments back up to retrieval size.
+  const packed = packChunksBySize(chunks, chunkMaxTokens);
+  const withBreadcrumbs = injectBreadcrumbs(packed);
+  const safeChunks = await enforceEmbeddingSafeChunks(withBreadcrumbs, chunkMaxTokens);
 
   return safeChunks;
 }
@@ -223,7 +274,7 @@ export async function splitAndPersistChunks(
     await boundedAll(
       chunks,
       (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
-      8,
+      4,
     );
   } else {
     await db.documentChunk.deleteMany({ where: { documentId: docId } });
@@ -258,19 +309,59 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
 
   const texts = allChunks.map((c) => c.content);
 
-  const validChunks: typeof allChunks = [];
-  const validTexts: string[] = [];
   const maxChunkTokens = embedModel.contextWindow || 8192;
+
+  let chunksToEmbed = allChunks;
+  let textsToEmbed = texts;
+
+  const oversizeIndices: number[] = [];
   for (let i = 0; i < allChunks.length; i++) {
     if (estimateTokens(texts[i]) > maxChunkTokens) {
-      throw new Error(
-        `Chunk ${allChunks[i].id} (${estimateTokens(texts[i])} tokens) exceeds embedding limit ${maxChunkTokens} tokens. ` +
-        `Split safety check failed — the document should have been split into smaller chunks before embedding.`
-      );
+      oversizeIndices.push(i);
     }
-    validChunks.push(allChunks[i]);
-    validTexts.push(texts[i]);
   }
+
+  if (oversizeIndices.length > 0) {
+    const idsToDelete = oversizeIndices.map(i => allChunks[i].id);
+    await db.documentChunk.deleteMany({ where: { id: { in: idsToDelete } } });
+
+    let nextIndex = (await db.documentChunk.findFirst({
+      where: { documentId: docId },
+      orderBy: { index: "desc" },
+      select: { index: true },
+    }))?.index ?? -1;
+
+    const replacements = oversizeIndices.flatMap(oi => {
+      const original = allChunks[oi];
+      const subChunks = splitByLinesInternal(texts[oi], maxChunkTokens, original.title ?? "");
+      const subs = subChunks.length > 1 ? subChunks : [{
+        content: texts[oi].slice(0, Math.floor(maxChunkTokens * 1.5)),
+        title: original.title,
+        tokenCount: maxChunkTokens,
+        headingPath: "",
+        index: 0,
+      }];
+      return subs.map((sc, si) => ({
+        documentId: docId,
+        index: ++nextIndex,
+        title: subs.length > 1 ? `${sc.title} (part ${si + 1}/${subs.length})` : sc.title,
+        content: sc.content,
+        tokenCount: sc.tokenCount,
+        headingPath: original.headingPath || "",
+      }));
+    });
+
+    await db.documentChunk.createMany({ data: replacements });
+
+    chunksToEmbed = await db.documentChunk.findMany({
+      where: { documentId: docId },
+      orderBy: { index: "asc" },
+    });
+    textsToEmbed = chunksToEmbed.map(c => c.content);
+  }
+
+  const validChunks = chunksToEmbed;
+  const validTexts = textsToEmbed;
 
   const baseBatchSize = embedModel.embeddingBatchSize || 10;
   const CONCURRENT_EMBED_BATCHES = 3;
@@ -320,7 +411,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
     const header = Buffer.alloc(8);
     header.writeInt32LE(validEmbeddings.length, 0);
     header.writeInt32LE(embedDim, 4);
-    fs.writeFileSync(embeddingsBinPath, Buffer.concat([header, ...validEmbeddings]));
+    await fsp.writeFile(embeddingsBinPath, Buffer.concat([header, ...validEmbeddings]));
 
     const manifest = buildEmbeddingManifest({
       documentId: docId,
@@ -328,7 +419,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
       embeddingDim: embedDim,
       chunks: validChunks.filter((chunk) => writtenEmbeddings.has(chunk.id)),
     });
-    fs.writeFileSync(
+    await fsp.writeFile(
       path.join(ctx.outputDir, "embedding_manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
       "utf-8",
@@ -345,7 +436,10 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   }).catch((err) => { console.warn("Failed to record embedding token usage:", err); });
 }
 
-export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string } | null> {
+export async function indexDocument(
+  ctx: ProcessingContext,
+  onProgressEvent?: (event: Record<string, unknown>) => void,
+): Promise<{ rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string } | null> {
   const { docId, doc, outputDir, embedModel, writingModel, options } = ctx;
 
   await syncFtsIndexForDocument(docId).catch((err) => { console.warn("FTS index sync failed:", err); });
@@ -389,6 +483,25 @@ export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { s
     ragLlmConfig,
     hasCachedEmbeddings ? embeddingsPath : undefined,
     ragRerankConfig,
+    onProgressEvent,
+    (event) => {
+      // Python LightRAG emits one `usage` event per LLM round-trip during graph
+      // extraction. Forward each one to recordTokenUsage so the Token Usage
+      // Analytics page can attribute graph-mode spend back to the writing model.
+      const inputTokens = Number(event.input_tokens ?? 0);
+      const outputTokens = Number(event.output_tokens ?? 0);
+      if (inputTokens === 0 && outputTokens === 0) return;
+      void recordTokenUsage({
+        userId: doc.userId,
+        modelConfigId: writingModel?.id,
+        module: "graph",
+        inputTokens,
+        outputTokens,
+        referenceId: docId,
+      }).catch((err) => {
+        console.warn("Failed to record graph-mode token usage:", err);
+      });
+    },
   ).catch((err) => {
     console.warn("LightRAG indexing failed (non-blocking):", err);
     return { status: "failed", chunks: 0, error: String(err) };
@@ -397,7 +510,7 @@ export async function indexDocument(ctx: ProcessingContext): Promise<{ rag?: { s
   return { rag: indexResult, indexMode };
 }
 
-export function indexWithLightRAG(
+async function indexWithLightRAG(
   docId: string,
   userId: string,
   chunksDir: string,
@@ -407,87 +520,93 @@ export function indexWithLightRAG(
   llmConfig?: { apiBase: string; apiKey: string; model: string },
   embeddingsFile?: string,
   rerankConfig?: { apiBase: string; apiKey: string; model: string },
+  onProgressEvent?: (event: Record<string, unknown>) => void,
+  onUsageEvent?: (event: Record<string, unknown>) => void,
 ): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }> {
-  const args = [
-    "--doc-id", docId,
-    "--user-id", userId,
-    "--chunks-dir", chunksDir,
-    "--index-mode", indexMode,
-  ];
-  if (embedDim > 0) args.push("--embed-dim", String(embedDim));
+  // Build the kwargs dict for rag_index.index_document(**params). The daemon
+  // takes this verbatim; the spawn fallback rebuilds argv from the same dict so
+  // the two paths can never diverge.
+  const params: Record<string, unknown> = {
+    doc_id: docId,
+    user_id: userId,
+    chunks_dir: chunksDir,
+    index_mode: indexMode,
+    embed_dim: embedDim,
+  };
   if (embeddingsFile) {
-    args.push("--embeddings-file", embeddingsFile);
+    params.embeddings_file = embeddingsFile;
   } else if (embedConfig) {
-    args.push(
-      "--embed-api-base", embedConfig.apiBase,
-      "--embed-api-key", embedConfig.apiKey,
-      "--embed-model", embedConfig.model,
-    );
+    params.embed_api_base = embedConfig.apiBase;
+    params.embed_api_key = embedConfig.apiKey;
+    params.embed_model = embedConfig.model;
   }
   if (indexMode === "graph" && llmConfig) {
-    args.push(
-      "--llm-api-base", llmConfig.apiBase,
-      "--llm-api-key", llmConfig.apiKey,
-      "--llm-model", llmConfig.model,
-    );
+    params.llm_api_base = llmConfig.apiBase;
+    params.llm_api_key = llmConfig.apiKey;
+    params.llm_model = llmConfig.model;
   }
   if (rerankConfig) {
+    params.rerank_api_base = rerankConfig.apiBase;
+    params.rerank_api_key = rerankConfig.apiKey;
+    params.rerank_model = rerankConfig.model;
+  }
+
+  // Basic mode is normally fast (no LLM), but the FIRST index op on a freshly
+  // spawned daemon pays interpreter + lightrag import + storage-load (the
+  // doc_status store accumulates across documents) which can exceed 120s on a
+  // cold daemon. 300s covers that cold path; subsequent ops reuse the resident
+  // daemon and finish in seconds. Graph mode keeps its long LLM-bound budget.
+  const timeoutMs = indexMode === "graph" ? 900_000 : 300_000;
+
+  if (isDaemonEnabled()) {
+    try {
+      return await pythonDaemon.call<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>(
+        "index",
+        params,
+        { onProgressEvent, onUsageEvent, timeoutMs },
+      );
+    } catch (err) {
+      console.warn("[daemon] index op failed, falling back to spawn:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Fallback (daemon disabled or failed): rebuild argv from the same params and
+  // spawn rag_index.py one-shot — identical to the pre-daemon behavior.
+  const args = [
+    "--doc-id", String(params.doc_id),
+    "--user-id", String(params.user_id),
+    "--chunks-dir", String(params.chunks_dir),
+    "--index-mode", String(params.index_mode),
+  ];
+  if (Number(params.embed_dim) > 0) args.push("--embed-dim", String(params.embed_dim));
+  if (params.embeddings_file) {
+    args.push("--embeddings-file", String(params.embeddings_file));
+  } else if (params.embed_api_base) {
     args.push(
-      "--rerank-api-base", rerankConfig.apiBase,
-      "--rerank-api-key", rerankConfig.apiKey,
-      "--rerank-model", rerankConfig.model,
+      "--embed-api-base", String(params.embed_api_base),
+      "--embed-api-key", String(params.embed_api_key),
+      "--embed-model", String(params.embed_model),
+    );
+  }
+  if (params.index_mode === "graph" && params.llm_api_base) {
+    args.push(
+      "--llm-api-base", String(params.llm_api_base),
+      "--llm-api-key", String(params.llm_api_key),
+      "--llm-model", String(params.llm_model),
+    );
+  }
+  if (params.rerank_api_base) {
+    args.push(
+      "--rerank-api-base", String(params.rerank_api_base),
+      "--rerank-api-key", String(params.rerank_api_key),
+      "--rerank-model", String(params.rerank_model),
     );
   }
   return spawnPythonJson(RAG_INDEX_SCRIPT, args, {
-    timeout: indexMode === "graph" ? 900_000 : 120_000,
+    timeout: timeoutMs,
+    onProgressEvent,
+    onUsageEvent,
   });
-}
-
-export async function indexDocumentImages(
-  ctx: ProcessingContext,
-): Promise<void> {
-  const imagesDir = path.join(ctx.outputDir, "images");
-  if (!fs.existsSync(imagesDir)) return;
-
-  const files = fs.readdirSync(imagesDir).filter((f) => !f.startsWith("."));
-  if (files.length === 0) return;
-
-  const markdownPath = path.join(ctx.outputDir, "full.md");
-  const markdown = fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, "utf-8") : "";
-
-  const altMap = new Map<string, string>();
-  const altRegex = /!\[([^\]]*)\]\(images\/([^)]+)\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = altRegex.exec(markdown)) !== null) {
-    altMap.set(match[2], match[1]);
-  }
-
-  for (const filename of files) {
-    const filePath = path.join(imagesDir, filename);
-    const stat = fs.statSync(filePath);
-
-    await db.documentImage.upsert({
-      where: {
-        documentId_filename: { documentId: ctx.docId, filename },
-      },
-      create: {
-        documentId: ctx.docId,
-        filename,
-        altText: altMap.get(filename) || null,
-        mimeType: `image/${path.extname(filename).replace(".", "")}`,
-        fileSize: stat.size,
-        width: null,
-        height: null,
-        pageNumber: null,
-        hash: null,
-      },
-      update: {
-        altText: altMap.get(filename) || null,
-        mimeType: `image/${path.extname(filename).replace(".", "")}`,
-        fileSize: stat.size,
-      },
-    });
-  }
 }
 
 export function splitByLinesInternal(

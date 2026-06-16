@@ -90,27 +90,26 @@ def find_boundaries(
                 continue  # Skip isolated point, merge
             boundaries.append(b)
 
-    # Hard constraint: ensure no segment exceeds max_tokens
+    # Hard constraint: ensure no segment exceeds max_tokens.
+    candidate_boundaries = sorted(set(boundaries))
     final_boundaries: list[int] = []
     last = 0
-    for b in boundaries:
-        seg_tokens = sum(tokens_per_sentence[last:b])
-        if seg_tokens > max_tokens:
-            # Force-split at midpoint
-            mid = last + (b - last) // 2
-            if mid > last:
-                final_boundaries.append(mid)
+
+    for b in candidate_boundaries + [len(sentences)]:
+        current_tokens = 0
+        idx = last
+        while idx < b:
+            next_tokens = tokens_per_sentence[idx]
+            if current_tokens > 0 and current_tokens + next_tokens > max_tokens:
+                final_boundaries.append(idx)
+                current_tokens = 0
+            current_tokens += next_tokens
+            idx += 1
+        if b < len(sentences):
+            final_boundaries.append(b)
         last = b
-        final_boundaries.append(b)
 
-    # Tail check
-    if last < len(sentences):
-        seg_tokens = sum(tokens_per_sentence[last:])
-        if seg_tokens > max_tokens:
-            mid = last + (len(sentences) - last) // 2
-            if mid > last and mid < len(sentences):
-                final_boundaries.append(mid)
-
+    final_boundaries = sorted(set(x for x in final_boundaries if 0 < x < len(sentences)))
     return similarities, final_boundaries
 
 

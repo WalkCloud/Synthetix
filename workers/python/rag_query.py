@@ -20,10 +20,33 @@ import sys
 import json
 import os
 import re
+import time
 import argparse
 import asyncio
 
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+
+# Per-call timeout for the query-time LLM (keyword extraction etc.). The OpenAI
+# client default is 600s; without this cap a single slow/hanging call waited up
+# to 600s x retries and was killed by the Node-side timeout — which is what made
+# hybrid/mix appear to "time out" even though the index loaded fine at 2048-dim.
+LLM_CALL_TIMEOUT_S = 25.0
+LLM_MAX_ATTEMPTS = 2
+
+
+def normalize_vector_score(value):
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)):
+        return None
+    return max(0.0, min(1.0, float(value)))
+
+
+def build_rank_score(rank: int, total: int) -> float:
+    if total <= 1:
+        return 0.75
+    t = rank / max(total - 1, 1)
+    return max(0.25, 0.75 - t * 0.35)
 
 
 async def query_rag(
@@ -86,7 +109,15 @@ async def query_rag(
     import numpy as np
 
     async def embedding_func(texts: list[str], **kwargs):
-        result = await openai_embed(
+        # IMPORTANT: openai_embed is decorated with @wrap_embedding_func_with_attrs
+        # which hardcodes embedding_dim=1536. Calling it directly makes LightRAG
+        # validate our 2048-dim (text-embedding-v4) vectors against 1536, producing
+        # "total elements (2048) cannot be evenly divided by expected dimension (1536)".
+        # Invoke the unwrapped function via `.func` to bypass the inner decorator.
+        # Same fix as rag_index.py — the query path was the only place still calling
+        # it directly, which is why semantic search failed while indexing worked.
+        unwrapped = getattr(openai_embed, "func", openai_embed)
+        result = await unwrapped(
             texts,
             model=embed_model,
             base_url=embed_api_base,
@@ -98,6 +129,10 @@ async def query_rag(
         return result
 
     _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
+
+    # Closure-shared observability: counts query-time LLM round-trips and their
+    # cumulative wall time, emitted as a stderr "timing" event after the query.
+    llm_stats = {"calls": 0, "total_ms": 0.0}
 
     async def llm_func(
         prompt: str,
@@ -118,21 +153,30 @@ async def query_rag(
         response_format = clean_kwargs.pop("response_format", None)
         clean_kwargs.pop("keyword_extraction", None)
         clean_kwargs.pop("stream", None)
+        # LightRAG passes a per-call `timeout` that is a different concept from the
+        # HTTP timeout; drop it and rely on the client-level LLM_CALL_TIMEOUT_S.
         clean_kwargs.pop("timeout", None)
 
-        client = AsyncOpenAI(base_url=llm_api_base, api_key=llm_api_key)
+        client = AsyncOpenAI(
+            base_url=llm_api_base,
+            api_key=llm_api_key,
+            timeout=LLM_CALL_TIMEOUT_S,
+        )
         use_structured = response_format is not None
 
         try:
-            for attempt in range(3):
+            for attempt in range(LLM_MAX_ATTEMPTS):
                 try:
                     if use_structured and attempt == 0:
                         try:
+                            _t0 = time.time()
                             response = await client.beta.chat.completions.parse(
                                 model=llm_model,
                                 messages=messages,
                                 response_format=response_format,
                             )
+                            llm_stats["total_ms"] += (time.time() - _t0) * 1000.0
+                            llm_stats["calls"] += 1
                             parsed = getattr(response.choices[0].message, "parsed", None)
                             if parsed is not None:
                                 return parsed.model_dump_json()
@@ -140,17 +184,20 @@ async def query_rag(
                         except Exception:
                             use_structured = False
 
+                    _t0 = time.time()
                     response = await client.chat.completions.create(
                         model=llm_model,
                         messages=messages,
                         **clean_kwargs,
                     )
+                    llm_stats["total_ms"] += (time.time() - _t0) * 1000.0
+                    llm_stats["calls"] += 1
                     content = response.choices[0].message.content or ""
                     if not content.strip():
                         raise ValueError("Empty response from LLM")
                     return content
                 except Exception:
-                    if attempt < 2:
+                    if attempt < LLM_MAX_ATTEMPTS - 1:
                         await asyncio.sleep(2 ** attempt)
                     else:
                         raise
@@ -218,7 +265,9 @@ async def query_rag(
             return
         raise
 
+    _t_load0 = time.time()
     await rag.initialize_storages()
+    print(json.dumps({"type": "timing", "stage": "load", "ms": round((time.time() - _t_load0) * 1000.0)}), file=sys.stderr, flush=True)
 
     # Resolve mode aliases
     valid_modes = {"local", "global", "hybrid", "mix", "naive", "bypass"}
@@ -227,12 +276,22 @@ async def query_rag(
 
     param = QueryParam(
         mode=mode,
-        chunk_top_k=max(limit * 3, 50),
+        top_k=60,
+        chunk_top_k=max(limit * 5, 80),
         only_need_context=True,
+        enable_rerank=True,
     )
 
     try:
+        _t_q0 = time.time()
         result = await rag.aquery_data(query_text, param=param)
+        print(json.dumps({
+            "type": "timing",
+            "stage": "query",
+            "ms": round((time.time() - _t_q0) * 1000.0),
+            "llm_calls": llm_stats["calls"],
+            "llm_ms": round(llm_stats["total_ms"]),
+        }), file=sys.stderr, flush=True)
         data = result.get("data", {}) if isinstance(result, dict) else {}
 
         chunks = data.get("chunks", [])
@@ -266,25 +325,17 @@ async def query_rag(
                         title = m.group(2)
                         break
 
-            # LightRAG's own ranking order is the primary signal
-            if len(chunks) > 1:
-                t = i / (len(chunks) - 1)
-                rag_score = max(0.3, 1.0 - t * 0.6)
-            else:
-                rag_score = 1.0
-
-            # VDB cosine is auxiliary (30% weight)
-            vdb_score = cosine_map.get(chunk_id)
-            if vdb_score is not None:
-                score = rag_score * 0.7 + vdb_score * 0.3
-            else:
-                score = rag_score
+            rank_score = build_rank_score(i, len(chunks))
+            vector_score = normalize_vector_score(cosine_map.get(chunk_id))
+            score = vector_score if vector_score is not None else rank_score
 
             output_chunks.append({
                 "chunk_id": chunk_id,
-                "content": content_text[:4000],
+                "content": content_text,
                 "title": title,
+                "rank": i + 1,
                 "score": round(score, 4),
+                "vector_score": round(vector_score, 4) if vector_score is not None else None,
             })
 
         output: dict = {

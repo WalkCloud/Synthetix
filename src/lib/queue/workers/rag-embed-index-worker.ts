@@ -1,0 +1,121 @@
+import fs from "fs";
+import { db } from "@/lib/db";
+import {
+  loadProcessingTask,
+  resolveProcessingModels,
+  embedDocumentChunks,
+  indexDocument,
+} from "@/lib/documents/pipeline";
+import { autoTagDocument } from "@/lib/documents/auto-tagger";
+import { assertLatestRagEmbedIndexTask, SupersededRagEmbedIndexTaskError } from "@/lib/documents/processing-tasks";
+import { shouldEnqueueGraphIndex } from "./index-mode-flags";
+
+export async function processRagEmbedIndex(
+  taskId: string,
+): Promise<{ ok: boolean; rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string }> {
+  await db.asyncTask.update({
+    where: { id: taskId },
+    data: { status: "running", progress: 10 },
+  });
+
+  let docId: string | undefined;
+
+  try {
+    const ctx = await loadProcessingTask(taskId);
+    docId = ctx.docId;
+    await assertLatestRagEmbedIndexTask(ctx.doc.userId, ctx.docId, taskId);
+    await resolveProcessingModels(ctx);
+
+    const needEmbedding = (ctx.options.indexTarget || "full") !== "original";
+    if (ctx.embedModel && needEmbedding) {
+      await db.document.update({
+        where: { id: ctx.docId },
+        data: { status: "embedding" },
+      });
+      await db.asyncTask.update({
+        where: { id: taskId },
+        data: { progress: 40 },
+      });
+
+      await embedDocumentChunks(ctx);
+      await assertLatestRagEmbedIndexTask(ctx.doc.userId, ctx.docId, taskId);
+    }
+
+    await db.document.update({
+      where: { id: ctx.docId },
+      data: { status: "indexing" },
+    });
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { progress: 70 },
+    });
+
+    // Embed/index always runs in basic mode here; the optional graph pass
+    // is enqueued separately as a "rag_index" task after this completes
+    // (see shouldEnqueueGraphIndex below).
+    const originalIndexMode = ctx.options.indexMode;
+    ctx.options.indexMode = "basic";
+    const indexResult = await indexDocument(ctx);
+    ctx.options.indexMode = originalIndexMode;
+
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { progress: 92 },
+    });
+
+    const mdForTags = ctx.markdownPath
+      ? await fs.promises.readFile(ctx.markdownPath, "utf-8").catch(() => "")
+      : "";
+    if (mdForTags) {
+      await autoTagDocument(ctx, mdForTags);
+    }
+
+    await db.document.update({
+      where: { id: ctx.docId },
+      data: { status: "ready" },
+    });
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { status: "completed", progress: 100 },
+    });
+
+    if (shouldEnqueueGraphIndex(ctx.options)) {
+      // Skip the follow-up graph task if the document was deleted while
+      // embed/index was running. Without this guard, a freshly-submitted
+      // rag_index task would start a long graph extraction against a doc
+      // that no longer exists, recreating orphan entities/relations.
+      const stillExists = await db.document.findUnique({
+        where: { id: ctx.docId },
+        select: { id: true },
+      });
+      if (stillExists) {
+        const { getQueue } = await import("@/lib/queue");
+        await getQueue().submit("rag_index", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+      }
+    }
+
+    return {
+      ok: true,
+      rag: indexResult?.rag,
+      indexMode: indexResult?.indexMode,
+    };
+  } catch (error) {
+    if (error instanceof SupersededRagEmbedIndexTaskError) {
+      return { ok: false };
+    }
+    if (docId) {
+      await db.document.update({
+        where: { id: docId },
+        data: { status: "failed" },
+      }).catch(() => {});
+    }
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: {
+        status: "failed",
+        errorMessage: error instanceof Error ? error.message : "RAG embed/index failed",
+      },
+    });
+    throw error;
+  }
+}

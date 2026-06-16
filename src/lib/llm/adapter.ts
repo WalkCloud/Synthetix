@@ -219,16 +219,44 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   async embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse> {
+    return this.embedWithRetry(texts, model, dimensions, 3);
+  }
+
+  private async embedWithRetry(
+    texts: string[],
+    model: string | undefined,
+    dimensions: number | undefined,
+    remaining: number,
+  ): Promise<EmbedResponse> {
     const url = buildEmbeddingsUrl(this.normalizedBase);
     const body: Record<string, unknown> = { input: texts, model: model || "text-embedding" };
     if (dimensions) body.dimensions = dimensions;
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: buildProviderHeaders(this.apiKey),
-      body: JSON.stringify(body),
-    });
+
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: buildProviderHeaders(this.apiKey),
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      // Network failure / timeout — retryable. A single dropped connection must
+      // not sink the whole rag_embed_index batch and force a full re-embed.
+      if (remaining > 0) {
+        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.embedWithRetry(texts, model, dimensions, remaining - 1);
+      }
+      throw new Error(`Embed request failed (network): ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     if (!response.ok) {
+      const retryable = response.status === 429 || response.status >= 500;
+      if (retryable && remaining > 0) {
+        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.embedWithRetry(texts, model, dimensions, remaining - 1);
+      }
       const errorText = await response.text().catch(() => "");
       throw new Error(`Embed request failed (${response.status}): ${errorText || response.statusText}`);
     }

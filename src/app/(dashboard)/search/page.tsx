@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import type { SearchResult } from "@/types/documents";
 import type { TopologyResponse } from "@/types/topology";
@@ -9,12 +8,34 @@ import { SearchHero } from "@/components/library/search-hero";
 import { SemanticResults } from "@/components/library/semantic-results";
 import { TopologyCanvas } from "@/components/topology/topology-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
+import { EntityEvidencePanel } from "@/components/topology/entity-evidence-panel";
 import { useLocale } from "@/lib/i18n";
+import { getVisibleSearchState, type SearchMode } from "@/lib/search/display-state";
+import { getGraphProgressView, type GraphProgressView } from "@/lib/knowledge/graph-progress-view";
+import { getGraphTaskDecision, type GraphTaskStatus } from "@/lib/knowledge/graph-task-status";
 
 type TabId = "search" | "knowledge-graph";
 
+interface GraphTaskInfo {
+  id: string;
+  type: string;
+  status: Exclude<GraphTaskStatus, "idle">;
+  progress: number;
+  result?: unknown;
+  error?: string | null;
+  updatedAt: string;
+}
+
+interface EntityEvidenceChunk {
+  chunkId: string;
+  documentId: string;
+  documentName: string;
+  title: string | null;
+  content: string;
+  score: number;
+}
+
 export default function SearchPage() {
-  const router = useRouter();
   const { locale, t } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
@@ -24,11 +45,13 @@ export default function SearchPage() {
   ];
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchMode, setSearchMode] = useState<"keyword" | "semantic">("keyword");
+  const [searchMode, setSearchMode] = useState<SearchMode>("keyword");
   const [isSearching, setIsSearching] = useState(false);
   const [searchStage, setSearchStage] = useState(0);
   const searchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const searchRequestRef = useRef(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [lastSearchMode, setLastSearchMode] = useState<SearchMode | null>(null);
 
   const [kgTopology, setKgTopology] = useState<TopologyResponse | null>(null);
   const [kgLoading, setKgLoading] = useState(false);
@@ -36,13 +59,20 @@ export default function SearchPage() {
   const [kgSearch, setKgSearch] = useState("");
   const [kgCenter, setKgCenter] = useState("");
   const [kgGraphNotice, setKgGraphNotice] = useState("");
+  const [kgIndexingStatus, setKgIndexingStatus] = useState<GraphTaskStatus>("idle");
+  const [kgIndexingProgress, setKgIndexingProgress] = useState(0);
+  const [kgProgressView, setKgProgressView] = useState<GraphProgressView | null>(null);
+  const [kgElapsed, setKgElapsed] = useState(0);
+  const kgStartRef = useRef<number | null>(null);
+  const kgElapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [kgSelectedNodeId, setKgSelectedNodeId] = useState<string | null>(null);
   const [kgEntityDetailLoading, setKgEntityDetailLoading] = useState(false);
+  const [kgEvidenceChunks, setKgEvidenceChunks] = useState<EntityEvidenceChunk[]>([]);
   const kgCacheRef = useRef<TopologyResponse | null>(null);
 
   const missingEntityMessage = useCallback((entity: string) => (
     locale === "zh-CN"
-      ? `未找到“${entity}”的关系图，已保留当前图谱。`
+      ? `未找到"${entity}"的关系图，已保留当前图谱。`
       : `No relationship graph found for "${entity}". Keeping the current graph.`
   ), [locale]);
 
@@ -50,7 +80,7 @@ export default function SearchPage() {
     setKgLoading(true);
     setKgSelectedNodeId(null);
     try {
-      const params = new URLSearchParams({ depth: "2", max_nodes: "100", mode: "core" });
+      const params = new URLSearchParams({ depth: "2", max_nodes: "150", mode: "core", min_degree: "1" });
       if (entity) { params.set("entity", entity); params.set("mode", "graph"); }
       const res = await fetch(`/api/v1/knowledge/graph?${params}`);
       const d = await res.json();
@@ -88,7 +118,7 @@ export default function SearchPage() {
         };
         setKgTopology(data);
         setKgGraphNotice("");
-        if (!entity) kgCacheRef.current = data;
+        if (!entity && nodes.length > 0) kgCacheRef.current = data;
       } else {
         if (entity) {
           setKgGraphNotice(missingEntityMessage(entity));
@@ -108,11 +138,19 @@ export default function SearchPage() {
     setKgLoading(false);
   }, [missingEntityMessage]);
 
+  const loadLatestGraphTask = useCallback(async (): Promise<GraphTaskInfo | null> => {
+    const res = await fetch("/api/v1/tasks?type=rag_index&limit=1");
+    const body = await res.json();
+    if (!body.success || !Array.isArray(body.data) || body.data.length === 0) return null;
+    return body.data[0] as GraphTaskInfo;
+  }, []);
+
   useEffect(() => {
     if (activeTab !== "knowledge-graph" || !kgSelectedNodeId) return;
     const node = kgTopology?.nodes.find(n => n.id === kgSelectedNodeId);
     if (!node) return;
     setKgEntityDetailLoading(true);
+    setKgEvidenceChunks([]);
     fetch(`/api/v1/knowledge/entities/${encodeURIComponent(node.id)}?depth=2&max_nodes=100`)
       .then(r => r.json())
       .then(d => {
@@ -147,7 +185,15 @@ export default function SearchPage() {
         }
       })
       .catch(() => {})
-      .finally(() => setKgEntityDetailLoading(false));
+      .finally(() => {
+        fetch(`/api/v1/knowledge/entity-evidence?entity=${encodeURIComponent(node.id)}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.success && Array.isArray(d.data?.documentChunks)) setKgEvidenceChunks(d.data.documentChunks);
+          })
+          .catch(() => {})
+          .finally(() => setKgEntityDetailLoading(false));
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, kgSelectedNodeId]);
 
@@ -163,8 +209,76 @@ export default function SearchPage() {
     }
   }, [activeTab, loadKnowledgeGraph, kgCenter]);
 
+  useEffect(() => {
+    if (activeTab !== "knowledge-graph" || kgCenter) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      try {
+        const task = await loadLatestGraphTask();
+        if (cancelled) return;
+
+        if (!task) {
+          setKgIndexingStatus("idle");
+          setKgIndexingProgress(0);
+          setKgProgressView(null);
+          return;
+        }
+
+        const decision = getGraphTaskDecision({
+          taskStatus: task.status,
+          hasGraphNodes: Boolean(kgTopology && kgTopology.nodes.length > 0),
+        });
+
+        setKgIndexingStatus(decision.status);
+        setKgIndexingProgress(task.progress || 0);
+        setKgProgressView(getGraphProgressView({ status: task.status, progress: task.progress || 0, result: task.result }));
+
+        if (decision.shouldPollAgain) {
+          timer = setTimeout(tick, 4000);
+          return;
+        }
+
+        if (decision.shouldRefreshGraph) {
+          kgCacheRef.current = null;
+          await loadKnowledgeGraph();
+        }
+      } catch {
+        if (!cancelled) setKgIndexingStatus("idle");
+      }
+    };
+
+    void tick();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeTab, kgCenter, kgTopology, loadKnowledgeGraph, loadLatestGraphTask]);
+
+  useEffect(() => {
+    const isActive = kgIndexingStatus === "pending" || kgIndexingStatus === "running";
+    if (isActive && !kgStartRef.current) {
+      kgStartRef.current = Date.now();
+      kgElapsedRef.current = setInterval(() => {
+        if (kgStartRef.current) setKgElapsed(Math.floor((Date.now() - kgStartRef.current) / 1000));
+      }, 1000);
+    } else if (!isActive && kgStartRef.current) {
+      if (kgElapsedRef.current) { clearInterval(kgElapsedRef.current); kgElapsedRef.current = null; }
+      kgStartRef.current = null;
+      setKgElapsed(0);
+    }
+    return () => {
+      if (kgElapsedRef.current) { clearInterval(kgElapsedRef.current); kgElapsedRef.current = null; }
+    };
+  }, [kgIndexingStatus]);
+
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
     setIsSearching(true);
     setSearchStage(0);
     const isSemantic = searchMode === "semantic";
@@ -179,10 +293,18 @@ export default function SearchPage() {
     }, advanceInterval);
     try {
       const endpoint = searchMode === "keyword" ? "/api/v1/library/search/keyword" : "/api/v1/library/search/semantic";
-      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: searchQuery }) });
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery, mode: "mix", limit: 20 }),
+      });
       const data = await res.json();
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
-      if (data.success) { setSearchResults(data.data); }
+      if (requestId !== searchRequestRef.current) return;
+      if (data.success) {
+        setSearchResults(data.data);
+        setLastSearchMode(searchMode);
+      }
       else { alert(data.error || t.errors.generationFailed); }
     } catch {
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
@@ -191,6 +313,13 @@ export default function SearchPage() {
       setIsSearching(false);
     }
   }, [searchQuery, searchMode, t]);
+
+  const visibleSearchState = getVisibleSearchState({
+    selectedMode: searchMode,
+    lastSearchMode,
+    resultsCount: searchResults.length,
+    hasQuery: searchQuery.trim().length > 0,
+  });
 
   return (
     <div>
@@ -219,11 +348,13 @@ export default function SearchPage() {
               isSearching={isSearching}
             />
             <SemanticResults
-              results={searchResults}
+              results={visibleSearchState.shouldShowResults ? searchResults : []}
               isSearching={isSearching}
               searchMode={searchMode}
+              resultMode={visibleSearchState.resultMode}
               searchStage={searchStage}
-              onViewDocument={(id) => router.push(`/library/${id}`)}
+              needsSearchForSelectedMode={visibleSearchState.needsSearchForSelectedMode}
+              onViewDocument={(id) => {}}
             />
           </>
         )}
@@ -265,6 +396,52 @@ export default function SearchPage() {
                 {kgGraphNotice}
               </div>
             )}
+            {(kgIndexingStatus === "pending" || kgIndexingStatus === "running") && (
+              <div className="mb-4 overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.04] text-foreground">
+                <div className="p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    </span>
+                    <p className="text-sm font-semibold flex-1">{t.search.knowledgeGraphBuilding}</p>
+                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary tabular-nums">{kgIndexingProgress}%</span>
+                    {kgElapsed > 0 && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {t.search.graphElapsed} {Math.floor(kgElapsed / 60)}:{String(kgElapsed % 60).padStart(2, "0")}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative h-2 overflow-hidden rounded-full bg-primary/15">
+                    <div
+                      className="h-full rounded-full bg-primary/80 transition-all duration-700 ease-out"
+                      style={{ width: `${Math.max(8, kgIndexingProgress)}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 w-1/3 animate-[shimmer-slide_2s_ease-in-out_infinite] rounded-full"
+                      style={{
+                        background: "linear-gradient(90deg, transparent, rgba(124,58,237,0.3), transparent)",
+                        left: `${Math.max(4, kgIndexingProgress - 15)}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                      {t.search.graphActive}
+                    </span>
+                    <span>{t.search.graphStageLabel}: {kgProgressView?.stage || "indexing"}</span>
+                    {kgProgressView?.chunkLabel && <span>{kgProgressView.chunkLabel}</span>}
+                    {kgProgressView?.heartbeatLabel && <span>{kgProgressView.heartbeatLabel}</span>}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground/80">
+                    {kgProgressView?.isSlow ? t.search.knowledgeGraphSlowHint : t.search.knowledgeGraphRunningHint}
+                  </p>
+                </div>
+              </div>
+            )}
             {kgLoading && !kgTopology ? (
               <div className="flex items-center justify-center min-h-[560px]">
                 <div className="text-center text-muted-foreground">
@@ -284,32 +461,42 @@ export default function SearchPage() {
                 </div>
               </div>
             ) : (
-              <TopologyCanvas
-                nodes={kgTopology.nodes}
-                edges={kgTopology.edges}
-                zoom={kgZoom}
-                selectedNodeId={kgSelectedNodeId}
-                onNodeClick={(nodeId) => {
-                  if (!nodeId) {
-                    setKgSelectedNodeId(null);
-                    return;
-                  }
-                  if (kgSelectedNodeId === nodeId) {
-                    setKgSelectedNodeId(null);
-                    return;
-                  }
-                  setKgSelectedNodeId(nodeId);
-                }}
-                onNodeDblClick={(nodeId) => {
-                  const node = kgTopology.nodes.find(n => n.id === nodeId);
-                  if (node) {
-                    setKgGraphNotice("");
-                    setKgCenter(node.id);
-                  }
-                }}
-                entityDetailLoading={kgEntityDetailLoading}
-                graphMode="knowledge"
-              />
+              <>
+                <TopologyCanvas
+                  nodes={kgTopology.nodes}
+                  edges={kgTopology.edges}
+                  zoom={kgZoom}
+                  selectedNodeId={kgSelectedNodeId}
+                  onNodeClick={(nodeId) => {
+                    if (!nodeId) {
+                      setKgSelectedNodeId(null);
+                      return;
+                    }
+                    if (kgSelectedNodeId === nodeId) {
+                      setKgSelectedNodeId(null);
+                      return;
+                    }
+                    setKgSelectedNodeId(nodeId);
+                  }}
+                  onNodeDblClick={(nodeId) => {
+                    const node = kgTopology.nodes.find(n => n.id === nodeId);
+                    if (node) {
+                      setKgGraphNotice("");
+                      setKgCenter(node.id);
+                    }
+                  }}
+                  entityDetailLoading={kgEntityDetailLoading}
+                  graphMode="knowledge"
+                />
+                <EntityEvidencePanel
+                  node={kgTopology.nodes.find((node) => node.id === kgSelectedNodeId) || null}
+                  edges={kgTopology.edges}
+                  onClose={() => setKgSelectedNodeId(null)}
+                  isLoading={kgEntityDetailLoading}
+                  chunks={kgEvidenceChunks}
+                  isZh={locale === "zh-CN"}
+                />
+              </>
             )}
           </>
         )}

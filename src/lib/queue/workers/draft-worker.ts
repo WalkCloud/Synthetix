@@ -4,6 +4,7 @@ import { generateSummary } from "@/lib/writing/summarizer";
 import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { buildEffectiveConstraints } from "@/lib/writing/constraints";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { persistSectionReferences } from "@/lib/writing/persist-references";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
 
 interface DraftGenerateAllPayload extends TaskPayload {
@@ -253,20 +254,7 @@ export async function generateDraftAll(
         return { generated, cancelled: true, errors };
       }
 
-      await db.sectionReference.deleteMany({ where: { sectionId: section.id } });
-      if (result.ragReferences.length > 0) {
-        await db.sectionReference.createMany({
-          data: result.ragReferences.map((ref) => ({
-            sectionId: section.id,
-            documentId: ref.documentId || null,
-            chunkId: ref.chunkId || null,
-            documentName: ref.documentName,
-            relevanceScore: ref.score,
-            sourceAnchor: ref.title || null,
-            content: ref.content || null,
-          })),
-        });
-      }
+      await persistSectionReferences(section.id, result.ragReferences);
 
       await db.section.update({
         where: { id: section.id },

@@ -43,7 +43,7 @@ export async function GET(
     taskId: task?.id,
     taskStatus: task?.status,
     progress: task?.progress || 0,
-    error: task?.errorMessage,
+    error: task?.error_message,
     graph: {
       requested: Boolean(graphTask),
       taskId: graphTask?.id,

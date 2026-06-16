@@ -184,10 +184,6 @@
                     radial-gradient(at 100% 0%, hsla(339,49%,30%,0.03) 0, transparent 50%);
 }
 
-.status-dot {
-  box-shadow: 0 0 0 4px rgba(255,255,255,0.8);
-}
-
 /* Dark mode overrides for custom classes */
 .dark .glass-card {
   background: rgba(17, 24, 39, 0.72);
@@ -216,10 +212,6 @@
     radial-gradient(at 80% 80%, rgba(251, 146, 60, 0.04) 0px, transparent 45%);
 }
 
-.dark .status-dot {
-  box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.85);
-}
-
 /* Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
@@ -229,11 +221,6 @@
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-12px); }
-}
-
-@keyframes pulse-soft {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
 }
 
 @keyframes pulse-dot {
@@ -251,21 +238,9 @@
 
 .animate-float { animation: float 8s ease-in-out infinite; }
 .animate-float-delayed { animation: float 10s ease-in-out infinite 2s; }
-.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
 .animate-task-pulse { animation: pulse-dot 2s infinite; }
 
 /* Topology animations */
-@keyframes topo-pulse {
-  0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-   50% { box-shadow: 0 4px 20px rgba(124, 58, 237, 0.15); }
-}
-
-@keyframes topo-dash {
-  to { stroke-dashoffset: -200; }
-}
-
-.animate-topo-pulse { animation: topo-pulse 3s ease-in-out infinite; }
-.animate-topo-dash { animation: topo-dash 20s linear infinite; }
 
 @keyframes loading-bar {
   0% { transform: translateX(-100%); }
@@ -275,9 +250,9 @@
 
 .animate-loading-bar { animation: loading-bar 1.2s ease-in-out infinite; }
 
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes shimmer-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 @keyframes progress-indeterminate {

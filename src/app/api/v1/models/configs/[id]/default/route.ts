@@ -1,26 +1,11 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { parseCapabilities } from "@/lib/llm/capabilities";
-
-type DefaultSlot = "llm" | "embedding" | "image";
-
-function normalizeDefaultSlot(value: unknown): DefaultSlot {
-  return value === "embedding" || value === "image" || value === "llm"
-    ? value
-    : "llm";
-}
-
-function modelMatchesDefaultSlot(rawCapabilities: unknown, slot: DefaultSlot): boolean {
-  const caps = parseCapabilities(rawCapabilities);
-  if (slot === "embedding") {
-    return caps.some((c) => c === "embedding" || c === "embed");
-  }
-  if (slot === "image") {
-    return caps.includes("image_generation");
-  }
-  return !caps.some((c) => c === "embedding" || c === "embed" || c === "image_generation");
-}
+import {
+  modelMatchesDefaultSlot,
+  normalizeDefaultSlot,
+  type DefaultSlot,
+} from "@/lib/llm/default-slot";
 
 export async function PATCH(
   request: Request,
@@ -46,9 +31,25 @@ export async function PATCH(
     return errorResponse({ code: "notFound", message: "Model config not found" }, 404);
   }
 
-  const defaultFor = normalizeDefaultSlot(body.defaultFor);
+  const defaultFor: DefaultSlot | null = normalizeDefaultSlot(body.defaultFor);
+  if (!defaultFor) {
+    return errorResponse(
+      { code: "invalidSlot", message: `Unknown defaultFor value: ${body.defaultFor}` },
+      400,
+    );
+  }
 
   if (body.setDefault) {
+    if (!modelMatchesDefaultSlot(modelConfig.capabilities, defaultFor)) {
+      return errorResponse(
+        {
+          code: "capabilityMismatch",
+          message: `Model ${modelConfig.modelName} (capabilities=${modelConfig.capabilities}) cannot be set as default for slot "${defaultFor}".`,
+        },
+        400,
+      );
+    }
+
     await db.modelConfig.updateMany({
       where: {
         isDefaultFor: defaultFor,

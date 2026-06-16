@@ -40,7 +40,7 @@ export default function LibraryPage() {
 
   useEffect(() => {
     const hasProcessing = documents.some((d) =>
-      ["uploading", "converting", "splitting", "embedding", "indexing"].includes(d.status)
+      ["uploading", "queued", "converting", "splitting", "embedding", "indexing"].includes(d.status)
     );
     if (!hasProcessing) return;
     const interval = setInterval(() => fetchDocs(page), 5000);
