@@ -1,63 +1,112 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { deriveDraftStatus } from "@/lib/writing/status";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
+const STUCK_THRESHOLD_MS = 3 * 60 * 1000;
+const TRANSIENT_STATUSES = ["generating", "retrieving", "comparing"];
+
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id } = await params;
 
   try {
-    const draft = await db.draft.findFirst({
+    let draft = await db.draft.findFirst({
       where: { id, userId: user.id },
       include: {
         sections: {
           orderBy: { index: "asc" },
+          include: {
+            references: {
+              orderBy: { relevanceScore: "desc" },
+              select: {
+                documentName: true,
+                relevanceScore: true,
+                sourceAnchor: true,
+                documentId: true,
+                chunkId: true,
+                content: true,
+                images: true,
+                sourceType: true,
+              },
+            },
+          },
         },
       },
     });
 
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
-    return NextResponse.json({ success: true, data: draft });
+    const now = Date.now();
+    const stuckSectionIds = draft.sections
+      .filter((s) => {
+        if (!TRANSIENT_STATUSES.includes(s.status)) return false;
+        const elapsed = now - new Date(s.updatedAt).getTime();
+        return elapsed > STUCK_THRESHOLD_MS;
+      })
+      .map((s) => s.id);
+
+    if (stuckSectionIds.length > 0) {
+      await db.section.updateMany({
+        where: { id: { in: stuckSectionIds } },
+        data: { status: "failed" },
+      });
+      const refreshed = await db.draft.findFirst({
+        where: { id, userId: user.id },
+        include: {
+          sections: {
+            orderBy: { index: "asc" },
+            include: {
+              references: {
+                orderBy: { relevanceScore: "desc" },
+                select: {
+                  documentName: true,
+                  relevanceScore: true,
+                  sourceAnchor: true,
+                  documentId: true,
+                  chunkId: true,
+                  content: true,
+                  images: true,
+                  sourceType: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (refreshed) draft = refreshed;
+    }
+
+    const derivedStatus = deriveDraftStatus(draft.sections);
+
+    return successResponse({ ...draft, status: derivedStatus });
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id } = await params;
@@ -69,21 +118,13 @@ export async function DELETE(
     });
 
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
-    // Cascade delete: SectionVersion -> Section -> Draft
-    // Prisma onDelete: Cascade handles SectionVersion and Section automatically
     await db.draft.delete({ where: { id: draft.id } });
 
-    return NextResponse.json({ success: true });
+    return successResponse(null);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

@@ -1,20 +1,16 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
-export async function GET(request: Request): Promise<NextResponse<ApiResponse>> {
+export async function GET(request: Request) {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
   const days = parseInt(searchParams.get("days") || "30", 10);
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  // Aggregate by day
   const usages = await db.tokenUsage.findMany({
     where: {
       userId: user.id,
@@ -24,12 +20,11 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
     select: { inputTokens: true, outputTokens: true, createdAt: true, module: true },
   });
 
-  // Build day-by-day time series
   const dayMap = new Map<string, { date: string; input: number; output: number }>();
   const moduleDayMap = new Map<string, Map<string, { input: number; output: number }>>();
 
   for (const u of usages) {
-    const day = u.createdAt.toISOString().slice(0, 10); // YYYY-MM-DD
+    const day = u.createdAt.toISOString().slice(0, 10);
     if (!dayMap.has(day)) {
       dayMap.set(day, { date: day, input: 0, output: 0 });
     }
@@ -49,7 +44,6 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
     modEntry.output += u.outputTokens;
   }
 
-  // Fill in missing days with 0
   const daysArray: Array<{ date: string; input: number; output: number }> = [];
   for (let d = days - 1; d >= 0; d--) {
     const date = new Date();
@@ -58,7 +52,6 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
     daysArray.push(dayMap.get(key) ?? { date: key, input: 0, output: 0 });
   }
 
-  // Build per-module series
   const byModule: Record<string, Array<{ date: string; input: number; output: number }>> = {};
   for (const [module, modMap] of moduleDayMap) {
     byModule[module] = daysArray.slice(-days).map((d) => ({
@@ -67,11 +60,7 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
     }));
   }
 
-  const data: {
-    total: Array<{ date: string; input: number; output: number }>;
-    byModule: Record<string, Array<{ date: string; input: number; output: number }>>;
-    summary: { totalInput: number; totalOutput: number; totalCalls: number; days: number };
-  } = {
+  return successResponse({
     total: daysArray,
     byModule,
     summary: {
@@ -80,7 +69,5 @@ export async function GET(request: Request): Promise<NextResponse<ApiResponse>> 
       totalCalls: usages.length,
       days,
     },
-  };
-
-  return NextResponse.json({ success: true, data });
+  });
 }

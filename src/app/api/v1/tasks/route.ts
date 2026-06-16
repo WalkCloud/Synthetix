@@ -1,22 +1,24 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
+  const type = searchParams.get("type");
   const limit = parseInt(searchParams.get("limit") || "50", 10);
 
   const where: Record<string, unknown> = { userId: user.id };
   if (status) {
     where.status = { in: status.split(",") };
   }
+  if (type) {
+    where.type = type;
+  }
+  const includeResultData = type === "draft_generate_all" || type === "rag_index";
 
   const tasks = await db.asyncTask.findMany({
     where,
@@ -27,22 +29,39 @@ export async function GET(request: Request) {
       type: true,
       status: true,
       progress: true,
+      inputData: true,
+      resultData: includeResultData,
       errorMessage: true,
       createdAt: true,
       updatedAt: true,
     },
   });
 
-  return NextResponse.json({
-    success: true,
-    data: tasks.map((t) => ({
-      id: t.id,
-      type: t.type,
-      status: t.status,
-      progress: t.progress,
-      error: t.errorMessage,
-      createdAt: t.createdAt.toISOString(),
-      updatedAt: t.updatedAt.toISOString(),
-    })),
-  });
+  return successResponse(
+    tasks.map((t) => {
+      let input: Record<string, unknown> | null = null;
+      let result: unknown = null;
+      try {
+        input = t.inputData ? JSON.parse(t.inputData) as Record<string, unknown> : null;
+      } catch {}
+      if (includeResultData) {
+        try {
+          result = t.resultData ? JSON.parse(t.resultData) : null;
+        } catch {}
+      }
+
+      return {
+        id: t.id,
+        type: t.type,
+        status: t.status,
+        progress: t.progress,
+        draftId: typeof input?.draftId === "string" ? input.draftId : null,
+        sessionId: typeof input?.sessionId === "string" ? input.sessionId : null,
+        result,
+        error: t.errorMessage,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+      };
+    }),
+  );
 }

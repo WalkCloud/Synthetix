@@ -1,27 +1,36 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useUser } from "@/lib/user-context";
+import { useLocale, type Locale } from "@/lib/i18n";
+import type { TranslationSchema } from "@/lib/i18n/types";
+import { useTheme } from "next-themes";
+import { logout } from "@/lib/auth/logout";
+import { AboutDialog } from "@/components/layout/about-dialog";
+
+type SidebarKeys = keyof TranslationSchema["layout"]["sidebar"];
 
 interface NavItem {
   readonly href: string;
-  readonly label: string;
+  readonly labelKey: SidebarKeys;
   readonly icon: React.ReactNode;
 }
 
 interface NavGroup {
-  readonly group: string;
+  readonly groupKey: SidebarKeys;
   readonly items: readonly NavItem[];
 }
 
 const navGroups: readonly NavGroup[] = [
   {
-    group: "Workspace",
+    groupKey: "workspace",
     items: [
       {
         href: "/",
-        label: "Dashboard",
+        labelKey: "dashboard",
         icon: (
           <>
             <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -33,7 +42,7 @@ const navGroups: readonly NavGroup[] = [
       },
       {
         href: "/documents",
-        label: "Document Init",
+        labelKey: "documentInit",
         icon: (
           <>
             <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
@@ -43,14 +52,29 @@ const navGroups: readonly NavGroup[] = [
       },
       {
         href: "/library",
-        label: "Document Library",
+        labelKey: "documentLibrary",
         icon: (
           <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
         ),
       },
       {
+        href: "/search",
+        labelKey: "knowledgeSearch",
+        icon: (
+          <>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    groupKey: "authoring",
+    items: [
+      {
         href: "/brainstorm",
-        label: "Mind Organization",
+        labelKey: "mindOrganization",
         icon: (
           <>
             <circle cx="12" cy="12" r="10" />
@@ -59,14 +83,9 @@ const navGroups: readonly NavGroup[] = [
           </>
         ),
       },
-    ],
-  },
-  {
-    group: "Authoring",
-    items: [
       {
         href: "/writing",
-        label: "Document Writing",
+        labelKey: "documentWriting",
         icon: (
           <>
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
@@ -76,7 +95,7 @@ const navGroups: readonly NavGroup[] = [
       },
       {
         href: "/topology",
-        label: "Document Topology",
+        labelKey: "documentTopology",
         icon: (
           <>
             <circle cx="18" cy="5" r="3" />
@@ -90,11 +109,11 @@ const navGroups: readonly NavGroup[] = [
     ],
   },
   {
-    group: "Settings",
+    groupKey: "settings",
     items: [
       {
         href: "/models",
-        label: "Model Management",
+        labelKey: "modelManagement",
         icon: (
           <>
             <circle cx="12" cy="12" r="3" />
@@ -104,7 +123,7 @@ const navGroups: readonly NavGroup[] = [
       },
       {
         href: "/settings",
-        label: "User Management",
+        labelKey: "userManagement",
         icon: (
           <>
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -120,29 +139,22 @@ const navGroups: readonly NavGroup[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [displayName, setDisplayName] = useState("");
-  const [initials, setInitials] = useState("");
+  const router = useRouter();
+  const { user } = useUser();
+  const { locale, t, setLocale } = useLocale();
+  const { theme, setTheme } = useTheme();
+  const [aboutOpen, setAboutOpen] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/v1/users/profile")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && data.data) {
-          const name = data.data.displayName || data.data.username || "";
-          setDisplayName(name);
-          setInitials(
-            name
-              ? name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
-              : "U"
-          );
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const displayName = useMemo(() => user?.displayName || user?.username || "User", [user]);
+  const initials = useMemo(
+    () => displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2),
+    [displayName],
+  );
+  const avatarUrl = user?.avatarUrl ?? null;
+  const roleLabel = user?.role ?? "Admin";
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white border-r flex flex-col z-50">
-      {/* Brand */}
+    <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white dark:bg-sidebar border-r flex flex-col z-50">
       <div className="h-16 shrink-0 flex items-center gap-3 px-6 border-b border-border">
         <svg
           className="w-[30px] h-[30px] text-primary shrink-0"
@@ -162,12 +174,11 @@ export function Sidebar() {
         <h1 className="text-xl font-bold font-display tracking-tight">Synthetix</h1>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
         {navGroups.map((group) => (
-          <div key={group.group} className="mb-6">
+          <div key={group.groupKey} className="mb-6">
             <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70 px-3 mb-1.5">
-              {group.group}
+              {t.layout.sidebar[group.groupKey]}
             </div>
             {group.items.map((item) => {
               const isActive =
@@ -175,11 +186,11 @@ export function Sidebar() {
                 (item.href !== "/" && pathname.startsWith(item.href));
               return (
                 <Link
-                  key={`${group.group}-${item.label}`}
+                  key={`${group.groupKey}-${item.labelKey}`}
                   href={item.href}
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors ${
                     isActive
-                      ? "bg-primary-50 text-primary font-semibold"
+                      ? "bg-primary-50 text-primary font-semibold dark:bg-primary/10"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                   }`}
                 >
@@ -194,7 +205,7 @@ export function Sidebar() {
                   >
                     {item.icon}
                   </svg>
-                  {item.label}
+                  {t.layout.sidebar[item.labelKey]}
                 </Link>
               );
             })}
@@ -202,31 +213,216 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* User Footer */}
-      <div className="p-3 border-t border-border/[0.6]">
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-secondary transition-colors">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-semibold text-xs shrink-0">
-            {initials || "U"}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold truncate">{displayName || "User"}</div>
-            <div className="text-[11px] text-muted-foreground">Admin</div>
-          </div>
-          <svg
-            className="w-3.5 h-3.5 text-muted-foreground shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="1" />
-            <circle cx="12" cy="5" r="1" />
-            <circle cx="12" cy="19" r="1" />
-          </svg>
-        </div>
+      <div className="p-3 border-t border-border/[0.6] relative">
+        <UserMenuTrigger
+          displayName={displayName}
+          initials={initials}
+          avatarUrl={avatarUrl}
+          roleLabel={roleLabel}
+          router={router}
+          theme={theme}
+          setTheme={setTheme}
+          locale={locale}
+          setLocale={setLocale}
+          t={t}
+          onAbout={() => setAboutOpen(true)}
+        />
       </div>
+
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </aside>
+  );
+}
+
+function UserMenuTrigger({
+  displayName,
+  initials,
+  avatarUrl,
+  roleLabel,
+  router,
+  theme,
+  setTheme,
+  locale,
+  setLocale,
+  t,
+  onAbout,
+}: {
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  roleLabel: string;
+  router: ReturnType<typeof useRouter>;
+  theme: string | undefined;
+  setTheme: (t: string) => void;
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+  t: TranslationSchema;
+  onAbout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      setOpen(false);
+      setLangOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [open, handleClickOutside]);
+
+  return (
+    <div ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-secondary transition-colors text-left bg-transparent border-none"
+      >
+        <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white font-semibold text-xs shrink-0 overflow-hidden">
+          {avatarUrl ? (
+            <Image src={avatarUrl} alt="" fill sizes="32px" className="object-cover" unoptimized />
+          ) : (
+            initials
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold truncate">{displayName}</div>
+          <div className="text-[11px] text-muted-foreground capitalize">{roleLabel}</div>
+        </div>
+        <svg
+          className="w-3.5 h-3.5 text-muted-foreground shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-3 right-3 mb-1 z-50 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-100">
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+            onClick={() => { setOpen(false); router.push("/settings"); }}
+          >
+            <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            {t.layout.userMenu.userSettings}
+          </button>
+
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+            onClick={() => { setTheme(theme === "dark" ? "light" : "dark"); }}
+          >
+            {theme === "dark" ? (
+              <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2" /><path d="M12 20v2" />
+                <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+                <path d="M2 12h2" /><path d="M20 12h2" />
+                <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+              </svg>
+            ) : (
+              <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+              </svg>
+            )}
+            {theme === "dark" ? t.layout.userMenu.lightMode : t.layout.userMenu.darkMode}
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+              onClick={() => setLangOpen((v) => !v)}
+            >
+              <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                <path d="M2 12h20" />
+              </svg>
+              {t.layout.userMenu.language}
+              <svg className="size-3 ml-auto shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+
+            {langOpen && (
+              <div className="absolute left-full bottom-0 ml-1 z-50 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 min-w-[120px] animate-in fade-in-0 zoom-in-95 duration-100">
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+                  onClick={() => { setLocale("en"); setLangOpen(false); }}
+                >
+                  {locale === "en" && (
+                    <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                  <span className={locale !== "en" ? "pl-5.5" : ""}>{t.language.en}</span>
+                </button>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+                  onClick={() => { setLocale("zh-CN"); setLangOpen(false); }}
+                >
+                  {locale === "zh-CN" && (
+                    <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                  <span className={locale !== "zh-CN" ? "pl-5.5" : ""}>{t.language.zhCN}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+            onClick={() => { setOpen(false); onAbout(); }}
+          >
+            <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+            {t.layout.userMenu.about}
+          </button>
+
+          <div className="my-1 h-px bg-border" />
+
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive transition-colors text-left bg-transparent border-none cursor-pointer text-destructive"
+            onClick={() => { setOpen(false); logout(); }}
+          >
+            <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            {t.layout.userMenu.logout}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

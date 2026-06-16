@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
@@ -11,35 +11,21 @@ const passwordSchema = z.object({
 
 export async function PUT(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const body = await request.json();
   const parsed = passwordSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return errorResponse(parsed.error.flatten(), 400);
   }
 
   const { currentPassword, newPassword } = parsed.data;
   const dbUser = await db.user.findUnique({ where: { id: user.id } });
-  if (!dbUser)
-    return NextResponse.json(
-      { success: false, error: "User not found" },
-      { status: 404 },
-    );
+  if (!dbUser) return errorResponse({ code: "notFound", message: "User not found" }, 404);
 
   const valid = await verifyPassword(currentPassword, dbUser.passwordHash);
   if (!valid) {
-    return NextResponse.json(
-      { success: false, error: "Current password is incorrect" },
-      { status: 400 },
-    );
+    return errorResponse({ code: "passwordIncorrect", message: "Current password is incorrect" }, 400);
   }
 
   const newHash = await hashPassword(newPassword);
@@ -48,5 +34,5 @@ export async function PUT(request: Request) {
     data: { passwordHash: newHash },
   });
 
-  return NextResponse.json({ success: true });
+  return successResponse({ success: true });
 }

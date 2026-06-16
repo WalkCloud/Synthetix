@@ -11,9 +11,13 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  const secret =
-    process.env.ENCRYPTION_KEY || "default-encryption-key-change-me";
-  return scryptSync(secret, "synthetix-salt", KEY_LENGTH);
+  if (!process.env.ENCRYPTION_KEY) {
+    throw new Error(
+      "FATAL: ENCRYPTION_KEY environment variable is required. " +
+      "Set it before starting the server."
+    );
+  }
+  return scryptSync(process.env.ENCRYPTION_KEY, "synthetix-salt", KEY_LENGTH);
 }
 
 export function encrypt(plaintext: string): string {

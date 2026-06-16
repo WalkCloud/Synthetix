@@ -1,28 +1,18 @@
-import { NextResponse } from "next/server";
 import { refreshSession, setAuthCookies } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
-import type { AuthUser } from "@/types/auth";
+import { errorResponse, successResponse } from "@/lib/api-helpers";
 
-export async function POST(): Promise<NextResponse<ApiResponse<AuthUser>>> {
+export async function POST() {
   try {
     const result = await refreshSession();
     if (!result) {
-      return NextResponse.json(
-        { success: false, error: "Invalid or expired refresh token" },
-        { status: 401 }
-      );
+      return errorResponse({ code: "unauthorized", message: "Invalid or expired refresh token" }, 401);
     }
 
     const { accessToken, refreshToken, user } = result;
-    const response = NextResponse.json({ success: true, data: user });
+    const response = successResponse(user);
     await setAuthCookies(response, accessToken, refreshToken);
     return response;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Token refresh failed";
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

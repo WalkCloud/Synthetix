@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { convertToMarkdown } from "@/lib/documents/converter";
 import { SUPPORTED_FORMATS } from "@/types/documents";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { resolveLocale } from "@/lib/i18n/server";
+import { getBrainstormMessages, isDefaultBrainstormTitle, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 import path from "path";
 import fs from "fs/promises";
 
@@ -12,13 +13,11 @@ const TEXT_FORMATS = ["txt", "md"];
 async function extractContent(file: File, userId: string, sessionId: string): Promise<string> {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
 
-  // Plain text formats — read directly, no conversion needed
   if (TEXT_FORMATS.includes(ext)) {
     const text = await file.text();
     return text;
   }
 
-  // Binary formats — use MarkItDown conversion pipeline
   const tmpDir = path.join("data", "tmp", userId, sessionId);
   await fs.mkdir(tmpDir, { recursive: true });
   const tmpPath = path.join(tmpDir, `upload.${ext}`);
@@ -36,26 +35,25 @@ async function extractContent(file: File, userId: string, sessionId: string): Pr
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const { id: sessionId } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id: sessionId, userId: user.id } });
-  if (!session) return NextResponse.json({ success: false, error: "Session not found" }, { status: 404 });
+  if (!session) return errorResponse({ code: "notFound", message: "Session not found" }, 404);
+  const locale = resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale();
+  const messages = getBrainstormMessages(locale);
 
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || !(file instanceof File)) {
-    return NextResponse.json({ success: false, error: "No file provided" }, { status: 400 });
+    return errorResponse({ code: "noFileProvided", message: "No file provided" }, 400);
   }
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   if (!SUPPORTED_FORMATS.includes(ext as typeof SUPPORTED_FORMATS[number])) {
-    return NextResponse.json(
-      { success: false, error: `Unsupported format: .${ext}` },
-      { status: 400 }
-    );
+    return errorResponse(`Unsupported format: .${ext}`, 400);
   }
 
   try {
@@ -69,7 +67,7 @@ export async function POST(
       data: {
         sessionId,
         role: "system",
-        content: `User uploaded document "${file.name}", content extracted.`,
+        content: messages.uploadSystem(file.name),
       },
     });
 
@@ -77,11 +75,11 @@ export async function POST(
       data: {
         sessionId,
         role: "user",
-        content: `I uploaded a document "${file.name}", please help me build a document outline based on the following content:\n\n${content}`,
+        content: messages.uploadUser(file.name, content),
       },
     });
 
-    if (session.title === "New Brainstorming Session") {
+    if (isDefaultBrainstormTitle(session.title)) {
       const baseName = file.name.replace(/\.[^.]+$/, "");
       await db.brainstormSession.update({
         where: { id: sessionId },
@@ -89,12 +87,8 @@ export async function POST(
       }).catch(() => {});
     }
 
-    return NextResponse.json({
-      success: true,
-      data: { systemMessage: systemMsg, userMessage: userMsg, fileName: file.name },
-    });
+    return successResponse({ systemMessage: systemMsg, userMessage: userMsg, fileName: file.name });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "File processing failed";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return errorResponse(err);
   }
 }

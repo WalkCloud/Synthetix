@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { decrypt } from "@/lib/crypto";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import type { ModelProvider, ModelConfig } from "@/generated/prisma/client";
 
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
@@ -8,9 +8,13 @@ type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 /**
  * Auto-detect embedding dimension by calling the embedding API with a short text.
  * Caches the result in ModelConfig.embeddingDim to avoid repeated API calls.
+ * Returns the dimension, and sets lightragCompatible = false if probing fails.
+ *
+ * The probe call still consumes provider tokens, so we record it under the
+ * "embedding" module — otherwise these calls were silently invisible on the
+ * Token Usage Analytics page.
  */
 export async function resolveEmbeddingDim(model: ModelWithProvider): Promise<number> {
-  // Return cached dimension if already known
   if (model.embeddingDim && model.embeddingDim > 0) {
     return model.embeddingDim;
   }
@@ -20,32 +24,34 @@ export async function resolveEmbeddingDim(model: ModelWithProvider): Promise<num
     const result = await provider.embed(["dimension probe"], model.modelId);
     const dim = result.embeddings[0]?.length;
     if (dim && dim > 0) {
-      // Cache in DB for future calls
       await db.modelConfig.update({
         where: { id: model.id },
         data: { embeddingDim: dim },
-      }).catch(() => {}); // non-critical
+      }).catch(() => {});
+      await recordTokenUsageSafely({
+        userId: model.provider.userId,
+        modelConfigId: model.id,
+        module: "embedding",
+        inputTokens: result.inputTokens ?? 0,
+        outputTokens: 0,
+      });
       return dim;
     }
-  } catch {
-    // Probe failed — fall through to heuristics
-  }
+  } catch {}
 
-  // Heuristic: well-known model dimensions
-  const modelLower = model.modelId.toLowerCase();
-  if (modelLower.includes("bge") || modelLower.includes("gte") || modelLower.includes("e5")) {
-    return 1024;
-  }
-  if (modelLower.includes("large") || modelLower.includes("ada")) {
-    return 1536;
-  }
-  if (modelLower.includes("3-large") || modelLower.includes("3-small")) {
-    return modelLower.includes("3-large") ? 3072 : 1536;
-  }
-  if (modelLower.includes("mxbai") || modelLower.includes("nomic")) {
-    return 768;
-  }
+  throw new Error(
+    `Cannot determine embedding dimension for "${model.modelId}". ` +
+    `Click "Test Connection" in Model Management to auto-detect it.`
+  );
+}
 
-  // Default: assume 768 (Ollama nomic-embed-text etc)
-  return 768;
+/**
+ * Check if the embedding model is verified compatible with LightRAG graph mode.
+ * LightRAG internally expects 1536-dimensional vectors for entity extraction.
+ * Models with smaller dimensions (768, 1024) will fail graph extraction.
+ */
+export function isLightRAGCompatible(model: { embeddingDim?: number | null }): boolean {
+  const dim = model.embeddingDim ?? 0;
+  // Only verified dimensions >= 1536 are LightRAG graph-mode compatible
+  return dim >= 1536;
 }

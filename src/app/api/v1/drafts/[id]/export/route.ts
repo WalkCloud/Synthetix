@@ -1,168 +1,78 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { getAuthUser } from "@/lib/auth/session";
-import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
-import type { ApiResponse } from "@/types/api";
+import { db } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth/session";
+import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
+import {
+  sanitizeFilename, contentDisposition, normalizeFormat,
+  buildMarkdown, inlineAssetImages, runExport,
+  renderPdfWithPlaywright, cleanupFiles, getTmpDir,
+} from "@/lib/writing/export-pipeline";
 
-const EXPORT_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/export.py");
-const PYTHON_PATH = process.env.PYTHON_PATH || "python3";
-const TMP_DIR = path.resolve("data/tmp");
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
-
-function sanitizeFilename(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 100);
-}
-
-async function buildMarkdown(draftId: string, userId: string): Promise<string> {
-  const draft = await db.draft.findFirst({
-    where: { id: draftId, userId },
-  });
-  if (!draft) throw new Error("Draft not found");
-
-  const sections = await db.section.findMany({
-    where: {
-      draftId,
-      status: { in: ["locked", "summarized"] },
-    },
-    orderBy: { index: "asc" },
-  });
-
-  if (sections.length === 0) {
-    throw new Error("No confirmed sections available to export");
-  }
-
-  const titleHeader = `# ${draft.title}\n\n`;
-  const sectionParts = sections.map(
-    (section) => `## ${section.title}\n\n${section.content ?? ""}\n\n`
-  );
-  return titleHeader + sectionParts.join("");
-}
+export const runtime = "nodejs";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
-): Promise<NextResponse<ApiResponse> | Response> {
+): Promise<Response> {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
+  if (!user) return authErrorResponse();
 
   const { id: draftId } = await params;
   const body = await request.json().catch(() => ({}));
-  const format = body.format || "markdown";
+  const format = normalizeFormat(body.format);
+  if (!format) return errorResponse(`Unsupported format: ${String(body.format)}`, 400);
 
   try {
-    const markdown = await buildMarkdown(draftId, user.id);
-
-    const draft = await db.draft.findFirst({
-      where: { id: draftId, userId: user.id },
-      select: { title: true },
-    });
+    const markdown = await buildMarkdown(draftId, user.id, { inlineAssets: false });
+    const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id }, select: { title: true } });
     const filename = sanitizeFilename(draft?.title || "document");
 
     if (format === "markdown") {
       return new Response(markdown, {
-        headers: {
-          "Content-Type": "text/markdown; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${filename}.md"`,
-        },
+        headers: { "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": contentDisposition(filename, "md") },
       });
     }
 
-    // Write temp markdown for Python converter
-    if (!fs.existsSync(TMP_DIR)) {
-      fs.mkdirSync(TMP_DIR, { recursive: true });
-    }
-    const tmpMd = path.join(TMP_DIR, `export-${draftId}.md`);
-    fs.writeFileSync(tmpMd, markdown, "utf-8");
+    const TMP_DIR = getTmpDir();
+    const inlinedMarkdown = await buildMarkdown(draftId, user.id, { inlineAssets: true });
+    const exportMarkdown = await inlineAssetImages(inlinedMarkdown);
+
+    if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+
+    const exportId = `${draftId}-${randomUUID()}`;
+    const tmpMd = path.join(TMP_DIR, `export-${exportId}.md`);
+    const tmpHtml = path.join(TMP_DIR, `export-${exportId}.html`);
+    const tmpPdf = path.join(TMP_DIR, `export-${exportId}.pdf`);
+    const tmpDocx = path.join(TMP_DIR, `export-${exportId}.docx`);
+
+    fs.writeFileSync(tmpMd, exportMarkdown, "utf-8");
 
     if (format === "pdf") {
-      const tmpPdf = path.join(TMP_DIR, `export-${draftId}.html`);
-      await runExport(tmpMd, tmpPdf, "pdf");
-
-      if (!fs.existsSync(tmpPdf)) {
-        return NextResponse.json(
-          { success: false, error: "PDF generation failed — ensure 'pip install markdown' is run" },
-          { status: 500 },
-        );
-      }
-
-      const pdfContent = fs.readFileSync(tmpPdf, "utf-8");
-      // Clean up temp files
-      fs.unlinkSync(tmpMd);
-      // Keep HTML for download (user opens in browser and prints to PDF)
-
+      await runExport(tmpMd, tmpHtml, "pdf");
+      if (!fs.existsSync(tmpHtml)) return errorResponse({ code: "exportFailed", message: "PDF generation failed — ensure 'pip install markdown' is run" });
+      await renderPdfWithPlaywright(tmpHtml, tmpPdf);
+      if (!fs.existsSync(tmpPdf)) return errorResponse({ code: "exportFailed", message: "PDF generation failed — ensure Playwright Chromium is installed" });
+      const pdfContent = fs.readFileSync(tmpPdf);
+      cleanupFiles(tmpMd, tmpHtml, tmpPdf);
       return new Response(pdfContent, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${filename}.html"`,
-        },
+        headers: { "Content-Type": "application/pdf", "Content-Disposition": contentDisposition(filename, "pdf") },
       });
     }
 
     if (format === "docx") {
-      const tmpDocx = path.join(TMP_DIR, `export-${draftId}.docx`);
       await runExport(tmpMd, tmpDocx, "docx");
-
-      if (!fs.existsSync(tmpDocx)) {
-        return NextResponse.json(
-          { success: false, error: "DOCX generation failed — ensure 'pip install python-docx' is run" },
-          { status: 500 },
-        );
-      }
-
+      if (!fs.existsSync(tmpDocx)) return errorResponse({ code: "exportFailed", message: "DOCX generation failed — ensure 'pip install python-docx' is run" });
       const docxContent = fs.readFileSync(tmpDocx);
-      fs.unlinkSync(tmpMd);
-      fs.unlinkSync(tmpDocx);
-
+      cleanupFiles(tmpMd, tmpDocx);
       return new Response(docxContent, {
-        headers: {
-          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "Content-Disposition": `attachment; filename="${filename}.docx"`,
-        },
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": contentDisposition(filename, "docx") },
       });
     }
 
-    return NextResponse.json(
-      { success: false, error: `Unsupported format: ${format}` },
-      { status: 400 },
-    );
+    return errorResponse(`Unsupported format: ${format}`, 400);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 },
-    );
+    return errorResponse(error);
   }
-}
-
-function runExport(input: string, output: string, format: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_PATH, [
-      EXPORT_SCRIPT,
-      "--input", input,
-      "--output", output,
-      "--format", format,
-    ], { stdio: "pipe", timeout: 60_000 });
-
-    let stderr = "";
-    proc.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-    proc.on("close", (code: number | null) => {
-      code === 0 ? resolve() : reject(new Error(stderr || `Export failed with code ${code}`));
-    });
-    proc.on("error", (err: Error) => reject(err));
-  });
 }

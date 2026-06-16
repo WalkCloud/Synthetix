@@ -1,13 +1,16 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 interface UserSettings {
   storageType?: string;
   localPath?: string;
+  cachePath?: string;
   s3Bucket?: string;
   s3Region?: string;
   s3Endpoint?: string;
   s3AccessKey?: string;
+  s3SecretKey?: string;
   minioEndpoint?: string;
   minioBucket?: string;
   minioAccessKey?: string;
@@ -18,6 +21,7 @@ interface UserSettings {
   pgPort?: number;
   pgDatabase?: string;
   pgUser?: string;
+  pgPassword?: string;
   // RAG / Vector DB settings
   ragVectorDb?: string;
   ragPgUrl?: string;
@@ -61,10 +65,12 @@ export function readSettings(userId: string): UserSettings {
 export function writeSettings(userId: string, updates: Partial<UserSettings>): void {
   const current = readSettings(userId);
   const merged = { ...current, ...updates };
-  // Remove undefined keys
   const cleaned: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(merged)) {
     if (v !== undefined) cleaned[k] = v;
   }
-  fs.writeFileSync(getSettingsPath(userId), JSON.stringify(cleaned, null, 2), "utf-8");
+  const filePath = getSettingsPath(userId);
+  const tmpPath = filePath + ".tmp." + crypto.randomBytes(4).toString("hex");
+  fs.writeFileSync(tmpPath, JSON.stringify(cleaned, null, 2), "utf-8");
+  fs.renameSync(tmpPath, filePath);
 }

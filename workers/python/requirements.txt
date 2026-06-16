@@ -1,4 +1,6 @@
-markitdown==0.1.1
-lightrag-hku>=1.0.0
+docling>=2.99.0
+lightrag-hku==1.5.0
 markdown>=3.7
-python-docx>=1.1
+Pillow>=10.0.0
+sentence-transformers>=4.0.0
+optimum[onnxruntime]>=1.20.0

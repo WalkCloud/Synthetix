@@ -1,20 +1,18 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
-}
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> },
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -24,7 +22,7 @@ export async function GET(
     select: { id: true },
   });
   if (!draft) {
-    return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+    return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
   try {
@@ -42,11 +40,8 @@ export async function GET(
       },
     });
 
-    return NextResponse.json({ success: true, data: versions });
+    return successResponse(versions);
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 },
-    );
+    return errorResponse(error);
   }
 }

@@ -1,24 +1,35 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { generateSummary } from "@/lib/writing/summarizer";
-import type { ApiResponse } from "@/types/api";
+import {
+  authErrorResponse,
+  errorResponse,
+  successResponse,
+} from "@/lib/api-helpers";
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
+async function generateSummaryBackground(sectionId: string, content: string, title: string, userId: string) {
+  try {
+    const summary = await generateSummary(content, title, userId, sectionId);
+    await db.section.update({
+      where: { id: sectionId },
+      data: { summary, status: "locked" },
+    });
+  } catch (err) {
+    console.error(`Summary generation failed for section ${sectionId}:`, err);
+    await db.section.update({
+      where: { id: sectionId },
+      data: { status: "locked" },
+    });
+  }
 }
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
-): Promise<NextResponse<ApiResponse>> {
+): Promise<Response> {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
+    return authErrorResponse();
   }
 
   const { id: draftId, secId: sectionId } = await params;
@@ -29,10 +40,7 @@ export async function POST(
       select: { id: true },
     });
     if (!draft) {
-      return NextResponse.json(
-        { success: false, error: "Draft not found" },
-        { status: 404 }
-      );
+      return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
     }
 
     const section = await db.section.findFirst({
@@ -40,37 +48,32 @@ export async function POST(
       include: { versions: true },
     });
     if (!section) {
-      return NextResponse.json(
-        { success: false, error: "Section not found" },
-        { status: 404 }
+      return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
+    }
+
+    const hasComparisonCandidates = Boolean(section.contentA || section.contentB);
+    const hasSelectedComparison = Boolean(section.selectedModel && section.content);
+
+    if (hasComparisonCandidates && !hasSelectedComparison) {
+      return errorResponse(
+        "Please select a source (A or B) before confirming",
+        400
       );
     }
 
-    // Must have content — if only comparison results exist, user must select first
     if (!section.content) {
-      if (section.contentA || section.contentB) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Please select a source (A or B) before confirming",
-          },
-          { status: 400 }
-        );
-      }
-      return NextResponse.json(
-        { success: false, error: "Section has no content to confirm" },
-        { status: 400 }
-      );
+      return errorResponse({ code: "invalidInput", message: "Section has no content to confirm" }, 400);
     }
 
-    // Create SectionVersion snapshot with correct source
     const wordCount = section.content.split(/\s+/).filter(Boolean).length;
     const nextVersion = section.versions.length + 1;
 
-    // Determine version source
     const versionSource = section.selectedModel
-      ? section.selectedModel === "a" ? "generated_a" : "generated_b"
-      : section.contentA || section.contentB ? "generated" // comparison done, user picked
+      ? section.selectedModel === section.modelA
+        ? "generated_a"
+        : section.selectedModel === section.modelB
+          ? "generated_b"
+          : "edited"
       : "edited";
 
     await db.sectionVersion.create({
@@ -83,31 +86,15 @@ export async function POST(
       },
     });
 
-    // Step 1: accepted — user has confirmed this content
-    await db.section.update({
-      where: { id: sectionId },
-      data: { status: "accepted", wordCount },
-    });
-
-    // Step 2: Generate summary for context compression
-    const summary = await generateSummary(section.content, section.title);
-
-    // Step 3: summarized → locked
-    await db.section.update({
-      where: { id: sectionId },
-      data: { summary, status: "summarized" },
-    });
-
     const locked = await db.section.update({
       where: { id: sectionId },
-      data: { status: "locked" },
+      data: { status: "locked", wordCount },
     });
 
-    return NextResponse.json({ success: true, data: locked });
+    generateSummaryBackground(sectionId, section.content, section.title, user.id);
+
+    return successResponse(locked);
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, error: getErrorMessage(error) },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }
