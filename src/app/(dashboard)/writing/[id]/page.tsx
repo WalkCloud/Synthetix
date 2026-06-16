@@ -13,6 +13,7 @@ import { useSectionActions } from "@/hooks/writing/use-section-actions";
 import { useExport } from "@/hooks/writing/use-export";
 import { useModelSelection } from "@/hooks/writing/use-model-selection";
 import { parseAllMarkers } from "@/lib/writing/marker-parser";
+import { splitSectionReferences } from "@/lib/writing/reference-view";
 import { useLocale } from "@/lib/i18n";
 
 export default function WritingPage({
@@ -56,15 +57,8 @@ export default function WritingPage({
     }
     const section = draft.sections?.find((s) => s.id === activeSectionId);
     if (section?.references?.length) {
-      setReferences(
-        section.references.map((ref) => ({
-          documentName: ref.documentName,
-          content: ref.content || "",
-          score: ref.relevanceScore,
-          title: ref.sourceAnchor,
-          images: ref.images,
-        })),
-      );
+      const refs = splitSectionReferences(section.references);
+      setReferences(refs);
     } else {
       setReferences([]);
     }

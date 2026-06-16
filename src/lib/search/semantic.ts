@@ -6,7 +6,8 @@ import { createRagContext } from "@/lib/rag/context";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
 import { searchByKeyword } from "@/lib/search/fts";
-import type { SearchResult } from "@/types/documents";
+import { buildSearchExcerpt } from "@/lib/search/excerpt";
+import type { SearchResult, SearchRerankStatus } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
@@ -15,6 +16,10 @@ const LIGHTRAG_NO_DATA_COOLDOWN_MS = 30 * 60 * 1000;
 const LIGHTRAG_INDEXING_COOLDOWN_MS = 5 * 60 * 1000;
 const MIN_COSINE_THRESHOLD = 0.55;
 
+function stripSearchMarkup(value: string): string {
+  return value.replace(/<\/?mark>/g, "");
+}
+
 const lightRagCooldowns = new Map<string, number>();
 
 interface RagChunkResult {
@@ -22,6 +27,8 @@ interface RagChunkResult {
   content: string;
   title: string;
   score: number;
+  rank?: number;
+  vector_score?: number | null;
 }
 
 interface RagQueryOutput {
@@ -31,6 +38,35 @@ interface RagQueryOutput {
   entities?: Array<{ entity_name: string; entity_type: string; description: string }>;
   relations?: Array<{ source_entity: string; target_entity: string; description: string; weight: number }>;
   error?: string;
+}
+
+export function mapRagChunkToSearchResult(input: {
+  chunk: RagChunkResult;
+  query: string;
+  mode: QueryMode;
+  docName: string;
+  docId: string;
+  rerank: SearchRerankStatus;
+}): SearchResult {
+  const vectorScore = typeof input.chunk.vector_score === "number" ? input.chunk.vector_score : undefined;
+  const score = typeof vectorScore === "number" ? vectorScore : Math.min(input.chunk.score, 0.75);
+  return {
+    chunkId: input.chunk.chunk_id,
+    documentId: input.docId,
+    documentName: input.docName,
+    title: input.chunk.title || null,
+    content: buildSearchExcerpt(input.chunk.content || "", input.query, 360),
+    score: Math.round(score * 1000) / 1000,
+    rank: input.chunk.rank,
+    source: "lightrag",
+    relevanceLabel: score >= 0.8 ? "high" : score >= 0.6 ? "medium" : "low",
+    debug: {
+      semanticRank: input.chunk.rank,
+      vectorScore,
+      mode: input.mode,
+      rerank: input.rerank,
+    },
+  };
 }
 
 async function searchViaLightRAG(
@@ -64,7 +100,10 @@ async function searchViaLightRAG(
     );
   }
 
-  const parsed: RagQueryOutput = await spawnPythonJson(RAG_QUERY_SCRIPT, args, { timeout: 60_000 });
+  // 90s ceiling gives rag_query's bounded-retry LLM path (per-call 25s × 2
+  // attempts) headroom. Normal hybrid/mix queries finish far sooner; this is
+  // only the safety ceiling so a transiently slow LLM doesn't trip a hard kill.
+  const parsed: RagQueryOutput = await spawnPythonJson(RAG_QUERY_SCRIPT, args, { timeout: 90_000 });
   if (parsed.error) {
     throw new Error(parsed.error);
   }
@@ -141,8 +180,11 @@ async function searchViaDirectEmbedding(
     documentId: r.chunk.document.id,
     documentName: r.chunk.document.originalName,
     title: contentMap.get(r.chunk.id)?.title || null,
-    content: contentMap.get(r.chunk.id)?.content?.slice(0, 4000) || "",
+    content: buildSearchExcerpt(contentMap.get(r.chunk.id)?.content || "", query, 360),
     score: Math.round(r.raw * 1000) / 1000,
+    source: "direct_embedding",
+    relevanceLabel: r.raw >= 0.8 ? "high" : r.raw >= 0.6 ? "medium" : "low",
+    debug: { vectorScore: Math.round(r.raw * 1000) / 1000 },
   })), inputTokens: embedTokens };
 }
 
@@ -196,36 +238,33 @@ export async function semanticSearch(
           contentFallback = new Map(fallbackChunks.map((c) => [c.id, c.content || ""]));
         }
 
+        const rerankStatus: SearchRerankStatus = ctx.rerankConfig ? "enabled" : "missing";
         semanticResults = ragResults.chunks
-          .filter((r) => r.score >= MIN_COSINE_THRESHOLD)
           .map((r) => {
             const docId = r.chunk_id.split("/")[0] || "";
             const docInfo = docMap.get(docId);
             const resolvedContent = r.content || contentFallback.get(r.chunk_id) || "";
-            return {
-              chunkId: r.chunk_id,
-              documentId: docInfo?.docId || docId,
-              documentName: docInfo?.docName || "",
-              title: r.title || null,
-              content: resolvedContent.slice(0, 4000),
-              score: Math.round(r.score * 1000) / 1000,
-            };
+            return mapRagChunkToSearchResult({
+              chunk: { ...r, content: resolvedContent },
+              query,
+              mode,
+              docId: docInfo?.docId || docId,
+              docName: docInfo?.docName || "",
+              rerank: rerankStatus,
+            });
           });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("data unavailable") || message.includes("no data indexed") || message.includes("empty index")) {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_NO_DATA_COOLDOWN_MS);
-        console.warn(`[semantic] LightRAG data not ready for user ${userId}; using fallback for 30m.`);
       } else if (message.includes("indexing in progress")) {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_INDEXING_COOLDOWN_MS);
-        console.warn(`[semantic] LightRAG indexing in progress for user ${userId}; using fallback for 5m.`);
       } else if (message.includes("404")) {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
-        console.warn(`[semantic] LightRAG query failed (404) for user ${userId}; using fallback for 5m.`);
       } else {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
-        console.error("[semantic] LightRAG failed:", err instanceof Error ? err.stack : err);
+        console.error("[semantic] LightRAG query failed for user", userId, err instanceof Error ? err.stack : err);
       }
     }
   }
@@ -255,11 +294,14 @@ export async function semanticSearch(
     const contentMap = new Map(chunks.map((c) => [c.id, c.content || ""]));
     keywordResults = keywordResults.map((r) => ({
       ...r,
-      content: (contentMap.get(r.chunkId) || r.content || "").slice(0, 4000),
+      content: buildSearchExcerpt(contentMap.get(r.chunkId) || r.content || "", query, 360),
+      source: r.source || "keyword",
+      relevanceLabel: r.relevanceLabel || "keyword",
+      debug: { ...r.debug, keywordScore: r.score },
     }));
   }
 
-  const results = rrfFuse(semanticResults, keywordResults, limit);
+  const results = rrfFuse(semanticResults, keywordResults, limit, query);
 
   const matchedDocIds = [...new Set(results.map((r) => r.documentId))];
   if (matchedDocIds.length > 0) {
@@ -292,25 +334,70 @@ function rrfFuse(
   semantic: SearchResult[],
   keyword: SearchResult[],
   limit: number,
+  query = "",
 ): SearchResult[] {
   const K = 20;
-  const chunkScore = new Map<string, { result: SearchResult; score: number }>();
+  const semanticWeight = 1.0;
+  const keywordWeight = 1.35;
+  const byChunk = new Map<string, { result: SearchResult; score: number }>();
 
-  for (const results of [semantic, keyword]) {
+  const exactPhraseBoost = (result: SearchResult): number => {
+    const q = query.trim();
+    if (!q) return 0;
+    const haystack = `${result.title || ""}\n${result.content || ""}`;
+    if ((result.title || "").includes(q)) return 0.14;
+    const exactIndex = haystack.indexOf(q);
+    if (exactIndex >= 0 && exactIndex <= 120) return 0.12;
+    if (exactIndex >= 0 && exactIndex <= 300) return 0.08;
+    if (exactIndex >= 0) return 0.03;
+    const terms = q.match(/[\u4e00-\u9fff]{2,}|[A-Za-z0-9_-]+/g) || [];
+    if (terms.length > 0 && terms.every((term) => haystack.includes(term))) return 0.03;
+    return 0;
+  };
+
+  const add = (results: SearchResult[], weight: number, kind: "semantic" | "keyword") => {
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      const key = r.chunkId;
-      const rrfRank = 1 / (K + i + 1);
-      const weighted = r.score * rrfRank;
-      const existing = chunkScore.get(key);
-      if (!existing || existing.score < weighted) {
-        chunkScore.set(key, { result: r, score: weighted });
-      }
+      const cleanResult: SearchResult = {
+        ...r,
+        content: stripSearchMarkup(r.content || ""),
+      };
+      const rankContribution = weight * (1 / (K + i + 1));
+      const scoreContribution = Math.max(0, Math.min(1, cleanResult.score || 0)) * 0.01;
+      const phraseBoost = exactPhraseBoost(cleanResult);
+      const contribution = rankContribution + scoreContribution + phraseBoost;
+      const existing = byChunk.get(cleanResult.chunkId);
+      const base = existing?.result || cleanResult;
+      const visibleScore = kind === "semantic"
+        ? Math.min(1, Math.max(0, (cleanResult.score || 0) + phraseBoost))
+        : cleanResult.score;
+      const merged: SearchResult = {
+        ...base,
+        score: kind === "semantic" || !existing ? Math.max(base.score || 0, visibleScore || 0) : base.score,
+        source: existing ? "fused" : (kind === "keyword" ? "keyword" : cleanResult.source || "lightrag"),
+        debug: {
+          ...base.debug,
+          ...(kind === "semantic" ? { semanticRank: i + 1 } : { keywordRank: i + 1, keywordScore: cleanResult.score }),
+          fusionScore: Math.round(((existing?.score || 0) + contribution) * 1000) / 1000,
+        },
+      };
+      byChunk.set(cleanResult.chunkId, { result: merged, score: (existing?.score || 0) + contribution });
     }
-  }
+  };
 
-  return Array.from(chunkScore.values())
-    .sort((a, b) => b.score - a.score)
+  add(semantic, semanticWeight, "semantic");
+  add(keyword, keywordWeight, "keyword");
+
+  return Array.from(byChunk.values())
+    .sort((a, b) => (b.result.score || 0) - (a.result.score || 0) || b.score - a.score)
     .slice(0, limit)
-    .map((entry) => entry.result);
+    .map((entry, idx) => ({
+      ...entry.result,
+      rank: idx + 1,
+      source: entry.result.source || "fused",
+      relevanceLabel: entry.result.relevanceLabel || (entry.result.score >= 0.8 ? "high" : entry.result.score >= 0.6 ? "medium" : "low"),
+      debug: { ...entry.result.debug, fusionScore: Math.round(entry.score * 1000) / 1000 },
+    }));
 }
+
+export const rrfFuseForTest = rrfFuse;

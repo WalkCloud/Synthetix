@@ -7,8 +7,18 @@ describe("sanitizeMarkdown", () => {
     expect(result).toBe("a\n\nb\n\nc");
   });
 
-  it("strips short image placeholders", () => {
+  it("strips only empty image placeholders", () => {
     const result = sanitizeMarkdown("text ![fig](img.png) text");
+    expect(result).toBe("text [Image: fig] text");
+  });
+
+  it("keeps useful short image anchors", () => {
+    const result = sanitizeMarkdown("text ![Image 1](images/image1.png) text");
+    expect(result).toBe("text [Image: Image 1] text");
+  });
+
+  it("strips empty image anchors", () => {
+    const result = sanitizeMarkdown("text ![](images/image1.png) text");
     expect(result).toBe("text  text");
   });
 

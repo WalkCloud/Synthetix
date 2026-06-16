@@ -3,7 +3,7 @@ import { docStatusLabels, docStatusColors, draftStatusLabels, draftStatusColors 
 
 describe("docStatusLabels", () => {
   it("has labels for all document statuses", () => {
-    const statuses = ["uploading", "converting", "splitting", "embedding", "indexing", "ready", "failed"];
+    const statuses = ["uploading", "queued", "converting", "splitting", "embedding", "indexing", "ready", "failed"];
     for (const s of statuses) {
       expect(docStatusLabels[s]).toBeDefined();
       expect(typeof docStatusLabels[s]).toBe("string");
@@ -17,7 +17,7 @@ describe("docStatusLabels", () => {
 
 describe("docStatusColors", () => {
   it("has color classes for all document statuses", () => {
-    const statuses = ["uploading", "converting", "splitting", "embedding", "indexing", "ready", "failed"];
+    const statuses = ["uploading", "queued", "converting", "splitting", "embedding", "indexing", "ready", "failed"];
     for (const s of statuses) {
       expect(docStatusColors[s]).toBeDefined();
       expect(docStatusColors[s]).toContain("bg-");

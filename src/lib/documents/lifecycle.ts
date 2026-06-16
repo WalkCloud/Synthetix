@@ -3,6 +3,13 @@ import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
+import { waitForDocActiveTasksToSettle } from "@/lib/documents/processing-tasks";
+
+// Long timeout: graph extraction can take 10+ minutes per document because each
+// chunk triggers an LLM call. We must let the in-flight Python subprocess exit
+// before wiping the rag working dir; otherwise its final entity/relationship
+// writes recreate orphan graph data after our reset.
+const CLEANUP_TASK_SETTLE_TIMEOUT_MS = 10 * 60_000;
 
 export type DocumentDeleteResult =
   | { deleted: null; notFound: true }
@@ -10,17 +17,19 @@ export type DocumentDeleteResult =
       deleted: string;
       cleanup: {
         database: "deleted";
-        files: "deleted";
-        rag: "deleted" | "reset" | "failed";
-        verification: "passed" | "dirty";
+        files: "deleted" | "queued";
+        rag: "deleted" | "reset" | "failed" | "queued";
+        verification: "passed" | "dirty" | "deferred";
       };
       issues: string[];
+      cleanupTaskId?: string;
     };
 
 export interface DocumentLifecycleDeps {
   findDocument(userId: string, docId: string): Promise<{ id: string; userId: string } | null>;
   countDocuments(userId: string): Promise<number>;
   cancelDocumentTasks(userId: string, docId: string): Promise<void>;
+  enqueueDocumentCleanup(userId: string, docId: string): Promise<string | null>;
   deleteRagDocument(userId: string, docId: string): Promise<void>;
   resetUserRag(userId: string): Promise<void>;
   cleanupRagOrphans(userId: string, activeDocIds: string[]): Promise<void>;
@@ -35,9 +44,42 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     if (!doc) return { deleted: null, notFound: true };
 
     const issues: string[] = [];
+    await deps.cancelDocumentTasks(userId, docId);
+    await deps.deleteDocumentRows(userId, docId);
+
+    let cleanupTaskId: string | null = null;
+    try {
+      cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
+    } catch (error) {
+      issues.push("Cleanup queued failed: " + (error instanceof Error ? error.message : String(error)));
+    }
+
+    return {
+      deleted: docId,
+      cleanup: {
+        database: "deleted",
+        files: "queued",
+        rag: "queued",
+        verification: "deferred",
+      },
+      issues,
+      cleanupTaskId: cleanupTaskId || undefined,
+    };
+  }
+
+  async function cleanupDeletedDocument(userId: string, docId: string): Promise<Exclude<DocumentDeleteResult, { notFound: true }>> {
+    const issues: string[] = [];
     let ragStatus: "deleted" | "reset" | "failed" = "deleted";
 
-    await deps.cancelDocumentTasks(userId, docId);
+    // Wait for any in-flight document_convert / rag_embed_index / rag_index task
+    // for this docId to actually exit before we touch the rag working directory.
+    // cancelDocumentTasks (called in deleteDocument) only marks DB rows
+    // cancelled — the running Python subprocess (especially graph extraction,
+    // which can run 10+ min per doc) keeps writing to the rag dir until it
+    // returns. Without this barrier, our resetUserRag below races the Python
+    // worker and the worker's final writes recreate orphan entities/relations.
+    await waitForDocActiveTasksToSettle(userId, docId, CLEANUP_TASK_SETTLE_TIMEOUT_MS);
+
     try {
       await deps.deleteRagDocument(userId, docId);
     } catch (error) {
@@ -46,7 +88,6 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     }
 
     await deps.deleteDocumentFiles(userId, docId);
-    await deps.deleteDocumentRows(userId, docId);
 
     const remaining = await deps.countDocuments(userId);
     if (remaining === 0) {
@@ -88,7 +129,7 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     };
   }
 
-  return { deleteDocument, deleteDocuments };
+  return { deleteDocument, cleanupDeletedDocument, deleteDocuments };
 }
 
 const storage = new LocalStorageAdapter();
@@ -109,6 +150,10 @@ export const documentLifecycle = createDocumentLifecycleService({
       },
       data: { status: "cancelled", errorMessage: "Document deleted" },
     }).catch(() => undefined);
+  },
+  async enqueueDocumentCleanup(userId, docId) {
+    const { getQueue } = await import("@/lib/queue");
+    return getQueue().submit("document_cleanup", { docId }, userId);
   },
   async deleteRagDocument(userId, docId) {
     const ctx = await createRagContext(userId);

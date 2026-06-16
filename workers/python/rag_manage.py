@@ -209,7 +209,8 @@ async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> di
             except Exception:
                 return (label, 0)
 
-        degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in labels[:20]])
+        candidate_labels = labels[: min(len(labels), max(max_nodes, 100))]
+        degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in candidate_labels])
         best_label, best_degree = max(degree_pairs, key=lambda x: x[1])
 
         kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
@@ -227,6 +228,14 @@ async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> di
             e for e in (kg.edges or [])
             if e.source in core_node_ids and e.target in core_node_ids
         ]
+
+        if len(filtered_nodes) < min(8, len(kg.nodes or [])):
+            relaxed_node_ids = {n.id for n in (kg.nodes or [])[:max_nodes]}
+            filtered_nodes = [n for n in (kg.nodes or []) if n.id in relaxed_node_ids]
+            filtered_edges = [
+                e for e in (kg.edges or [])
+                if e.source in relaxed_node_ids and e.target in relaxed_node_ids
+            ]
 
         return {
             "entity": best_label,
@@ -264,7 +273,13 @@ async def main_async(args) -> None:
     import numpy as np
 
     async def embedding_func(texts: list[str], **kwargs):
-        result = await openai_embed(
+        # IMPORTANT: openai_embed is decorated with @wrap_embedding_func_with_attrs
+        # which hardcodes embedding_dim=1536. Calling it directly makes LightRAG
+        # validate vectors against 1536 even for 2048-dim (text-embedding-v4) /
+        # 2560-dim (qwen3-vl) models. Invoke the unwrapped function via `.func` to
+        # bypass the inner decorator. Same fix as rag_index.py / rag_query.py.
+        unwrapped = getattr(openai_embed, "func", openai_embed)
+        result = await unwrapped(
             texts,
             model=args.embed_model,
             base_url=args.embed_api_base,

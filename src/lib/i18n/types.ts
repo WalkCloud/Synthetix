@@ -192,8 +192,13 @@ export type TranslationSchema = {
       llmModel: string;
       embeddingModel: string;
       selectModel: string;
-      maxContextUsage: string;
-      maxContextUsageDesc: string;
+      autoChunkSize: string;
+      autoChunkSizeDesc: string;
+      defaultChunkSize: string;
+      noModelsWarning: string;
+      noEmbeddingWarning: string;
+      noLlmWarning: string;
+      modelManagementLink: string;
       splitStrategy: string;
       splitStrategyDesc: string;
       indexTarget: string;
@@ -266,6 +271,23 @@ export type TranslationSchema = {
     batchDeleteConfirm: string;
     reindex: string;
     viewDocument: string;
+    detail: {
+      processingPipeline: string;
+      stageUpload: string;
+      stageConvert: string;
+      stageSplit: string;
+      stageEmbed: string;
+      stageIndex: string;
+      stageAnalyze: string;
+      stageClassify: string;
+      stagePersist: string;
+      words: string;
+      tokens: string;
+      chunks: string;
+      documentDetails: string;
+      conversionMethod: string;
+      uploadedAgo: string;
+    };
   };
   search: {
     title: string;
@@ -291,6 +313,13 @@ export type TranslationSchema = {
       documentSearch: string;
       knowledgeGraph: string;
     };
+    knowledgeGraphIndexing: string;
+    knowledgeGraphBuilding: string;
+    knowledgeGraphRunningHint: string;
+    knowledgeGraphSlowHint: string;
+    graphStageLabel: string;
+    graphActive: string;
+    graphElapsed: string;
   };
   writing: {
     title: string;
@@ -458,9 +487,14 @@ export type TranslationSchema = {
       modelId: string;
       contextWindow: string;
       contextWindowDesc: string;
+      contextWindowDefault: string;
+      embeddingMaxTokens: string;
+      embeddingMaxTokensDesc: string;
+      embeddingMaxTokensDefault: string;
       embeddingDim: string;
       embeddingDimDesc: string;
       embeddingDimPlaceholder: string;
+      embeddingDimDetected: string;
       embeddingBatchSize: string;
       embeddingBatchSizeDesc: string;
       capabilities: string;
@@ -507,6 +541,7 @@ export type TranslationSchema = {
       noModuleData: string;
       noRecentActivity: string;
       unknown: string;
+      unattributed: string;
       today: string;
       sevenDays: string;
       thirtyDays: string;
@@ -719,6 +754,7 @@ export type TranslationSchema = {
     documentNotFound: string;
     modelNotConfigured: string;
     ragNotConfigured: string;
+    noEmbeddingUpload: string;
     generationFailed: string;
     exportFailed: string;
     uploadFailed: string;

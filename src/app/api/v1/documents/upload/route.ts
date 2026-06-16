@@ -3,13 +3,24 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { SUPPORTED_FORMATS } from "@/types/documents";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { getQueue } from "@/lib/queue";
 import type { ProcessingOptions } from "@/lib/queue/types";
-import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import crypto from "crypto";
+import { createReadStream, promises as fsp } from "fs";
+import { pipeline } from "stream/promises";
 
 const MAX_UPLOAD_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE || "104857600", 10);
 const storage = new LocalStorageAdapter();
+
+async function hashFileStream(filePath: string): Promise<string> {
+  const hash = crypto.createHash("sha256");
+  await pipeline(
+    createReadStream(filePath, { highWaterMark: 64 * 1024 }),
+    hash,
+  );
+  return hash.digest("hex");
+}
 
 export async function POST(request: Request) {
   const user = await getAuthUser();
@@ -37,35 +48,49 @@ export async function POST(request: Request) {
     return errorResponse(`Unsupported format: .${ext}. Supported: ${SUPPORTED_FORMATS.join(", ")}`, 400);
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-
-  const existing = await db.document.findFirst({
-    where: { userId: user.id, originalHash: hash },
-  });
-  if (existing) {
-    return NextResponse.json(
-      { success: false, error: "DUPLICATE", code: "conflict", existingId: existing.id },
-      { status: 409 },
-    );
-  }
-
+  // Create a placeholder Document row so we can stream the upload to its
+  // owned directory. We compute the hash AFTER persisting to disk via a
+  // streamed read, instead of synchronously hashing the in-memory buffer
+  // on the Next.js event loop (which would stall the UI for big uploads).
   const doc = await db.document.create({
     data: {
       userId: user.id,
       originalName: file.name,
       originalFormat: ext,
       originalSize: file.size,
-      originalHash: hash,
+      originalHash: "",
       originalPath: "",
       status: "uploading",
     },
   });
 
-  const filePath = await storage.saveOriginal(doc.id, file, user.id);
-  await db.document.update({
+  let filePath: string;
+  try {
+    filePath = await storage.saveOriginal(doc.id, file, user.id);
+  } catch (err) {
+    // Roll back placeholder if save itself failed.
+    await db.document.delete({ where: { id: doc.id } }).catch(() => {});
+    throw err;
+  }
+
+  const hash = await hashFileStream(filePath);
+
+  const existing = await db.document.findFirst({
+    where: { userId: user.id, originalHash: hash, NOT: { id: doc.id } },
+  });
+  if (existing) {
+    // Drop the just-saved file and the placeholder row.
+    await fsp.unlink(filePath).catch(() => {});
+    await db.document.delete({ where: { id: doc.id } }).catch(() => {});
+    return NextResponse.json(
+      { success: false, error: "DUPLICATE", code: "conflict", existingId: existing.id },
+      { status: 409 },
+    );
+  }
+
+  const updatedDoc = await db.document.update({
     where: { id: doc.id },
-    data: { originalPath: filePath },
+    data: { originalHash: hash, originalPath: filePath, status: "queued" },
   });
 
   const options: ProcessingOptions = {
@@ -78,8 +103,7 @@ export async function POST(request: Request) {
     autoSplit: formData.get("autoSplit") ? (formData.get("autoSplit") as string) === "true" : undefined,
   };
 
-  const queue = getQueue();
-  const taskId = await queue.submit("document_convert", { docId: doc.id, options }, user.id);
+  void getQueue().submit("document_convert", { docId: doc.id, options }, user.id);
 
-  return successResponse({ document: doc, taskId }, 201);
+  return successResponse({ document: updatedDoc }, 201);
 }

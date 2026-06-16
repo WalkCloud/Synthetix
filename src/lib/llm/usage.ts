@@ -23,3 +23,9 @@ export async function recordTokenUsage(params: TokenUsageParams): Promise<void> 
     },
   });
 }
+
+export async function recordTokenUsageSafely(params: TokenUsageParams): Promise<void> {
+  try { await recordTokenUsage(params); } catch (err) {
+    console.warn("Failed to record token usage:", err);
+  }
+}

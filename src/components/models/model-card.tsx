@@ -12,10 +12,20 @@ export function parseContextWindow(n: number | null): string {
   return String(n);
 }
 
+interface TestResult {
+  connected: boolean;
+  contextWindows?: Record<string, number>;
+  embeddingDims?: Record<string, number>;
+  embedDimErrors?: string[];
+  error?: string;
+}
+
 export function ModelCard({
   name,
+  modelId,
   providerName,
   contextWindow,
+  embeddingDim,
   isActive,
   isTesting,
   testResult,
@@ -30,11 +40,13 @@ export function ModelCard({
   onToggleDefault,
 }: {
   name: string;
+  modelId?: string;
   providerName: string;
   contextWindow: number;
+  embeddingDim?: number | null;
   isActive: boolean;
   isTesting: boolean;
-  testResult: { connected: boolean; contextWindows?: Record<string, number>; error?: string } | null;
+  testResult: TestResult | null;
   isDeleting: boolean;
   iconColors: IconColors;
   isDefault: boolean;
@@ -46,6 +58,12 @@ export function ModelCard({
   onToggleDefault: () => void;
 }) {
   const { t } = useLocale();
+
+  // Check if THIS model had its embedding dim detected or errored
+  const detectedEmbedDim = modelId ? testResult?.embeddingDims?.[modelId] : undefined;
+  const embedDimError = modelId
+    ? testResult?.embedDimErrors?.find((e: string) => e.startsWith(modelId))
+    : undefined;
 
   return (
     <div
@@ -77,8 +95,21 @@ export function ModelCard({
               )}
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
-              {providerName}              {contextWindow > 0 && (<><span className="text-border mx-1.5">|</span>{parseContextWindow(contextWindow)} {t.models.models.tokens}</>)}
+              {providerName}
+              {contextWindow > 0 && (<><span className="text-border mx-1.5">|</span>{parseContextWindow(contextWindow)} {t.models.models.tokens}</>)}
+              {(embeddingDim ?? 0) > 0 && (<><span className="text-border mx-1.5">|</span>dim: {embeddingDim}</>)}
             </div>
+            {/* Embedding dimension detection status */}
+            {detectedEmbedDim !== undefined && (
+              <div className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded mt-1 inline-block">
+                {t.models.models.embeddingDimDetected}: {detectedEmbedDim}
+              </div>
+            )}
+            {embedDimError && (
+              <div className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded mt-1 inline-block">
+                {embedDimError}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">

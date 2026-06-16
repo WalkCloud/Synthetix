@@ -1,14 +1,16 @@
 import { db } from "@/lib/db";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { recordTokenUsage } from "@/lib/llm/usage";
-import { buildSkeletonOutlinePrompt, buildEnrichmentPrompt } from "@/lib/brainstorm/outline-prompt";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
+import { buildSkeletonOutlinePrompt, buildPartExpansionPrompt } from "@/lib/brainstorm/outline-prompt";
 import { buildSummaryPrompt, type ConversationSummary } from "@/lib/brainstorm/summary-prompt";
 import { normalizeGeneratedOutline } from "@/lib/brainstorm/outline-normalizer";
+import { parseMarkdownToSections } from "@/lib/brainstorm/outline-markdown";
 import { evaluateOutlineQuality } from "@/lib/brainstorm/outline-quality";
 import { composeArchetypeKey } from "@/lib/brainstorm/archetypes";
 import type { TaskPayload, TaskResult } from "@/lib/queue/types";
 import type { OutlineSection } from "@/lib/outline-tree";
+import { renumberSections } from "@/lib/outline-tree";
 import { getBrainstormMessages, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 
 interface OutlineGeneratePayload extends TaskPayload {
@@ -114,7 +116,7 @@ export async function generateOutline(
 
   onProgress(30);
 
-  // ── Phase B: Two-Stage Outline Generation ──────────────────────
+  // ── Phase B Stage 1: Chapter-level skeleton (small JSON, never truncates) ──
   const skeletonPrompt = buildSkeletonOutlinePrompt(archetype, docLocale);
 
   const sectionsContext = summary.confirmedSections?.length
@@ -157,7 +159,7 @@ export async function generateOutline(
     constraintsContext && `\nConstraints:\n${constraintsContext}`,
     `\nStructured requirements summary:\n${structuredSummary}`,
     `\nFull conversation context, newest details preserved:\n${conversationContext}`,
-    "\nGenerate the complete outline skeleton.",
+    "\nGenerate the top-level part skeleton (level 1 only).",
   ].filter(Boolean).join("\n");
 
   async function generateSkeleton(feedback?: string): Promise<ReturnType<typeof normalizeGeneratedOutline>> {
@@ -172,7 +174,7 @@ export async function generateOutline(
         { role: "user", content: feedback ? `${userMessage}\n\n${feedback}` : userMessage },
       ],
       response_format: { type: "json_object" },
-      maxTokens: 4096,
+      maxTokens: 2048,
     })) {
       chunks.push(chunk.content || "");
       if (chunk.inputTokens) streamInputTokens = chunk.inputTokens;
@@ -187,30 +189,61 @@ export async function generateOutline(
 
   onProgress(35);
 
-  // Stage 1: Generate skeleton (fast, flat JSON)
+  // Stage 1: top-level chapters only. Sub-sections are expanded per-chapter in
+  // Stage 2, so validate ONLY the chapter count here (no depth/leaf/detail —
+  // those come from Stage 2). The old check (minDepth 2 / minLeaf 8+) would
+  // reject a correct chapter-only skeleton.
   let outline = await generateSkeleton();
-  let quality = evaluateOutlineQuality(outline, { lengthHint: summary.constraints?.lengthHint });
+  let quality = evaluateOutlineQuality(outline, {
+    lengthHint: summary.constraints?.lengthHint,
+    checkDetailFields: false,
+    minDepth: 1,
+    minLeafCount: 0,
+  });
 
   if (!quality.ok) {
-    const feedback = `Generated skeleton insufficient. Issues: ${quality.issues.join("; ")}. Ensure 2-3 levels of depth and 15-30 leaf sections.`;
+    const feedback = `Generated skeleton insufficient. Issues: ${quality.issues.join("; ")}. Output ONLY 4-8 top-level chapters with plain integer "num" (no sub-sections, no dotted numbers).`;
     outline = await generateSkeleton(feedback);
-    quality = evaluateOutlineQuality(outline, { lengthHint: summary.constraints?.lengthHint });
+    quality = evaluateOutlineQuality(outline, {
+      lengthHint: summary.constraints?.lengthHint,
+      checkDetailFields: false,
+      minDepth: 1,
+      minLeafCount: 0,
+    });
     if (!quality.ok) {
-      throw new Error(`Outline skeleton did not meet quality requirements: ${quality.issues.join("; ")}`);
+      throw new Error(`Outline skeleton did not meet chapter requirements: ${quality.issues.join("; ")}`);
     }
   }
 
-  onProgress(55);
+  onProgress(45);
 
-  // Stage 2: Enrich chapters with detail fields (parallel, up to 3 concurrent)
-  const enrichmentPrompt = buildEnrichmentPrompt(docLocale);
-  const topLevelSections = outline.sections.filter((s) => !s.num.includes("."));
+  // ── Phase B Stage 2: Part-level markdown expansion (adaptive depth) ──
+  // One LLM call per part emits that part's full markdown outline; heading
+  // depth (##/###/####/#####) is decided by the model per chapter based on
+  // content complexity (NOT a fixed depth). Parsed back into a tree by
+  // parseMarkdownToSections. Sibling-part titles are injected as context to
+  // prevent cross-part duplication. ~6 calls vs the old ~84 recursive node
+  // calls — far fewer tokens, far faster, and each part is internally coherent.
+  const partExpansionPrompt = buildPartExpansionPrompt(docLocale);
+  const MAX_CONCURRENT = 8;
 
-  async function enrichChapter(
-    chapter: OutlineSection,
-    fullRequirements: string,
-  ): Promise<OutlineSection> {
-    const chapterJson = JSON.stringify({ sections: [chapter] }, null, 2);
+  const requirementsSummary = [
+    summaryText,
+    topicContext,
+    constraintsContext,
+  ].filter(Boolean).join("\n");
+
+  async function expandPart(part: OutlineSection): Promise<OutlineSection> {
+    const partContext = JSON.stringify({
+      num: part.num,
+      title: part.title,
+      description: part.description,
+      estimatedWords: part.estimatedWords,
+    }, null, 2);
+    const siblings = outline.sections
+      .filter((p) => p.num !== part.num)
+      .map((p) => `${p.num} ${p.title}`)
+      .join("\n") || "(none)";
     const chunks: string[] = [];
     let streamInputTokens = 0;
     let streamOutputTokens = 0;
@@ -218,11 +251,10 @@ export async function generateOutline(
     for await (const chunk of provider.chatStream({
       model: modelId,
       messages: [
-        { role: "system", content: enrichmentPrompt },
-        { role: "user", content: `Document requirements:\n${fullRequirements}\n\nChapter to enrich:\n${chapterJson}` },
+        { role: "system", content: partExpansionPrompt },
+        { role: "user", content: `Document requirements:\n${requirementsSummary}\n\nPart to expand:\n${partContext}\n\nOther parts (avoid duplicating these topics):\n${siblings}` },
       ],
-      response_format: { type: "json_object" },
-      maxTokens: 4096,
+      maxTokens: 8192,
     })) {
       chunks.push(chunk.content || "");
       if (chunk.inputTokens) streamInputTokens = chunk.inputTokens;
@@ -232,35 +264,22 @@ export async function generateOutline(
     totalInputTokens += streamInputTokens;
     totalOutputTokens += streamOutputTokens;
 
-    const result = normalizeGeneratedOutline(parseJsonObject(chunks.join("")));
-    return result.sections[0] || chapter;
+    const children = parseMarkdownToSections(chunks.join(""));
+    return children.length > 0 ? { ...part, children } : part;
   }
 
-  const requirementsSummary = [
-    summaryText,
-    topicsStr(topicContext),
-    constraintsContext,
-  ].filter(Boolean).join("\n");
-
-  const MAX_CONCURRENT = 3;
-  const enrichedChapters: OutlineSection[] = [];
-  for (let i = 0; i < topLevelSections.length; i += MAX_CONCURRENT) {
-    const batch = topLevelSections.slice(i, i + MAX_CONCURRENT);
-    const results = await Promise.all(
-      batch.map((chapter) =>
-        enrichChapter(chapter, requirementsSummary).catch(() => chapter),
-      ),
-    );
-    enrichedChapters.push(...results);
-    onProgress(55 + Math.floor(((i + batch.length) / topLevelSections.length) * 30));
+  let partsDone = 0;
+  const totalParts = outline.sections.length;
+  const expandedParts: OutlineSection[] = [];
+  for (let i = 0; i < outline.sections.length; i += MAX_CONCURRENT) {
+    const batch = outline.sections.slice(i, i + MAX_CONCURRENT);
+    const results = await Promise.all(batch.map((p) => expandPart(p).catch(() => p)));
+    expandedParts.push(...results);
+    partsDone += batch.length;
+    onProgress(45 + Math.floor((partsDone / totalParts) * 43));
   }
 
-  // Rebuild hierarchy: replace top-level sections with enriched versions
-  const enrichedMap = new Map(enrichedChapters.map((c) => [c.num, c]));
-  outline.sections = outline.sections.map((s) => {
-    const enriched = enrichedMap.get(s.num.split(".")[0]);
-    return enriched || s;
-  });
+  outline.sections = renumberSections(expandedParts);
 
   onProgress(88);
 
@@ -278,10 +297,10 @@ export async function generateOutline(
 
   onProgress(96);
 
-  await recordTokenUsage({
+  await recordTokenUsageSafely({
     userId, modelConfigId: chatModel.id, module: "outline",
     inputTokens: totalInputTokens, outputTokens: totalOutputTokens, referenceId: sessionId,
-  }).catch((err) => { console.warn("Failed to record token usage:", err); });
+  });
 
   if (await isTaskCancelled(taskId)) {
     return { cancelled: true };
@@ -294,8 +313,4 @@ export async function generateOutline(
   onProgress(100);
 
   return { outline, title: outline.title || session.title };
-}
-
-function topicsStr(text: string): string {
-  return text || "";
 }

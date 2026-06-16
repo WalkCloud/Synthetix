@@ -19,7 +19,6 @@ export default function DocumentsPage() {
   const [embedModels, setEmbedModels] = useState<ModelOption[]>([]);
   const [llmModel, setLlmModel] = useState("");
   const [embedModel, setEmbedModel] = useState("");
-  const [contextUsage, setContextUsage] = useState(30);
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
   const [indexMode, setIndexMode] = useState<"basic" | "graph">("graph");
@@ -44,7 +43,14 @@ export default function DocumentsPage() {
         for (const p of data.data) {
           for (const m of p.models) {
             const caps = parseCapabilities(m.capabilities);
-            const entry: ModelOption = { id: m.id, modelName: m.modelName, providerName: p.name, embeddingDim: m.embeddingDim, isDefaultFor: m.isDefaultFor };
+            const entry: ModelOption = {
+              id: m.id,
+              modelName: m.modelName,
+              providerName: p.name,
+              embeddingDim: m.embeddingDim,
+              contextWindow: m.contextWindow,
+              isDefaultFor: m.isDefaultFor,
+            };
             if (caps.some((c) => c === "embedding" || c === "embed")) {
               embed.push(entry);
             } else if (caps.includes("chat")) {
@@ -71,6 +77,13 @@ export default function DocumentsPage() {
       return supportedExts.has(ext as typeof SUPPORTED_FORMATS[number]);
     });
     if (arr.length === 0) return;
+
+    // Warn if no embedding model configured
+    const effectiveIndexTarget = embedModels.length === 0 ? "original" : indexTarget;
+    if (embedModels.length === 0) {
+      toast.warning(t.errors.noEmbeddingUpload);
+    }
+
     for (const file of arr) {
       const id = crypto.randomUUID();
       const item: UploadItem = { id, name: file.name, size: file.size, status: "converting", progress: 50 };
@@ -78,11 +91,10 @@ export default function DocumentsPage() {
 
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("llmModelId", llmModel);
-      fd.append("embedModelId", embedModel);
-      fd.append("contextUsage", String(contextUsage));
+      if (llmModel) fd.append("llmModelId", llmModel);
+      if (embedModel) fd.append("embedModelId", embedModel);
       fd.append("splitStrategy", splitStrategy);
-      fd.append("indexTarget", indexTarget);
+      fd.append("indexTarget", effectiveIndexTarget);
       fd.append("indexMode", indexMode);
       fd.append("autoSplit", String(autoSplit));
       try {
@@ -99,7 +111,7 @@ export default function DocumentsPage() {
         setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: t.documents.upload.uploadFailed } : u));
       }
     }
-  }, [llmModel, embedModel, contextUsage, splitStrategy, indexTarget, indexMode, autoSplit, t.documents.upload.uploadFailed]);
+  }, [llmModel, embedModel, splitStrategy, indexTarget, indexMode, autoSplit, embedModels.length, t]);
 
   function removeUpload(id: string) {
     setUploads((prev) => prev.filter((u) => u.id !== id));
@@ -123,9 +135,8 @@ export default function DocumentsPage() {
               options: {
                 llmModelId: llmModel || undefined,
                 embedModelId: embedModel || undefined,
-                contextUsage,
                 splitStrategy,
-                indexTarget,
+                indexTarget: embedModels.length === 0 ? "original" : indexTarget,
                 indexMode,
                 autoSplit,
               },
@@ -158,10 +169,10 @@ export default function DocumentsPage() {
         <ProcessingSettings
           llmModels={llmModels} embedModels={embedModels}
           llmModel={llmModel} embedModel={embedModel}
-          contextUsage={contextUsage} splitStrategy={splitStrategy}
+          splitStrategy={splitStrategy}
           indexTarget={indexTarget} indexMode={indexMode} autoSplit={autoSplit}
           onLlmModelChange={setLlmModel} onEmbedModelChange={handleEmbedModelChange}
-          onContextUsageChange={setContextUsage} onSplitStrategyChange={setSplitStrategy}
+          onSplitStrategyChange={setSplitStrategy}
           onIndexTargetChange={setIndexTarget} onIndexModeChange={setIndexMode}
           onAutoSplitChange={setAutoSplit}
         />

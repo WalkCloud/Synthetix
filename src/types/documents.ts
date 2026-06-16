@@ -1,10 +1,11 @@
 export const SUPPORTED_FORMATS = [
-  "pdf", "docx", "pptx", "xlsx", "html", "epub", "txt", "md"
+  "pdf", "docx", "pptx", "xlsx", "html", "txt", "md"
 ] as const;
 export type SupportedFormat = typeof SUPPORTED_FORMATS[number];
 
 export type DocumentStatus =
   | "uploading"
+  | "queued"
   | "converting"
   | "splitting"
   | "embedding"
@@ -22,10 +23,18 @@ export interface DocumentMeta {
   parentId: string | null;
   tokenEstimate: number | null;
   wordCount: number | null;
+  conversionMethod?: string | null;
   createdAt: string;
   updatedAt: string;
   chunks?: ChunkMeta[];
   tags?: TagMeta[];
+  /**
+   * Position in the global document-convert queue (1-indexed). Only set when
+   * `status === "queued"`. The library API computes this on the fly from
+   * pending/running async_tasks. `total` is the total number of queued docs
+   * (incl. one currently running) so the UI can show "Waiting 2 / 5".
+   */
+  queuePosition?: { rank: number; total: number };
 }
 
 export interface ChunkMeta {
@@ -59,6 +68,20 @@ export interface DocumentImageMeta {
   pageNumber: number | null;
 }
 
+export type SearchResultSource = "lightrag" | "direct_embedding" | "keyword" | "fused";
+export type SearchRelevanceLabel = "high" | "medium" | "low" | "keyword" | "unknown";
+export type SearchRerankStatus = "enabled" | "missing" | "failed";
+
+export interface SearchResultDebug {
+  semanticRank?: number;
+  keywordRank?: number;
+  vectorScore?: number;
+  keywordScore?: number;
+  fusionScore?: number;
+  rerank?: SearchRerankStatus;
+  mode?: string;
+}
+
 export interface SearchResult {
   chunkId: string;
   documentId: string;
@@ -66,6 +89,11 @@ export interface SearchResult {
   title: string | null;
   content: string;
   score: number;
+  rank?: number;
+  source?: SearchResultSource;
+  relevanceLabel?: SearchRelevanceLabel;
+  matchedTerms?: string[];
+  debug?: SearchResultDebug;
   images?: DocumentImageMeta[];
 }
 

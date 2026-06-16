@@ -30,6 +30,75 @@ from lightrag.utils import EmbeddingFunc
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
 
 
+def emit_progress(stage: str, progress: int, message: str, **extra) -> None:
+    event = {
+        "type": "progress",
+        "stage": stage,
+        "progress": max(0, min(100, int(progress))),
+        "message": message,
+    }
+    event.update({k: v for k, v in extra.items() if v is not None})
+    print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
+def emit_usage(module: str, input_tokens: int, output_tokens: int) -> None:
+    """Emit a token-usage event line on stderr (parsed by Node's spawnPython).
+
+    LightRAG's `token_tracker` interface gives us per-call counts during graph
+    extraction; we forward them here so the Token Usage Analytics page can
+    attribute the spend back to the LLM model. Without this hook the entire
+    knowledge-graph extraction stage was invisible to billing.
+    """
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+    event = {
+        "type": "usage",
+        "module": module,
+        "input_tokens": int(input_tokens),
+        "output_tokens": int(output_tokens),
+    }
+    print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
+class StdoutTokenTracker:
+    """Implements LightRAG's token_tracker contract (`add_usage(dict)`).
+
+    LightRAG calls `tracker.add_usage({"prompt_tokens": ..., "completion_tokens": ...})`
+    after each LLM round-trip; we re-emit those numbers as stderr `usage` events
+    so the Node side can record them via `recordTokenUsage`.
+    """
+
+    def __init__(self, module: str) -> None:
+        self._module = module
+
+    def add_usage(self, counts: dict) -> None:
+        try:
+            prompt = int(counts.get("prompt_tokens", 0) or 0)
+            completion = int(counts.get("completion_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        emit_usage(self._module, prompt, completion)
+
+
+def get_insert_batch_size(index_mode: str, env: dict | None = None) -> int:
+    source = env if env is not None else os.environ
+    if index_mode == "graph":
+        return int(source.get("LIGHTRAG_GRAPH_INSERT_BATCH_SIZE", source.get("LIGHTRAG_INSERT_BATCH_SIZE", "5")))
+    return int(source.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
+
+
+def sort_chunk_files(files: list[str]) -> list[str]:
+    def chunk_index(name: str) -> int:
+        stem = os.path.splitext(name)[0]
+        try:
+            return int(stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            return sys.maxsize
+
+    chunk_files = [f for f in files if f.startswith("chunk_") and f.endswith(".md")]
+    return sorted(chunk_files, key=lambda f: (chunk_index(f), f))
+
+
 @contextmanager
 def indexing_lock(working_dir: str, doc_id: str):
     """Create the lock that rag_query.py already treats as indexing-in-progress."""
@@ -43,7 +112,7 @@ def indexing_lock(working_dir: str, doc_id: str):
             os.remove(lock_path)
 
 
-async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False) -> int:
+async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False, on_progress=None) -> int:
     """Insert chunks with bounded bulk calls, falling back only for unsupported APIs.
 
     When force_serial is True (graph mode), always use serial inserts so
@@ -54,6 +123,8 @@ async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, fo
         for item in chunk_records:
             await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
             indexed += 1
+            if on_progress:
+                on_progress(indexed, len(chunk_records))
         return indexed
 
     indexed = 0
@@ -65,10 +136,14 @@ async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, fo
         try:
             await rag.ainsert(contents, ids=ids, file_paths=paths)
             indexed += len(batch)
+            if on_progress:
+                on_progress(indexed, len(chunk_records))
         except TypeError:
             for item in batch:
                 await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
                 indexed += 1
+                if on_progress:
+                    on_progress(indexed, len(chunk_records))
     return indexed
 
 
@@ -118,6 +193,7 @@ async def index_document(
     """
     working_dir = os.path.join("data", "rag", user_id)
     os.makedirs(working_dir, exist_ok=True)
+    emit_progress("initializing", 10, "Preparing graph workspace" if index_mode == "graph" else "Preparing RAG workspace")
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
@@ -129,6 +205,7 @@ async def index_document(
         embed_dim = embed_dim if embed_dim > 0 else probed_dim
         embedding_iter = iter(cached_embeddings)
         print(f"Loaded {len(cached_embeddings)} cached embeddings dim={embed_dim} from {embeddings_file}", file=sys.stderr)
+        emit_progress("loading", 20, "Loaded cached embeddings", total=len(cached_embeddings))
 
     # Auto-probe embedding dimension if not already known
     if not embed_dim or embed_dim <= 0:
@@ -153,7 +230,15 @@ async def index_document(
     else:
 
         async def embedding_func(texts: list[str], **kwargs):
-            result = await openai_embed(
+            # IMPORTANT: openai_embed is decorated with @wrap_embedding_func_with_attrs
+            # which has hardcoded embedding_dim=1536. Calling it directly causes our
+            # outer EmbeddingFunc(embedding_dim=embed_dim) to clash with that 1536
+            # default — LightRAG ends up validating result vectors against 1536 even
+            # though the model returns 2048 (text-embedding-v4) or 2560 (qwen3-vl).
+            # We must invoke the unwrapped function via `.func` to bypass the inner
+            # decorator. See lightrag/utils.py:1115 docstring on double decoration.
+            unwrapped = getattr(openai_embed, "func", openai_embed)
+            result = await unwrapped(
                 texts,
                 model=embed_model,
                 base_url=embed_api_base,
@@ -167,7 +252,12 @@ async def index_document(
 
     entity_stats: dict = {}
 
+    # `hashing_kv` and `openai_client_configs` are LightRAG internals we don't
+    # forward. `token_tracker` is dropped from inbound kwargs because we always
+    # inject our own StdoutTokenTracker below — see Fix C in
+    # docs/codebase-optimization-roadmap-2026-06-02.md for context.
     _ignored_llm_kwargs = {"hashing_kv", "openai_client_configs", "token_tracker"}
+    graph_token_tracker = StdoutTokenTracker(module="graph")
 
     if index_mode == "graph" and llm_api_base and llm_model:
         import asyncio
@@ -195,6 +285,7 @@ async def index_document(
                         history_messages=history_messages,
                         base_url=llm_api_base,
                         api_key=llm_api_key,
+                        token_tracker=graph_token_tracker,
                         **clean_kwargs,
                     )
                 except Exception as e:
@@ -209,6 +300,7 @@ async def index_document(
                             history_messages=history_messages,
                             base_url=llm_api_base,
                             api_key=llm_api_key,
+                            token_tracker=graph_token_tracker,
                             **clean_kwargs,
                         )
                     raise
@@ -287,10 +379,12 @@ async def index_document(
 
     with indexing_lock(working_dir, doc_id):
         await rag.initialize_storages()
+        emit_progress("storage", 25, "Initialized graph storage")
 
         if index_mode == "graph":
             from lightrag.base import DocStatus
             print(f"Cleaning existing RAG chunks for document {doc_id} to prevent duplicate skipping...", file=sys.stderr)
+            emit_progress("cleanup", 28, "Cleaning previous document index")
             try:
                 all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
                 to_delete = [k for k in all_docs.keys() if k == doc_id or k.startswith(doc_id + "/")]
@@ -298,12 +392,14 @@ async def index_document(
                     for chunk_id in to_delete:
                         await rag.adelete_by_doc_id(chunk_id)
                     print(f"Successfully cleaned {len(to_delete)} existing chunks.", file=sys.stderr)
+                    emit_progress("cleanup", 32, "Cleaned previous document index", total=len(to_delete))
             except Exception as cleanup_err:
                 print(f"Warning during pre-indexing cleanup: {cleanup_err}", file=sys.stderr)
 
-        chunk_files = sorted([f for f in os.listdir(chunks_dir) if f.startswith("chunk_")])
+        chunk_files = sort_chunk_files(os.listdir(chunks_dir))
         if not chunk_files:
             return {"status": "skipped", "reason": "no chunks found", "doc_id": doc_id}
+        emit_progress("loading_chunks", 35, "Loaded document chunks", total=len(chunk_files))
 
         chunk_records = []
         for f in chunk_files:
@@ -316,11 +412,18 @@ async def index_document(
                 "path": chunk_path,
             })
 
-        batch_size = int(os.environ.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=False)
+        batch_size = get_insert_batch_size(index_mode)
+        emit_progress("indexing", 40, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=0, total=len(chunk_records))
+        def _report_index_progress(done, total):
+            progress = 40 + int((done / max(total, 1)) * 50)
+            emit_progress("indexing", progress, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=done, total=total)
+
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=(index_mode == "graph"), on_progress=_report_index_progress)
+        emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
 
     if index_mode == "graph" and llm_api_base and llm_model:
         try:
+            emit_progress("finalizing", 94, "Collecting graph labels")
             labels = await rag.get_graph_labels()
             entity_stats = {
                 "graph_entities": len(labels),

@@ -30,7 +30,7 @@ export function parseSectionConstraints(value?: string | null): SectionConstrain
   }
 }
 
-export function stringifySectionConstraints(value: SectionConstraintData): string | null {
+function stringifySectionConstraints(value: SectionConstraintData): string | null {
   const cleaned: SectionConstraintData = {};
   if (value.outlineNumber) cleaned.outlineNumber = value.outlineNumber;
   if (value.additionalRequirements) cleaned.additionalRequirements = value.additionalRequirements;

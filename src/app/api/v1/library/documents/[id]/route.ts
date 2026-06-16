@@ -26,5 +26,8 @@ export async function GET(
     return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  return successResponse({ ...doc, tags: doc.tags.map((dt) => dt.tag) });
+  return successResponse({
+    ...doc,
+    tags: doc.tags.map((dt) => dt.tag),
+  });
 }

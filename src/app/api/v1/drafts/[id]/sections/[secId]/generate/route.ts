@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
 import { auditSection } from "@/lib/writing/auditor";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
@@ -8,6 +8,7 @@ import { persistSectionReferences } from "@/lib/writing/persist-references";
 import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { buildEffectiveConstraints, mergeSectionConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
+import { createOnceRecorder } from "@/lib/writing/once-recorder";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
@@ -45,6 +46,15 @@ export async function POST(
   let inTokens = 0;
   let outTokens = 0;
   let modelConfigId = "";
+
+  const tokenRecorder = createOnceRecorder(async () => {
+    if (!modelConfigId) return;
+    if (inTokens === 0 && outTokens === 0) return;
+    await recordTokenUsageSafely({
+      userId: user.id, modelConfigId, module: "writing",
+      inputTokens: inTokens, outputTokens: outTokens,
+    });
+  });
 
   const readable = new ReadableStream({
     async start(controller) {
@@ -86,7 +96,6 @@ export async function POST(
           sectionForGeneration,
           buildEffectiveConstraints(sectionForGeneration.constraints, constraints),
         );
-        const cleanContent = stripLeadingSectionTitle(contentWithRequiredDiagram, section.title);
 
         const finalContent = stripLeadingSectionTitle(contentWithIds, section.title);
 
@@ -109,14 +118,11 @@ export async function POST(
           controller.enqueue(encoder.encode(sseEvent("assets", { count: pendingCount, pending: true })));
         }
 
-        await recordTokenUsage({
-          userId: user.id, modelConfigId, module: "writing",
-          inputTokens: inTokens, outputTokens: outTokens,
-        }).catch((err) => { console.warn("Failed to record token usage:", err); });
+        await tokenRecorder.record();
 
         (async () => {
           try {
-            const auditResult = await auditSection(section.title, cleanContent, section.keyPoints, user.id, sectionId);
+            const auditResult = await auditSection(section.title, contentWithRequiredDiagram, section.keyPoints, user.id, sectionId);
             const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
             await db.section.update({
               where: { id: sectionId },
@@ -130,12 +136,7 @@ export async function POST(
         controller.enqueue(encoder.encode(sseDone()));
         controller.close();
       } catch (error) {
-        if (modelConfigId && (inTokens > 0 || outTokens > 0)) {
-          await recordTokenUsage({
-            userId: user.id, modelConfigId, module: "writing",
-            inputTokens: inTokens, outputTokens: outTokens,
-          }).catch(() => {});
-        }
+        await tokenRecorder.record();
         await db.section.update({
           where: { id: sectionId }, data: { status: "failed" },
         }).catch((err) => { console.warn("Failed to update section status:", err); });

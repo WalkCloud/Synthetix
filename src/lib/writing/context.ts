@@ -26,6 +26,7 @@ export interface ContextInput {
     title?: string | null;
     content: string;
     score: number;
+    sourceType?: "rag_chunk" | "rag_graph";
   }[];
   constraints?: {
     referenceSections?: string[];

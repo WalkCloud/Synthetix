@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/db";
+import { Semaphore } from "@/lib/concurrency/limiter";
 import type {
   TaskType,
   TaskPayload,
@@ -15,6 +16,7 @@ interface QueueOptions {
   concurrency?: number;
   timeoutMs?: number | null;
   taskTimeoutMs?: Partial<Record<TaskType, number | null>>;
+  taskConcurrency?: Partial<Record<TaskType, number>>;
 }
 
 export class TaskQueue {
@@ -23,11 +25,20 @@ export class TaskQueue {
   private readonly concurrency: number;
   private readonly timeoutMs: number | null;
   private readonly taskTimeoutMs: Partial<Record<TaskType, number | null>>;
+  private readonly taskConcurrency: Partial<Record<TaskType, number>>;
+  private readonly activePerType: Map<TaskType, number> = new Map();
+  // Serialises the scheduling section (cap check → SQL claim → counter
+  // increment) so concurrent processNext() calls cannot all observe an
+  // empty activePerType for the same capped type and over-claim.
+  // executeTask itself runs OUTSIDE this lock, so global concurrency
+  // is preserved.
+  private readonly schedulerLock = new Semaphore(1);
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.taskTimeoutMs = options.taskTimeoutMs ?? {};
+    this.taskConcurrency = options.taskConcurrency ?? {};
   }
 
   registerWorker(type: TaskType, workerFn: WorkerFn): void {
@@ -128,36 +139,74 @@ export class TaskQueue {
     return false;
   }
 
+  private isTypeAtCap(type: TaskType): boolean {
+    const cap = this.taskConcurrency[type];
+    if (cap == null) return false;
+    return (this.activePerType.get(type) ?? 0) >= cap;
+  }
+
   async processNext(): Promise<void> {
-    if (this.activeCount >= this.concurrency) {
-      return;
+    // Scheduling section is serialised. claimedTask is the row we successfully
+    // reserved (or null if none was eligible).
+    const release = await this.schedulerLock.acquire();
+    let claimedTask: { id: string; type: TaskType; input_data: string | null } | null = null;
+    try {
+      if (this.activeCount >= this.concurrency) {
+        return;
+      }
+
+      // Filter out task types that have already hit their per-type cap.
+      // This lets `rag_index` (graph) and `rag_embed_index` share the global
+      // pool without one starving the other.
+      const eligibleTypes = [...this.workers.keys()].filter((t) => !this.isTypeAtCap(t));
+      if (eligibleTypes.length === 0) {
+        return;
+      }
+
+      // Atomic claim: try to update a pending task to "running" in a single query.
+      // SQLite serialises the UPDATE so two concurrent processNext() calls cannot
+      // claim the same row.
+      const placeholders = eligibleTypes.map(() => "?").join(", ");
+      const claimed = await db.$queryRawUnsafe<{ id: string; type: string; input_data: string | null }[]>(
+        `UPDATE async_tasks
+         SET status = 'running', updated_at = ?
+         WHERE id = (
+           SELECT id FROM async_tasks
+           WHERE status = 'pending' AND type IN (${placeholders})
+           ORDER BY created_at ASC
+           LIMIT 1
+         ) AND status = 'pending'
+         RETURNING id, type, input_data`,
+        new Date(),
+        ...eligibleTypes,
+      );
+
+      if (!claimed || claimed.length === 0) {
+        return;
+      }
+
+      const task = claimed[0];
+      const taskType = task.type as TaskType;
+      this.activeCount += 1;
+      this.activePerType.set(taskType, (this.activePerType.get(taskType) ?? 0) + 1);
+      claimedTask = { id: task.id, type: taskType, input_data: task.input_data };
+    } finally {
+      release();
     }
 
-    // Atomic claim: try to update a pending task to "running" in a single query
-    // This prevents race conditions when multiple workers call processNext concurrently
-    const claimed = await db.$queryRaw<{ id: string; type: string; input_data: string | null }[]>`
-      UPDATE async_tasks
-      SET status = 'running', updated_at = ${new Date()}
-      WHERE id = (
-        SELECT id FROM async_tasks
-        WHERE status = 'pending'
-        ORDER BY created_at ASC
-        LIMIT 1
-      ) AND status = 'pending'
-      RETURNING id, type, input_data
-    `;
-
-    if (!claimed || claimed.length === 0) {
-      return;
-    }
-
-    const task = claimed[0];
-    this.activeCount += 1;
+    if (!claimedTask) return;
 
     try {
-      await this.executeTask(task.id, task.type as TaskType, task.input_data);
+      await this.executeTask(claimedTask.id, claimedTask.type, claimedTask.input_data);
     } finally {
+      const taskType = claimedTask.type;
+      // Both decrements happen after executeTask returns; any other waiter
+      // will see the freed slot on its next acquire.
       this.activeCount -= 1;
+      this.activePerType.set(taskType, Math.max(0, (this.activePerType.get(taskType) ?? 1) - 1));
+      // Wake schedulers — first call may pick up the same type we just freed,
+      // second call lets a different type take the global slot if needed.
+      void this.processNext();
       void this.processNext();
     }
   }
