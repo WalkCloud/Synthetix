@@ -1,16 +1,15 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
+import { toProviderDto } from "@/lib/models/provider-dto";
+import { providerCreateSchema } from "@/lib/models/provider-schema";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const providers = await db.modelProvider.findMany({
     where: { userId: user.id },
@@ -18,51 +17,23 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ success: true, data: providers });
+  return successResponse(providers.map(toProviderDto));
 }
-
-const modelConfigSchema = z.object({
-  modelId: z.string().min(1),
-  modelName: z.string().min(1),
-  capabilities: z.array(z.string()).default([]),
-  contextWindow: z.number().int().min(0).default(0),
-  maxOutputTokens: z.number().int().optional(),
-  supportsStreaming: z.boolean().default(true),
-  inputPrice: z.number().optional(),
-  outputPrice: z.number().optional(),
-  localOrCloud: z.enum(["local", "cloud"]).default("local"),
-  isDefaultFor: z.string().optional(),
-  embeddingBatchSize: z.number().int().min(1).max(1000).optional(),
-});
-
-const providerSchema = z.object({
-  name: z.string().min(1).max(100),
-  providerType: z.enum([
-    "ollama",
-    "openai_compatible",
-    "anthropic",
-    "custom",
-  ]),
-  apiBaseUrl: z.string().url(),
-  apiKey: z.string().optional(),
-  models: z.array(modelConfigSchema).min(1),
-});
 
 export async function POST(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
-  const body = await request.json();
-  const parsed = providerSchema.safeParse(body);
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
+  }
+
+  const parsed = providerCreateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return errorResponse(parsed.error.flatten(), 400);
   }
 
   const { name, providerType, apiBaseUrl, apiKey, models } = parsed.data;
@@ -87,14 +58,12 @@ export async function POST(request: Request) {
           localOrCloud: m.localOrCloud,
           isDefaultFor: m.isDefaultFor,
           embeddingBatchSize: m.embeddingBatchSize,
+          embeddingDim: m.embeddingDim,
         })),
       },
     },
     include: { models: true },
   });
 
-  return NextResponse.json(
-    { success: true, data: provider },
-    { status: 201 },
-  );
+  return successResponse(toProviderDto(provider), 201);
 }

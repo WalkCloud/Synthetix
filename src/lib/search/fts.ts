@@ -5,6 +5,10 @@ import type { SearchResult } from "@/types/documents";
 let ftsReady = false;
 let ftsIndexed = false;
 
+export function stripFtsSnippetMarkup(value: string): string {
+  return value.replace(/<\/?mark>/g, "");
+}
+
 export async function ensureFtsTable(): Promise<void> {
   if (ftsReady) return;
   const existing = await db.$queryRawUnsafe<{ sql: string }[]>(
@@ -39,25 +43,84 @@ async function ensureFtsIndexed(): Promise<void> {
   ftsIndexed = true;
 }
 
-export async function syncFtsIndex(): Promise<void> {
+async function syncFtsIndex(): Promise<void> {
   await ensureFtsTable();
   const chunks = await db.$queryRawUnsafe<
     { rowid: number; title: string; content: string }[]
   >(`SELECT rowid, title, content FROM document_chunks`);
   await db.$executeRawUnsafe(`DELETE FROM document_fts`);
   if (chunks.length === 0) return;
-  await db.$executeRawUnsafe(`INSERT INTO document_fts(rowid, title, content) VALUES ${chunks.map(() => '(?, ?, ?)').join(',')}`,
-    ...chunks.flatMap((chunk) => [
-      chunk.rowid,
-      chunk.title ? tokenizeChinese(chunk.title) : "",
-      chunk.content ? tokenizeChinese(chunk.content) : "",
-    ])
+
+  const BATCH_SIZE = 100; // 100 rows × 3 vars = 300, well under SQLite's 999 limit
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    await db.$executeRawUnsafe(
+      `INSERT INTO document_fts(rowid, title, content) VALUES ${batch.map(() => '(?, ?, ?)').join(',')}`,
+      ...batch.flatMap((chunk) => [
+        chunk.rowid,
+        chunk.title ? tokenizeChinese(chunk.title) : "",
+        chunk.content ? tokenizeChinese(chunk.content) : "",
+      ])
+    );
+    // Yield between batches so a multi-thousand-chunk reindex doesn't
+    // hold the Next.js event loop while Jieba tokenises each row.
+    if (i + BATCH_SIZE < chunks.length) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+  ftsIndexed = true;
+}
+
+export async function syncFtsIndexForDocument(docId: string): Promise<void> {
+  await ensureFtsTable();
+
+  const rowIds = await db.$queryRawUnsafe<{ rowid: number }[]>(
+    `SELECT rowid FROM document_chunks WHERE document_id = ?`,
+    docId,
   );
+
+  if (rowIds.length > 0) {
+    const placeholders = rowIds.map(() => "?").join(",");
+    await db.$executeRawUnsafe(
+      `DELETE FROM document_fts WHERE rowid IN (${placeholders})`,
+      ...rowIds.map((r) => r.rowid),
+    );
+  }
+
+  const chunks = await db.$queryRawUnsafe<
+    { rowid: number; title: string; content: string }[]
+  >(
+    `SELECT rowid, title, content FROM document_chunks WHERE document_id = ?`,
+    docId,
+  );
+
+  if (chunks.length === 0) return;
+
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    await db.$executeRawUnsafe(
+      `INSERT INTO document_fts(rowid, title, content) VALUES ${batch.map(() => "(?, ?, ?)").join(",")}`,
+      ...batch.flatMap((chunk) => [
+        chunk.rowid,
+        chunk.title ? tokenizeChinese(chunk.title) : "",
+        chunk.content ? tokenizeChinese(chunk.content) : "",
+      ]),
+    );
+    // Yield between batches: Jieba tokenisation is synchronous Rust
+    // (@node-rs/jieba) and a 1000-chunk doc would otherwise hold the
+    // event loop for hundreds of ms during a Phase 2 worker run.
+    if (i + BATCH_SIZE < chunks.length) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
   ftsIndexed = true;
 }
 
 export async function searchByKeyword(
   query: string,
+  userId: string,
   limit = 20,
   offset = 0
 ): Promise<SearchResult[]> {
@@ -79,10 +142,12 @@ export async function searchByKeyword(
      FROM document_fts f
      JOIN document_chunks dc ON dc.rowid = f.rowid
      JOIN documents d ON d.id = dc.document_id
-     WHERE document_fts MATCH ?
-     ORDER BY f.rank
-     LIMIT ? OFFSET ?`,
+      WHERE document_fts MATCH ?
+        AND d.user_id = ?
+      ORDER BY f.rank
+      LIMIT ? OFFSET ?`,
     tokenized,
+    userId,
     limit,
     offset
   );
@@ -100,7 +165,7 @@ export async function searchByKeyword(
       documentId: r.document_id,
       documentName: r.document_name,
       title: r.title,
-      content: r.snippet,
+      content: stripFtsSnippetMarkup(r.snippet),
       score: Math.round(score * 100) / 100,
     };
   });

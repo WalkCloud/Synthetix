@@ -1,41 +1,55 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
   const doc = await db.document.findFirst({ where: { id, userId: user.id } });
   if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  const task = await db.asyncTask.findFirst({
+  // Use raw query for precise inputData match — Prisma's JSON contains
+  // can match old tasks whose inputData happens to contain a similar UUID
+  const task = await db.$queryRawUnsafe<{ id: string; status: string; progress: number; error_message: string | null }[]>(
+    `SELECT id, status, progress, error_message FROM async_tasks
+     WHERE user_id = ? AND type = 'document_convert'
+       AND input_data LIKE ?
+     ORDER BY created_at DESC LIMIT 1`,
+    user.id,
+    `%${doc.id}%`,
+  ).then((rows) => rows[0] || null);
+
+  const graphTask = await db.asyncTask.findFirst({
     where: {
       userId: user.id,
-      type: "document_convert",
+      type: "rag_index",
       inputData: { contains: doc.id },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      documentId: doc.id,
-      status: doc.status,
-      taskId: task?.id,
-      taskStatus: task?.status,
-      progress: task?.progress || 0,
-      error: task?.errorMessage,
+  return successResponse({
+    documentId: doc.id,
+    status: doc.status,
+    taskId: task?.id,
+    taskStatus: task?.status,
+    progress: task?.progress || 0,
+    error: task?.error_message,
+    graph: {
+      requested: Boolean(graphTask),
+      taskId: graphTask?.id,
+      status: graphTask?.status || "not_requested",
+      progress: graphTask?.progress || 0,
+      error: graphTask?.errorMessage,
     },
   });
 }

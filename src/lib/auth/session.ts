@@ -9,14 +9,6 @@ const ACCESS_MAX_AGE = 60 * 15; // 15 minutes
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 const isProduction = process.env.NODE_ENV === "production";
-
-const baseCookieOptions = {
-  httpOnly: true,
-  secure: isProduction,
-  sameSite: "strict" as const,
-  path: "/",
-};
-
 export async function setAuthCookies(
   response: Response,
   accessToken: string,
@@ -43,12 +35,12 @@ export function clearAuthCookies(response: Response): void {
   );
 }
 
-export async function getAccessToken(): Promise<string | null> {
+async function getAccessToken(): Promise<string | null> {
   const cookieStore = await cookies();
   return cookieStore.get(ACCESS_TOKEN_KEY)?.value ?? null;
 }
 
-export async function getRefreshToken(): Promise<string | null> {
+async function getRefreshToken(): Promise<string | null> {
   const cookieStore = await cookies();
   return cookieStore.get(REFRESH_TOKEN_KEY)?.value ?? null;
 }
@@ -103,7 +95,7 @@ export async function refreshSession(): Promise<{
   }
 }
 
-export function payloadToAuthUser(payload: JWTPayload): AuthUser {
+function payloadToAuthUser(payload: JWTPayload): AuthUser {
   return {
     id: payload.userId,
     username: payload.username,

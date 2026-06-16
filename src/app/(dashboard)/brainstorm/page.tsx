@@ -1,96 +1,90 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/header";
+import { renderAIContent } from "@/components/shared/markdown-renderer";
+import { useBrainstormSessions } from "@/hooks/brainstorm/use-brainstorm-sessions";
+import { useBrainstormChat } from "@/hooks/brainstorm/use-brainstorm-chat";
+import { useBrainstormOutline } from "@/hooks/brainstorm/use-brainstorm-outline";
+import { EditOutlineNode } from "@/components/brainstorm/edit-outline-node";
+import { DisplayOutlineNode } from "@/components/brainstorm/display-outline-node";
+import { useLocale } from "@/lib/i18n";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
-  Trash2, Check, X, GripVertical, FileText
+  Trash2, Check, X, FileText
 } from "lucide-react";
 
-interface Session {
-  id: string;
-  title: string;
-  status: string;
-  outline: string | null;
-  createdAt: string;
-  updatedAt: string;
-  _count?: { messages: number };
-}
-
-interface Message {
-  id: string;
-  sessionId: string;
-  role: "user" | "ai" | "system";
-  content: string;
-  createdAt: string;
-}
-
-interface OutlineSection {
-  num: string;
-  title: string;
-  keyPoints?: string[];
-  estimatedWords?: number;
-  children?: OutlineSection[];
-}
-
-interface Outline {
-  title: string;
-  sections: OutlineSection[];
-}
-
 export default function BrainstormPage() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [outline, setOutline] = useState<Outline | null>(null);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [editSections, setEditSections] = useState<OutlineSection[]>([]);
-  const [editTitle, setEditTitle] = useState("");
+  const { locale, t, format } = useLocale();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const messagesEnd = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const sess = useBrainstormSessions();
 
-  useEffect(() => {
-    fetch("/api/v1/brainstorm/sessions")
-      .then((r) => r.json())
-      .then((d) => { if (d.success) setSessions(d.data); });
-  }, []);
-
-  const loadSession = useCallback(async (id: string) => {
-    setActiveId(id); setLoading(true);
-    const res = await fetch(`/api/v1/brainstorm/sessions/${id}`);
-    const d = await res.json();
-    if (d.success) {
-      setMessages(d.data.messages || []);
-      setOutline(d.data.outline ? JSON.parse(d.data.outline) : null);
-      setStatus(d.data.status === "active" ? "Active" : "Complete");
-    }
-    setLoading(false);
+  const scrollToEnd = useCallback(() => {
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
   }, []);
 
-  async function createSession() {
-    const res = await fetch("/api/v1/brainstorm/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "New Brainstorming Session" }),
-    });
-    const d = await res.json();
-    if (d.success) {
-      setSessions((prev) => [d.data, ...prev]);
-      loadSession(d.data.id);
+  const outline = useBrainstormOutline({
+    activeId: sess.activeId,
+    outline: sess.outline,
+    setOutline: sess.setOutline,
+    setStatus: sess.setStatus,
+    setPhase: sess.setPhase,
+    loading: sess.loading,
+    setLoading: sess.setLoading,
+    setSessions: sess.setSessions,
+    setOutlineTaskId: sess.setOutlineTaskId,
+  });
+  const { generateOutline, startPollingExternal } = outline;
+
+  useEffect(() => {
+    if (sess.outlineTaskId) {
+      startPollingExternal(sess.outlineTaskId);
     }
+  }, [startPollingExternal, sess.outlineTaskId]);
+
+  const handleMarker = useCallback((marker: string) => {
+    switch (marker) {
+      case "NEEDS_GATHERED": sess.setPhase("direction"); sess.setLoading(false); break;
+      case "DIRECTION_CONFIRMED": sess.setPhase("mode_select"); sess.setLoading(false); break;
+      case "GENERATE_DIRECT": sess.setPhase("ready"); generateOutline(); break;
+      case "SECTION_BY_SECTION": sess.setPhase("section_refine"); sess.setLoading(false); break;
+      case "ALL_SECTIONS_CONFIRMED": sess.setPhase("ready"); generateOutline(); break;
+      default: sess.setLoading(false); break;
+    }
+  }, [generateOutline, sess]);
+
+  const chat = useBrainstormChat({
+    activeId: sess.activeId,
+    phase: sess.phase,
+    loading: sess.loading,
+    setLoading: sess.setLoading,
+    setMessages: sess.setMessages,
+    setSessions: sess.setSessions,
+    handleMarker,
+    scrollToEnd,
+  });
+
+  const activeSession = sess.sessions.find((s) => s.id === sess.activeId);
+  const displayStatus = sess.outline
+    ? t.brainstorm.outlineGenerated
+    : sess.phase === "gathering"
+      ? t.brainstorm.phases.exploration
+      : sess.phase === "direction"
+        ? t.brainstorm.phases.structuring
+        : sess.phase === "mode_select"
+          ? t.brainstorm.phases.structuring
+          : sess.phase === "section_refine"
+            ? t.brainstorm.phases.refinement
+            : t.brainstorm.outlineGenerated;
+
+  function formatTime(d: string): string {
+    return new Date(d).toLocaleTimeString(locale === "zh-CN" ? "zh-CN" : "en-US", { hour: "numeric", minute: "2-digit" });
   }
 
-  function startRenaming(s: Session) {
+  function startRenaming(s: typeof sess.sessions[number]) {
     setRenamingId(s.id);
     setRenameValue(s.title);
   }
@@ -106,667 +100,53 @@ export default function BrainstormPage() {
     });
     const d = await res.json();
     if (d.success) {
-      setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title: trimmed } : s));
+      sess.setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title: trimmed } : s));
     }
-  }
-
-  async function deleteSession(id: string) {
-    const res = await fetch(`/api/v1/brainstorm/sessions/${id}`, { method: "DELETE" });
-    const d = await res.json();
-    if (d.success) {
-      setSessions((prev) => prev.filter((s) => s.id !== id));
-      if (activeId === id) {
-        setActiveId(null);
-        setMessages([]);
-        setOutline(null);
-        setStatus("");
-      }
-    }
-  }
-
-  async function handleFileUpload(file: File) {
-    if (!activeId || loading) return;
-    setLoading(true);
-
-    const optSystem: Message = { id: "opt-sys", sessionId: activeId, role: "system", content: `Uploading document "${file.name}" and extracting content...`, createdAt: new Date().toISOString() };
-    setMessages((prev) => [...prev, optSystem]);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/upload`, { method: "POST", body: formData });
-      const d = await res.json();
-
-      if (d.success) {
-        // Reload to show the uploaded content as user message
-        await loadSession(activeId);
-        // Trigger AI to respond to the uploaded document
-        const aiRes = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Please give me an outline suggestion based on the uploaded document." }),
-        });
-        const aiData = await aiRes.json();
-        if (aiData.success) {
-          await loadSession(activeId);
-          if (aiData.data.outlineRequested) {
-            await generateOutline();
-          }
-        }
-        fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
-      } else {
-        setMessages((prev) => [...prev.filter((m) => m.id !== "opt-sys"), { id: "err", sessionId: activeId, role: "system", content: `Upload failed: ${d.error}`, createdAt: new Date().toISOString() }]);
-        setLoading(false);
-      }
-    } catch {
-      setMessages((prev) => [...prev.filter((m) => m.id !== "opt-sys"), { id: "err", sessionId: activeId, role: "system", content: "Upload failed, please try again.", createdAt: new Date().toISOString() }]);
-      setLoading(false);
-    }
-  }
-
-  async function sendMessage() {
-    if (!input.trim() || !activeId || loading) return;
-    const content = input; setInput(""); setLoading(true);
-
-    const optMsg: Message = { id: "opt", sessionId: activeId, role: "user", content, createdAt: new Date().toISOString() };
-    setMessages((prev) => [...prev, optMsg]);
-    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 50);
-
-    const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    const d = await res.json();
-    if (d.success) {
-      setMessages((prev) => [...prev.filter((m) => m.id !== "opt"), d.data.message]);
-      if (d.data.outlineRequested) {
-        await generateOutline();
-      } else {
-        setLoading(false);
-      }
-      fetch("/api/v1/brainstorm/sessions").then((r) => r.json()).then((sd) => { if (sd.success) setSessions(sd.data); });
-    } else {
-      setLoading(false);
-    }
-    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 100);
-  }
-
-  async function generateOutline() {
-    if (!activeId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST" });
-      const d = await res.json();
-      if (d.success) { 
-        setOutline(d.data); 
-        setStatus("Complete"); 
-        setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, title: d.data.title || "New Brainstorming Session" } : s));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function clearOutline() {
-    if (!activeId || loading) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "clearOutline" }),
-      });
-      const d = await res.json();
-      if (d.success) { setOutline(null); setStatus("Active"); }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function confirmAndWrite() {
-    if (!activeId || !outline || confirming) return;
-    setConfirming(true);
-    try {
-      // Persist latest outline before creating draft
-      await persistOutline(outline);
-      const res = await fetch("/api/v1/drafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: activeId, outline }),
-      });
-      const d = await res.json();
-      if (d.success && d.data?.id) {
-        router.push(`/writing/${d.data.id}`);
-      }
-    } finally {
-      setConfirming(false);
-    }
-  }
-
-  function totalWords(): number {
-    return sumWords(outline?.sections);
-  }
-
-  function sumWords(sections?: OutlineSection[]): number {
-    if (!sections) return 0;
-    return sections.reduce((sum, s) => sum + (s.estimatedWords || 0) + sumWords(s.children), 0);
-  }
-
-  function formatTime(d: string): string {
-    return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-
-  function renderAIContent(content: string): React.ReactNode {
-    const text = content.replace(/OUTLINE_REQUESTED/g, "").trim();
-    if (!text) return null;
-
-    const lines = text.split("\n");
-    return lines.map((line, i) => {
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      const renderedLine = parts.map((part, j) => {
-        if (part.startsWith("**") && part.endsWith("**")) {
-          return <strong key={j} className="text-indigo-900 font-semibold">{part.slice(2, -2)}</strong>;
-        }
-        return part;
-      });
-
-      const isList = /^[-*]\s|^[0-9]+[.．]\s/.test(line.trim());
-      if (isList) {
-        return (
-          <div key={i} className="pl-4 relative my-1 text-slate-700">
-            <span className="absolute left-0 top-[8px] w-1.5 h-1.5 bg-indigo-400 rounded-full"></span>
-            {renderedLine}
-          </div>
-        );
-      }
-      return <span key={i} className="block mb-2 text-slate-700 leading-relaxed">{renderedLine}</span>;
-    });
-  }
-
-  const activeSession = sessions.find((s) => s.id === activeId);
-  const activeMessageCount = activeSession?._count?.messages ?? messages.length;
-  const displayStatus = outline ? "Outline Ready" : status === "Complete" ? "Complete" : "Deepening Phase";
-
-  function deepClone(sections: OutlineSection[]): OutlineSection[] {
-    return sections.map(s => ({ ...s, children: s.children ? deepClone(s.children) : undefined }));
-  }
-
-  function getByPath(sections: OutlineSection[], path: number[]): OutlineSection | undefined {
-    if (path.length === 0) return undefined;
-    const [head, ...rest] = path;
-    const node = sections[head];
-    if (!node) return undefined;
-    if (rest.length === 0) return node;
-    return getByPath(node.children || [], rest);
-  }
-
-  function updateByPath(sections: OutlineSection[], path: number[], updater: (s: OutlineSection) => OutlineSection): OutlineSection[] {
-    if (path.length === 0) return sections;
-    const [head, ...rest] = path;
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      if (rest.length === 0) return updater(s);
-      return { ...s, children: updateByPath(s.children || [], rest, updater) };
-    });
-  }
-
-  function removeByPath(sections: OutlineSection[], path: number[]): OutlineSection[] {
-    if (path.length === 0) return sections;
-    const [head, ...rest] = path;
-    if (rest.length === 0) return sections.filter((_, i) => i !== head);
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      return { ...s, children: removeByPath(s.children || [], rest) };
-    });
-  }
-
-  function addChildAtPath(sections: OutlineSection[], path: number[], defaults: { num: string; title: string; estimatedWords: number }): OutlineSection[] {
-    if (path.length === 0) {
-      return [...sections, defaults];
-    }
-    const [head, ...rest] = path;
-    return sections.map((s, i) => {
-      if (i !== head) return s;
-      if (rest.length === 0) {
-        const children = [...(s.children || []), defaults];
-        return { ...s, children };
-      }
-      return { ...s, children: addChildAtPath(s.children || [], rest, defaults) };
-    });
-  }
-
-  function renumberSections(sections: OutlineSection[], prefix = ""): OutlineSection[] {
-    return sections.map((s, i) => {
-      const num = prefix ? `${prefix}.${i + 1}` : String(i + 1);
-      return { ...s, num, children: s.children ? renumberSections(s.children, num) : undefined };
-    });
-  }
-
-  function numForPath(sections: OutlineSection[], path: number[]): string {
-    if (path.length === 0) return "";
-    const [head, ...rest] = path;
-    if (rest.length === 0) return String(head + 1);
-    const parentNum = String(head + 1);
-    const childNum = numForPath(sections[head]?.children || [], rest.map(r => r));
-    return `${parentNum}.${childNum}`;
-  }
-
-  function startEditing() {
-    if (!outline) return;
-    setEditTitle(outline.title);
-    setEditSections(deepClone(outline.sections));
-    setEditing(true);
-  }
-
-  function cancelEditing() {
-    setEditing(false);
-    setEditSections([]);
-    setEditTitle("");
-  }
-
-  function saveEditing() {
-    if (!outline) return;
-    const renumbered = renumberSections(editSections);
-    const updated = { ...outline, title: editTitle, sections: renumbered };
-    setOutline(updated);
-    setEditing(false);
-    persistOutline(updated);
-  }
-
-  async function persistOutline(updatedOutline: typeof outline) {
-    if (!activeId || !updatedOutline) return;
-    await fetch(`/api/v1/brainstorm/outlines/${activeId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outline: updatedOutline }),
-    }).catch(() => {});
-  }
-
-  function updateEditNode(path: number[], field: "title" | "estimatedWords", value: string) {
-    setEditSections((prev) =>
-      updateByPath(prev, path, (s) =>
-        field === "estimatedWords" ? { ...s, estimatedWords: parseInt(value) || 0 } : { ...s, [field]: value }
-      )
-    );
-  }
-
-  function removeEditNode(path: number[]) {
-    setEditSections((prev) => removeByPath(prev, path));
-  }
-
-  function addEditChild(parentPath: number[]) {
-    const parent = getByPath(editSections, parentPath);
-    const childCount = parent?.children?.length || 0;
-    const parentNum = parentPath.length > 0 ? numForPath(editSections, parentPath) : String(editSections.length + 1);
-    const childNum = `${parentNum}.${childCount + 1}`;
-    setEditSections((prev) =>
-      addChildAtPath(prev, parentPath, { num: childNum, title: "", estimatedWords: 200 })
-    );
-  }
-
-  function addEditSection() {
-    setEditSections((prev) => [
-      ...prev,
-      { num: String(prev.length + 1), title: "", estimatedWords: 500 },
-    ]);
-  }
-
-  function insertSectionAfter(index: number) {
-    if (!outline) return;
-    const section: OutlineSection = { num: "", title: "", estimatedWords: 500 };
-    const updated = [...outline.sections.slice(0, index + 1), section, ...outline.sections.slice(index + 1)];
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function updateNodeTitle(path: number[], title: string) {
-    if (!outline) return;
-    const updated = updateByPath(outline.sections, path, (s) => ({ ...s, title }));
-    setOutline({ ...outline, sections: updated });
-  }
-
-  function removeNode(path: number[]) {
-    if (!outline) return;
-    const updated = removeByPath(outline.sections, path);
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function insertChildAfter(parentPath: number[], childIndex: number) {
-    if (!outline) return;
-    const updated = addChildAtPath(outline.sections, [...parentPath, childIndex], { num: "", title: "", estimatedWords: 200 });
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function reorderSections(from: number, to: number) {
-    if (!outline || from === to) return;
-    const updated = [...outline.sections];
-    const [moved] = updated.splice(from, 1);
-    updated.splice(to, 0, moved);
-    const newOutline = { ...outline, sections: renumberSections(updated) };
-    setOutline(newOutline);
-    persistOutline(newOutline);
-  }
-
-  function EditOutlineNode({ section, path, onUpdate, onRemove, onAddChild, depth }: {
-    section: OutlineSection;
-    path: number[];
-    onUpdate: (path: number[], field: "title" | "estimatedWords", value: string) => void;
-    onRemove: (path: number[]) => void;
-    onAddChild: (parentPath: number[]) => void;
-    depth: number;
-  }) {
-    const isTop = depth === 0;
-    const indent = depth > 0 ? `pl-${Math.min(depth * 4, 12)}` : "";
-
-    return (
-      <div className={isTop ? "rounded-[12px] border bg-white shadow-sm overflow-hidden" : undefined}>
-        <div className={`flex items-center gap-2 ${isTop ? "p-3" : "py-2 pr-1"} ${indent}`}>
-          {isTop && <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />}
-          <span className={`shrink-0 ${isTop ? "w-5 text-sm font-bold" : "min-w-6 text-xs font-semibold"} text-primary`}>
-            {section.num}
-          </span>
-          <input
-            type="text"
-            value={section.title}
-            onChange={(e) => onUpdate(path, "title", e.target.value)}
-            placeholder={isTop ? "Section title..." : "Sub-section title..."}
-            className={`min-w-0 flex-1 bg-transparent text-foreground focus:outline-none ${isTop ? "text-sm font-semibold" : "text-[13px] border-b border-dashed border-slate-300 focus:border-primary-400"}`}
-          />
-          <input
-            type="text"
-            inputMode="numeric"
-            value={section.estimatedWords || ""}
-            onChange={(e) => onUpdate(path, "estimatedWords", e.target.value)}
-            className={`shrink-0 rounded ${isTop ? "w-16 rounded-lg border bg-slate-50 px-2 py-1 text-xs focus:ring-2 focus:ring-primary/20" : "w-14 border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary/20"} text-center text-muted-foreground focus:outline-none`}
-            placeholder="words"
-          />
-          <button
-            onClick={() => onRemove(path)}
-            className={`flex shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-red-500 ${isTop ? "h-7 w-7 rounded-lg hover:bg-red-50 hover:text-red-600" : "h-6 w-6"}`}
-          >
-            {isTop ? <Trash2 className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-        {isTop && section.children && section.children.length > 0 && (
-          <div className="border-t bg-slate-50/50 p-2 space-y-2">
-            {section.children.map((child, ci) => (
-              <EditOutlineNode
-                key={ci}
-                section={child}
-                path={[...path, ci]}
-                onUpdate={onUpdate}
-                onRemove={onRemove}
-                onAddChild={onAddChild}
-                depth={depth + 1}
-              />
-            ))}
-          </div>
-        )}
-        {!isTop && section.children && section.children.length > 0 && (
-          <div className="space-y-1">
-            {section.children.map((child, ci) => (
-              <EditOutlineNode
-                key={ci}
-                section={child}
-                path={[...path, ci]}
-                onUpdate={onUpdate}
-                onRemove={onRemove}
-                onAddChild={onAddChild}
-                depth={depth + 1}
-              />
-            ))}
-          </div>
-        )}
-        {(isTop || (section.children && section.children.length > 0)) && (
-          <div className={`${isTop ? "pl-6 pt-1 pb-1" : "pl-4 pt-0.5 pb-0.5"}`}>
-            <button
-              onClick={() => onAddChild(path)}
-              className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-primary/60 hover:text-primary transition-colors"
-            >
-              <Plus className="h-3 w-3" /> Add Sub-section
-            </button>
-          </div>
-        )}
-        {!isTop && !section.children?.length && (
-          <div className="pl-4 pt-0.5 pb-0.5">
-            <button
-              onClick={() => onAddChild(path)}
-              className="flex cursor-pointer items-center gap-1 text-[10px] font-semibold text-primary/50 hover:text-primary transition-colors"
-            >
-              <Plus className="h-2.5 w-2.5" /> Add Sub-section
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function DisplayOutlineNode({ section, path, depth, isDraggable, dragIndex, setDragIndex, onReorder, onUpdateTitle, onRemove, onInsertChild, onAddChild, onInsertAfter }: {
-    section: OutlineSection;
-    path: number[];
-    depth: number;
-    isDraggable: boolean;
-    dragIndex: number | null;
-    setDragIndex: (i: number | null) => void;
-    onReorder: (from: number, to: number) => void;
-    onUpdateTitle: (path: number[], title: string) => void;
-    onRemove: (path: number[]) => void;
-    onInsertChild: (parentPath: number[], childIndex: number) => void;
-    onAddChild: (parentPath: number[]) => void;
-    onInsertAfter: (path: number[]) => void;
-  }) {
-    const isTop = depth === 0;
-
-    if (isTop) {
-      return (
-        <li
-          draggable={isDraggable}
-          onDragStart={() => isDraggable && setDragIndex(path[0])}
-          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary-50/30"); }}
-          onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); }}
-          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary-50/30"); if (dragIndex !== null && isDraggable) onReorder(dragIndex, path[0]); setDragIndex(null); }}
-          onDragEnd={() => setDragIndex(null)}
-          className={`group/section rounded-[12px] border bg-white shadow-sm transition ${dragIndex === path[0] ? "opacity-40" : ""}`}
-        >
-          <div className="flex items-center gap-2 px-3 py-2.5">
-            {isDraggable && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/30 transition group-hover/section:text-muted-foreground" />}
-            <span className="min-w-5 shrink-0 text-sm font-bold text-primary">{section.num}.</span>
-            <input
-              value={section.title}
-              onChange={(e) => onUpdateTitle(path, e.target.value)}
-              placeholder="Enter chapter title..."
-              className="min-w-0 flex-1 bg-transparent text-sm font-semibold leading-5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-            />
-            <span className="shrink-0 text-[11px] text-muted-foreground">~{section.estimatedWords || 500}w</span>
-            <button
-              onClick={() => onRemove(path)}
-              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/30 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover/section:opacity-100"
-              title="Delete"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-          {section.children && section.children.length > 0 && (
-            <ul className="border-t bg-slate-50/50 px-3 py-2">
-              {section.children.map((child, ci) => (
-                <DisplayOutlineNode
-                  key={ci}
-                  section={child}
-                  path={[...path, ci]}
-                  depth={depth + 1}
-                  isDraggable={false}
-                  dragIndex={dragIndex}
-                  setDragIndex={setDragIndex}
-                  onReorder={onReorder}
-                  onUpdateTitle={onUpdateTitle}
-                  onRemove={onRemove}
-                  onInsertChild={onInsertChild}
-                  onAddChild={onAddChild}
-                  onInsertAfter={onInsertAfter}
-                />
-              ))}
-              <li className="py-1">
-                <button
-                  onClick={() => onAddChild(path)}
-                  className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
-                >
-                  <Plus className="h-3 w-3" /> Add sub-section
-                </button>
-              </li>
-            </ul>
-          )}
-          {(!section.children || section.children.length === 0) && (
-            <div className="border-t bg-slate-50/50 px-3 py-1.5">
-              <button
-                onClick={() => onAddChild(path)}
-                className="flex cursor-pointer items-center gap-1 pl-4 text-[11px] font-medium text-primary/40 transition hover:text-primary/70"
-              >
-                <Plus className="h-3 w-3" /> Add sub-section
-              </button>
-            </div>
-          )}
-        </li>
-      );
-    }
-
-    return (
-      <>
-        <li
-          className="group/child relative flex items-center gap-2 rounded-lg py-1.5 pl-4"
-        >
-          <span className={`shrink-0 text-xs font-semibold ${depth === 1 ? "text-primary/70" : "text-primary/50"}`}>
-            {section.num}
-          </span>
-          <input
-            value={section.title}
-            onChange={(e) => onUpdateTitle(path, e.target.value)}
-            placeholder="Enter title..."
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-          />
-          <span className="shrink-0 text-[10px] text-muted-foreground">~{section.estimatedWords || 300}w</span>
-          <button
-            onClick={() => onInsertAfter(path)}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-primary/0 transition hover:bg-primary-50 hover:text-primary group-hover/child:text-primary/40"
-            title="Insert after"
-          >
-            <Plus className="h-2.5 w-2.5" />
-          </button>
-          <button
-            onClick={() => onRemove(path)}
-            className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/0 transition hover:bg-red-50 hover:text-red-500 group-hover/child:text-muted-foreground/30"
-          >
-            <Trash2 className="h-2.5 w-2.5" />
-          </button>
-        </li>
-        {section.children && section.children.length > 0 && (
-          <ul className="pl-4">
-            {section.children.map((child, ci) => (
-              <DisplayOutlineNode
-                key={ci}
-                section={child}
-                path={[...path, ci]}
-                depth={depth + 1}
-                isDraggable={false}
-                dragIndex={dragIndex}
-                setDragIndex={setDragIndex}
-                onReorder={onReorder}
-                onUpdateTitle={onUpdateTitle}
-                onRemove={onRemove}
-                onInsertChild={onInsertChild}
-                onAddChild={onAddChild}
-                onInsertAfter={onInsertAfter}
-              />
-            ))}
-            <li className="py-0.5">
-              <button
-                onClick={() => onAddChild(path)}
-                className="flex cursor-pointer items-center gap-1 pl-4 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
-              >
-                <Plus className="h-2.5 w-2.5" /> Add sub-section
-              </button>
-            </li>
-          </ul>
-        )}
-        {!section.children?.length && (
-          <div className="pl-8 py-0.5 opacity-0 transition-opacity group-hover/child:opacity-100">
-            <button
-              onClick={() => onAddChild(path)}
-              className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-primary/30 transition hover:text-primary/60"
-            >
-              <Plus className="h-2.5 w-2.5" /> Add sub-section
-            </button>
-          </div>
-        )}
-      </>
-    );
   }
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <Header title="Mind Organization" />
+      <Header title={t.brainstorm.title} />
 
-      <div className="h-[calc(100vh-64px)] overflow-hidden bg-slate-50/50 px-6 py-6 xl:px-8">
+      <div className="h-[calc(100vh-64px)] overflow-hidden bg-muted/40 px-6 py-6 dark:bg-background xl:px-8">
         <div className="mx-auto flex h-full max-w-[1600px] gap-6">
           {/* Session History */}
-          <section className="hidden w-[280px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
-            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
-              <h4 className="font-display text-sm font-bold text-foreground">Sessions</h4>
-              <button
-                onClick={createSession}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-[12px] bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-primary-light"
-              >
-                <Plus className="h-3 w-3" />
-                New
+          <section className="hidden w-[280px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm dark:shadow-soft xl:flex">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-5">
+              <h4 className="font-display text-sm font-bold text-foreground">{t.brainstorm.sessionListTitle}</h4>
+              <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-1 rounded-[12px] bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-primary-light">
+                <Plus className="h-3 w-3" /> {t.brainstorm.newSession}
               </button>
             </div>
-
-            <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4">
-              {sessions.map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => { if (renamingId !== s.id) loadSession(s.id); }}
+            <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto bg-muted/50 p-4 dark:bg-background/35">
+              {sess.sessions.map((s) => (
+                <div key={s.id}
+                  onClick={() => { if (renamingId !== s.id) sess.loadSession(s.id); }}
                   onDoubleClick={(e) => { e.stopPropagation(); startRenaming(s); }}
-                  className={`group w-full cursor-pointer rounded-[16px] border bg-white px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md ${
-                    s.id === activeId ? "border-primary/60 bg-primary-50/60 shadow-md" : "border-border/60"
-                  }`}
+                  className={`group w-full cursor-pointer rounded-[16px] border bg-card px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md dark:shadow-none dark:hover:bg-primary/10 ${s.id === sess.activeId ? "border-primary/60 bg-primary-50/60 shadow-md dark:border-primary/55 dark:bg-primary/15 dark:ring-1 dark:ring-primary/20" : "border-border/60 dark:border-border"}`}
                 >
                   <div className="flex items-start gap-2.5">
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: s.status === "complete" ? "#16a34a" : "#a78bfa" }} />
                     <div className="min-w-0 flex-1">
                       {renamingId === s.id ? (
-                        <input
-                          autoFocus
-                          value={renameValue}
+                        <input autoFocus value={renameValue}
                           onChange={(e) => setRenameValue(e.target.value)}
                           onBlur={() => commitRename(s.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitRename(s.id);
-                            if (e.key === "Escape") setRenamingId(null);
-                          }}
+                          onKeyDown={(e) => { if (e.key === "Enter") commitRename(s.id); if (e.key === "Escape") setRenamingId(null); }}
                           onClick={(e) => e.stopPropagation()}
-                          className="w-full rounded border border-primary-300 bg-white px-2 py-0.5 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          className="w-full rounded border border-primary-300 bg-card px-2 py-0.5 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                       ) : (
                         <p className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground">{s.title}</p>
                       )}
                       <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
                         <div className="flex items-center gap-2">
-                          <span>{new Date(s.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                          <span>{format.date(s.updatedAt)}</span>
                           <span className="text-border">·</span>
-                          <span>{s._count?.messages || 0} msgs</span>
+                          <span>{s._count?.messages || 0} {t.brainstorm.messageCount}</span>
                         </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 opacity-0 transition hover:text-red-500 group-hover:opacity-100"
-                          title="Delete"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); sess.deleteSession(s.id); }}
+                          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 opacity-0 transition hover:text-red-500 group-hover:opacity-100" title={t.common.actions.delete}>
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -774,24 +154,21 @@ export default function BrainstormPage() {
                   </div>
                 </div>
               ))}
-
-              {sessions.length === 0 && (
-                <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-                  <Sparkles className="mb-3 h-8 w-8 opacity-25" />
-                  <span className="text-xs leading-5">No brainstorming sessions yet.<br />Start one to begin.</span>
+              {sess.sessions.length === 0 && (
+                <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground dark:text-muted-foreground">
+                  <Sparkles className="mb-3 h-8 w-8 opacity-40 dark:text-primary" />
+                  <span className="text-xs leading-5">{t.brainstorm.emptySessions}<br/>{t.brainstorm.emptySessionsDesc}</span>
                 </div>
               )}
             </div>
           </section>
 
           {/* Conversation */}
-          <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm dark:shadow-soft">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <MessageSquare className="h-5 w-5 shrink-0 text-primary" />
-                <h3 className="truncate font-display text-base font-bold text-foreground">
-                  {activeSession?.title || "Document Brainstorming"}
-                </h3>
+                <h3 className="truncate font-display text-base font-bold text-foreground dark:text-card-foreground">{activeSession?.title || t.brainstorm.title}</h3>
               </div>
               {activeSession && (
                 <div className="flex shrink-0 items-center gap-1.5 text-[13px] font-semibold text-emerald-600">
@@ -801,68 +178,46 @@ export default function BrainstormPage() {
               )}
             </div>
 
-            <div className="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto bg-slate-50 p-6">
+            <div className="custom-scrollbar flex flex-1 flex-col gap-6 overflow-y-auto bg-muted/50 p-6 dark:bg-background/35">
               {!activeSession && (
                 <div className="flex flex-1 flex-col items-center justify-center text-center">
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-primary">
-                    <Sparkles className="h-8 w-8" />
-                  </div>
-                  <h2 className="mb-2 font-display text-xl font-bold text-foreground">Document Brainstorming</h2>
-                  <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">
-                    Collaborate with the AI Document Architect to structure your thoughts and generate a comprehensive document outline.
-                  </p>
-                  <button
-                    onClick={createSession}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-light"
-                  >
-                    <Plus className="h-4 w-4" /> Start New Session
+                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15 dark:text-primary"><Sparkles className="h-8 w-8" /></div>
+                  <h2 className="mb-2 font-display text-xl font-bold text-foreground dark:text-card-foreground">{t.brainstorm.title}</h2>
+                  <p className="mb-7 max-w-md text-sm leading-6 text-muted-foreground">{t.brainstorm.startConversationDesc}</p>
+                  <button onClick={sess.createSession} className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-light">
+                    <Plus className="h-4 w-4" /> {t.brainstorm.startConversation}
                   </button>
                 </div>
               )}
 
-              {activeSession && messages.length === 0 && !loading && (
+              {activeSession && sess.messages.length === 0 && !sess.loading && (
                 <>
                   <div className="self-center rounded-full border border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">
-                    New brainstorming session started · Socratic Skill active
+                    {t.brainstorm.sessionStarted}
                   </div>
                   <div className="flex max-w-[85%] self-start">
-                    <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary">
-                      <Bot className="h-5 w-5" />
-                    </div>
+                    <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15"><Bot className="h-5 w-5" /></div>
                     <div>
-                      <div className="rounded-[16px] rounded-tl bg-white px-4.5 py-3.5 text-sm leading-6 text-foreground shadow-sm ring-1 ring-border">
-                        Tell me what kind of document you want to write. I will ask focused questions and turn the discussion into an outline.
+                      <div className="rounded-[16px] rounded-tl bg-card px-4.5 py-3.5 text-sm leading-6 text-foreground shadow-sm ring-1 ring-border">
+                        {t.brainstorm.initialAssistantMessage}
                       </div>
                     </div>
                   </div>
                 </>
               )}
 
-              {messages.map((msg) => {
+              {sess.messages.map((msg) => {
                 const isUser = msg.role === "user";
-                const isSystem = msg.role === "system";
-
-                if (isSystem) {
-                  return (
-                    <div key={msg.id} className="self-center rounded-full border border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">
-                      {msg.content}
-                    </div>
-                  );
+                if (msg.role === "system") {
+                  return <div key={msg.id} className="self-center rounded-full border border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">{msg.content}</div>;
                 }
-
                 return (
                   <div key={msg.id} className={`flex max-w-[85%] ${isUser ? "self-end flex-row-reverse" : "self-start"}`}>
-                    <div className={`mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                      isUser ? "bg-muted text-muted-foreground" : "bg-primary-100 text-primary"
-                    }`}>
+                    <div className={`mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${isUser ? "bg-muted text-muted-foreground dark:bg-secondary dark:text-foreground" : "bg-primary-100 text-primary dark:bg-primary/15"}`}>
                       {isUser ? <User className="h-4 w-4" /> : <Bot className="h-5 w-5" />}
                     </div>
                     <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
-                      <div className={`px-4.5 py-3.5 text-sm leading-6 shadow-sm ${
-                        isUser
-                          ? "rounded-[16px] rounded-tr bg-primary text-white"
-                          : "rounded-[16px] rounded-tl bg-white text-foreground ring-1 ring-border"
-                      }`}>
+                      <div className={`px-4.5 py-3.5 text-sm leading-6 shadow-sm ${isUser ? "rounded-[16px] rounded-tr bg-primary text-white" : "rounded-[16px] rounded-tl bg-card text-foreground ring-1 ring-border"}`}>
                         {isUser ? msg.content : renderAIContent(msg.content)}
                       </div>
                       <div className="mt-1.5 px-1 text-[11px] text-muted-foreground">{formatTime(msg.createdAt)}</div>
@@ -871,55 +226,57 @@ export default function BrainstormPage() {
                 );
               })}
 
-              {loading && messages[messages.length - 1]?.role === "user" && (
+              {chat.isSending && sess.messages[sess.messages.length - 1]?.role === "user" && (
                 <div className="flex max-w-[85%] self-start">
-                  <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary">
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div className="flex items-center gap-2 rounded-[16px] rounded-tl bg-white px-5 py-4 shadow-sm ring-1 ring-border">
+                  <div className="mx-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15"><Bot className="h-5 w-5" /></div>
+                  <div className="flex items-center gap-2 rounded-[16px] rounded-tl bg-card px-5 py-4 shadow-sm ring-1 ring-border">
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" style={{ animationDelay: "0.2s" }} />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" style={{ animationDelay: "0.4s" }} />
                   </div>
                 </div>
               )}
+
+              {sess.phase === "mode_select" && !chat.isSending && (
+                <div className="flex max-w-[85%] self-start gap-3 ml-12">
+                  <button onClick={() => chat.sendQuickMessage(t.brainstorm.quickActions.directMessage, "GENERATE_DIRECT")}
+                    className="flex-1 cursor-pointer rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm transition hover:border-primary hover:bg-primary-50 dark:border-primary/35 dark:hover:border-primary/65 dark:hover:bg-primary/12">
+                    <div className="text-sm font-bold text-foreground">{t.brainstorm.quickActions.directTitle}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.brainstorm.quickActions.directDesc}</div>
+                  </button>
+                  <button onClick={() => chat.sendQuickMessage(t.brainstorm.quickActions.refineMessage, "SECTION_BY_SECTION")}
+                    className="flex-1 cursor-pointer rounded-2xl border-2 border-primary-200 bg-card p-4 text-left shadow-sm transition hover:border-primary hover:bg-primary-50 dark:border-primary/35 dark:hover:border-primary/65 dark:hover:bg-primary/12">
+                    <div className="text-sm font-bold text-foreground">{t.brainstorm.quickActions.refineTitle}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.brainstorm.quickActions.refineDesc}</div>
+                  </button>
+                </div>
+              )}
+
+              {sess.phase === "section_refine" && !sess.loading && !sess.outline && (
+                <div className="self-center rounded-full border border-primary-200 bg-primary-50 px-4 py-1.5 text-center text-xs font-semibold text-primary dark:border-primary/35 dark:bg-primary/15">
+                  {t.brainstorm.outlinePanel.sectionRefineBanner}
+                </div>
+              )}
               <div ref={messagesEnd} />
             </div>
 
-            <div className="bg-slate-50/50 px-6 pb-6 pt-3 shrink-0">
-              <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10">
-                <label
-                  className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${!activeSession || loading ? "pointer-events-none opacity-40" : ""}`}
-                  title="Upload Document"
-                >
+            <div className="bg-muted/40 px-6 pb-6 pt-3 shrink-0 dark:bg-background/35">
+              <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10 dark:shadow-none">
+                <label className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-muted-foreground ${!sess.activeId || chat.isSending ? "pointer-events-none opacity-40" : ""}`} title={t.documents.upload.title}>
                   <Paperclip className="h-4.5 w-4.5" />
-                  <input
-                    type="file"
-                    accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md"
-                    className="absolute inset-0 cursor-pointer opacity-0"
-                    disabled={!activeSession || loading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileUpload(file);
-                      e.target.value = "";
-                    }}
+                  <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md" className="absolute inset-0 cursor-pointer opacity-0"
+                    disabled={!sess.activeId || chat.isSending}
+                    onChange={(e) => { const file = e.target.files?.[0]; if (file) chat.handleFileUpload(file); e.target.value = ""; }}
                   />
                 </label>
-                <textarea
-                  rows={1}
-                  placeholder="Answer the AI or refine the outline..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  disabled={!activeSession}
-                  className="min-h-9 max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                <textarea rows={1} placeholder={t.brainstorm.placeholder} value={chat.input}
+                  onChange={(e) => chat.setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chat.sendMessage(); } }}
+                  disabled={!sess.activeId}
+                  className="min-h-9 max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 />
-                <button
-                  onClick={sendMessage}
-                  disabled={loading || !input.trim() || !activeSession}
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Send"
-                >
+                <button onClick={chat.sendMessage} disabled={chat.isSending || !chat.input.trim() || !sess.activeId}
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary-600 text-white transition hover:bg-primary-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40" title={t.brainstorm.send}>
                   <Send className="h-4.5 w-4.5" />
                 </button>
               </div>
@@ -927,162 +284,122 @@ export default function BrainstormPage() {
           </section>
 
           {/* Right Panel */}
-          <section className="hidden w-[340px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
-            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
-              <div className="flex items-center gap-2 font-display text-base font-bold text-foreground">
-                <LayoutList className="h-[18px] w-[18px]" />
-                Outline
-              </div>
-              {outline && (
-                <span className="font-sans text-xs font-semibold text-muted-foreground">
-                  ~{totalWords().toLocaleString()} words
-                </span>
-              )}
+          <section className="hidden w-[340px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm dark:shadow-soft xl:flex">
+            <div className="flex h-[60px] shrink-0 items-center justify-between border-b border-border bg-card px-6">
+              <div className="flex items-center gap-2 font-display text-base font-bold text-foreground"><LayoutList className="h-[18px] w-[18px]" /> {t.writing.outline}</div>
+              {sess.outline && <span className="font-sans text-xs font-semibold text-muted-foreground">~{outline.totalWords().toLocaleString()} {t.brainstorm.wordUnit}</span>}
             </div>
             <div className="flex flex-1 flex-col overflow-hidden p-6">
-              {outline ? (
+              {sess.outline ? (
                 <>
-                  {editing ? (
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="mb-4 w-full border-b-2 border-primary-100 bg-transparent pb-3 text-[15px] font-bold text-foreground focus:border-primary focus:outline-none"
-                    />
+                  {outline.editing ? (
+                    <input type="text" value={outline.editTitle} onChange={(e) => outline.setEditTitle(e.target.value)}
+                      className="mb-4 w-full border-b-2 border-primary-100 bg-transparent pb-3 text-[15px] font-bold text-foreground focus:border-primary focus:outline-none" />
                   ) : (
-                    <div className="mb-4 border-b-2 border-primary-100 pb-3 text-[15px] font-bold text-foreground">
-                      {outline.title}
-                    </div>
+                    <div className="mb-4 border-b-2 border-primary-100 pb-3 text-[15px] font-bold text-foreground">{sess.outline.title}</div>
                   )}
-
                   <div className="custom-scrollbar flex-1 overflow-y-auto">
-                    {editing ? (
+                    {outline.editing ? (
                       <div className="space-y-3">
-                        {editSections.map((s, i) => (
-                          <EditOutlineNode
-                            key={i}
-                            section={s}
-                            path={[i]}
-                            onUpdate={updateEditNode}
-                            onRemove={removeEditNode}
-                            onAddChild={addEditChild}
-                            depth={0}
-                          />
+                        {outline.editSections.map((s, i) => (
+                          <EditOutlineNode key={i} section={s} path={[i]} onUpdate={outline.updateEditNode} onRemove={outline.removeEditNode} onAddChild={outline.addEditChild} depth={0} />
                         ))}
-                        <button
-                          onClick={addEditSection}
-                          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-primary-200 py-2.5 text-xs font-semibold text-primary hover:bg-primary-50"
-                        >
-                          <Plus className="h-3.5 w-3.5" /> Add Section
+                        <button onClick={outline.addEditSection} className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-primary-200 py-2.5 text-xs font-semibold text-primary hover:bg-primary-50 dark:border-primary/35 dark:hover:bg-primary/12">
+                          <Plus className="h-3.5 w-3.5" /> {t.brainstorm.addSection}
                         </button>
                       </div>
                     ) : (
-                      <>
                       <ul className="space-y-2">
-                        {outline.sections.map((s, i) => (
-                          <DisplayOutlineNode
-                            key={i}
-                            section={s}
-                            path={[i]}
-                            depth={0}
-                            isDraggable={true}
-                            dragIndex={dragIndex}
-                            setDragIndex={setDragIndex}
-                            onReorder={reorderSections}
-                            onUpdateTitle={updateNodeTitle}
-                            onRemove={removeNode}
-                            onInsertChild={insertChildAfter}
-                            onAddChild={(parentPath) => {
-                              if (!outline) return;
-                              const updated = addChildAtPath(outline.sections, parentPath, { num: "", title: "", estimatedWords: 200 });
-                              const newOutline = { ...outline, sections: renumberSections(updated) };
-                              setOutline(newOutline);
-                              persistOutline(newOutline);
-                            }}
-                            onInsertAfter={(path) => {
-                              if (!outline) return;
-                              const parentPath = path.slice(0, -1);
-                              const myIndex = path[path.length - 1];
-                              const updated = addChildAtPath(outline.sections, [...parentPath, myIndex], { num: "", title: "", estimatedWords: 200 });
-                              const newOutline = { ...outline, sections: renumberSections(updated) };
-                              setOutline(newOutline);
-                              persistOutline(newOutline);
-                            }}
-                          />
+                        {sess.outline.sections.map((s, i) => (
+                          <DisplayOutlineNode key={i} section={s} path={[i]} depth={0} />
                         ))}
                       </ul>
-                      <button
-                        onClick={() => insertSectionAfter(outline.sections.length - 1)}
-                        className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1 rounded-[12px] border border-dashed border-primary/20 py-2 text-xs font-medium text-primary/60 transition hover:border-primary/40 hover:bg-primary-50/50 hover:text-primary"
-                      >
-                        <Plus className="h-3 w-3" /> Add Chapter
-                      </button>
-                      </>
                     )}
                   </div>
                 </>
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center bg-slate-50 px-4 text-center">
-                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary">
-                    <LayoutList className="h-7 w-7" />
+              ) : outline.isGeneratingOutline ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-b from-primary/10 to-card p-4 dark:border-primary/25 dark:from-primary/15 dark:to-card">
+                  <div className="mb-4 flex shrink-0 items-center gap-3">
+                    <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card text-primary shadow-sm ring-1 ring-primary-100 dark:ring-primary/25">
+                      <Sparkles className="h-5 w-5 animate-pulse" />
+                      <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground">{t.brainstorm.outlinePanel.generatingTitle}</h4>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.brainstorm.outlinePanel.generatingDesc}</p>
+                    </div>
                   </div>
-                  <h4 className="mb-2 font-semibold text-foreground">Outline Preview</h4>
-                  <p className="mb-6 max-w-[250px] text-sm leading-6 text-muted-foreground">
-                    Discuss your requirements with the AI, and an outline will appear here.
-                  </p>
-                  <button
-                    onClick={generateOutline}
-                    disabled={loading || messages.length < 2 || !activeSession}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-primary-200 bg-white px-4 py-2 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Sparkles className="h-4 w-4" /> Generate Manually
+                  <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                    {t.brainstorm.outlinePanel.generationSteps.map((item, idx) => (
+                      <div key={item} className="rounded-xl border border-card/80 bg-card/80 p-2.5 shadow-sm">
+                        <div className="mb-1.5 flex items-center gap-2">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-100 text-[11px] font-bold text-primary dark:bg-primary/15">{idx + 1}</span>
+                          <span className="text-xs font-semibold text-foreground/75 dark:text-foreground">{item}</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                          <div className="h-full w-1/2 rounded-full bg-primary-500 animate-loading-bar" style={{ animationDelay: `${idx * 0.18}s` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : sess.phase === "mode_select" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15"><Sparkles className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.modeSelectTitle}</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.modeSelectDesc}</p>
+                </div>
+              ) : sess.phase === "section_refine" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15"><MessageSquare className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.refiningTitle}</h4>
+                  <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.refiningDesc}</p>
+                </div>
+              ) : sess.phase === "ready" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive"><RefreshCw className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.generationFailedTitle}</h4>
+                  <p className="mb-4 max-w-[240px] text-sm leading-6 text-muted-foreground">{outline.outlineError || t.brainstorm.outlinePanel.generationFailedDesc}</p>
+                  <button onClick={outline.generateOutline} disabled={sess.loading}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground/75 shadow-sm transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 dark:text-foreground dark:shadow-none">
+                    <RefreshCw className="h-4 w-4" /> {t.common.actions.retry}
                   </button>
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary dark:bg-primary/15"><LayoutList className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.previewTitle}</h4>
+                  <p className="max-w-[250px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.previewDesc}</p>
                 </div>
               )}
             </div>
 
-            <div className="bg-slate-50/50 px-6 py-5 border-t border-slate-200 shrink-0">
-              {editing ? (
+            <div className="bg-muted/40 px-6 py-5 border-t border-border shrink-0 dark:bg-background/35">
+              {outline.editing ? (
                 <div className="flex gap-3">
-                  <button
-                    onClick={saveEditing}
-                    className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-3 text-[13px] font-semibold text-white transition hover:bg-primary-700 shadow-sm"
-                  >
-                    <Check className="h-4 w-4" /> Save
+                  <button onClick={outline.saveEditing} className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-3 text-[13px] font-semibold text-white transition hover:bg-primary-700 shadow-sm">
+                    <Check className="h-4 w-4" /> {t.common.actions.save}
                   </button>
-                  <button
-                    onClick={cancelEditing}
-                    className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm"
-                  >
-                    <X className="h-4 w-4" /> Cancel
+                  <button onClick={outline.cancelEditing} className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 shadow-sm dark:text-foreground dark:shadow-none">
+                    <X className="h-4 w-4" /> {t.common.actions.cancel}
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex gap-3">
-                    <button
-                      onClick={startEditing}
-                      disabled={!outline}
-                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
-                    >
-                      <Edit3 className="h-4 w-4" /> Edit
+                    <button onClick={outline.startEditing} disabled={!sess.outline}
+                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm dark:text-foreground dark:shadow-none">
+                      <Edit3 className="h-4 w-4" /> {t.common.actions.edit}
                     </button>
-                    <button
-                      onClick={clearOutline}
-                      disabled={loading || !outline}
-                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
-                    >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Regenerate
+                    <button onClick={outline.regenerateOutline} disabled={sess.loading || !sess.outline}
+                      className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm dark:text-foreground dark:shadow-none">
+                      {sess.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t.writing.sections.regenerate}
                     </button>
                   </div>
-                  <button
-                    onClick={confirmAndWrite}
-                    disabled={confirming || !outline}
-                    className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
-                  >
-                    {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                    {confirming ? "Preparing..." : "Confirm & Write"}
+                  <button onClick={outline.confirmAndWrite} disabled={outline.confirming || !sess.outline}
+                    className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
+                    {outline.confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    {outline.confirming ? t.common.states.processing + "..." : t.brainstorm.generateOutline}
                   </button>
                 </div>
               )}
@@ -1092,19 +409,10 @@ export default function BrainstormPage() {
       </div>
 
       <style dangerouslySetInnerHTML={{__html: `
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background-color: #cbd5e1;
-          border-radius: 10px;
-        }
-        .custom-scrollbar:hover::-webkit-scrollbar-thumb {
-          background-color: #94a3b8;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: #94a3b8; }
       `}} />
     </div>
   );

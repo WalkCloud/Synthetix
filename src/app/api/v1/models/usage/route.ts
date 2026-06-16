@@ -1,17 +1,13 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
-  if (!user)
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+  if (!user) return authErrorResponse();
 
   const { searchParams } = new URL(request.url);
-  const module = searchParams.get("module");
+  const usageModule = searchParams.get("module");
   const days = parseInt(searchParams.get("days") || "30");
 
   const since = new Date();
@@ -20,10 +16,10 @@ export async function GET(request: Request) {
   const where = {
     userId: user.id,
     createdAt: { gte: since },
-    ...(module && { module }),
+    ...(usageModule && { module: usageModule }),
   };
 
-  const [usage, byModelRaw, byModuleRaw, summaryRaw, distinctModels] =
+  const [usage, byModelRaw, byModuleRaw, summaryRaw] =
     await Promise.all([
       db.tokenUsage.findMany({
         where,
@@ -54,10 +50,6 @@ export async function GET(request: Request) {
         where,
         _sum: { inputTokens: true, outputTokens: true },
         _count: true,
-      }),
-      db.tokenUsage.groupBy({
-        by: ["modelConfigId"],
-        where,
       }),
     ]);
 
@@ -93,28 +85,41 @@ export async function GET(request: Request) {
     ]),
   );
 
-  const byModel = byModelRaw
-    .filter((r) => r.modelConfigId !== null)
-    .map((r) => {
-      const info = modelLookup.get(r.modelConfigId!) ?? {
-        modelName: "Unknown",
-        providerName: "",
-      };
+  // Keep rows whose modelConfigId is null as a synthetic "unattributed" bucket
+  // so byModel totals reconcile to the summary totals. This used to be silently
+  // discarded — Python LightRAG / legacy rows never have a modelConfigId, so
+  // dropping them made byModel sums smaller than the summary every time.
+  const byModel = byModelRaw.map((r) => {
+    if (r.modelConfigId === null) {
       return {
-        modelConfigId: r.modelConfigId!,
-        modelName: info.modelName,
-        providerName: info.providerName,
+        modelConfigId: null,
+        modelName: "Unattributed",
+        providerName: "",
         totalInputTokens: r._sum.inputTokens ?? 0,
         totalOutputTokens: r._sum.outputTokens ?? 0,
         totalCalls: r._count,
       };
-    })
-    .sort(
-      (a, b) =>
-        b.totalInputTokens +
-        b.totalOutputTokens -
-        (a.totalInputTokens + a.totalOutputTokens),
-    );
+    }
+    const info = modelLookup.get(r.modelConfigId) ?? {
+      modelName: "Unknown",
+      providerName: "",
+    };
+    return {
+      modelConfigId: r.modelConfigId,
+      modelName: info.modelName,
+      providerName: info.providerName,
+      totalInputTokens: r._sum.inputTokens ?? 0,
+      totalOutputTokens: r._sum.outputTokens ?? 0,
+      totalCalls: r._count,
+    };
+  });
+
+  byModel.sort(
+    (a, b) =>
+      b.totalInputTokens +
+      b.totalOutputTokens -
+      (a.totalInputTokens + a.totalOutputTokens),
+  );
 
   const byModule = byModuleRaw
     .map((r) => ({
@@ -130,20 +135,17 @@ export async function GET(request: Request) {
         (a.totalInputTokens + a.totalOutputTokens),
     );
 
-  const modelsUsed = distinctModels.filter((d) => d.modelConfigId !== null).length;
+  const modelsUsed = byModel.length;
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      entries,
-      byModel,
-      byModule,
-      summary: {
-        totalInputTokens: summaryRaw._sum.inputTokens ?? 0,
-        totalOutputTokens: summaryRaw._sum.outputTokens ?? 0,
-        totalCalls: summaryRaw._count,
-        modelsUsed,
-      },
+  return successResponse({
+    entries,
+    byModel,
+    byModule,
+    summary: {
+      totalInputTokens: summaryRaw._sum.inputTokens ?? 0,
+      totalOutputTokens: summaryRaw._sum.outputTokens ?? 0,
+      totalCalls: summaryRaw._count,
+      modelsUsed,
     },
   });
 }

@@ -1,3 +1,9 @@
+export interface ReferenceChunk {
+  sourceAnchor?: string | null;
+  sectionTitle: string;
+  relevanceScore: number;
+}
+
 export interface TopologyNode {
   id: string;
   type: "draft" | "reference" | "entity";
@@ -8,6 +14,18 @@ export interface TopologyNode {
   relevanceScore: number;
   /** Entity-specific: entity type (person, concept, organization, etc.) */
   entityType?: string;
+  /** Entity description from knowledge graph */
+  description?: string;
+  /** Reference chunks: source anchor → writing section mapping with scores */
+  referenceChunks?: ReferenceChunk[];
+  /** Draft-specific summary fields for the central document node */
+  draftStatus?: string;
+  totalSections?: number;
+  completedSections?: number;
+  sectionsWithReferences?: number;
+  totalReferences?: number;
+  uniqueDocuments?: number;
+  mostReferencedDoc?: string | null;
 }
 
 export interface TopologyEdge {
@@ -30,6 +48,7 @@ export interface TopologyStats {
   /** Knowledge graph stats */
   totalEntities?: number;
   totalRelations?: number;
+  leafCount?: number;
 }
 
 export interface TopologyResponse {

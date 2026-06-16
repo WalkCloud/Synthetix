@@ -1,21 +1,15 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { LocalStorageAdapter } from "@/lib/documents/storage";
-import { resolveModel } from "@/lib/llm/resolve-model";
-import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { deleteDocumentFromRag, buildConfig } from "@/lib/rag/client";
-import type { ApiResponse } from "@/types/api";
-
-const storage = new LocalStorageAdapter();
+import { documentLifecycle } from "@/lib/documents/lifecycle";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
@@ -29,51 +23,26 @@ export async function GET(
   });
 
   if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  return NextResponse.json({
-    success: true,
-    data: { ...doc, tags: doc.tags.map((dt) => dt.tag) },
-  });
+  return successResponse({ ...doc, tags: doc.tags.map((dt) => dt.tag) });
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { id } = await params;
-  const doc = await db.document.findFirst({ where: { id, userId: user.id } });
-  if (!doc) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  const result = await documentLifecycle.deleteDocument(user.id, id);
+  if ("notFound" in result) {
+    return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  await storage.deleteDocument(id, user.id);
-  await db.document.delete({ where: { id } });
-
-  // Clean up LightRAG index (best-effort, non-blocking)
-  deleteLightRagData(id, user.id).catch(() => {});
-
-  return NextResponse.json({ success: true, data: { deleted: id } });
-}
-
-async function deleteLightRagData(docId: string, userId: string) {
-  const [embedModel, llmModel] = await Promise.all([
-    resolveModel("embedding"),
-    resolveModel("writing"),
-  ]);
-  if (!embedModel || !llmModel?.provider.apiKey) return;
-  const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-  await deleteDocumentFromRag(
-    userId,
-    await buildConfig(embedModel),
-    await buildConfig(llmModel),
-    embedDim,
-    docId,
-  );
+  return successResponse(result);
 }
