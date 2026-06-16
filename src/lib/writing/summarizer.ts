@@ -1,5 +1,5 @@
-import { resolveModel } from "@/lib/llm/resolve-model";
-import { createLLMProvider } from "@/lib/llm/factory";
+import { getLLMClient } from "@/lib/llm/client";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import type { ChatMessage } from "@/lib/llm/types";
 
 const SUMMARY_MAX_TOKENS = 300;
@@ -31,27 +31,11 @@ function buildSummaryMessages(
   return [systemMessage, userMessage];
 }
 
-async function resolveDefaultModel() {
-  const writingModel = await resolveModel("writing");
-
-  if (writingModel?.provider) {
-    return {
-      provider: createLLMProvider({
-        apiBaseUrl: writingModel.provider.apiBaseUrl,
-        apiKey: writingModel.provider.apiKey,
-      }),
-      modelId: writingModel.modelId,
-    };
-  }
-
-  throw new Error(
-    "No model available for summarization. Configure a writing or chat model in settings."
-  );
-}
-
 export async function generateSummary(
   sectionContent: string,
-  sectionTitle: string
+  sectionTitle: string,
+  userId?: string,
+  referenceId?: string,
 ): Promise<string> {
   if (!sectionContent.trim()) {
     throw new Error("Cannot generate summary: section content is empty.");
@@ -61,7 +45,7 @@ export async function generateSummary(
     throw new Error("Cannot generate summary: section title is empty.");
   }
 
-  const { provider, modelId } = await resolveDefaultModel();
+  const { provider, modelId, modelConfigId } = await getLLMClient("writing", userId);
 
   const messages = buildSummaryMessages(sectionContent, sectionTitle);
 
@@ -77,6 +61,17 @@ export async function generateSummary(
 
     if (!summary) {
       throw new Error("Model returned empty summary.");
+    }
+
+    if (userId) {
+      await recordTokenUsageSafely({
+        userId,
+        modelConfigId,
+        module: "summary",
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        referenceId,
+      });
     }
 
     return summary;

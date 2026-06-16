@@ -1,62 +1,138 @@
+import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
-import { resolveModel } from "@/lib/llm/resolve-model";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
 import {
   assembleContext,
   type ContextInput,
 } from "@/lib/writing/context";
+import type { DocumentLanguage } from "@/lib/prompts";
+import { buildEffectiveConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
 
-const RAG_REFERENCE_LIMIT = 20;
+const RAG_REFERENCE_LIMIT = 8;
+const MIN_COSINE_THRESHOLD = 0.4;
 const GENERATION_TEMPERATURE = 0.7;
 
-interface ModelResolution {
-  provider: ReturnType<typeof createLLMProvider>;
-  modelId: string;
-  modelConfigId: string;
+const SECTION_ENRICHMENT_PROMPT = `Given the document and section context, generate enrichment metadata as JSON. Output only:
+{"retrievalQuery": "optimized search query for knowledge base", "referenceHints": ["keyword1", "keyword2", "framework1"], "writingRequirements": "drafting instructions: what to cover, angle, tone, boundaries, what to avoid"}`;
+
+/** Detect document language from title/content CJK presence */
+function detectDocLocale(title: string): DocumentLanguage {
+  if (/[一-鿿぀-ヿ가-힯]/.test(title)) return "zh-CN";
+  return "en";
 }
 
-async function resolveDefaultWritingModel(): Promise<ModelResolution> {
-  const writingModel = await resolveModel("writing");
+interface RagConfig {
+  mode: "auto" | "manual" | "off";
+  documentIds: string[];
+}
 
-  if (writingModel?.provider) {
-    return {
-      provider: createLLMProvider({
-        apiBaseUrl: writingModel.provider.apiBaseUrl,
-        apiKey: writingModel.provider.apiKey,
-      }),
-      modelId: writingModel.modelId,
-      modelConfigId: writingModel.id,
-    };
+function parseKeyPoints(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [value];
+  } catch {
+    return [value];
+  }
+}
+
+interface EnrichmentResult {
+  retrievalQuery?: string;
+  referenceHints?: string[];
+  writingRequirements?: string;
+}
+
+async function enrichSectionContext(
+  section: ContextInput["section"] & { constraints?: string | null },
+  draftTitle: string,
+  provider: ReturnType<typeof createLLMProvider>,
+  modelId: string,
+): Promise<EnrichmentResult> {
+  const hidden = parseSectionConstraints(section.constraints);
+  if (hidden.retrievalQuery || hidden.referenceHints) {
+    return hidden;
   }
 
-  throw new Error(
-    "No writing model configured. Set a default writing model or add a chat-capable model in settings."
-  );
+  try {
+    const keyPoints = parseKeyPoints(section.keyPoints);
+    const context = [
+      `Document: ${draftTitle}`,
+      section.title && `Section: ${section.title}`,
+      section.description && `Scope: ${section.description}`,
+      keyPoints.length && `Key points: ${keyPoints.join(", ")}`,
+    ].filter(Boolean).join("\n");
+
+    const response = await provider.chat({
+      model: modelId,
+      messages: [
+        { role: "system", content: SECTION_ENRICHMENT_PROMPT },
+        { role: "user", content: context },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = JSON.parse(response.content.trim()) as Record<string, unknown>;
+    return {
+      retrievalQuery: typeof parsed.retrievalQuery === "string" ? parsed.retrievalQuery : undefined,
+      referenceHints: Array.isArray(parsed.referenceHints) ? parsed.referenceHints.filter((h): h is string => typeof h === "string") : undefined,
+      writingRequirements: typeof parsed.writingRequirements === "string" ? parsed.writingRequirements : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function fetchRagReferences(
   draftTitle: string,
-  sectionTitle: string,
-  sectionDescription: string | null | undefined,
-  userId: string
+  section: ContextInput["section"] & { constraints?: string | null },
+  userId: string,
+  ragConfig?: RagConfig
 ): Promise<ContextInput["ragReferences"]> {
-  const queryParts = [draftTitle, sectionTitle];
-  if (sectionDescription) {
-    queryParts.push(sectionDescription);
+  if (ragConfig?.mode === "off") {
+    return [];
   }
-  const query = queryParts.join(" ");
+
+  const hidden = parseSectionConstraints(section.constraints);
+  const keyPoints = parseKeyPoints(section.keyPoints);
+  const queryParts: string[] = [];
+
+  if (hidden.retrievalQuery?.trim()) {
+    queryParts.push(hidden.retrievalQuery.trim(), hidden.retrievalQuery.trim(), hidden.retrievalQuery.trim());
+  }
+  if (section.title) queryParts.push(section.title);
+  if (section.description) queryParts.push(section.description);
+  queryParts.push(...keyPoints);
+  if (hidden.referenceHints?.length) {
+    queryParts.push(...hidden.referenceHints);
+  }
+
+  const query = queryParts
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join(" ");
 
   try {
     const results = await semanticSearch(query, userId, RAG_REFERENCE_LIMIT);
-    return results.map((result) => ({
-      documentId: result.documentId,
-      chunkId: result.chunkId,
-      documentName: result.documentName,
-      title: result.title,
-      content: result.content,
-      score: result.score,
-    }));
+    let mapped = results
+      .filter((result) => result.score >= MIN_COSINE_THRESHOLD)
+      .map((result) => ({
+        documentId: result.documentId,
+        chunkId: result.chunkId,
+        documentName: result.documentName,
+        title: result.title,
+        content: result.content,
+        score: result.score,
+        sourceType: (result.source === "lightrag" ? "rag_graph" : "rag_chunk") as "rag_graph" | "rag_chunk",
+      }));
+
+    if (ragConfig?.mode === "manual" && ragConfig.documentIds.length > 0) {
+      const allowed = new Set(ragConfig.documentIds);
+      mapped = mapped.filter((r) => r.documentId && allowed.has(r.documentId));
+    }
+
+    return mapped;
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Unknown error";
@@ -72,29 +148,107 @@ export interface GenerationResult {
   outputTokens: number;
 }
 
-export async function generateSection(
+export interface FullGenerationResult extends GenerationResult {
+  modelConfigId: string;
+  ragReferences: ContextInput["ragReferences"];
+}
+
+function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | null }): RagConfig {
+  const mode = (section.ragMode || "auto") as RagConfig["mode"];
+  let documentIds: string[] = [];
+  try {
+    documentIds = JSON.parse(section.ragDocumentIds || "[]");
+  } catch { documentIds = []; }
+  return { mode, documentIds };
+}
+
+async function generateSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   constraints?: ContextInput["constraints"]
 ): Promise<GenerationResult> {
-  const { provider, modelId, modelConfigId } = await resolveDefaultWritingModel();
+  const result = await generateSectionFull(
+    draft,
+    section,
+    completedSections,
+    userId,
+    constraints,
+  );
+
+  return {
+    content: result.content,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+  };
+}
+
+export async function generateSectionFull(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string,
+): Promise<FullGenerationResult> {
+  let provider: ReturnType<typeof createLLMProvider>;
+  let modelId: string;
+  let modelConfigId: string;
+
+  if (customModelConfigId) {
+    const { db } = await import("@/lib/db");
+    const modelConfig = await db.modelConfig.findUnique({
+      where: { id: customModelConfigId },
+      include: { provider: true },
+    });
+    if (!modelConfig?.provider) {
+      throw new Error(`Model config ${customModelConfigId} not found`);
+    }
+    provider = createLLMProvider({
+      apiBaseUrl: modelConfig.provider.apiBaseUrl,
+      apiKey: modelConfig.provider.apiKey,
+    });
+    modelId = modelConfig.modelId;
+    modelConfigId = modelConfig.id;
+  } else {
+    const resolved = await getLLMClient("writing", userId);
+    provider = resolved.provider;
+    modelId = resolved.modelId;
+    modelConfigId = resolved.modelConfigId;
+  }
+
+  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
 
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
-    userId
+    section,
+    userId,
+    parseRagConfig(section)
   );
+
+  const baseConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
+  );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
     section,
     completedSections,
     ragReferences,
-    constraints,
-  });
+    constraints: effectiveConstraints,
+  }, detectDocLocale(draft.title));
 
   try {
     const response = await provider.chat({
@@ -109,18 +263,20 @@ export async function generateSection(
       );
     }
 
-    await recordTokenUsage({
+    await recordTokenUsageSafely({
       userId,
       modelConfigId,
       module: "writing",
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
-    }).catch(() => {});
+    });
 
     return {
       content: response.content,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
+      modelConfigId,
+      ragReferences,
     };
   } catch (error: unknown) {
     const message =
@@ -131,27 +287,69 @@ export async function generateSection(
 
 export async function generateSectionStream(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
-  constraints?: ContextInput["constraints"]
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string
 ) {
-  const { provider, modelId, modelConfigId } = await resolveDefaultWritingModel();
+  let provider: ReturnType<typeof createLLMProvider>;
+  let modelId: string;
+  let modelConfigId: string;
+
+  if (customModelConfigId) {
+    const { db } = await import("@/lib/db");
+    const modelConfig = await db.modelConfig.findUnique({
+      where: { id: customModelConfigId },
+      include: { provider: true },
+    });
+    if (!modelConfig?.provider) {
+      throw new Error(`Model config ${customModelConfigId} not found`);
+    }
+    provider = createLLMProvider({
+      apiBaseUrl: modelConfig.provider.apiBaseUrl,
+      apiKey: modelConfig.provider.apiKey,
+    });
+    modelId = modelConfig.modelId;
+    modelConfigId = modelConfig.id;
+  } else {
+    const resolved = await getLLMClient("writing", userId);
+    provider = resolved.provider;
+    modelId = resolved.modelId;
+    modelConfigId = resolved.modelConfigId;
+  }
+
+  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
 
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
-    userId
+    section,
+    userId,
+    parseRagConfig(section)
   );
+
+  const baseConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
+  );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
     section,
     completedSections,
     ragReferences,
-    constraints,
-  });
+    constraints: effectiveConstraints,
+  }, detectDocLocale(draft.title));
 
   const stream = provider.chatStream({
     model: modelId,
@@ -172,11 +370,12 @@ export interface ComparisonResult {
   outputTokensA: number;
   inputTokensB: number;
   outputTokensB: number;
+  ragReferences: ContextInput["ragReferences"];
 }
 
-export async function compareSection(
+async function compareSection(
   draft: ContextInput["draft"],
-  section: ContextInput["section"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
   completedSections: ContextInput["completedSections"],
   userId: string,
   modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
@@ -190,20 +389,37 @@ export async function compareSection(
     typeof createLLMProvider
   >;
 
+  const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
+
   const ragReferences = await fetchRagReferences(
     draft.title,
-    section.title,
-    section.description,
-    userId
+    section,
+    userId,
+    parseRagConfig(section)
   );
+
+  const baseConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
+  );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
 
   const messages = assembleContext({
     draft,
     section,
     completedSections,
     ragReferences,
-    constraints,
-  });
+    constraints: effectiveConstraints,
+  }, detectDocLocale(draft.title));
 
   const chatParams = {
     messages,
@@ -236,10 +452,144 @@ export async function compareSection(
       outputTokensA: responseA.outputTokens,
       inputTokensB: responseB.inputTokens,
       outputTokensB: responseB.outputTokens,
+      ragReferences,
     };
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Unknown error";
     throw new Error(`Section comparison failed: ${message}`);
   }
+}
+
+export interface CompareStreamCallbacks {
+  onReferences?: (refs: ContextInput["ragReferences"]) => void;
+  onChunk: (source: "a" | "b", content: string) => void;
+  onDone: (result: {
+    contentA: string;
+    contentB: string;
+    modelA: string;
+    modelB: string;
+    inputTokensA: number;
+    outputTokensA: number;
+    inputTokensB: number;
+    outputTokensB: number;
+    contentASource?: "a";
+    contentBSource?: "b";
+  }) => void;
+  onError: (source: "a" | "b", error: string) => void;
+}
+
+export async function compareSectionStream(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
+  modelBConfig: { provider: unknown; modelId: string; modelConfigId?: string },
+  constraints: ContextInput["constraints"] | undefined,
+  callbacks: CompareStreamCallbacks,
+): Promise<void> {
+  const providerA = modelAConfig.provider as ReturnType<typeof createLLMProvider>;
+  const providerB = modelBConfig.provider as ReturnType<typeof createLLMProvider>;
+
+  const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
+
+  const ragReferences = await fetchRagReferences(
+    draft.title,
+    section,
+    userId,
+    parseRagConfig(section),
+  );
+
+  callbacks.onReferences?.(ragReferences);
+
+  const baseConstraints = buildEffectiveConstraints(
+    section.constraints,
+    constraints,
+  );
+
+  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
+    ? {
+        ...baseConstraints,
+        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
+        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
+        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
+        additionalRequirements: baseConstraints?.additionalRequirements,
+      }
+    : undefined;
+
+  const messages = assembleContext({
+    draft,
+    section,
+    completedSections,
+    ragReferences,
+    constraints: effectiveConstraints,
+  }, detectDocLocale(draft.title));
+
+  const chatParams = {
+    messages,
+    temperature: GENERATION_TEMPERATURE,
+    stream: true as const,
+  };
+
+  let contentA = "";
+  let contentB = "";
+  let modelA = "";
+  let modelB = "";
+  let inputTokensA = 0;
+  let outputTokensA = 0;
+  let inputTokensB = 0;
+  let outputTokensB = 0;
+
+  await Promise.allSettled([
+    (async () => {
+      try {
+        const stream = providerA.chatStream({ ...chatParams, model: modelAConfig.modelId });
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            contentA += chunk.content;
+            callbacks.onChunk("a", chunk.content);
+          }
+          if (chunk.done) {
+            modelA = modelAConfig.modelId;
+            inputTokensA = chunk.inputTokens ?? 0;
+            outputTokensA = chunk.outputTokens ?? 0;
+          }
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        callbacks.onError("a", message);
+      }
+    })(),
+    (async () => {
+      try {
+        const stream = providerB.chatStream({ ...chatParams, model: modelBConfig.modelId });
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            contentB += chunk.content;
+            callbacks.onChunk("b", chunk.content);
+          }
+          if (chunk.done) {
+            modelB = modelBConfig.modelId;
+            inputTokensB = chunk.inputTokens ?? 0;
+            outputTokensB = chunk.outputTokens ?? 0;
+          }
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        callbacks.onError("b", message);
+      }
+    })(),
+  ]);
+
+  callbacks.onDone({
+    contentA,
+    contentB,
+    modelA,
+    modelB,
+    inputTokensA,
+    outputTokensA,
+    inputTokensB,
+    outputTokensB,
+  });
 }

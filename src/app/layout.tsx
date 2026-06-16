@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
-import { Toaster } from "sonner";
+import { Providers } from "@/components/providers";
+import { resolveLocale } from "@/lib/i18n/server";
 import "./globals.css";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -22,16 +23,17 @@ export const metadata: Metadata = {
     "Write, organize, and publish professional documents with intelligent assistance.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await resolveLocale();
+
   return (
-      <html lang="zh-CN" className={cn(plusJakartaSans.variable, inter.variable)} suppressHydrationWarning>
-      <body className="font-sans antialiased bg-base text-foreground">
-        {children}
-        <Toaster />
+    <html lang={locale} className={cn(plusJakartaSans.variable, inter.variable)} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-background text-foreground">
+        <Providers initialLocale={locale}>{children}</Providers>
       </body>
     </html>
   );

@@ -1,26 +1,21 @@
-export type DraftStatus = "drafting" | "assembling" | "completed";
+import type { DraftStatus, SectionStatus } from "@/lib/writing/status";
 
-export type SectionStatus =
-  | "pending"
-  | "retrieving"
-  | "generating"
-  | "comparing"
-  | "reviewing"
-  | "accepted"
-  | "summarized"
-  | "locked"
-  | "failed";
+export {
+  CONFIRMED_SECTION_STATUSES,
+  deriveDraftStatus,
+  isSectionDone,
+} from "@/lib/writing/status";
+export type { DraftStatus, SectionStatus } from "@/lib/writing/status";
 
 export type GenerationMode = "single" | "compare";
 
-export type VersionSource = "generated_a" | "generated_b" | "edited" | "merged";
-
-export interface SectionConstraints {
-  referenceSections: string[];
-  wordLimit: number;
-  additionalRequirements: string;
-  generationMode: GenerationMode;
+export interface ModelOption {
+  id: string;
+  modelName: string;
+  capabilities: string;
 }
+
+export type VersionSource = "generated_a" | "generated_b" | "edited";
 
 export interface DraftProgress {
   accepted: number;
@@ -44,6 +39,17 @@ export interface DraftMeta {
   progress?: DraftProgress;
 }
 
+export interface SectionReferenceMeta {
+  documentName: string;
+  relevanceScore: number;
+  sourceAnchor: string | null;
+  documentId: string | null;
+  chunkId?: string | null;
+  content: string | null;
+  sourceType?: string | null;
+  images?: Array<{ documentId: string; filename: string; url: string; altText: string | null }>;
+}
+
 export interface SectionMeta {
   id: string;
   draftId: string;
@@ -63,10 +69,13 @@ export interface SectionMeta {
   modelA: string | null;
   modelB: string | null;
   selectedModel: string | null;
+  ragMode: string;
+  ragDocumentIds: string | null;
   createdAt: string;
   updatedAt: string;
   children?: SectionMeta[];
   versions?: SectionVersionMeta[];
+  references?: SectionReferenceMeta[];
 }
 
 export interface SectionVersionMeta {
@@ -80,18 +89,19 @@ export interface SectionVersionMeta {
   createdAt: string;
 }
 
+export interface OutlineSectionData {
+  num: string;
+  title: string;
+  description?: string;
+  keyPoints?: string[];
+  estimatedWords?: number;
+  writingRequirements?: string;
+  retrievalQuery?: string;
+  referenceHints?: string[];
+  children?: OutlineSectionData[];
+}
+
 export interface OutlineData {
   title: string;
-  sections: {
-    num: string;
-    title: string;
-    keyPoints?: string[];
-    estimatedWords?: number;
-    children?: {
-      num: string;
-      title: string;
-      keyPoints?: string[];
-      estimatedWords?: number;
-    }[];
-  }[];
+  sections: OutlineSectionData[];
 }

@@ -19,7 +19,7 @@ export interface Provider {
   name: string;
   providerType: string;
   apiBaseUrl: string;
-  apiKey?: string | null;
+  hasApiKey?: boolean | null;
   isActive: boolean;
   models: ModelConfig[];
 }
@@ -35,7 +35,7 @@ export interface UsageEntry {
 }
 
 export interface ModelUsageAggregate {
-  modelConfigId: string;
+  modelConfigId: string | null;
   modelName: string;
   providerName: string;
   totalInputTokens: number;

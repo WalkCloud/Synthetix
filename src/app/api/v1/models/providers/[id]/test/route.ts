@@ -2,81 +2,15 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { getAuthUser } from "@/lib/auth/session";
-
-function normalizeBaseUrl(url: string): string {
-  return url
-    .replace(/\/+$/, "")
-    .replace(/\/v1\/(chat\/completions|embeddings?)$/, "")
-    .replace(/\/v1$/, "");
-}
-
-async function detectContextWindows(
-  baseUrl: string,
-  headers: Record<string, string>,
-  models: Array<{ id: string; modelId: string }>,
-  providerType: string,
-): Promise<Record<string, number>> {
-  const result: Record<string, number> = {};
-
-  for (const model of models) {
-    // Ollama: /api/show returns model_info with context_length
-    if (providerType === "ollama") {
-      try {
-        const showRes = await fetch(`${baseUrl}/api/show`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: model.modelId }),
-        });
-        if (showRes.ok) {
-          const data = (await showRes.json()) as {
-            model_info?: Record<string, unknown>;
-          };
-          const modelInfo = data.model_info ?? {};
-          for (const [key, value] of Object.entries(modelInfo)) {
-            if (key.endsWith(".context_length") && typeof value === "number") {
-              result[model.modelId] = value;
-              break;
-            }
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    // Check /v1/models for context info (some providers include it)
-    if (!result[model.modelId]) {
-      try {
-        const modelsRes = await fetch(`${baseUrl}/v1/models`, {
-          method: "GET",
-          headers,
-        });
-        if (modelsRes.ok) {
-          const data = (await modelsRes.json()) as {
-            data?: Array<Record<string, unknown>>;
-          };
-          const entry = (data.data ?? []).find(
-            (m) => m.id === model.modelId,
-          );
-          if (entry) {
-            const ctx =
-              entry.context_window ??
-              entry.context_length ??
-              entry.max_context_length ??
-              entry.max_model_len;
-            if (typeof ctx === "number") {
-              result[model.modelId] = ctx;
-            }
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  return result;
-}
+import { parseCapabilities } from "@/lib/llm/capabilities";
+import {
+  normalizeBaseUrl,
+  extractVersionPrefix,
+  testConnectivity,
+  detectContextWindows,
+  detectEmbeddingDim,
+} from "@/lib/llm/provider-probe";
+import { lookupEmbeddingDim, lookupContextWindow, lookupMaxOutputTokens } from "@/lib/models/model-catalog";
 
 export async function POST(
   _request: Request,
@@ -104,76 +38,80 @@ export async function POST(
 
   try {
     const baseUrl = normalizeBaseUrl(provider.apiBaseUrl);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    const ver = extractVersionPrefix(provider.apiBaseUrl);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (provider.apiKey) {
       headers["Authorization"] = `Bearer ${decrypt(provider.apiKey)}`;
     }
 
-    // Test connection via /v1/models
-    let connected = false;
-    const modelsRes = await fetch(`${baseUrl}/v1/models`, {
-      method: "GET",
-      headers,
-    });
-    if (modelsRes.ok) {
-      connected = true;
+    const conn = await testConnectivity(baseUrl, ver, headers);
+    if (!conn.connected) {
+      return NextResponse.json({ success: true, data: { connected: false, error: conn.error } });
     }
 
-    // Fallback: try embed endpoint to verify connectivity/auth
-    if (!connected) {
-      const embedRes = await fetch(`${baseUrl}/v1/embeddings`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ input: "test", model: "test" }),
-      });
-      if (embedRes.ok || embedRes.status === 400 || embedRes.status === 404) {
-        connected = true;
-      } else {
-        const errorText = await embedRes.text().catch(() => "");
-        return NextResponse.json({
-          success: true,
-          data: {
-            connected: false,
-            error: `${embedRes.status}: ${errorText.slice(0, 200)}`,
-          },
-        });
-      }
-    }
-
-    // Auto-detect context windows from provider API
     const contextWindows = await detectContextWindows(
-      baseUrl,
-      headers,
+      baseUrl, ver, headers,
       provider.models.map((m) => ({ id: m.id, modelId: m.modelId })),
       provider.providerType,
     );
 
-    // Persist detected context windows
     for (const [externalModelId, ctx] of Object.entries(contextWindows)) {
-      const config = provider.models.find(
-        (m) => m.modelId === externalModelId,
-      );
+      const config = provider.models.find((m) => m.modelId === externalModelId);
       if (config) {
-        await db.modelConfig.update({
-          where: { id: config.id },
-          data: { contextWindow: ctx },
-        });
+        await db.modelConfig.update({ where: { id: config.id }, data: { contextWindow: ctx } });
+      }
+    }
+    // Catalog fallback for models whose context window wasn't auto-detected
+    for (const m of provider.models) {
+      if ((m.contextWindow ?? 0) === 0 && !contextWindows[m.modelId]) {
+        const ctx = await lookupContextWindow(m.modelId);
+        if (ctx > 0) {
+          contextWindows[m.modelId] = ctx;
+          await db.modelConfig.update({ where: { id: m.id }, data: { contextWindow: ctx } }).catch(() => {});
+        }
+      }
+    }
+    // Catalog fallback for max output tokens
+    for (const m of provider.models) {
+      if (!m.maxOutputTokens) {
+        const mot = await lookupMaxOutputTokens(m.modelId);
+        if (mot) {
+          await db.modelConfig.update({ where: { id: m.id }, data: { maxOutputTokens: mot } }).catch(() => {});
+        }
+      }
+    }
+
+    const embedModels = provider.models.filter((m) => {
+      const caps = parseCapabilities(m.capabilities);
+      return caps.some((c) => c === "embedding" || c === "embed");
+    });
+    const embeddingDims: Record<string, number> = {};
+    const embedDimErrors: string[] = [];
+    for (const m of embedModels) {
+      const dim = await detectEmbeddingDim(baseUrl, headers, { modelId: m.modelId }, provider.apiBaseUrl);
+      if (dim !== null) {
+        embeddingDims[m.modelId] = dim;
+        await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: dim } }).catch(() => {});
+      } else {
+        // Fallback to LiteLLM catalog
+        const catalogDim = await lookupEmbeddingDim(m.modelId);
+        if (catalogDim) {
+          embeddingDims[m.modelId] = catalogDim;
+          await db.modelConfig.update({ where: { id: m.id }, data: { embeddingDim: catalogDim } }).catch(() => {});
+        } else {
+          embedDimErrors.push(`${m.modelId}: unable to detect embedding dimension`);
+        }
       }
     }
 
     return NextResponse.json({
       success: true,
-      data: { connected: true, contextWindows },
+      data: { connected: true, contextWindows, embeddingDims, embedDimErrors: embedDimErrors.length > 0 ? embedDimErrors : undefined },
     });
   } catch (err) {
     return NextResponse.json({
       success: true,
-      data: {
-        connected: false,
-        error: err instanceof Error ? err.message : String(err),
-      },
+      data: { connected: false, error: err instanceof Error ? err.message : String(err) },
     });
   }
 }

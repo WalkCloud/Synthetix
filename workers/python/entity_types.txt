@@ -1,0 +1,16 @@
+Technology
+Framework
+Architecture
+Protocol
+Pattern
+Concept
+Algorithm
+Component
+Service
+Platform
+Module
+Interface
+Strategy
+Mechanism
+Pipeline
+Workflow

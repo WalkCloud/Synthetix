@@ -9,10 +9,13 @@ export interface ChatParams {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  streamOptions?: Record<string, unknown>;
+  response_format?: { type: "json_object" } | { type: "json_schema"; json_schema: { name: string; schema: Record<string, unknown> } };
 }
 
 export interface ChatChunk {
   content: string;
+  reasoning?: string;
   done: boolean;
   inputTokens?: number;
   outputTokens?: number;
@@ -39,7 +42,7 @@ export interface ModelInfo {
 export interface LLMProvider {
   chat(params: ChatParams): Promise<ChatResponse>;
   chatStream(params: ChatParams): AsyncGenerator<ChatChunk>;
-  embed(texts: string[], model?: string): Promise<EmbedResponse>;
+  embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse>;
   testConnection(): Promise<boolean>;
   getModels(): Promise<ModelInfo[]>;
 }

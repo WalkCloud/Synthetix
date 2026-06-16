@@ -1,10 +1,11 @@
 export type TaskType =
-  | "document_upload"
   | "document_convert"
+  | "document_cleanup"
+  | "rag_embed_index"
   | "rag_index"
-  | "chapter_generate"
-  | "chapter_summarize"
-  | "outline_generate";
+  | "outline_generate"
+  | "draft_generate_all"
+  | `_test_${string}`;
 
 export type TaskStatus =
   | "pending"
@@ -13,7 +14,7 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type SplitStrategy = "structure-llm" | "heading-only" | "llm-only";
+export type SplitStrategy = "structure-llm" | "heading-only";
 export type IndexTarget = "full" | "original" | "chunks";
 export type IndexMode = "basic" | "graph";
 export type QueryMode = "local" | "global" | "hybrid" | "mix" | "naive" | "bypass";
@@ -26,6 +27,10 @@ export interface ProcessingOptions {
   indexTarget?: IndexTarget;
   indexMode?: IndexMode;
   autoSplit?: boolean;
+  // When true, ignore the Docling conversion cache and re-convert from source
+  // (e.g. after a converter upgrade). Defaults to false so reprocess of an
+  // unchanged source file is fast.
+  forceReconnect?: boolean;
 }
 
 export interface TaskPayload {

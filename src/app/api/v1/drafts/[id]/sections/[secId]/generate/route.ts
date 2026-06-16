@@ -1,149 +1,158 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
-import { recordTokenUsage } from "@/lib/llm/usage";
+import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
+import { auditSection } from "@/lib/writing/auditor";
+import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
+import { persistSectionReferences } from "@/lib/writing/persist-references";
+import { createAssetRequests } from "@/lib/writing/asset-pipeline";
+import { buildEffectiveConstraints, mergeSectionConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
+import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
+import { createOnceRecorder } from "@/lib/writing/once-recorder";
+import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
 ): Promise<Response> {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const { id: draftId, secId: sectionId } = await params;
 
-  let body: { constraints?: { wordLimit?: number; additionalRequirements?: string } };
+  let body: { constraints?: { wordLimit?: number; additionalRequirements?: string }; modelAConfigId?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     body = {};
   }
 
-  try {
-    const draft = await db.draft.findFirst({
-      where: { id: draftId, userId: user.id },
+  const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
+  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
+
+  const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
+  if (!section) return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
+
+  const constraints = body.constraints
+    ? { wordLimit: body.constraints.wordLimit, additionalRequirements: body.constraints.additionalRequirements }
+    : undefined;
+  const persistedConstraints = constraints?.additionalRequirements?.trim()
+    ? mergeSectionConstraints(section.constraints, { additionalRequirements: constraints.additionalRequirements.trim() })
+    : section.constraints;
+  const sectionForGeneration = { ...section, constraints: persistedConstraints };
+
+  const encoder = new TextEncoder();
+  let fullContent = "";
+  let inTokens = 0;
+  let outTokens = 0;
+  let modelConfigId = "";
+
+  const tokenRecorder = createOnceRecorder(async () => {
+    if (!modelConfigId) return;
+    if (inTokens === 0 && outTokens === 0) return;
+    await recordTokenUsageSafely({
+      userId: user.id, modelConfigId, module: "writing",
+      inputTokens: inTokens, outputTokens: outTokens,
     });
-    if (!draft) return NextResponse.json({ success: false, error: "Draft not found" }, { status: 404 });
+  });
 
-    const section = await db.section.findFirst({
-      where: { id: sectionId, draftId },
-    });
-    if (!section) return NextResponse.json({ success: false, error: "Section not found" }, { status: 404 });
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        await db.section.update({ where: { id: sectionId }, data: { status: "retrieving", constraints: persistedConstraints } });
 
-    await db.section.update({
-      where: { id: sectionId },
-      data: { status: "retrieving" },
-    });
+        const completedSections = await db.section.findMany({
+          where: { draftId, status: { in: ["locked", "summarized"] } },
+          select: { title: true, summary: true, status: true },
+          orderBy: { index: "asc" },
+        });
 
-    const completedSections = await db.section.findMany({
-      where: { draftId, status: { in: ["locked", "summarized"] } },
-      select: { title: true, summary: true, status: true },
-      orderBy: { index: "asc" },
-    });
+        const result = await generateSectionStream(
+          draft, sectionForGeneration, completedSections, user.id, constraints, body.modelAConfigId,
+        );
+        modelConfigId = result.modelConfigId;
 
-    const constraints = body.constraints
-      ? {
-          wordLimit: body.constraints.wordLimit,
-          additionalRequirements: body.constraints.additionalRequirements,
-        }
-      : undefined;
+        await persistSectionReferences(sectionId, result.ragReferences);
+        await db.section.update({ where: { id: sectionId }, data: { status: "generating" } });
+        controller.enqueue(encoder.encode(sseEvent("references", { references: result.ragReferences })));
 
-    const { stream, modelConfigId, ragReferences } = await generateSectionStream(
-      draft,
-      section,
-      completedSections,
-      user.id,
-      constraints
-    );
-
-    await db.sectionReference.deleteMany({ where: { sectionId } });
-    if (ragReferences.length > 0) {
-      await db.sectionReference.createMany({
-        data: ragReferences.map((ref) => ({
-          sectionId,
-          documentId: ref.documentId || null,
-          chunkId: ref.chunkId || null,
-          documentName: ref.documentName,
-          relevanceScore: ref.score,
-          sourceAnchor: ref.title || null,
-        })),
-      });
-    }
-
-    await db.section.update({
-      where: { id: sectionId },
-      data: { status: "generating" },
-    });
-
-    const encoder = new TextEncoder();
-    let fullContent = "";
-    let inTokens = 0;
-    let outTokens = 0;
-
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "references", references: ragReferences })}\n\n`));
-
-          for await (const chunk of stream) {
-            if (chunk.content) {
-              fullContent += chunk.content;
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: chunk.content })}\n\n`));
-            }
-            if (chunk.inputTokens) inTokens = chunk.inputTokens;
-            if (chunk.outputTokens) outTokens = chunk.outputTokens;
+        for await (const chunk of result.stream) {
+          if (chunk.content) {
+            fullContent += chunk.content;
+            controller.enqueue(encoder.encode(sseEvent("chunk", { content: chunk.content })));
           }
-
-          await db.section.update({
-            where: { id: sectionId },
-            data: {
-              content: fullContent,
-              wordCount: fullContent.split(/\s+/).filter(Boolean).length,
-              status: "reviewing",
-            },
-          });
-
-          await recordTokenUsage({
-            userId: user.id,
-            modelConfigId,
-            module: "writing",
-            inputTokens: inTokens,
-            outputTokens: outTokens,
-          }).catch(() => {});
-
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
-          controller.close();
-        } catch (error) {
-          await db.section.update({
-            where: { id: sectionId },
-            data: { status: "failed" },
-          }).catch(() => {});
-          const message = error instanceof Error ? error.message : "Stream failed";
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`));
-          controller.close();
+          if (chunk.reasoning) {
+            controller.enqueue(encoder.encode(sseEvent("reasoning", { content: chunk.reasoning })));
+          }
+          if (chunk.inputTokens) inTokens = chunk.inputTokens;
+          if (chunk.outputTokens) outTokens = chunk.outputTokens;
         }
-      }
-    });
 
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-      },
-    });
-  } catch (error: unknown) {
-    try {
-      await db.section.update({
-        where: { id: sectionId },
-        data: { status: "failed" },
-      });
-    } catch {}
-    
-    const message = error instanceof Error ? error.message : "Unexpected error";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
+        const contentWithRequiredDiagram = stripLeadingSectionTitle(fullContent, section.title);
+        const { diagrams, images, contentWithIds } = await createAssetRequests(
+          draftId,
+          sectionId,
+          contentWithRequiredDiagram,
+          sectionForGeneration,
+          buildEffectiveConstraints(sectionForGeneration.constraints, constraints),
+        );
+
+        const finalContent = stripLeadingSectionTitle(contentWithIds, section.title);
+
+        await db.section.update({
+          where: { id: sectionId },
+          data: {
+            content: finalContent,
+            contentA: null,
+            contentB: null,
+            modelA: null,
+            modelB: null,
+            selectedModel: null,
+            wordCount: finalContent.split(/\s+/).filter(Boolean).length,
+            status: "reviewing",
+          },
+        });
+
+        const pendingCount = diagrams.length + images.length;
+        if (pendingCount > 0) {
+          controller.enqueue(encoder.encode(sseEvent("assets", { count: pendingCount, pending: true })));
+        }
+
+        await tokenRecorder.record();
+
+        (async () => {
+          try {
+            const auditResult = await auditSection(section.title, contentWithRequiredDiagram, section.keyPoints, user.id, sectionId);
+            const current = await db.section.findUnique({ where: { id: sectionId }, select: { constraints: true } });
+            await db.section.update({
+              where: { id: sectionId },
+              data: { constraints: JSON.stringify({ ...parseSectionConstraints(current?.constraints), _audit: auditResult }) },
+            });
+          } catch (err) {
+            console.error(`Background audit failed for section ${sectionId}:`, err);
+          }
+        })();
+
+        controller.enqueue(encoder.encode(sseDone()));
+        controller.close();
+      } catch (error) {
+        await tokenRecorder.record();
+        await db.section.update({
+          where: { id: sectionId }, data: { status: "failed" },
+        }).catch((err) => { console.warn("Failed to update section status:", err); });
+        const message = error instanceof Error ? error.message : "Stream failed";
+        try { controller.enqueue(encoder.encode(sseError(message))); } catch {}
+        try { controller.close(); } catch {}
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

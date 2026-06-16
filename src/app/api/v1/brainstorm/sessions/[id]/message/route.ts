@@ -1,127 +1,178 @@
-import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { resolveModel } from "@/lib/llm/resolve-model";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
-import type { ApiResponse } from "@/types/api";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { preFetchDomainKnowledge } from "@/lib/brainstorm/domain-context";
+import { buildLengthRequirementQuestion, conversationHasLengthRequirement } from "@/lib/brainstorm/length-requirement";
+import { detectMarker, stripMarker } from "@/lib/brainstorm/markers";
+import { resolveLocale } from "@/lib/i18n/server";
+import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
+import { buildFacilitatorPrompt, resolveDocumentLanguage } from "@/lib/prompts";
+import type { ChatResponse } from "@/lib/llm/types";
 
-const FACILITATOR_PROMPT = `You are a top-tier Document Architect. Your goal is to help the user build a high-quality document outline.
+type ClientMarker = "GENERATE_DIRECT" | "SECTION_BY_SECTION" | "ALL_SECTIONS_CONFIRMED";
+type BrainstormPhase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready";
 
-Your job is to build the skeleton, not fill in the content! Do not let the user write specific content!
+const BRAINSTORM_HISTORY_LIMIT = 16;
+const BRAINSTORM_MESSAGE_CHAR_LIMIT = 6_000;
+// 1600 truncated the assistant mid-outline (a 300-page plan outline spans many
+// chapters) before it could emit the GENERATE_DIRECT marker that triggers the
+// structured outline-worker — so the outline never got generated. 8192 lets the
+// assistant finish its outline recap + emit the marker in one turn.
+const BRAINSTORM_MAX_OUTPUT_TOKENS = 8192;
 
-## Core Process (strictly follow)
+function isClientMarker(value: unknown): value is ClientMarker {
+  return value === "GENERATE_DIRECT"
+    || value === "SECTION_BY_SECTION"
+    || value === "ALL_SECTIONS_CONFIRMED";
+}
 
-### Phase 1: Understand Requirements (1-2 rounds of dialogue)
-When the user first describes their idea, quickly gather the following key information (skip if already provided):
-- **Writing context**: What is the purpose of this document? Who is the target audience?
-- **Core requirements**: What topics or chapters must be covered? Any special requirements?
-- **Length expectations**: Roughly how many words? Is it a report, white paper, thesis, or other format?
+function isBrainstormPhase(value: unknown): value is BrainstormPhase {
+  return value === "gathering"
+    || value === "direction"
+    || value === "mode_select"
+    || value === "section_refine"
+    || value === "ready";
+}
 
-**Note**: Use brief, natural dialogue to gather info. Don't throw all questions at once! Respond to the user's idea first, then ask 1-2 targeted questions.
-If the user uploaded a document, extract this information directly from the document content without asking.
+function trimMessageContent(content: string): string {
+  if (content.length <= BRAINSTORM_MESSAGE_CHAR_LIMIT) return content;
+  return `${content.slice(0, BRAINSTORM_MESSAGE_CHAR_LIMIT)}\n\n[Earlier content truncated to keep the brainstorming context responsive.]`;
+}
 
-### Phase 2: Generate Outline
-Once you fully understand the requirements, provide an initial outline suggestion.
-- Use Markdown lists for chapter titles and brief descriptions.
-- At the end, ask: “Is this structure direction right? Do you want to add or remove any chapters, or should I generate the final outline?”
+function isTransientLLMError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|terminated|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timeout|aborted/i.test(message);
+}
 
-### Phase 3: Iterative Revision
-The user will suggest modifications to your outline. Adjust based on their feedback and show the complete revised version again.
-
-## Trigger Condition
-When you feel the outline structure is essentially ready, or the user explicitly confirms the outline and asks you to generate it, immediately append the marker at the end of your reply: OUTLINE_REQUESTED
-
-If the user confirms the current outline, reply directly: OUTLINE_REQUESTED
-
-## Response Principles
-- Keep each reply concise and clear, avoid lengthy responses
-- Use chapter-level Markdown lists for the outline, do not expand into content
-- Always reply in the SAME LANGUAGE as the user's input. If the user speaks Chinese, you MUST reply in Chinese. If English, reply in English. Maintain a professional and efficient tone.`;
+async function runBrainstormCompletion(
+  provider: ReturnType<typeof createLLMProvider>,
+  model: string,
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+): Promise<ChatResponse> {
+  try {
+    return await provider.chat({
+      model,
+      messages,
+      maxTokens: BRAINSTORM_MAX_OUTPUT_TOKENS,
+    });
+  } catch (error) {
+    if (!isTransientLLMError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return provider.chat({
+      model,
+      messages,
+      maxTokens: BRAINSTORM_MAX_OUTPUT_TOKENS,
+    });
+  }
+}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
-  if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!user) return authErrorResponse();
 
   const { id } = await params;
   const session = await db.brainstormSession.findFirst({ where: { id, userId: user.id } });
-  if (!session) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (!session) return errorResponse({ code: "notFound", message: "Not found" }, 404);
 
-  const { content } = await request.json();
-  if (!content) return NextResponse.json({ success: false, error: "Message required" }, { status: 400 });
+  let body: { content?: string; clientMarker?: unknown; phase?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return errorResponse({ code: "invalidInput", message: "Invalid request body" }, 400);
+  }
+  const { content } = body;
+  if (!content) return errorResponse({ code: "invalidInput", message: "Message required" }, 400);
+  if (body.clientMarker !== undefined && !isClientMarker(body.clientMarker)) {
+    return errorResponse({ code: "invalidInput", message: "Invalid client marker" }, 400);
+  }
+  if (body.phase !== undefined && !isBrainstormPhase(body.phase)) {
+    return errorResponse({ code: "invalidInput", message: "Invalid brainstorm phase" }, 400);
+  }
+  const clientMarker = body.clientMarker;
+  const phase = isBrainstormPhase(body.phase) ? body.phase : "gathering";
 
-  // Save user message
-  await db.message.create({
+  const userMessage = await db.message.create({
     data: { sessionId: id, role: "user", content },
   });
 
-  const chatModel = await resolveModel("chat");
-
-  if (!chatModel) {
-    return NextResponse.json({ success: false, error: "No chat model configured" }, { status: 400 });
+  if (clientMarker === "GENERATE_DIRECT" || clientMarker === "ALL_SECTIONS_CONFIRMED") {
+    return successResponse({ userMessage, message: null, marker: clientMarker });
   }
 
-  // Get conversation history
-  const history = await db.message.findMany({
-    where: { sessionId: id },
-    orderBy: { createdAt: "asc" },
-    take: 20,
+  const chatModel = await resolveModel("chat", user.id);
+  if (!chatModel) return errorResponse({ code: "modelNotConfigured", message: "No chat model configured" }, 400);
+
+  const existingCount = await db.message.count({
+    where: { sessionId: id, role: { in: ["user", "ai"] } },
   });
 
+  let ragSupplement = "";
+  if (existingCount <= 2) {
+    const ragResult = await preFetchDomainKnowledge(content, user.id);
+    if (ragResult) {
+      ragSupplement = `\n\n## Background Reference (internal only; never mention, cite, or imply that this material exists)\n${ragResult}`;
+    }
+  }
+
+  const historyDesc = await db.message.findMany({
+    where: { sessionId: id },
+    orderBy: { createdAt: "desc" },
+    take: BRAINSTORM_HISTORY_LIMIT,
+  });
+  const history = historyDesc.reverse();
+
+  const locale = resolveDocumentLanguage(resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale());
+  const facilitatorPrompt = buildFacilitatorPrompt(locale, phase);
+
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    { role: "system", content: FACILITATOR_PROMPT },
+    { role: "system", content: facilitatorPrompt + ragSupplement },
     ...history.filter((m) => m.role !== "system").map((m) => ({
       role: (m.role === "ai" ? "assistant" : "user") as "assistant" | "user",
-      content: m.content,
+      content: trimMessageContent(m.content),
     })),
   ];
 
   try {
     const provider = createLLMProvider(chatModel.provider);
-    const chunks: string[] = [];
-    let inputTokens = 0;
-    let outputTokens = 0;
+    const response = await runBrainstormCompletion(provider, chatModel.modelId, llmMessages);
+    const rawContent = response.content;
+    const marker = detectMarker(rawContent);
+    const cleanContent = stripMarker(rawContent, marker);
+    let effectiveMarker = clientMarker ?? marker;
+    let effectiveContent = cleanContent;
 
-    for await (const chunk of provider.chatStream({
-      model: chatModel.modelId,
-      messages: llmMessages,
-    })) {
-      chunks.push(chunk.content || "");
-      if (chunk.inputTokens) inputTokens = chunk.inputTokens;
-      if (chunk.outputTokens) outputTokens = chunk.outputTokens;
+    if (phase === "direction" && marker === "DIRECTION_CONFIRMED" && !conversationHasLengthRequirement(history)) {
+      effectiveMarker = null;
+      effectiveContent = buildLengthRequirementQuestion(locale);
     }
 
-    const aiContent = chunks.join("");
-
     const msg = await db.message.create({
-      data: { sessionId: id, role: "ai", content: aiContent },
+      data: { sessionId: id, role: "ai", content: effectiveContent },
     });
-
-    // Intentionally removed auto-rename. Session title will be updated when the outline is generated.
 
     await recordTokenUsage({
       userId: user.id,
       modelConfigId: chatModel.id,
       module: "brainstorm",
-      inputTokens,
-      outputTokens,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
       referenceId: id,
     }).catch(() => {});
 
-    // Check if outline was requested
-    const outlineRequested = aiContent.includes("OUTLINE_REQUESTED");
-
-    return NextResponse.json({
-      success: true,
-      data: { message: msg, outlineRequested },
-    });
+    return successResponse({ userMessage, message: msg, marker: effectiveMarker });
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : "AI response failed",
-    }, { status: 500 });
+    if (isTransientLLMError(error)) {
+      return errorResponse({
+        code: "generationFailed",
+        message: "Brainstorm response generation failed because the model service connection was interrupted. Please retry this message.",
+      }, 502);
+    }
+    return errorResponse(error);
   }
 }

@@ -1,51 +1,60 @@
-import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import type { ApiResponse } from "@/types/api";
+import { readDbGlobalConfig, writeDbGlobalConfig } from "@/lib/settings/db-config";
+import { authErrorResponse, successResponse } from "@/lib/api-helpers";
 
-export async function GET(): Promise<NextResponse<ApiResponse>> {
+export async function GET() {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const settings = readSettings(user.id);
-  return NextResponse.json({
-    success: true,
-    data: {
-      dbType: settings.dbType ?? (process.env.DATABASE_URL?.startsWith("postgresql") ? "postgresql" : "sqlite"),
-      sqlitePath: settings.sqlitePath ?? process.env.DATABASE_URL?.replace("file:", "") ?? "./dev.db",
-      pgHost: settings.pgHost ?? process.env.POSTGRES_HOST ?? "",
-      pgPort: settings.pgPort ?? parseInt(process.env.POSTGRES_PORT || "5432", 10),
-      pgDatabase: settings.pgDatabase ?? process.env.POSTGRES_DATABASE ?? "",
-      pgUser: settings.pgUser ?? process.env.POSTGRES_USER ?? "",
-      // Note: DATABASE_URL changes require server restart
-      connectionUrl: process.env.DATABASE_URL ?? "file:./dev.db",
-    },
+  const globalConfig = readDbGlobalConfig();
+
+  return successResponse({
+    dbType: settings.dbType ?? (process.env.DATABASE_URL?.startsWith("postgresql") ? "postgresql" : "sqlite"),
+    sqlitePath: settings.sqlitePath ?? process.env.DATABASE_URL?.replace("file:", "") ?? "./dev.db",
+    pgHost: settings.pgHost ?? process.env.POSTGRES_HOST ?? "",
+    pgPort: settings.pgPort ?? parseInt(process.env.POSTGRES_PORT || "5432", 10),
+    pgDatabase: settings.pgDatabase ?? process.env.POSTGRES_DATABASE ?? "",
+    pgUser: settings.pgUser ?? process.env.POSTGRES_USER ?? "",
+    pgConfigured: globalConfig?.dbType === "postgresql" && !!globalConfig.pgHost,
+    connectionUrl: process.env.DATABASE_URL ?? "file:./dev.db",
   });
 }
 
-export async function PUT(request: Request): Promise<NextResponse<ApiResponse>> {
+export async function PUT(request: Request) {
   const user = await getAuthUser();
-  if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return authErrorResponse();
 
   const body = await request.json();
-  writeSettings(user.id, {
+  const userSettings: Record<string, unknown> = {
     dbType: body.dbType,
     sqlitePath: body.sqlitePath,
     pgHost: body.pgHost,
     pgPort: body.pgPort,
     pgDatabase: body.pgDatabase,
     pgUser: body.pgUser,
-  });
+  };
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      saved: true,
-      note: "Database connection changes require a server restart to take effect.",
-    },
+  if (body.pgPassword) {
+    userSettings.pgPassword = body.pgPassword;
+  }
+
+  writeSettings(user.id, userSettings);
+
+  if (body.dbType === "postgresql" && body.pgHost && body.pgDatabase) {
+    writeDbGlobalConfig({
+      dbType: "postgresql",
+      pgHost: body.pgHost,
+      pgPort: parseInt(String(body.pgPort || "5432"), 10),
+      pgDatabase: body.pgDatabase,
+      pgUser: body.pgUser || "",
+      pgPassword: body.pgPassword || "",
+    });
+  }
+
+  return successResponse({
+    saved: true,
+    note: "Database connection changes require a server restart to take effect.",
   });
 }

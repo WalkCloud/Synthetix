@@ -36,6 +36,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
+!dev-output.log
 
 # env files (can opt-in for committing if needed)
 .env*
@@ -76,6 +78,10 @@ screenshots/
 
 # temp/test files
 tmp-*.txt
+tmp/
+tmp-chrome-profile/
+__pycache__/
+*.pyc
 test_*.ts
 test_out.txt
 
@@ -96,3 +102,4 @@ _archive/
 
 # prototype mockups (design reference only)
 prototype/
+.deepseek/

@@ -25,7 +25,6 @@ model User {
   documents  Document[]
   sessions   BrainstormSession[]
   drafts     Draft[]
-
   @@map("users")
 }
 
@@ -52,7 +51,7 @@ model ModelConfig {
   modelId           String   @map("model_id")
   modelName         String   @map("model_name")
   capabilities      String   @default("[]")
-  contextWindow     Int      @map("context_window") @default(4096)
+  contextWindow     Int      @map("context_window") @default(0)
   maxOutputTokens   Int?     @map("max_output_tokens")
   supportsStreaming  Boolean  @default(true) @map("supports_streaming")
   inputPrice        Float?   @map("input_price")
@@ -83,6 +82,8 @@ model AsyncTask {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, type, createdAt])
+  @@index([userId, createdAt])
   @@map("async_tasks")
 }
 
@@ -98,8 +99,9 @@ model TokenUsage {
   createdAt     DateTime @default(now()) @map("created_at")
 
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+  modelConfig ModelConfig?  @relation(fields: [modelConfigId], references: [id], onDelete: Cascade)
 
+  @@index([userId, createdAt])
   @@map("token_usage")
 }
 
@@ -115,16 +117,21 @@ model Document {
   markdownSize   Int?     @map("markdown_size")
   status         String   @default("uploading")
   parentId       String?  @map("parent_id")
-  tokenEstimate  Int?     @map("token_estimate")
-  wordCount      Int?     @map("word_count")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  tokenEstimate    Int?     @map("token_estimate")
+  wordCount        Int?     @map("word_count")
+  conversionMethod String?  @map("conversion_method")
+  conversionWarning String? @map("conversion_warning")
+  structurePath    String?  @map("structure_path")
+  imageManifestPath String? @map("image_manifest_path")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   children Document[]   @relation("DocumentSplit")
-  parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id])
+  parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id], onDelete: Cascade)
   chunks   DocumentChunk[]
   tags     DocumentTag[]
+  images   DocumentImage[]
 
   @@index([userId, status])
   @@index([originalHash])
@@ -195,6 +202,7 @@ model Message {
 
   session BrainstormSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@index([sessionId])
   @@map("messages")
 }
 
@@ -235,14 +243,17 @@ model Section {
   modelA          String?  @map("model_a")
   modelB          String?  @map("model_b")
   selectedModel   String?  @map("selected_model")
-  createdAt       DateTime @default(now()) @map("created_at")
+  ragMode           String   @default("auto") @map("rag_mode")
+  ragDocumentIds    String?  @map("rag_document_ids")
+  createdAt         DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   draft    Draft     @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  parent   Section?  @relation("SectionTree", fields: [parentId], references: [id])
+  parent   Section?  @relation("SectionTree", fields: [parentId], references: [id], onDelete: Cascade)
   children Section[] @relation("SectionTree")
   versions SectionVersion[]
   references SectionReference[]
+  assets     SectionAsset[]
 
   @@index([draftId, index])
   @@map("sections")
@@ -272,6 +283,9 @@ model SectionReference {
   documentName    String   @map("document_name")
   relevanceScore  Float    @map("relevance_score")
   sourceAnchor    String?  @map("source_anchor")
+  content         String?  @map("content")
+  images          String?
+  sourceType      String   @default("rag_chunk") @map("source_type") // rag_chunk | rag_graph
   createdAt       DateTime @default(now()) @map("created_at")
 
   section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
@@ -279,5 +293,50 @@ model SectionReference {
   @@index([sectionId])
   @@index([documentId])
   @@index([sectionId, documentId])
+  @@index([sourceType])
   @@map("section_references")
+}
+
+model SectionAsset {
+  id          String   @id @default(uuid())
+  draftId     String   @map("draft_id")
+  sectionId   String   @map("section_id")
+  type        String   // diagram | image | mermaid | svg
+  title       String
+  description String?
+  prompt      String?
+  path        String?
+  mimeType    String?  @map("mime_type")
+  width       Int?
+  height      Int?
+  status      String   @default("pending") // pending | generating | ready | failed
+  metadata    String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([draftId])
+  @@index([sectionId])
+  @@map("section_assets")
+}
+
+model DocumentImage {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  filename    String
+  altText     String?  @map("alt_text")
+  mimeType    String   @map("mime_type")
+  fileSize    Int      @map("file_size")
+  width       Int?
+  height      Int?
+  pageNumber  Int?     @map("page_number")
+  hash        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@unique([documentId, filename])
+  @@map("document_images")
 }

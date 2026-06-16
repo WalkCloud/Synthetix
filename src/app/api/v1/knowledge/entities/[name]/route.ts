@@ -1,56 +1,47 @@
-import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/session";
-import { resolveModel } from "@/lib/llm/resolve-model";
-import { resolveEmbeddingDim } from "@/lib/rag/dimension";
-import { getEntityDetail, buildConfig } from "@/lib/rag/client";
-import type { ApiResponse } from "@/types/api";
+import { createRagContext } from "@/lib/rag/context";
+import { manageRag } from "@/lib/rag/client";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ name: string }> },
-): Promise<NextResponse<ApiResponse>> {
+) {
   const user = await getAuthUser();
   if (!user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return authErrorResponse();
   }
 
   const { name } = await params;
   if (!name) {
-    return NextResponse.json({ success: false, error: "Entity name required" }, { status: 400 });
+    return errorResponse({ code: "invalidInput", message: "Entity name required" }, 400);
   }
 
   const { searchParams } = new URL(request.url);
   const depth = parseInt(searchParams.get("depth") || "2", 10);
   const maxNodes = parseInt(searchParams.get("max_nodes") || "100", 10);
 
-  const [embedModel, llmModel] = await Promise.all([
-    resolveModel("embedding"),
-    resolveModel("writing"),
-  ]);
-
-  if (!embedModel || !llmModel) {
-    return NextResponse.json(
-      { success: false, error: "Configure embedding and LLM models first" },
-      { status: 400 },
-    );
-  }
-
   try {
-    const embedDim = await resolveEmbeddingDim(embedModel).catch(() => 0);
-    const result = await getEntityDetail(
-      user.id,
-      await buildConfig(embedModel),
-      await buildConfig(llmModel),
-      embedDim,
-      decodeURIComponent(name),
+    const ctx = await createRagContext(user.id, { requireLlm: true });
+    const result = await manageRag({
+      userId: user.id,
+      action: "entity-detail",
+      embedConfig: ctx.embedConfig,
+      llmConfig: ctx.llmConfig!,
+      rerankConfig: ctx.rerankConfig,
+      embedDim: ctx.embedDim,
+      entityName: decodeURIComponent(name),
       depth,
       maxNodes,
-    );
-    return NextResponse.json({ success: true, data: result });
+    });
+    if (result.error) {
+      return errorResponse(result.error as string, 500);
+    }
+    return successResponse(result);
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed" },
-      { status: 500 },
-    );
+    if (error instanceof Error && error.message.includes("model configured")) {
+      return errorResponse({ code: "ragNotConfigured", message: "Configure embedding and LLM models first" }, 400);
+    }
+    return errorResponse(error);
   }
 }

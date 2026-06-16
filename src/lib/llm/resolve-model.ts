@@ -1,25 +1,53 @@
 import { db } from "@/lib/db";
+import { parseCapabilities } from "./capabilities";
 
 type ModelWithProvider = NonNullable<
   Awaited<ReturnType<typeof db.modelConfig.findFirst<{ include: { provider: true } }>>>
 >;
 
-export async function resolveModel(capability: string): Promise<ModelWithProvider | null> {
-  let model = await db.modelConfig.findFirst({
-    where: { isDefaultFor: capability },
+function defaultSlotForCapability(capability: string): "llm" | "embedding" | "image" | "rerank" {
+  if (capability === "embedding" || capability === "embed") return "embedding";
+  if (capability === "image_generation" || capability === "image") return "image";
+  if (capability === "rerank") return "rerank";
+  return "llm";
+}
+
+function matchesCapability(rawCapabilities: unknown, capability: string): boolean {
+  const caps = parseCapabilities(rawCapabilities);
+  return (
+    caps.includes(capability) ||
+    (capability === "writing" && caps.includes("chat")) ||
+    (capability === "chat" && caps.includes("writing"))
+  );
+}
+
+export async function resolveModel(capability: string, userId?: string): Promise<ModelWithProvider | null> {
+  const defaultFor = defaultSlotForCapability(capability);
+  const userFilter = userId ? { provider: { userId } } : {};
+
+  const scopedDefault = await db.modelConfig.findFirst({
+    where: { isDefaultFor: defaultFor, ...userFilter },
     include: { provider: true },
   });
 
-  if (!model) {
-    const all = await db.modelConfig.findMany({ include: { provider: true } });
-    model = all.find((m) => {
-      try { 
-        const caps = JSON.parse(m.capabilities as string);
-        if (capability === "writing" && caps.includes("chat")) return true;
-        return caps.includes(capability); 
-      } catch { return false; }
-    }) || null;
+  if (scopedDefault && matchesCapability(scopedDefault.capabilities, capability)) {
+    return scopedDefault;
   }
 
-  return model;
+  const legacyDefault = await db.modelConfig.findFirst({
+    where: { isDefaultFor: "default", ...userFilter },
+    include: { provider: true },
+  });
+
+  if (legacyDefault && matchesCapability(legacyDefault.capabilities, capability)) {
+    return legacyDefault;
+  }
+
+  const all = await db.modelConfig.findMany({
+    where: userFilter,
+    include: { provider: true },
+  });
+  return (
+    all.find((m) => matchesCapability(m.capabilities, capability)) || null
+  );
 }

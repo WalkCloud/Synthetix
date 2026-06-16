@@ -94,7 +94,7 @@ npx prisma generate
 pnpm dev
 ```
 
-Open http://localhost:3000 and use the setup wizard to create your admin account and configure your first LLM provider.
+Open http://localhost:3000. On first launch, the login page will ask you to create the local admin account. After that, use the same page to sign in and configure your first LLM provider.
 
 ## Configuration
 

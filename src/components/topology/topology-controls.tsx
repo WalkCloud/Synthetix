@@ -1,200 +1,197 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { GraphViewMode } from "@/types/topology";
+import { useLocale } from "@/lib/i18n";
 
 interface TopologyControlsProps {
-  readonly drafts: readonly { id: string; title: string }[];
-  readonly selectedDraftId: string | null;
-  readonly onDraftChange: (id: string) => void;
+  readonly mode: "documents" | "knowledge";
+  readonly drafts?: readonly { id: string; title: string }[];
+  readonly selectedDraftId?: string | null;
+  readonly onDraftChange?: (id: string) => void;
   readonly zoom: number;
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onZoomFit: () => void;
-  readonly refFilter: string;
-  readonly onRefFilterChange: (value: string) => void;
-  readonly groupBy: string;
-  readonly onGroupByChange: (value: string) => void;
-  readonly graphMode: GraphViewMode;
-  readonly onGraphModeChange: (mode: GraphViewMode) => void;
+  readonly kgSearch?: string;
+  readonly onKgSearchChange?: (val: string) => void;
+  readonly onKgSearchSubmit?: (entityName?: string) => void;
+  readonly kgCenter?: string;
+  readonly onKgCenterClear?: () => void;
+  readonly totalEntities?: number;
+  readonly totalRelations?: number;
+  readonly leafCount?: number;
 }
 
-const REF_FILTER_OPTIONS = [
-  { value: "all", label: "All References" },
-  { value: "direct", label: "Direct References" },
-  { value: "indirect", label: "Indirect References" },
-] as const;
-
-const GROUP_BY_OPTIONS = [
-  { value: "document", label: "By document" },
-  { value: "section", label: "By section" },
-  { value: "anchor", label: "By citation anchor" },
-] as const;
-
-const VIEW_OPTIONS = [
-  { value: "documents" as const, label: "Documents" },
-  { value: "knowledge" as const, label: "Knowledge Graph" },
-];
-
-
-const ICON_BUTTON_CLASSES =
-  "flex items-center justify-center w-9 h-9 rounded-lg text-[#6B6560] hover:bg-[#F4F2EF] hover:text-[#1E1B18] transition-colors cursor-pointer";
+const BAR_H = "h-8";
 
 export function TopologyControls({
+  mode,
   drafts,
   selectedDraftId,
   onDraftChange,
   onZoomIn,
   onZoomOut,
   onZoomFit,
-  refFilter,
-  onRefFilterChange,
-  groupBy,
-  onGroupByChange,
-  graphMode,
-  onGraphModeChange,
+  kgSearch,
+  onKgSearchChange,
+  onKgSearchSubmit,
+  kgCenter,
+  onKgCenterClear,
+  totalEntities,
+  totalRelations,
+  leafCount,
 }: TopologyControlsProps) {
-  return (
-    <div className="flex items-center gap-2.5 mb-4 flex-wrap">
-      {/* Graph view mode toggle */}
-      <div className="flex items-center bg-[#F4F2EF] rounded-lg p-0.5">
-        {VIEW_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onGraphModeChange(opt.value)}
-            className={`px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors cursor-pointer ${
-              graphMode === opt.value
-                ? "bg-white text-[#1E1B18] shadow-sm"
-                : "text-[#8C887F] hover:text-[#6B6560]"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+  const { locale } = useLocale();
+  const isZh = locale === "zh-CN";
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-      {/* Draft selector (documents mode only) */}
-      {graphMode === "documents" && (
+  const allEntitiesRef = useRef<string[]>([]);
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (!q || q.length < 1) { setSuggestions([]); setShowDropdown(false); return; }
+    try {
+      if (allEntitiesRef.current.length === 0) {
+        const res = await fetch("/api/v1/knowledge/entities?limit=500");
+        const d = await res.json();
+        if (d.success && Array.isArray(d.data?.entities)) {
+          allEntitiesRef.current = d.data.entities;
+        }
+      }
+      const lower = q.toLowerCase();
+      const filtered = allEntitiesRef.current.filter(e => e.toLowerCase().includes(lower)).slice(0, 8);
+      setSuggestions(filtered);
+      setShowDropdown(filtered.length > 0);
+    } catch {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "knowledge") return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [mode]);
+
+  function handleInputChange(val: string) {
+    onKgSearchChange?.(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 300);
+  }
+
+  function handleSelectSuggestion(name: string) {
+    setShowDropdown(false);
+    setSuggestions([]);
+    onKgSearchChange?.(name);
+    onKgSearchSubmit?.(name);
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 mb-4 flex-wrap h-8">
+      {mode === "documents" && drafts && onDraftChange && (
         <Select value={selectedDraftId ?? ""} onValueChange={(v) => onDraftChange(v!)}>
-          <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-            <SelectValue placeholder="Select a draft..."></SelectValue>
+          <SelectTrigger size="sm" className="w-[280px] text-[13px] bg-card cursor-pointer">
+            <SelectValue placeholder={isZh ? "选择草稿..." : "Select a draft..."}>
+              {(v: string | null) => drafts.find(d => d.id === v)?.title ?? (isZh ? "选择草稿..." : "Select a draft...")}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {drafts.map((draft) => (
-              <SelectItem key={draft.id} value={draft.id}>
-                {draft.title}
-              </SelectItem>
+              <SelectItem key={draft.id} value={draft.id}>{draft.title}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       )}
 
-      {/* Zoom controls */}
-      <div className="flex items-center gap-1 border border-[#E8E6E1] rounded-lg p-0.5">
-        <button
-          type="button"
-          onClick={onZoomIn}
-          className={ICON_BUTTON_CLASSES}
-          aria-label="Zoom in"
-          title="Zoom in"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+      {mode === "knowledge" && (
+        <div className={`relative ${BAR_H}`}>
+          <div className="relative h-full">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              type="text"
+              value={kgSearch ?? ""}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && kgSearch?.trim()) {
+                  setShowDropdown(false);
+                  onKgSearchSubmit?.(kgSearch);
+                }
+                if (e.key === "Escape") setShowDropdown(false);
+              }}
+              onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder={isZh ? "搜索实体..." : "Search entity..."}
+              className="w-[200px] h-full pl-7 pr-2 border border-border rounded-lg text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+          </div>
+          {showDropdown && suggestions.length > 0 && (
+            <div ref={dropdownRef} className="absolute top-full left-0 mt-1 w-[200px] bg-card border border-border rounded-lg shadow-lg z-50 max-h-[200px] overflow-y-auto">
+              {suggestions.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-[12px] text-foreground hover:bg-secondary truncate cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSelectSuggestion(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "knowledge" && kgCenter && (
+        <div className={`inline-flex max-w-[320px] items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-[12px] font-medium text-primary ${BAR_H}`}>
+          <span className="shrink-0">{isZh ? "聚焦" : "Focused"}:</span>
+          <span className="truncate">{kgCenter}</span>
+          <button
+            type="button"
+            onClick={onKgCenterClear}
+            className="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-primary/80 transition hover:bg-primary/15 hover:text-primary"
+            aria-label={isZh ? "返回核心图谱" : "Back to core graph"}
+            title={isZh ? "返回核心图谱" : "Back to core graph"}
           >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            <line x1="11" y1="8" x2="11" y2="14" />
-            <line x1="8" y1="11" x2="14" y2="11" />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {mode === "knowledge" && totalEntities !== undefined && totalRelations !== undefined && (
+        <span className="text-[13px] text-muted-foreground">
+          {totalEntities} {isZh ? "实体" : "entities"} &middot; {totalRelations} {isZh ? "关系" : "rels"}
+          {leafCount !== undefined && leafCount > 0 && <span className="ml-2">({leafCount} {isZh ? "已隐藏" : "hidden"})</span>}
+        </span>
+      )}
+
+      <div className={`flex items-center gap-0.5 border border-border rounded-lg p-0.5 ${BAR_H}`}>
+        <button type="button" onClick={onZoomIn} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "放大" : "Zoom in"} title={isZh ? "放大" : "Zoom in"}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
           </svg>
         </button>
-
-        <button
-          type="button"
-          onClick={onZoomOut}
-          className={ICON_BUTTON_CLASSES}
-          aria-label="Zoom out"
-          title="Zoom out"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            <line x1="8" y1="11" x2="14" y2="11" />
+        <button type="button" onClick={onZoomOut} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "缩小" : "Zoom out"} title={isZh ? "缩小" : "Zoom out"}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="8" y1="11" x2="14" y2="11" />
           </svg>
         </button>
-
-        <button
-          type="button"
-          onClick={onZoomFit}
-          className={ICON_BUTTON_CLASSES}
-          aria-label="Fit to screen"
-          title="Fit to screen"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M15 3h6v6" />
-            <path d="M9 21H3v-6" />
-            <path d="M21 3l-7 7" />
-            <path d="M3 21l7-7" />
+        <button type="button" onClick={onZoomFit} className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer" aria-label={isZh ? "适配屏幕" : "Fit to screen"} title={isZh ? "适配屏幕" : "Fit to screen"}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" />
           </svg>
         </button>
       </div>
-
-      {graphMode === "documents" && (
-        <>
-          {/* Reference filter */}
-          <Select value={refFilter} onValueChange={(v) => onRefFilterChange(v!)}>
-            <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-              <SelectValue>{(v: string | null) => REF_FILTER_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {REF_FILTER_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Group by */}
-          <Select value={groupBy} onValueChange={(v) => onGroupByChange(v!)}>
-            <SelectTrigger className="w-[150px] text-[13px] bg-white cursor-pointer">
-              <SelectValue>{(v: string | null) => GROUP_BY_OPTIONS.find(o => o.value === v)?.label ?? v}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {GROUP_BY_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
-      )}
     </div>
   );
 }

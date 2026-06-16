@@ -23,7 +23,7 @@ export function tokenizeQuery(query: string): string {
   const uniqueTokens = [...new Set(tokens)];
   if (uniqueTokens.length === 0) return "";
   if (uniqueTokens.length <= 3) {
-    return uniqueTokens.map((t) => `"${t}"`).join(" ");
+    return uniqueTokens.map((t) => `"${t}"`).join(" OR ");
   }
   const groups: string[] = [];
   const windowSize = Math.min(3, uniqueTokens.length);

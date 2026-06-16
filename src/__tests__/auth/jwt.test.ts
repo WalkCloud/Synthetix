@@ -7,7 +7,7 @@ import {
 
 describe("JWT utils", () => {
   it("should sign and verify access token", async () => {
-    const payload = { userId: "user-1", username: "admin", role: "admin" };
+    const payload = { userId: "user-1", username: "admin", role: "admin" as const };
     const token = await signAccessToken(payload);
     const decoded = await verifyToken(token);
     expect(decoded.userId).toBe("user-1");
@@ -15,7 +15,7 @@ describe("JWT utils", () => {
   });
 
   it("should sign and verify refresh token", async () => {
-    const payload = { userId: "user-1", username: "admin", role: "admin" };
+    const payload = { userId: "user-1", username: "admin", role: "admin" as const };
     const token = await signRefreshToken(payload);
     const decoded = await verifyToken(token);
     expect(decoded.userId).toBe("user-1");
