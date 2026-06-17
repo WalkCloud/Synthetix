@@ -141,6 +141,8 @@ export function StorageTab() {
             <CardSelector
               selected={storageMode === "s3"}
               onSelect={() => { setStorageMode("s3"); setStorageConfigured(!!s3Bucket); }}
+              disabled
+              badge={t.common.states.comingSoon}
               icon={<div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/35 dark:text-blue-300 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg></div>}
               title={t.settings.storage.s3Storage}
               description={t.settings.storage.s3StorageDesc}

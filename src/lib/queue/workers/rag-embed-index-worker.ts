@@ -70,9 +70,15 @@ export async function processRagEmbedIndex(
       await autoTagDocument(ctx, mdForTags);
     }
 
+    // Graph mode runs a SECOND, long phase (rag_index) after this basic pass
+    // completes. Only mark the document ready once that graph phase ALSO
+    // finishes — otherwise the doc shows "ready" (and the Processing Pipeline
+    // goes all-green) while the knowledge graph is still being extracted for
+    // ~30+ minutes. The graph worker flips "indexing_graph" -> "ready".
+    const willGraph = shouldEnqueueGraphIndex(ctx.options);
     await db.document.update({
       where: { id: ctx.docId },
-      data: { status: "ready" },
+      data: { status: willGraph ? "indexing_graph" : "ready" },
     });
     await db.asyncTask.update({
       where: { id: taskId },

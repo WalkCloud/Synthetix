@@ -65,8 +65,24 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
       },
     });
 
+    // Graph extraction is the FINAL pipeline stage. The embed worker left the
+    // document in "indexing_graph" awaiting us, so only here — once the
+    // knowledge graph is built — does the document become truly ready.
+    // (LightRAG soft-failures are non-blocking: basic indexing already
+    // succeeded, so the doc is usable and "ready" is correct.)
+    await db.document.update({
+      where: { id: ctx.docId },
+      data: { status: "ready" },
+    }).catch(() => {});
+
     return { ok: true, rag: indexResult?.rag, indexMode: indexResult?.indexMode };
   } catch (error) {
+    if (ctx.docId) {
+      await db.document.update({
+        where: { id: ctx.docId },
+        data: { status: "failed" },
+      }).catch(() => {});
+    }
     await db.asyncTask.update({
       where: { id: taskId },
       data: {
