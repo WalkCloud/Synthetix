@@ -321,6 +321,7 @@ const zhCN = {
     knowledgeGraphIndexing: "知识图谱仍在抽取中，当前进度 {progress}%。完成后会自动刷新。",
     knowledgeGraphBuilding: "知识图谱正在生成",
     knowledgeGraphRunningHint: "长文档会分批调用模型抽取实体。你可以离开此页，任务会继续运行。",
+    kgGraphHint: "滚轮缩放 · 拖拽节点排列 · 拖拽背景平移 · 双击以实体为中心",
     knowledgeGraphSlowHint: "模型响应时间比平时更久。任务仍在跟踪中，进度推进后页面会自动刷新。",
     graphStageLabel: "阶段",
     graphActive: "处理中",
