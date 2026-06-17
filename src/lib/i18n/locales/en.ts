@@ -321,6 +321,7 @@ const en = {
     knowledgeGraphIndexing: "Knowledge graph extraction is still running ({progress}%). This view will refresh automatically.",
     knowledgeGraphBuilding: "Knowledge graph is being built",
     knowledgeGraphRunningHint: "Long documents call the model in batches. You can leave this page; the task keeps running.",
+    kgGraphHint: "Scroll to zoom · drag a node to arrange · drag background to pan · double-click to focus an entity",
     knowledgeGraphSlowHint: "The model is taking longer than usual. The task is still tracked; this page will refresh when it advances.",
     graphStageLabel: "Stage",
     graphActive: "Processing",

@@ -319,6 +319,7 @@ export type TranslationSchema = {
     knowledgeGraphIndexing: string;
     knowledgeGraphBuilding: string;
     knowledgeGraphRunningHint: string;
+    kgGraphHint: string;
     knowledgeGraphSlowHint: string;
     graphStageLabel: string;
     graphActive: string;

@@ -6,7 +6,7 @@ import type { SearchResult } from "@/types/documents";
 import type { TopologyResponse } from "@/types/topology";
 import { SearchHero } from "@/components/library/search-hero";
 import { SemanticResults } from "@/components/library/semantic-results";
-import { TopologyCanvas } from "@/components/topology/topology-canvas";
+import { KnowledgeGraphCanvas, type KnowledgeGraphCanvasHandle } from "@/components/knowledge/knowledge-graph-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
 import { EntityEvidencePanel } from "@/components/topology/entity-evidence-panel";
 import { useLocale } from "@/lib/i18n";
@@ -55,7 +55,7 @@ export default function SearchPage() {
 
   const [kgTopology, setKgTopology] = useState<TopologyResponse | null>(null);
   const [kgLoading, setKgLoading] = useState(false);
-  const [kgZoom, setKgZoom] = useState(1);
+  const kgZoomRef = useRef<KnowledgeGraphCanvasHandle | null>(null);
   const [kgSearch, setKgSearch] = useState("");
   const [kgCenter, setKgCenter] = useState("");
   const [kgGraphNotice, setKgGraphNotice] = useState("");
@@ -363,10 +363,10 @@ export default function SearchPage() {
           <>
             <TopologyControls
               mode="knowledge"
-              zoom={kgZoom}
-              onZoomIn={() => setKgZoom((z) => Math.min(z + 0.2, 3))}
-              onZoomOut={() => setKgZoom((z) => Math.max(z - 0.2, 0.4))}
-              onZoomFit={() => setKgZoom(1)}
+              zoom={1}
+              onZoomIn={() => kgZoomRef.current?.zoomBy(1.2)}
+              onZoomOut={() => kgZoomRef.current?.zoomBy(1 / 1.2)}
+              onZoomFit={() => kgZoomRef.current?.zoomToFit()}
               kgSearch={kgSearch}
               onKgSearchChange={setKgSearch}
               onKgSearchSubmit={(entityName) => {
@@ -462,10 +462,9 @@ export default function SearchPage() {
               </div>
             ) : (
               <>
-                <TopologyCanvas
+                <KnowledgeGraphCanvas
                   nodes={kgTopology.nodes}
                   edges={kgTopology.edges}
-                  zoom={kgZoom}
                   selectedNodeId={kgSelectedNodeId}
                   onNodeClick={(nodeId) => {
                     if (!nodeId) {
@@ -485,8 +484,8 @@ export default function SearchPage() {
                       setKgCenter(node.id);
                     }
                   }}
+                  zoomRef={kgZoomRef}
                   entityDetailLoading={kgEntityDetailLoading}
-                  graphMode="knowledge"
                 />
                 <EntityEvidencePanel
                   node={kgTopology.nodes.find((node) => node.id === kgSelectedNodeId) || null}
