@@ -56,7 +56,20 @@ Choose the next question based on what is still missing:
 - required scope and core arguments
 - depth, tone, and style when they affect structure
 - boundaries, exclusions, evidence, implementation modules, analysis dimensions, or reader priorities
-- expected length, word count, page count, or format only if it naturally belongs in the current turn
+
+Do not ask about length together with other structural questions. First finish the non-length structural questions above.
+
+When all non-length requirements are clear, and expected length, word count, page count, or format is still unknown, ask one final standalone length question:
+Before I draft the confirmable outline, I need to confirm the document length.
+
+What approximate length do you expect for this document?
+
+A. Brief: about 2,000-3,000 words for a quick report
+B. Standard: about 5,000-8,000 words for a formal proposal
+C. Full: 10,000+ words for a detailed report, bid, or thesis-style document
+D. Other: specify page count, word count, or required format
+
+Do not append NEEDS_GATHERED in the same response as the final length question.
 
 Tailor options to the inferred archetype. Provide A/B/C/D options with line breaks.
 
@@ -83,7 +96,20 @@ D. 其他：【请用户补充说明】
 - 必须覆盖的范围和核心论点
 - 会影响结构的深度、语气和风格
 - 边界、排除项、证据材料、实施模块、分析维度或读者优先级
-- 期望篇幅、字数、页数或格式（仅在当前轮次自然适合时询问）
+
+不要把篇幅/字数/页数和其他结构问题混在同一轮询问。先问完上面的非篇幅结构问题。
+
+当非篇幅结构需求已经清楚，但篇幅、字数、页数或格式仍未知时，最后一个独立问题必须只问篇幅：
+在形成可确认的大纲前，还需要确认文档篇幅。
+
+你期望这份文档的大致篇幅是多少？
+
+A. 简版：约 2,000-3,000 字，适合快速汇报
+B. 标准版：约 5,000-8,000 字，适合正式方案
+C. 完整版：10,000 字以上，适合详细报告、投标文件或论文式材料
+D. 其他：请说明页数、字数或格式要求
+
+提出最后的篇幅问题时，不要在同一条回复中追加 NEEDS_GATHERED。
 
 选项必须贴合推断出的文档原型。提供分行展示的 A/B/C/D 选项。
 
@@ -93,26 +119,9 @@ NEEDS_GATHERED`,
   "brainstorm-direction": {
     en: `Current task: outline direction selection.
 
-Based on the confirmed requirements, provide 2-3 tailored outline structure options. Each option must include:
-- core organizing idea
-- a 3-5 major-section skeleton
-- best-fit scenario
+Based on the confirmed requirements, provide one confirmable initial outline as Markdown lists with section titles and one-sentence descriptions.
 
-Recommend one option with a short reason. Avoid generic thematic/timeline/problem-driven defaults unless they truly fit.
-
-After the user chooses and confirms a direction, check whether the conversation already includes expected length, word count, page count, or format.
-
-If length is still unknown, do not show the full initial outline yet, do not present A/B generation mode yet, and do not append DIRECTION_CONFIRMED. Ask only:
-Before choosing the final outline generation mode, I need to confirm the document length.
-
-What approximate length do you expect for this document?
-
-A. Brief: about 2,000-3,000 words for a quick report
-B. Standard: about 5,000-8,000 words for a formal proposal
-C. Full: 10,000+ words for a detailed report, bid, or thesis-style document
-D. Other: specify page count, word count, or required format
-
-After the user provides the length requirement, show a full initial outline as Markdown lists with section titles and one-sentence descriptions.
+Do not offer multiple competing outline directions. Choose the best structure yourself from the conversation, because the user has already completed the requirement questions.
 
 Then ask exactly:
 Does this outline direction look right? Should any sections be added, removed, or adjusted?
@@ -124,26 +133,9 @@ Only when the full initial outline and A/B choice are both presented, append:
 DIRECTION_CONFIRMED`,
     "zh-CN": `当前任务：大纲方向选择。
 
-基于已确认需求，提供 2-3 个定制化大纲结构方案。每个方案必须包含：
-- 核心组织思路
-- 3-5 个主要章节的高层骨架
-- 适用场景
+基于已确认需求，用 Markdown 列表提供一个可确认的初始大纲，包含章节标题和一句话描述。
 
-推荐一个方案并简述理由。不要默认套用通用主题式/时间线式/问题式，除非确实适合。
-
-用户选择并确认方向后，先检查对话中是否已经包含期望篇幅、字数、页数或格式要求。
-
-如果篇幅仍未知，不要展示完整初始大纲，不要提供 A/B 生成方式，也不要追加 DIRECTION_CONFIRMED。只询问：
-在进入最终大纲生成方式选择前，还需要确认文档篇幅。
-
-你期望这份文档的大致篇幅是多少？
-
-A. 简版：约 2,000-3,000 字，适合快速汇报
-B. 标准版：约 5,000-8,000 字，适合正式方案
-C. 完整版：10,000 字以上，适合详细报告、投标文件或论文式材料
-D. 其他：请说明页数、字数或格式要求
-
-用户提供篇幅要求后，再用 Markdown 列表展示完整初始大纲，包含章节标题和一句话描述。
+不要提供多个互相竞争的大纲方向。用户已经完成需求提问，你需要根据对话自行选择最合适的结构。
 
 然后按以下格式询问：
 这个大纲方向是否合适？是否需要增删或调整章节？

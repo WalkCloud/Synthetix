@@ -14,7 +14,7 @@ export function hasExplicitLengthRequirement(content: string): boolean {
   return ZH_LENGTH_PATTERN.test(content) || EN_LENGTH_PATTERN.test(content);
 }
 
-function asksLengthRequirement(content: string): boolean {
+export function messageAsksLengthRequirement(content: string): boolean {
   return LENGTH_QUESTION_PATTERN.test(content);
 }
 
@@ -24,19 +24,26 @@ function isOptionReplyToPreviousLengthQuestion(
 ): boolean {
   if (current.role && current.role !== "user") return false;
   if (!previous || previous.role !== "ai") return false;
-  return OPTION_REPLY_PATTERN.test(current.content.trim()) && asksLengthRequirement(previous.content);
+  return OPTION_REPLY_PATTERN.test(current.content.trim()) && messageAsksLengthRequirement(previous.content);
+}
+
+// Only a USER message that states length/word/page/format counts — the AI
+// merely ASKING about length must not be treated as a confirmed requirement.
+export function userProvidedExplicitLengthRequirement(message: BrainstormMessageLike): boolean {
+  if (message.role && message.role !== "user") return false;
+  return hasExplicitLengthRequirement(message.content);
 }
 
 export function conversationHasLengthRequirement(messages: BrainstormMessageLike[]): boolean {
   return messages.some((message, index) =>
-    hasExplicitLengthRequirement(message.content)
+    userProvidedExplicitLengthRequirement(message)
     || isOptionReplyToPreviousLengthQuestion(message, messages[index - 1])
   );
 }
 
 export function buildLengthRequirementQuestion(locale: DocumentLanguage = "en"): string {
   if (locale === "zh-CN") {
-    return `在进入最终大纲生成方式选择前，还需要确认文档篇幅。
+    return `在形成可确认的大纲前，还需要确认文档篇幅。
 
 你期望这份文档的大致篇幅是多少？
 
@@ -46,7 +53,7 @@ C. 完整版：10,000 字以上，适合详细报告、投标文件或论文式�
 D. 其他：请说明页数、字数或格式要求`;
   }
 
-  return `Before choosing the final outline generation mode, I need to confirm the document length.
+  return `Before I draft the confirmable outline, I need to confirm the document length.
 
 What approximate length do you expect for this document?
 

@@ -18,8 +18,14 @@ interface UseBrainstormChatOptions {
 }
 
 function inferModeSelectClientMarker(content: string, phase: Phase): BrainstormClientMarker | undefined {
-  if (phase !== "mode_select") return undefined;
+  if (phase !== "mode_select" && phase !== "ready_to_generate") return undefined;
   const text = content.trim();
+  if (phase === "ready_to_generate") {
+    if (/^(生成|开始生成|生成完整大纲|generate|A)(?:[\s,，.。:：]|$)/i.test(text)) {
+      return "GENERATE_DIRECT";
+    }
+    return undefined;
+  }
   if (/^A(?:[\s,，.。:：]|$)/i.test(text) || text.startsWith("直接生成完整大纲")) {
     return "GENERATE_DIRECT";
   }

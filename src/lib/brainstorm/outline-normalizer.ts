@@ -103,6 +103,35 @@ export function renumberOutlineSections(sections: OutlineSection[], prefix = "")
   });
 }
 
+// Default per-depth word estimates when the LLM omits estimatedWords.
+const DEFAULT_EW_BY_DEPTH = [2000, 800, 500, 300, 200];
+
+/**
+ * Recursively fill any missing estimatedWords by distributing the parent's
+ * estimate among its children (top-down), or falling back to a depth-based
+ * default. The LLM (doubao) often omits estimatedWords on deeply nested
+ * children; without this, draft sections get null → editor shows "No word
+ * estimate".
+ */
+export function fillMissingEstimatedWords(
+  sections: OutlineSection[],
+  parentEW: number | undefined,
+  depth: number,
+): void {
+  for (const s of sections) {
+    if (!s.estimatedWords || s.estimatedWords <= 0) {
+      s.estimatedWords = parentEW
+        ? Math.max(200, Math.round(parentEW / sections.length))
+        : (DEFAULT_EW_BY_DEPTH[depth] ?? 300);
+    }
+  }
+  for (const s of sections) {
+    if (s.children?.length) {
+      fillMissingEstimatedWords(s.children, s.estimatedWords, depth + 1);
+    }
+  }
+}
+
 export function normalizeGeneratedOutline(raw: unknown): GeneratedOutline {
   if (!isRecord(raw)) throw new Error("Outline must be a JSON object");
 
@@ -119,9 +148,12 @@ export function normalizeGeneratedOutline(raw: unknown): GeneratedOutline {
     ? buildHierarchyFromDottedNumbers(parsedSections)
     : parsedSections;
 
+  const finalSections = renumberOutlineSections(hierarchicalSections);
+  fillMissingEstimatedWords(finalSections, undefined, 0);
+
   return {
     title,
     documentType: asString(raw.documentType) || undefined,
-    sections: renumberOutlineSections(hierarchicalSections),
+    sections: finalSections,
   };
 }

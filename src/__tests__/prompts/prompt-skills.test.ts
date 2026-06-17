@@ -8,8 +8,8 @@ describe("prompt skill builders", () => {
     const prompt = buildFacilitatorPrompt("en", "gathering");
 
     expect(prompt).toContain("NEEDS_GATHERED");
-    expect(prompt).toContain("expected length, word count, page count, or format");
-    expect(prompt).toContain("only if it naturally belongs in the current turn");
+    expect(prompt).toContain("Do not ask about length together with other structural questions");
+    expect(prompt).toContain("ask one final standalone length question");
     expect(prompt).toContain("A. [option title]");
     expect(prompt).toContain("D. Other");
     expect(prompt).not.toContain("DIRECTION_CONFIRMED");
@@ -20,9 +20,8 @@ describe("prompt skill builders", () => {
     const prompt = buildFacilitatorPrompt("en", "direction");
 
     expect(prompt).toContain("outline direction selection");
-    expect(prompt).toContain("If length is still unknown");
-    expect(prompt).toContain("do not present A/B generation mode yet");
-    expect(prompt).toContain("show a full initial outline");
+    expect(prompt).toContain("provide one confirmable initial outline");
+    expect(prompt).toContain("Do not offer multiple competing outline directions");
     expect(prompt).toContain("A. Generate the complete outline directly");
     expect(prompt).toContain("B. Discuss each section first");
     expect(prompt).toContain("DIRECTION_CONFIRMED");
@@ -41,8 +40,8 @@ describe("prompt skill builders", () => {
   it("builds localized Chinese discovery prompts with length and option formatting rules", () => {
     const prompt = buildFacilitatorPrompt("zh-CN", "gathering");
 
-    expect(prompt).toContain("期望篇幅、字数、页数或格式");
-    expect(prompt).toContain("仅在当前轮次自然适合时询问");
+    expect(prompt).toContain("不要把篇幅/字数/页数和其他结构问题混在同一轮询问");
+    expect(prompt).toContain("最后一个独立问题");
     expect(prompt).toContain("A. 【选项标题】");
     expect(prompt).toContain("D. 其他");
   });
