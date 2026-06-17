@@ -16,11 +16,26 @@ interface ParsedAssetRequest {
   placement?: string;
   nodes?: unknown;
   flows?: unknown;
+  relationships?: unknown;
+  groups?: unknown;
+  boundaries?: unknown;
   markerId?: string;
 }
 
 function normalizeDiagrams(diagrams: DiagramRequest[]): ParsedAssetRequest[] {
-  return diagrams.map((d) => ({ type: "diagram" as const, title: d.title, purpose: d.purpose, raw: d.raw, diagramType: d.type, placement: d.placement, nodes: d.nodes, flows: d.flows }));
+  return diagrams.map((d) => ({
+    type: "diagram" as const,
+    title: d.title,
+    purpose: d.purpose,
+    raw: d.raw,
+    diagramType: d.type,
+    placement: d.placement,
+    nodes: d.nodes,
+    flows: d.flows,
+    relationships: d.relationships,
+    groups: d.groups,
+    boundaries: d.boundaries,
+  }));
 }
 
 function normalizeImages(images: ImageRequest[]): ParsedAssetRequest[] {
@@ -57,6 +72,9 @@ export async function createAssetRequests(
         placement: d.placement,
         nodes: d.nodes,
         flows: d.flows,
+        relationships: d.relationships,
+        groups: d.groups,
+        boundaries: d.boundaries,
       }),
     })),
     ...images.filter((i) => i.prompt).map((i) => ({

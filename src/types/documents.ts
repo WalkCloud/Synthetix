@@ -1,3 +1,5 @@
+import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
+
 export const SUPPORTED_FORMATS = [
   "pdf", "docx", "pptx", "xlsx", "html", "txt", "md"
 ] as const;
@@ -10,6 +12,7 @@ export type DocumentStatus =
   | "splitting"
   | "embedding"
   | "indexing"
+  | "indexing_graph"
   | "ready"
   | "failed";
 
@@ -28,6 +31,13 @@ export interface DocumentMeta {
   updatedAt: string;
   chunks?: ChunkMeta[];
   tags?: TagMeta[];
+  /**
+   * Task-driven Processing Pipeline view (stage dots + percentages) for the
+   * document detail page. Computed server-side from the document's real
+   * async_tasks (convert / embed-index / graph) and attached by the library
+   * document-detail API. Optional: only present on detail responses.
+   */
+  pipeline?: DocumentPipeline;
   /**
    * Position in the global document-convert queue (1-indexed). Only set when
    * `status === "queued"`. The library API computes this on the fly from

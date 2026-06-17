@@ -5,6 +5,9 @@ export interface DiagramRequest {
   placement: string;
   nodes?: string;
   flows?: string;
+  relationships?: string;
+  groups?: string;
+  boundaries?: string;
   raw: string;
 }
 
@@ -48,6 +51,9 @@ export function parseDiagramRequests(content: string): {
       placement: fields.placement || "after_current_paragraph",
       nodes: fields.nodes,
       flows: fields.flows,
+      relationships: fields.relationships,
+      groups: fields.groups,
+      boundaries: fields.boundaries,
       raw: match[0],
     });
   }
@@ -185,6 +191,9 @@ export function segmentContent(content: string): ContentSegment[] {
           placement: fields.placement || "after_current_paragraph",
           nodes: fields.nodes,
           flows: fields.flows,
+          relationships: fields.relationships,
+          groups: fields.groups,
+          boundaries: fields.boundaries,
           raw: match[0],
           markerId: fields.id,
         },

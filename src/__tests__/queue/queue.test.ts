@@ -357,4 +357,65 @@ describe("TaskQueue", () => {
     expect(bPeak).toBe(1);
     expect(totalPeak).toBe(2);
   });
+
+  // --- recoverOrphanedPhaseOne / resolveRecoveryOptions --------------------
+  // Regression: a dev-server hot-reload re-ran recoverOrphanedPhaseOne while a
+  // fresh upload's document_convert task was still pending. Recovery resubmitted
+  // with options:{}; the supersede guard then cancelled the REAL upload task
+  // (it was older) and ran the empty-options one — so indexMode:"graph" was
+  // lost and the knowledge-graph phase was never enqueued (empty KG).
+  const RECOVERY_TYPE = "document_convert";
+
+  async function createConvertTask(
+    docId: string,
+    status: string,
+    options: Record<string, unknown> = {},
+  ): Promise<string> {
+    const id = `rcv-${docId}-${Math.random().toString(36).slice(2, 8)}`;
+    await db.asyncTask.create({
+      data: {
+        id,
+        userId: TEST_USER_ID,
+        type: RECOVERY_TYPE,
+        status,
+        progress: 0,
+        inputData: JSON.stringify({ docId, options }),
+      },
+    });
+    return id;
+  }
+
+  it("resolveRecoveryOptions skips a doc that already has a pending convert task", async () => {
+    const { resolveRecoveryOptions } = await import("@/lib/queue");
+    const docId = "recovery-skip-pending";
+    const id = await createConvertTask(docId, "pending", { indexMode: "graph" });
+    try {
+      const result = await resolveRecoveryOptions(TEST_USER_ID, docId);
+      // A live task exists → recovery must NOT race it (returns null = skip).
+      expect(result).toBeNull();
+    } finally {
+      await db.asyncTask.deleteMany({ where: { id } });
+    }
+  });
+
+  it("resolveRecoveryOptions reuses options from the latest prior convert task", async () => {
+    const { resolveRecoveryOptions } = await import("@/lib/queue");
+    const docId = "recovery-reuse-options";
+    const id = await createConvertTask(docId, "completed", {
+      indexMode: "graph",
+      splitStrategy: "structure-llm",
+    });
+    try {
+      const result = await resolveRecoveryOptions(TEST_USER_ID, docId);
+      expect(result).toEqual({ indexMode: "graph", splitStrategy: "structure-llm" });
+    } finally {
+      await db.asyncTask.deleteMany({ where: { id } });
+    }
+  });
+
+  it("resolveRecoveryOptions returns empty options when no prior task exists", async () => {
+    const { resolveRecoveryOptions } = await import("@/lib/queue");
+    const result = await resolveRecoveryOptions(TEST_USER_ID, "recovery-no-task");
+    expect(result).toEqual({});
+  });
 });
