@@ -19,6 +19,8 @@
 
 # production
 /build
+# Windows-installer packaging output (multi-GB bundle — never commit)
+/dist
 
 # misc
 .DS_Store
