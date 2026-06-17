@@ -39,6 +39,21 @@ describe("section diagram requirements", () => {
     expect(content).toContain("title=Deployment Architecture diagram");
   });
 
+  it("uses topology relationships instead of flow arrows for deployment isolation diagrams", () => {
+    const content = ensureRequiredDiagramRequest(
+      "传统基础设施资源层部署现状说明烟囱式业务系统与资源池物理隔离。",
+      {
+        title: "传统基础设施资源层部署现状",
+        description: "展示烟囱式业务系统与 x86、信创多资源池的物理隔离状态，呈现资源孤岛形成逻辑",
+        keyPoints: "核心账务系统, 惠农支付系统, 网点运营系统, x86物理机资源池, VMware虚拟化资源池, 海光信创资源池, 鲲鹏信创资源池",
+      },
+    );
+
+    expect(content).toContain("type=deployment");
+    expect(content).toContain("relationships=derive topology, ownership, management scope, and isolation boundaries from the section content");
+    expect(content).not.toContain("flows=derive from the section content");
+  });
+
   it("does not duplicate existing diagram requests", () => {
     const existing = [
       "Architecture overview.",

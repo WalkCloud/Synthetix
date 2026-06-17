@@ -16,6 +16,11 @@ const DIAGRAM_KEYWORDS = [
   "layered architecture",
   "network model",
   "network topology",
+  "resource pool",
+  "resource pools",
+  "physical isolation",
+  "silo",
+  "siloed",
   "microservice",
   "cluster deployment",
   "high availability",
@@ -36,6 +41,11 @@ const DIAGRAM_KEYWORDS = [
   "\u62d3\u6251",
   "\u7f51\u7edc\u62d3\u6251",
   "\u90e8\u7f72\u62d3\u6251",
+  "\u8d44\u6e90\u6c60",
+  "\u7269\u7406\u9694\u79bb",
+  "\u8d44\u6e90\u5b64\u5c9b",
+  "\u70df\u56f1\u5f0f",
+  "\u4fe1\u521b",
   "\u6d41\u7a0b",
   "\u4e1a\u52a1\u6d41\u7a0b",
   "\u5904\u7406\u6d41\u7a0b",
@@ -101,13 +111,26 @@ function inferDiagramType(text: string): string {
   if (/flowchart|flow\s+diagram/i.test(text) || text.includes("\u6d41\u7a0b")) {
     return "flowchart";
   }
-  if (/topology|deployment/i.test(text) || text.includes("\u62d3\u6251") || text.includes("\u90e8\u7f72")) {
+  if (
+    /topology|deployment|resource\s+pools?|physical\s+isolation|siloed?/i.test(text) ||
+    text.includes("\u62d3\u6251") ||
+    text.includes("\u90e8\u7f72") ||
+    text.includes("\u8d44\u6e90\u6c60") ||
+    text.includes("\u7269\u7406\u9694\u79bb") ||
+    text.includes("\u8d44\u6e90\u5b64\u5c9b") ||
+    text.includes("\u70df\u56f1\u5f0f") ||
+    text.includes("\u4fe1\u521b")
+  ) {
     return "deployment";
   }
   if (/timeline|roadmap|milestone/i.test(text) || text.includes("\u8def\u7ebf\u56fe") || text.includes("\u9636\u6bb5")) {
     return "timeline";
   }
   return "architecture";
+}
+
+function isTopologyDiagramType(type: string): boolean {
+  return type === "architecture" || type === "deployment" || type === "component" || type === "security";
 }
 
 function compact(value: string | null | undefined, fallback: string): string {
@@ -141,7 +164,9 @@ export function ensureRequiredDiagramRequest(
     `purpose=${purpose}`,
     "placement=after_current_paragraph",
     `nodes=${nodes}`,
-    "flows=derive from the section content",
+    ...(isTopologyDiagramType(type)
+      ? ["relationships=derive topology, ownership, management scope, and isolation boundaries from the section content"]
+      : ["flows=derive from the section content"]),
     "]",
   ].join("\n");
 }
