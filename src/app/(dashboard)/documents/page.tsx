@@ -24,6 +24,11 @@ export default function DocumentsPage() {
   const [indexMode, setIndexMode] = useState<"basic" | "graph">("graph");
   const [autoSplit, setAutoSplit] = useState(true);
   const [processing, setProcessing] = useState(false);
+  // False until the first /models/providers fetch settles. Gates the
+  // "no models configured" warning so we don't flash it on every refresh
+  // while the model list is still loading (empty arrays look identical to
+  // "genuinely unconfigured" before the fetch returns).
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   const handleEmbedModelChange = useCallback((id: string) => {
     setEmbedModel(id);
@@ -67,7 +72,8 @@ export default function DocumentsPage() {
         if (defaultLlm) setLlmModel(defaultLlm.id);
         else if (llm.length > 0) setLlmModel(llm[0].id);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setModelsLoaded(true));
   }, []);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
@@ -169,6 +175,7 @@ export default function DocumentsPage() {
         <ProcessingSettings
           llmModels={llmModels} embedModels={embedModels}
           llmModel={llmModel} embedModel={embedModel}
+          modelsLoaded={modelsLoaded}
           splitStrategy={splitStrategy}
           indexTarget={indexTarget} indexMode={indexMode} autoSplit={autoSplit}
           onLlmModelChange={setLlmModel} onEmbedModelChange={handleEmbedModelChange}

@@ -25,6 +25,7 @@ interface ProcessingSettingsProps {
   embedModels: ModelOption[];
   llmModel: string;
   embedModel: string;
+  modelsLoaded: boolean;
   splitStrategy: string;
   indexTarget: string;
   indexMode: "basic" | "graph";
@@ -42,7 +43,7 @@ function formatTokens(n: number): string {
 }
 
 export function ProcessingSettings({
-  llmModels, embedModels, llmModel, embedModel,
+  llmModels, embedModels, llmModel, embedModel, modelsLoaded,
   splitStrategy, indexTarget, indexMode, autoSplit,
   onLlmModelChange, onEmbedModelChange,
   onSplitStrategyChange, onIndexTargetChange, onIndexModeChange, onAutoSplitChange,
@@ -85,22 +86,23 @@ export function ProcessingSettings({
         <h3 className="font-display text-[16px] font-semibold text-foreground">{t.documents.processing.processingSettings}</h3>
       </div>
       <div className="p-6">
-        {/* Warning banners */}
-        {hasNoModels && (
+        {/* Warning banners — hidden until models have finished loading so the
+            empty-while-fetching state isn't mistaken for "unconfigured". */}
+        {hasNoModels && modelsLoaded && (
           <div className="mb-6 px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-red-800 text-[13px]">
             <span className="font-semibold">⚠</span>{" "}
             {t.documents.processing.noModelsWarning}{" "}
             <Link href="/models" className="underline font-medium hover:text-red-900">{t.documents.processing.modelManagementLink}</Link>
           </div>
         )}
-        {!hasNoModels && hasNoEmbed && (
+        {!hasNoModels && hasNoEmbed && modelsLoaded && (
           <div className="mb-6 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-[13px]">
             <span className="font-semibold">⚠</span>{" "}
             {t.documents.processing.noEmbeddingWarning}{" "}
             <Link href="/models" className="underline font-medium hover:text-amber-900">{t.documents.processing.modelManagementLink}</Link>
           </div>
         )}
-        {!hasNoModels && !hasNoEmbed && hasNoLlm && (
+        {!hasNoModels && !hasNoEmbed && hasNoLlm && modelsLoaded && (
           <div className="mb-6 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-[13px]">
             <span className="font-semibold">⚠</span>{" "}
             {t.documents.processing.noLlmWarning}{" "}
@@ -116,7 +118,9 @@ export function ProcessingSettings({
                 <SelectValue>{modelLabel(llmModels, llmModel) || t.documents.processing.selectModel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {llmModels.length === 0 ? (
+                {!modelsLoaded ? (
+                  <SelectItem value="none" disabled>{t.common.states.loading}…</SelectItem>
+                ) : llmModels.length === 0 ? (
                   <SelectItem value="none" disabled>{t.errors.modelNotConfigured}</SelectItem>
                 ) : (
                   llmModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
@@ -131,7 +135,9 @@ export function ProcessingSettings({
                 <SelectValue>{modelLabel(embedModels, embedModel) || t.documents.processing.selectModel}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {embedModels.length === 0 ? (
+                {!modelsLoaded ? (
+                  <SelectItem value="none" disabled>{t.common.states.loading}…</SelectItem>
+                ) : embedModels.length === 0 ? (
                   <SelectItem value="none" disabled>{t.errors.modelNotConfigured}</SelectItem>
                 ) : (
                   embedModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.modelName} ({m.providerName})</SelectItem>)
