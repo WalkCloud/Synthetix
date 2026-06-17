@@ -4,7 +4,7 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { buildSkeletonOutlinePrompt, buildPartExpansionPrompt } from "@/lib/brainstorm/outline-prompt";
 import { buildSummaryPrompt, type ConversationSummary } from "@/lib/brainstorm/summary-prompt";
-import { normalizeGeneratedOutline } from "@/lib/brainstorm/outline-normalizer";
+import { normalizeGeneratedOutline, fillMissingEstimatedWords } from "@/lib/brainstorm/outline-normalizer";
 import { parseMarkdownToSections } from "@/lib/brainstorm/outline-markdown";
 import { evaluateOutlineQuality } from "@/lib/brainstorm/outline-quality";
 import { composeArchetypeKey } from "@/lib/brainstorm/archetypes";
@@ -280,6 +280,10 @@ export async function generateOutline(
   }
 
   outline.sections = renumberSections(expandedParts);
+
+  // Fill any estimatedWords gaps left by the expansion LLM (doubao often
+  // omits it on deeply nested children) so draft sections get word estimates.
+  fillMissingEstimatedWords(outline.sections, undefined, 0);
 
   onProgress(88);
 

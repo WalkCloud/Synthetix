@@ -51,7 +51,7 @@ export default function BrainstormPage() {
       case "DIRECTION_CONFIRMED": sess.setPhase("mode_select"); sess.setLoading(false); break;
       case "GENERATE_DIRECT": sess.setPhase("ready"); generateOutline(); break;
       case "SECTION_BY_SECTION": sess.setPhase("section_refine"); sess.setLoading(false); break;
-      case "ALL_SECTIONS_CONFIRMED": sess.setPhase("ready"); generateOutline(); break;
+      case "ALL_SECTIONS_CONFIRMED": sess.setPhase("ready_to_generate"); sess.setLoading(false); break;
       default: sess.setLoading(false); break;
     }
   }, [generateOutline, sess]);
@@ -355,6 +355,16 @@ export default function BrainstormPage() {
                   <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.refiningTitle}</h4>
                   <p className="max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.refiningDesc}</p>
                 </div>
+              ) : sess.phase === "ready_to_generate" ? (
+                <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"><Check className="h-7 w-7" /></div>
+                  <h4 className="mb-2 font-semibold text-foreground">{t.brainstorm.outlinePanel.readyToGenerateTitle}</h4>
+                  <p className="mb-4 max-w-[240px] text-sm leading-6 text-muted-foreground">{t.brainstorm.outlinePanel.readyToGenerateDesc}</p>
+                  <button onClick={outline.generateOutline} disabled={sess.loading}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    <FileText className="h-4 w-4" /> {t.brainstorm.outlinePanel.readyToGenerateButton}
+                  </button>
+                </div>
               ) : sess.phase === "ready" ? (
                 <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 px-4 text-center dark:bg-background/35">
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive"><RefreshCw className="h-7 w-7" /></div>
@@ -386,6 +396,12 @@ export default function BrainstormPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
+                  {!sess.outline && ["direction", "mode_select", "section_refine", "ready_to_generate"].includes(sess.phase) && (
+                    <button onClick={outline.generateOutline} disabled={sess.loading}
+                      className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
+                      <FileText className="h-4 w-4" /> {t.brainstorm.outlinePanel.escapeHatchButton}
+                    </button>
+                  )}
                   <div className="flex gap-3">
                     <button onClick={outline.startEditing} disabled={!sess.outline}
                       className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-[13px] font-semibold text-foreground/75 transition hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm dark:text-foreground dark:shadow-none">
@@ -399,7 +415,7 @@ export default function BrainstormPage() {
                   <button onClick={outline.confirmAndWrite} disabled={outline.confirming || !sess.outline}
                     className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary-600 px-3 text-[14px] font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm">
                     {outline.confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                    {outline.confirming ? t.common.states.processing + "..." : t.brainstorm.generateOutline}
+                    {outline.confirming ? t.common.states.processing + "..." : t.brainstorm.importToWriting}
                   </button>
                 </div>
               )}

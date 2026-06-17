@@ -24,6 +24,6 @@ export interface BrainstormOutline {
   sections: OutlineSection[];
 }
 
-export type Phase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready";
+export type Phase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready_to_generate" | "ready";
 
 export type BrainstormClientMarker = "GENERATE_DIRECT" | "SECTION_BY_SECTION" | "ALL_SECTIONS_CONFIRMED";
