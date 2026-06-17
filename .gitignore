@@ -105,3 +105,21 @@ _archive/
 # prototype mockups (design reference only)
 prototype/
 .deepseek/
+
+# local dev / diagnostic scripts (not for distribution)
+/inspect-*.cjs
+/poll-*.cjs
+/check-*.cjs
+/read-sec.cjs
+/reset-admin-pw.cjs
+/scripts/_check-embed.mjs
+
+# local dev tooling configs
+.opencode/
+opencode.json
+knip.json
+
+# local upload staging + transient build outputs
+/.upload-tmp/
+embedding_manifest.json
+embeddings.bin
