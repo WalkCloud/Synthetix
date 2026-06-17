@@ -397,6 +397,7 @@ export type TranslationSchema = {
     startConversation: string;
     startConversationDesc: string;
     generateOutline: string;
+    importToWriting: string;
     outlineGenerated: string;
     newSession: string;
     sessionListTitle: string;
@@ -440,6 +441,11 @@ export type TranslationSchema = {
       generationFailedDesc: string;
       previewTitle: string;
       previewDesc: string;
+      readyToGenerateTitle: string;
+      readyToGenerateDesc: string;
+      readyToGenerateButton: string;
+      escapeHatchButton: string;
+      readyHint: string;
     };
     phases: {
       exploration: string;

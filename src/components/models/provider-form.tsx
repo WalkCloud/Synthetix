@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocale } from "@/lib/i18n";
 import { parseCapabilities } from "@/lib/llm/capabilities";
+import { getProviderTypeOptions, isLocalProviderType, type ModelProviderType } from "@/lib/models/provider-types";
 import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./types";
 
 type ContextUnit = "" | "K" | "M";
@@ -84,12 +85,18 @@ function toAbsoluteValue(value: string, unit: ContextUnit): number {
 export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
   const { t } = useLocale();
   const isEdit = !!provider;
+  const providerTypeOptions = useMemo(() => getProviderTypeOptions(tab), [tab]);
+  const initialProviderType = (
+    provider?.providerType && providerTypeOptions.some((option) => option.value === provider.providerType)
+      ? provider.providerType
+      : providerTypeOptions[0]?.value ?? "ollama"
+  ) as ModelProviderType;
   const [name, setName] = useState(provider?.name || "");
-  const [providerType, setProviderType] = useState(provider?.providerType || "ollama");
+  const [providerType, setProviderType] = useState<ModelProviderType>(initialProviderType);
   const [apiBaseUrl, setApiBaseUrl] = useState(provider?.apiBaseUrl || "");
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
-  const isLocal = providerType === "ollama" || providerType === "custom";
+  const isLocal = isLocalProviderType(providerType);
   const resolvedModelType = tab === "embedding" ? "embedding" : tab === "rerank" ? "rerank" : tab === "image" ? "image" : "llm" as const;
   const [models, setModels] = useState<FormModelConfig[]>(
     provider?.models?.length
@@ -167,8 +174,9 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
 
   // Clean up timers on unmount
   useEffect(() => {
+    const timers = catalogTimers.current;
     return () => {
-      catalogTimers.current.forEach((t) => clearTimeout(t));
+      timers.forEach((t) => clearTimeout(t));
     };
   }, []);
 
@@ -285,18 +293,16 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
         </div>
         <div>
           <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.models.form.type}</label>
-          <Select value={providerType} onValueChange={(v) => setProviderType(v!)}>
+          <Select value={providerType} onValueChange={(v) => setProviderType(v as ModelProviderType)}>
             <SelectTrigger className="w-full text-sm">
               <SelectValue>{(v: string | null) => {
-                const labels: Record<string, string> = { ollama: 'Ollama', openai_compatible: 'OpenAI Compatible', anthropic: 'Anthropic', custom: 'Custom' };
-                return labels[v ?? ''] ?? v;
+                return providerTypeOptions.find((option) => option.value === v)?.label ?? v;
               }}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ollama">Ollama</SelectItem>
-              <SelectItem value="openai_compatible">OpenAI Compatible</SelectItem>
-              <SelectItem value="anthropic">Anthropic</SelectItem>
-              <SelectItem value="custom">Custom</SelectItem>
+              {providerTypeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -7,13 +7,14 @@ import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-hel
 import { preFetchDomainKnowledge } from "@/lib/brainstorm/domain-context";
 import { buildLengthRequirementQuestion, conversationHasLengthRequirement } from "@/lib/brainstorm/length-requirement";
 import { detectMarker, stripMarker } from "@/lib/brainstorm/markers";
+import { resolveBrainstormPromptPhase } from "@/lib/brainstorm/phase-routing";
 import { resolveLocale } from "@/lib/i18n/server";
 import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
 import { buildFacilitatorPrompt, resolveDocumentLanguage } from "@/lib/prompts";
 import type { ChatResponse } from "@/lib/llm/types";
 
 type ClientMarker = "GENERATE_DIRECT" | "SECTION_BY_SECTION" | "ALL_SECTIONS_CONFIRMED";
-type BrainstormPhase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready";
+type BrainstormPhase = "gathering" | "direction" | "mode_select" | "section_refine" | "ready_to_generate" | "ready";
 
 const BRAINSTORM_HISTORY_LIMIT = 16;
 const BRAINSTORM_MESSAGE_CHAR_LIMIT = 6_000;
@@ -34,6 +35,7 @@ function isBrainstormPhase(value: unknown): value is BrainstormPhase {
     || value === "direction"
     || value === "mode_select"
     || value === "section_refine"
+    || value === "ready_to_generate"
     || value === "ready";
 }
 
@@ -128,7 +130,8 @@ export async function POST(
   const history = historyDesc.reverse();
 
   const locale = resolveDocumentLanguage(resolveBrainstormLocale(request.headers.get("x-locale")) ?? await resolveLocale());
-  const facilitatorPrompt = buildFacilitatorPrompt(locale, phase);
+  const promptPhase = resolveBrainstormPromptPhase(phase, history);
+  const facilitatorPrompt = buildFacilitatorPrompt(locale, promptPhase);
 
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: facilitatorPrompt + ragSupplement },
@@ -147,7 +150,16 @@ export async function POST(
     let effectiveMarker = clientMarker ?? marker;
     let effectiveContent = cleanContent;
 
-    if (phase === "direction" && marker === "DIRECTION_CONFIRMED" && !conversationHasLengthRequirement(history)) {
+    // Server-side hard gate: never let the conversation leave the gathering
+    // phase without a user-confirmed length requirement. If the model tries to
+    // end discovery (NEEDS_GATHERED) before the user has stated length/words/
+    // pages/format, ask the length question instead of advancing.
+    if (promptPhase === "gathering" && marker === "NEEDS_GATHERED" && !conversationHasLengthRequirement(history)) {
+      effectiveMarker = null;
+      effectiveContent = buildLengthRequirementQuestion(locale);
+    }
+
+    if (promptPhase === "direction" && marker === "DIRECTION_CONFIRMED" && !conversationHasLengthRequirement(history)) {
       effectiveMarker = null;
       effectiveContent = buildLengthRequirementQuestion(locale);
     }
