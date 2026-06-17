@@ -290,6 +290,13 @@ export async function splitAndPersistChunks(
         headingPath: title,
       },
     });
+
+    // Persist the single chunk as a file too, mirroring the split branch.
+    // File-based consumers (notably rag_index.py graph extraction, which reads
+    // chunk_*.md from the doc dir) otherwise see "no chunks found" for any
+    // document small enough to skip splitting — silently producing an empty
+    // knowledge graph.
+    await storage.saveChunk(docId, 0, markdown, ctx.doc.userId);
   }
 }
 

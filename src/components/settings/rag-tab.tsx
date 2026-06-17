@@ -113,6 +113,8 @@ export function RagTab() {
             <CardSelector
               selected={ragVectorDb === "pgvector"}
               onSelect={() => { setRagVectorDb("pgvector"); setRagConfigured(!!ragPgHost); }}
+              disabled
+              badge={t.common.states.comingSoon}
               icon={<div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/35 dark:text-blue-300 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg></div>}
               title="pgvector (PostgreSQL)"
               description={t.settings.rag.pgvectorDesc}
@@ -120,6 +122,8 @@ export function RagTab() {
             <CardSelector
               selected={ragVectorDb === "milvus"}
               onSelect={() => { setRagVectorDb("milvus"); setRagConfigured(!!ragMilvusUri); }}
+              disabled
+              badge={t.common.states.comingSoon}
               icon={<div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></div>}
               title="Milvus"
               description={t.settings.rag.milvusDesc}
@@ -127,6 +131,8 @@ export function RagTab() {
             <CardSelector
               selected={ragVectorDb === "qdrant"}
               onSelect={() => { setRagVectorDb("qdrant"); setRagConfigured(!!ragQdrantUrl); }}
+              disabled
+              badge={t.common.states.comingSoon}
               icon={<div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>}
               title="Qdrant"
               description={t.settings.rag.qdrantDesc}

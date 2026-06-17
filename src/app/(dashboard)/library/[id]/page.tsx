@@ -6,10 +6,9 @@ import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
+import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
 
 type Tab = "overview" | "chunks";
-
-const PIPELINE_STAGES = ["uploading", "queued", "converting", "splitting", "embedding", "indexing"] as const;
 
 function formatBadgeColor(fmt: string): string {
   switch (fmt) {
@@ -42,8 +41,10 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     if (!doc) return;
-    const isProcessing = (PIPELINE_STAGES as readonly string[]).includes(doc.status);
-    if (!isProcessing) return;
+    // Drive polling off the REAL pipeline (task-driven) so it keeps
+    // refreshing through the graph-extraction phase — which runs AFTER the
+    // document would otherwise look "ready" when read from status alone.
+    if (!doc.pipeline?.isProcessing) return;
 
     const interval = setInterval(async () => {
       const res = await fetch(`/api/v1/library/documents/${id}`);
@@ -51,14 +52,13 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
       if (data.success) setDoc(data.data);
     }, 4000);
     return () => clearInterval(interval);
-  }, [id, doc?.status]);
+  }, [id, doc?.pipeline?.isProcessing]);
 
   if (loading) return <div><Header title={t.common.states.loading} /><LoadingState /></div>;
   if (!doc) return <div><Header title={t.errors.notFound} /><div className="p-8">{t.errors.documentNotFound}</div></div>;
 
   const chunks = doc.chunks || [];
   const isZh = locale === "zh-CN";
-  const isProcessing = (PIPELINE_STAGES as readonly string[]).includes(doc.status);
 
   const totalTokens = chunks.reduce((sum, c) => sum + (c.tokenCount || 0), 0);
 
@@ -73,16 +73,6 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     <div>
       <Header title={doc.originalName} />
       <div className="p-6 md:p-8 space-y-8">
-        {isProcessing && (
-          <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/30 rounded-xl p-4 flex items-center gap-3">
-            <svg className="animate-spin w-5 h-5 text-orange-600 dark:text-orange-400" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <span className="text-sm font-medium text-orange-700 dark:text-orange-300">{t.common.states.processing} — {doc.status}</span>
-          </div>
-        )}
-
         <div className="flex gap-0 border-b border-border mb-6">
           {tabs.map((tab) => (
             <button
@@ -161,42 +151,38 @@ function StageSpacer() {
 }
 
 interface PipelineProps {
-  doc: DocumentMeta;
-  stageKeys: string[];
-  stageStatus: (idx: number) => Stage;
+  pipeline: DocumentPipeline;
   td: Record<string, string>;
 }
 
-function Pipeline({ doc, stageKeys, stageStatus: getStageStatus, td }: PipelineProps) {
-  const splitDone = ["converting", "splitting", "embedding", "indexing", "ready"].includes(doc.status);
-  const isReady = doc.status === "ready";
+function lineColorFor(from: Stage, to: Stage): string {
+  if (from === "done" && (to === "done" || to === "active")) return "bg-emerald-300 dark:bg-emerald-700";
+  return "bg-border";
+}
 
-  const allStages = [
-    { key: "s0", label: stageKeys[0], status: getStageStatus(0) },
-    { key: "s1", label: stageKeys[1], status: getStageStatus(1) },
-    { key: "s2", label: stageKeys[2], status: getStageStatus(2) },
-    { key: "s3", label: stageKeys[3], status: getStageStatus(3) },
-    { key: "s4", label: stageKeys[4], status: getStageStatus(4) },
-  ];
-
-  const lineColorFor = (from: Stage, to: Stage): string => {
-    if (from === "done" && (to === "done" || to === "active")) return "bg-emerald-300 dark:bg-emerald-700";
-    return "bg-border";
-  };
-
+function Pipeline({ pipeline, td }: PipelineProps) {
+  const stages = pipeline.stages;
   return (
     <div className="bg-card border rounded-2xl p-6">
-      <h3 className="text-sm font-semibold text-foreground mb-6">{td.processingPipeline}</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-sm font-semibold text-foreground">{td.processingPipeline}</h3>
+        {pipeline.isProcessing && (
+          <span className="text-xs font-medium text-orange-600 dark:text-orange-400 tabular-nums">{pipeline.overallPercent}%</span>
+        )}
+      </div>
 
       <div className="flex items-start gap-0 flex-wrap justify-center">
-        {allStages.map((stage, idx) => (
+        {stages.map((stage, idx) => (
           <Fragment key={stage.key}>
             <div className="flex flex-col items-center shrink-0">
               <PipelineDot status={stage.status} />
-              <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(stage.status)}`}>{stage.label}</span>
+              <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(stage.status)}`}>{td[stage.key]}</span>
+              {stage.status === "active" && stage.progress != null && (
+                <span className="mt-0.5 text-[10px] tabular-nums text-orange-600 dark:text-orange-400">{stage.progress}%</span>
+              )}
             </div>
-            {idx < allStages.length - 1 && (
-              <div className={`w-[120px] h-[2px] mt-[10px] rounded-full transition-colors ${lineColorFor(stage.status, allStages[idx + 1].status)}`} />
+            {idx < stages.length - 1 && (
+              <div className={`w-[120px] h-[2px] mt-[10px] rounded-full transition-colors ${lineColorFor(stage.status, stages[idx + 1].status)}`} />
             )}
           </Fragment>
         ))}
@@ -214,29 +200,10 @@ function stageColor(status: Stage): string {
 
 function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, onSwitchTab }: OverviewTabProps) {
   const chunks = chunksRaw ?? [];
-  const currentStageIdx = (PIPELINE_STAGES as readonly string[]).indexOf(doc.status);
-  const isReady = doc.status === "ready";
-  const isFailed = doc.status === "failed";
-
-  function stageStatus(idx: number): "done" | "active" | "pending" | "failed" {
-    if (isReady) return "done";
-    if (isFailed) return idx < currentStageIdx ? "done" : idx === currentStageIdx ? "failed" : "pending";
-    if (currentStageIdx < 0) return "pending";
-    if (idx < currentStageIdx) return "done";
-    if (idx === currentStageIdx) return "active";
-    return "pending";
-  }
-
-  const stageKeys = [td.stageUpload, td.stageConvert, td.stageSplit, td.stageEmbed, td.stageIndex];
 
   return (
     <div className="space-y-8">
-      <Pipeline
-        doc={doc}
-        stageKeys={stageKeys}
-        stageStatus={stageStatus}
-        td={td}
-      />
+      {doc.pipeline && <Pipeline pipeline={doc.pipeline} td={td} />}
 
       {/* Key metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -268,7 +235,7 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
           <DetailField label={isZh ? "大小" : "Size"} value={format.fileSize(doc.originalSize)} />
           <DetailField
             label={isZh ? "\u72b6\u6001" : "Status"}
-            value={doc.status === "ready" ? (isZh ? "\u5c31\u7eea" : "Ready") : doc.status === "failed" ? (isZh ? "\u5931\u8d25" : "Failed") : doc.status}
+            value={doc.status === "ready" ? (isZh ? "\u5c31\u7eea" : "Ready") : doc.status === "failed" ? (isZh ? "\u5931\u8d25" : "Failed") : doc.status === "indexing_graph" ? (isZh ? "\u56fe\u8c31\u7d22\u5f15\u4e2d" : "Indexing graph") : doc.status}
             tone={doc.status === "ready" ? "success" : doc.status === "failed" ? "danger" : "warning"}
           />
           <DetailField label={isZh ? "\u4e0a\u4f20\u65f6\u95f4" : "Uploaded"} value={format.relativeTime(doc.createdAt)} />

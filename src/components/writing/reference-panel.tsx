@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
 import type { RagReferenceView } from "@/lib/writing/reference-view";
+import { buildDiagramGenerationPrompt } from "@/lib/writing/diagram-prompt";
 import { getLocalizedError, useLocale } from "@/lib/i18n";
 
 type Reference = RagReferenceView;
@@ -89,15 +90,7 @@ export function ReferencePanel({
 
   useEffect(() => {
     if (activeMarker) {
-      const p = activeMarker.params;
-      const parts: string[] = [];
-      if (p.prompt) parts.push(p.prompt);
-      if (p.type) parts.push(`${p.type} diagram`);
-      if (p.title) parts.push(`"${p.title}"`);
-      if (p.purpose) parts.push(p.purpose);
-      if (p.nodes) parts.push(`nodes: ${p.nodes}`);
-      if (p.flows) parts.push(`flows: ${p.flows}`);
-      setImagePrompt(parts.join(". "));
+      setImagePrompt(buildDiagramGenerationPrompt(activeMarker.params));
       setWorkspaceAssetId(null);
     }
   }, [activeMarker]);
@@ -195,13 +188,7 @@ export function ReferencePanel({
     if (!sectionId || !imagePrompt.trim()) return;
     setGeneratingMethod("mermaid");
     try {
-      let prompt = imagePrompt.trim();
-      if (activeMarker?.params?.nodes) {
-        prompt += `\nNodes: ${activeMarker.params.nodes}`;
-      }
-      if (activeMarker?.params?.flows) {
-        prompt += `\nFlows: ${activeMarker.params.flows}`;
-      }
+      const prompt = imagePrompt.trim();
       const codeRes = await fetch(
         `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/mermaid-generate-code`,
         {

@@ -91,6 +91,7 @@ export function DocumentTable({
     splitting: t.documents.processing.splitStrategy,
     embedding: t.models.capabilities.embedding,
     indexing: t.common.states.processing,
+    indexing_graph: t.common.states.indexingGraph,
     failed: t.common.states.failed,
   };
   const sortLabels: Record<string, string> = {
@@ -146,6 +147,7 @@ export function DocumentTable({
             <SelectItem value="splitting">{statusLabels.splitting}</SelectItem>
             <SelectItem value="embedding">{statusLabels.embedding}</SelectItem>
             <SelectItem value="indexing">{statusLabels.indexing}</SelectItem>
+            <SelectItem value="indexing_graph">{statusLabels.indexing_graph}</SelectItem>
             <SelectItem value="failed">{statusLabels.failed}</SelectItem>
           </SelectContent>
         </Select>
