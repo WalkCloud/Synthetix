@@ -35,6 +35,8 @@ export type TranslationSchema = {
       pending: string;
       completed: string;
       cancelled: string;
+      indexingGraph: string;
+      comingSoon: string;
       none: string;
       all: string;
       active: string;
@@ -278,6 +280,7 @@ export type TranslationSchema = {
       stageSplit: string;
       stageEmbed: string;
       stageIndex: string;
+      stageGraph: string;
       stageAnalyze: string;
       stageClassify: string;
       stagePersist: string;

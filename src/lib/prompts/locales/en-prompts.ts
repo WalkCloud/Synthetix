@@ -132,8 +132,9 @@ Structure:
 
 Rules:
 - Max 24 nodes, 35 arrows. Concise labels (1-4 words).
-- Every arrow needs a meaningful flow type and label.
 - Use containers to group related nodes.
+- For architecture, deployment, and topology diagrams, use containers to show layers, resource pools, trust zones, platforms, and operating domains. Arrows are optional and should mean ownership, management scope, dependency, or isolation constraints.
+- For flowchart, data-flow, and sequence diagrams, arrows should have meaningful flow types and labels.
 - All text labels MUST be in the SAME language as the user's description.`,
 
   diagramEdit: `You are a technical diagram editor. Output ONLY valid JSON — no explanation, no fences.
