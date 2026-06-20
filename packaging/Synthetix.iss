@@ -9,6 +9,11 @@
 ;    installed (they only configure their own LLM/Embedding API keys in-app).
 ;  - .env and data\ are generated at runtime by first-run.js, so they are
 ;    excluded from the payload (never ship dev secrets / dev DB).
+;
+; Versioning: the MyAppVersion / OutputBaseFilename below are PLACEHOLDERS.
+; scripts/build-installer.mjs substitutes them with the version from
+; package.json (single source of truth) into Synthetix.generated.iss before
+; compiling, so do not hand-edit the version here.
 
 #define MyAppName "Synthetix"
 #define MyAppVersion "1.0.0"
@@ -42,8 +47,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; The entire prepared bundle (node_modules, .next, runtime\python, runtime\node.exe,
 ; workers, prisma, start.bat, stop.bat, first-run.js, package.json ...).
-; "data" and ".env" are runtime-generated, so they are never shipped.
-Source: "..\dist\app\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "data,data\*,.env,.env.*"
+; "data\" and ".env" are runtime-generated, so they are never shipped.
+; IMPORTANT: the leading backslash anchors each exclude to the BUNDLE ROOT.
+; Without it, a bare "data" would also strip every node_modules\...\data\ dir
+; (fast-check, caniuse-lite, node-releases, …) and corrupt those packages.
+Source: "..\dist\app\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "\data,\data\*,.env,.env.*"
 
 [Icons]
 Name: "{group}\Synthetix"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\runtime\node.exe"; Comment: "Start Synthetix"

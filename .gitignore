@@ -21,6 +21,8 @@
 /build
 # Windows-installer packaging output (multi-GB bundle — never commit)
 /dist
+# generated Inno Setup script (produced by scripts/build-installer.mjs from the version in package.json)
+packaging/Synthetix.generated.iss
 
 # misc
 .DS_Store
