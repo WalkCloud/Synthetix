@@ -168,8 +168,13 @@ export function KnowledgeGraphCanvas({
     labelThresholdRef.current = graphData.threshold;
   }, [graphData]);
 
-  const toSim = (clientX: number, clientY: number) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
+  const toSim = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    // The pointer listeners are bound to window, so a mousemove can arrive after
+    // the canvas unmounts (e.g. tab switch / remount) while the stale listener
+    // is still being torn down. Bail out instead of crashing on null.
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
     const t = transformRef.current;
     return {
       x: (clientX - rect.left - t.x) / t.k,
@@ -239,11 +244,30 @@ export function KnowledgeGraphCanvas({
       .force("collide", forceCollide<GNode>().radius((d) => d.r + 9).iterations(3))
       .force("center", forceCenter(w / 2, h / 2))
       .alphaDecay(0.03);
-    sim.on("tick", () => scheduleDrawRef.current());
+    // Fit the view to the nodes as soon as the canvas has a real size and the
+    // nodes have begun to spread out — but early enough that the user never sees
+    // the un-scaled (k=1) initial frame. The former fixed 500ms delay showed a
+    // visible "too large then shrinks" flash; tracking the first few ticks once
+    // the layout is measured eliminates it.
+    let ticksSinceReady = -1;
+    let fitDone = false;
+    const fitOnReady = () => {
+      scheduleDrawRef.current();
+      if (fitDone) return;
+      // Wait until the ResizeObserver has measured the canvas.
+      if (sizeRef.current.w <= 0 || sizeRef.current.h <= 0) return;
+      // Let the simulation spread the nodes a few ticks so the bounding box is
+      // meaningful, then lock the fit.
+      ticksSinceReady += 1;
+      if (ticksSinceReady >= 3) {
+        fitDone = true;
+        zoomToFitInternal();
+      }
+    };
+    sim.on("tick", fitOnReady);
     simRef.current = sim;
 
-    const fitTimer = setTimeout(() => zoomToFitInternal(), 500);
-    return () => { clearTimeout(fitTimer); sim.stop(); };
+    return () => { sim.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData]);
 
@@ -433,6 +457,7 @@ export function KnowledgeGraphCanvas({
     };
     const onDown = (e: MouseEvent) => {
       const sp = toSim(e.clientX, e.clientY);
+      if (!sp) return;
       const hit = nodeAt(sp.x, sp.y);
       if (hit) {
         dragNodeRef.current = hit;
@@ -449,6 +474,7 @@ export function KnowledgeGraphCanvas({
         if (Math.hypot(dx, dy) > 3) dragMovedRef.current = true;
         if (dragMovedRef.current) {
           const sp = toSim(e.clientX, e.clientY);
+          if (!sp) return;
           const n = dragNodeRef.current;
           n.fx = sp.x; n.fy = sp.y;
           simRef.current?.alphaTarget(0.3).restart();
@@ -468,6 +494,7 @@ export function KnowledgeGraphCanvas({
         return;
       }
       const sp = toSim(e.clientX, e.clientY);
+      if (!sp) return;
       const hit = nodeAt(sp.x, sp.y);
       const id = hit?.id ?? null;
       if (id !== hoverRef.current) {
@@ -489,6 +516,7 @@ export function KnowledgeGraphCanvas({
       panRef.current.active = false;
       if (!moved) {
         const sp = toSim(e.clientX, e.clientY);
+        if (!sp) return;
         const hit = nodeAt(sp.x, sp.y);
         if (hit) onNodeClick(hit.id);
         else if (wasPanning) onNodeClick("");
@@ -496,6 +524,7 @@ export function KnowledgeGraphCanvas({
     };
     const onDbl = (e: MouseEvent) => {
       const sp = toSim(e.clientX, e.clientY);
+      if (!sp) return;
       const hit = nodeAt(sp.x, sp.y);
       if (hit && onNodeDblClick) onNodeDblClick(hit.id);
     };
