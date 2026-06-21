@@ -26,6 +26,7 @@ const en = {
       remove: "Remove",
       add: "Add",
       view: "View",
+      hide: "Hide",
       copy: "Copy",
     },
     states: {
@@ -326,6 +327,12 @@ const en = {
     graphStageLabel: "Stage",
     graphActive: "Processing",
     graphElapsed: "elapsed",
+    kgLoadingTitle: "Loading knowledge graph",
+    loadingStageInit: "Initializing retrieval engine",
+    loadingStageTraverse: "Traversing entities & relations",
+    loadingStageBuild: "Building core graph",
+    kgLoadingHint: "First load analyzes all entities (~5–15s). The result is cached, so reopening is faster.",
+    kgLoadingEstimate: "estimated",
   },
   writing: {
     title: "Document Writing",

@@ -26,6 +26,7 @@ const zhCN = {
       remove: "移除",
       add: "添加",
       view: "查看",
+      hide: "隐藏",
       copy: "复制",
     },
     states: {
@@ -326,6 +327,12 @@ const zhCN = {
     graphStageLabel: "阶段",
     graphActive: "处理中",
     graphElapsed: "已用时",
+    kgLoadingTitle: "正在加载知识图谱",
+    loadingStageInit: "初始化检索引擎",
+    loadingStageTraverse: "遍历实体与关系",
+    loadingStageBuild: "构建核心图谱",
+    kgLoadingHint: "首次加载需分析全部实体，约 5–15 秒。结果会缓存，再次打开更快。",
+    kgLoadingEstimate: "预估",
   },
   writing: {
     title: "文档撰写",
