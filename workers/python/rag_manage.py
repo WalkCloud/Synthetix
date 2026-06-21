@@ -160,6 +160,58 @@ async def action_merge_entities(rag, sources: list[str], target: str) -> dict:
         return {"error": str(e)}
 
 
+async def _top_labels_by_degree(rag, labels: list[str], limit: int) -> list[tuple[str, int]]:
+    """Return [(label, degree), ...] sorted by degree desc.
+
+    Prefers the storage backend's get_popular_labels (a single degree sweep over
+    the whole graph) and resolves each label's degree in one batch. Falls back to
+    the per-label get_knowledge_graph fan-out when the backend predates that API.
+    """
+    graph_store = getattr(rag, "chunk_entity_relation_graph", None)
+    get_popular = getattr(graph_store, "get_popular_labels", None)
+    if callable(get_popular):
+        try:
+            popular = await get_popular(limit)
+            if popular:
+                # popular is degree-sorted names; resolve degrees in one pass via
+                # node_degree (O(1) per node on NetworkX) for the score we return.
+                degree_fn = getattr(graph_store, "node_degree", None)
+                pairs: list[tuple[str, int]] = []
+                for name in popular:
+                    deg = 0
+                    if callable(degree_fn):
+                        try:
+                            deg = int(await degree_fn(name) or 0)
+                        except Exception:
+                            deg = 0
+                    pairs.append((name, deg))
+                return pairs
+        except Exception:
+            pass  # fall through to the legacy fan-out below
+
+    # Legacy fan-out (old LightRAG without get_popular_labels). Throttled to 2
+    # concurrent traversals; identical to the original implementation.
+    sem = asyncio.Semaphore(2)
+
+    async def _get_degree_pair(label: str) -> tuple[str, int]:
+        try:
+            async with sem:
+                kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
+            return (label, len(kg.edges or []))
+        except Exception:
+            return (label, 0)
+
+    candidates = labels[: min(len(labels), limit)]
+    pairs = await asyncio.gather(*[_get_degree_pair(label) for label in candidates])
+    return sorted(pairs, key=lambda x: x[1], reverse=True)
+
+
+async def _pick_top_label(rag, labels: list[str], limit: int) -> str:
+    """Return the highest-degree label, or the first label as a last resort."""
+    pairs = await _top_labels_by_degree(rag, labels, limit)
+    return pairs[0][0] if pairs else labels[0]
+
+
 async def action_graph_summary(rag) -> dict:
     """Return graph statistics: total entities, relations, and top entities by degree."""
     try:
@@ -167,23 +219,10 @@ async def action_graph_summary(rag) -> dict:
         if not labels:
             return {"entities": [], "total_entities": 0, "total_relations": 0, "top": []}
 
-        # Count degrees from the subgraph of each major entity (concurrent)
-        sem = asyncio.Semaphore(2)
-
-        async def _get_degree(label: str) -> dict | None:
-            try:
-                async with sem:
-                    kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
-                degree = len(kg.edges or [])
-                return {"name": label, "degree": degree} if degree > 0 else None
-            except Exception:
-                return None
-
-        results = await asyncio.gather(*[_get_degree(label) for label in labels[:30]])
-        top_entities = sorted(
-            [r for r in results if r is not None],
-            key=lambda x: -x["degree"],
-        )
+        # Single degree sweep via the storage backend (falls back to fan-out on
+        # old LightRAG) replaces the former 30-call get_knowledge_graph loop.
+        pairs = await _top_labels_by_degree(rag, labels, 30)
+        top_entities = [{"name": name, "degree": deg} for name, deg in pairs if deg > 0]
         return {
             "total_entities": len(labels),
             "top": top_entities[:20],
@@ -199,19 +238,10 @@ async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> di
         if not labels:
             return {"entity": "", "graph": {"nodes": [], "edges": []}}
 
-        sem = asyncio.Semaphore(2)
-
-        async def _get_degree_pair(label: str) -> tuple[str, int]:
-            try:
-                async with sem:
-                    kg = await rag.get_knowledge_graph(label, max_depth=1, max_nodes=1000)
-                return (label, len(kg.edges or []))
-            except Exception:
-                return (label, 0)
-
-        candidate_labels = labels[: min(len(labels), max(max_nodes, 100))]
-        degree_pairs = await asyncio.gather(*[_get_degree_pair(label) for label in candidate_labels])
-        best_label, best_degree = max(degree_pairs, key=lambda x: x[1])
+        # Pick the highest-degree node as the graph center. The storage backend's
+        # get_popular_labels does this in a single degree sweep; fall back to the
+        # per-label fan-out only if the method is unavailable on older LightRAG.
+        best_label = await _pick_top_label(rag, labels, max(max_nodes, 100))
 
         kg = await rag.get_knowledge_graph(best_label, max_depth=2, max_nodes=max_nodes)
 

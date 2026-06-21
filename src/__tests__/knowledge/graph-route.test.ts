@@ -25,9 +25,12 @@ vi.mock("@/lib/rag/context", () => ({
 vi.mock("@/lib/rag/client", () => ({ manageRag }));
 
 describe("GET /api/v1/knowledge/graph", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     findMany.mockReset();
     manageRag.mockReset();
+    // Fresh cache per test so order/timing never leaks across cases.
+    const { clearGraphCache } = await import("@/lib/knowledge/graph-cache");
+    clearGraphCache();
   });
 
   it("does not hide LightRAG results when the user has no documents", async () => {
@@ -48,4 +51,20 @@ describe("GET /api/v1/knowledge/graph", () => {
       minDegree: 1,
     }));
   });
+
+  it("serves a repeated identical request from cache without re-invoking manageRag", async () => {
+    const graph = { entity: "Center", graph: { nodes: [{ id: "n1" }], edges: [] }, total_entities: 1 };
+    manageRag.mockResolvedValueOnce(graph);
+    const { GET } = await import("@/app/api/v1/knowledge/graph/route");
+    const url = "http://localhost/api/v1/knowledge/graph?mode=core&min_degree=1&depth=2&max_nodes=150";
+
+    const first = await GET(new Request(url));
+    const second = await GET(new Request(url));
+
+    expect(await first.json()).toEqual({ success: true, data: graph });
+    expect(await second.json()).toEqual({ success: true, data: graph });
+    // Only the first request reaches Python; the second is served from cache.
+    expect(manageRag).toHaveBeenCalledTimes(1);
+  });
 });
+
