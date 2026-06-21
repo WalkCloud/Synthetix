@@ -24,6 +24,7 @@ export type TranslationSchema = {
       remove: string;
       add: string;
       view: string;
+      hide: string;
       copy: string;
     };
     states: {
@@ -324,6 +325,12 @@ export type TranslationSchema = {
     graphStageLabel: string;
     graphActive: string;
     graphElapsed: string;
+    kgLoadingTitle: string;
+    loadingStageInit: string;
+    loadingStageTraverse: string;
+    loadingStageBuild: string;
+    kgLoadingHint: string;
+    kgLoadingEstimate: string;
   };
   writing: {
     title: string;

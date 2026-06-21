@@ -294,9 +294,14 @@ export function DocumentTable({
                             </svg>
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold text-foreground truncate">
+                            <button
+                              type="button"
+                              onClick={() => onView(doc.id)}
+                              className="block max-w-full text-left text-sm font-semibold text-foreground hover:text-primary transition-colors truncate cursor-pointer"
+                              title={t.common.actions.view}
+                            >
                               {doc.originalName.replace(/\.[^.]+$/, "")}
-                            </div>
+                            </button>
                             <div className="text-xs text-muted-foreground truncate">{doc.originalName}</div>
                           </div>
                         </div>
