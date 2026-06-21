@@ -3,6 +3,7 @@ import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
+import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
 import { waitForDocActiveTasksToSettle } from "@/lib/documents/processing-tasks";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
@@ -166,6 +167,9 @@ export const documentLifecycle = createDocumentLifecycleService({
       embedDim: ctx.embedDim,
       docId,
     });
+    // Removing a document's entities/relations reshapes the graph; drop cached
+    // snapshots so the next read isn't stale.
+    invalidateUserGraph(userId);
   },
   async resetUserRag(userId) {
     await storage.deleteUserRagData(userId);
