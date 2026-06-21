@@ -30,26 +30,7 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
     <div className="space-y-3 animate-fade-in-up">
       {isSearching ? (
         <div className="flex flex-col items-center justify-center py-10">
-          <div className="w-full max-w-2xl space-y-4 mb-8">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-card border border-border rounded-[16px] p-5 animate-pulse">
-                <div className="flex justify-between items-center mb-3">
-                  <div className="h-5 bg-muted rounded-lg w-48" />
-                  <div className="h-6 w-20 bg-primary-100 rounded-full" />
-                </div>
-                <div className="space-y-2">
-                  <div className="h-3.5 bg-muted rounded w-full" />
-                  <div className="h-3.5 bg-muted rounded w-5/6" />
-                  <div className="h-3.5 bg-muted rounded w-4/6" />
-                </div>
-                <div className="flex gap-4 mt-3">
-                  <div className="h-3 bg-muted rounded w-24" />
-                  <div className="h-3 bg-muted rounded w-32" />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3 mb-8">
             <div className="relative">
               <div className="w-12 h-12 border-[3px] border-primary/20 rounded-full" />
               <div className="absolute inset-0 w-12 h-12 border-[3px] border-transparent border-t-primary rounded-full animate-spin" />
@@ -76,6 +57,29 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
                 ))}
               </div>
             )}
+          </div>
+          <div className="w-full max-w-2xl space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="relative bg-card border border-border rounded-[16px] p-5 animate-pulse overflow-hidden">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="h-5 bg-muted rounded-lg w-48" />
+                  <div className="h-6 w-20 bg-primary-100 rounded-full" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3.5 bg-muted rounded w-full" />
+                  <div className="h-3.5 bg-muted rounded w-5/6" />
+                  <div className="h-3.5 bg-muted rounded w-4/6" />
+                </div>
+                <div className="flex gap-4 mt-3">
+                  <div className="h-3 bg-muted rounded w-24" />
+                  <div className="h-3 bg-muted rounded w-32" />
+                </div>
+                <div
+                  className="absolute inset-0 animate-[shimmer-slide_2.5s_ease-in-out_infinite] pointer-events-none"
+                  style={{ background: "linear-gradient(90deg, transparent, rgba(124,58,237,0.07), transparent)" }}
+                />
+              </div>
+            ))}
           </div>
         </div>
       ) : needsSearchForSelectedMode ? (
