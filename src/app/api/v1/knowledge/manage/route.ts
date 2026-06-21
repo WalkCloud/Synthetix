@@ -1,6 +1,7 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
+import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function POST(request: Request) {
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
     if (result.error) {
       return errorResponse(result.error as string, 500);
     }
+    // Entity mutations change the graph topology — drop cached graphs so the
+    // next read reflects the new state instead of a stale snapshot.
+    invalidateUserGraph(user.id);
     return successResponse(result);
   } catch (error) {
     return errorResponse(error);
