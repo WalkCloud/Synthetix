@@ -13,6 +13,7 @@ import { useLocale } from "@/lib/i18n";
 import { getVisibleSearchState, type SearchMode } from "@/lib/search/display-state";
 import { getGraphProgressView, type GraphProgressView } from "@/lib/knowledge/graph-progress-view";
 import { getGraphTaskDecision, type GraphTaskStatus } from "@/lib/knowledge/graph-task-status";
+import { getKGLoadingProgress } from "@/lib/knowledge/graph-loading-stages";
 
 type TabId = "search" | "knowledge-graph";
 
@@ -69,6 +70,21 @@ export default function SearchPage() {
   const [kgEntityDetailLoading, setKgEntityDetailLoading] = useState(false);
   const [kgEvidenceChunks, setKgEvidenceChunks] = useState<EntityEvidenceChunk[]>([]);
   const kgCacheRef = useRef<TopologyResponse | null>(null);
+  const [kgLoadingElapsed, setKgLoadingElapsed] = useState(0);
+  const [kgLoadingProgress, setKgLoadingProgress] = useState(0);
+  const [kgLoadingStage, setKgLoadingStage] = useState("");
+  const kgLoadingStartRef = useRef<number | null>(null);
+  const kgLoadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopKgLoadingTimer = useCallback(() => {
+    if (kgLoadingTimerRef.current) {
+      clearInterval(kgLoadingTimerRef.current);
+      kgLoadingTimerRef.current = null;
+    }
+  }, []);
+
+  // Clear the loading timer if the component unmounts mid-fetch.
+  useEffect(() => () => { stopKgLoadingTimer(); }, [stopKgLoadingTimer]);
 
   const missingEntityMessage = useCallback((entity: string) => (
     locale === "zh-CN"
@@ -79,6 +95,19 @@ export default function SearchPage() {
   const loadKnowledgeGraph = useCallback(async (entity?: string) => {
     setKgLoading(true);
     setKgSelectedNodeId(null);
+    kgLoadingStartRef.current = Date.now();
+    setKgLoadingProgress(0);
+    setKgLoadingElapsed(0);
+    const tickLoading = () => {
+      const elapsed = Date.now() - (kgLoadingStartRef.current || Date.now());
+      const { stage, progress } = getKGLoadingProgress(elapsed);
+      setKgLoadingElapsed(elapsed);
+      setKgLoadingProgress(progress);
+      setKgLoadingStage(stage);
+    };
+    tickLoading();
+    stopKgLoadingTimer();
+    kgLoadingTimerRef.current = setInterval(tickLoading, 200);
     try {
       const params = new URLSearchParams({ depth: "2", max_nodes: "150", mode: "core", min_degree: "1" });
       if (entity) { params.set("entity", entity); params.set("mode", "graph"); }
@@ -90,7 +119,6 @@ export default function SearchPage() {
         const edges = Array.isArray(kg.edges) ? kg.edges : [];
         if (entity && nodes.length === 0) {
           setKgGraphNotice(missingEntityMessage(entity));
-          setKgLoading(false);
           return;
         }
         const stats = {
@@ -134,9 +162,12 @@ export default function SearchPage() {
         setKgGraphNotice("");
         setKgTopology(null);
       }
+    } finally {
+      stopKgLoadingTimer();
+      setKgLoadingProgress(100);
+      setKgLoading(false);
     }
-    setKgLoading(false);
-  }, [missingEntityMessage]);
+  }, [missingEntityMessage, stopKgLoadingTimer]);
 
   const loadLatestGraphTask = useCallback(async (): Promise<GraphTaskInfo | null> => {
     const res = await fetch("/api/v1/tasks?type=rag_index&limit=1");
@@ -443,10 +474,57 @@ export default function SearchPage() {
               </div>
             )}
             {kgLoading && !kgTopology ? (
-              <div className="flex items-center justify-center min-h-[560px]">
-                <div className="text-center text-muted-foreground">
-                  <div className="w-10 h-10 mx-auto mb-3 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p>{t.common.states.loading}...</p>
+              <div className="overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.04] text-foreground min-h-[560px] flex flex-col justify-center">
+                <div className="p-6 max-w-xl mx-auto w-full animate-fade-in-up">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    </span>
+                    <p className="text-sm font-semibold flex-1">{t.search.kgLoadingTitle}</p>
+                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary tabular-nums">
+                      {Math.round(kgLoadingProgress)}%
+                      <span className="ml-1 font-normal text-primary/60">· {t.search.kgLoadingEstimate}</span>
+                    </span>
+                    {kgLoadingElapsed > 0 && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {t.search.graphElapsed} {Math.floor(kgLoadingElapsed / 1000)}s
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative h-2 overflow-hidden rounded-full bg-primary/15">
+                    <div
+                      className="h-full rounded-full bg-primary/80 transition-all duration-300 ease-out"
+                      style={{ width: `${Math.max(8, kgLoadingProgress)}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 w-1/3 animate-[shimmer-slide_2s_ease-in-out_infinite] rounded-full"
+                      style={{
+                        background: "linear-gradient(90deg, transparent, rgba(124,58,237,0.3), transparent)",
+                        left: `${Math.max(4, kgLoadingProgress - 15)}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                      {t.search.graphActive}
+                    </span>
+                    {kgLoadingStage && (
+                      <span>
+                        {t.search.graphStageLabel}: {
+                          kgLoadingStage === "loadingStageInit" ? t.search.loadingStageInit
+                          : kgLoadingStage === "loadingStageTraverse" ? t.search.loadingStageTraverse
+                          : t.search.loadingStageBuild
+                        }
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground/80">
+                    {t.search.kgLoadingHint}
+                  </p>
                 </div>
               </div>
             ) : !kgTopology || kgTopology.nodes.length === 0 ? (
