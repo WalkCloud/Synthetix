@@ -9,6 +9,7 @@ import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { buildEffectiveConstraints, mergeSectionConstraints, parseSectionConstraints } from "@/lib/writing/constraints";
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { createOnceRecorder } from "@/lib/writing/once-recorder";
+import { updateWikiAfterSection } from "@/lib/wiki/writer";
 import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
 
 export async function POST(
@@ -132,6 +133,20 @@ export async function POST(
             console.error(`Background audit failed for section ${sectionId}:`, err);
           }
         })();
+
+        // Wiki writeback flywheel: extract this section's new knowledge and
+        // merge it back into the Wiki so subsequent sections benefit. Fire-and-
+        // forget (non-blocking) — the section is already saved successfully.
+        // Bumps confidence of Wiki entries that were cited in this section.
+        const wikiEntryIds = (result as { wikiEntryIds?: string[] }).wikiEntryIds ?? [];
+        void updateWikiAfterSection(
+          { id: sectionId, title: section.title, content: finalContent },
+          draftId,
+          user.id,
+          wikiEntryIds,
+        ).catch((err) => {
+          console.warn(`Wiki writeback failed for section ${sectionId} (non-blocking):`, err);
+        });
 
         controller.enqueue(encoder.encode(sseDone()));
         controller.close();
