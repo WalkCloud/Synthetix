@@ -99,6 +99,7 @@ export async function synthesizeDocument(
         { documentId: ctx.docId, chunkId: chunk.id, chunkIndex: chunk.index },
         knowledge,
         existingTitles,
+        client, // enables LLM fusion when merging into existing entries
       );
       // mergeChunkKnowledge pushes new titles into existingTitles in-place
       const added = existingTitles.length - before;
@@ -226,6 +227,7 @@ async function generateDocSummary(
     sourceRef,
     0.85,
     existingTitles,
+    client,
   );
 
   // Create links from the doc_summary to its key topics (OKF link-as-graph)

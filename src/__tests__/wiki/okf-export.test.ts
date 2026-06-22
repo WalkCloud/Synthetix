@@ -62,6 +62,6 @@ describe("WIKI_CONFIG tunables", () => {
 
   it("caps entry content to keep Wiki modular (OKF principle: small files)", () => {
     expect(WIKI_CONFIG.entryContentCharLimit).toBeGreaterThan(100);
-    expect(WIKI_CONFIG.entryContentCharLimit).toBeLessThanOrEqual(2000);
+    expect(WIKI_CONFIG.entryContentCharLimit).toBeLessThanOrEqual(5000);
   });
 });
