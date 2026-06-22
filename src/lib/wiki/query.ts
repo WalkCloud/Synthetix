@@ -117,13 +117,15 @@ export async function getEntriesForDocument(userId: string, documentId: string):
     .map(toView);
 }
 
-/** Aggregate counts per type for the Wiki browse page stats ribbon. */
+/** Aggregate counts for the Wiki browse page stats ribbon. */
 export async function getWikiStats(userId: string): Promise<{
   total: number;
   docSummary: number;
   topics: number;
   concepts: number;
   claims: number;
+  multiSource: number;
+  totalSourceRefs: number;
 }> {
   const active = await db.wikiEntry.groupBy({
     by: ["type"],
@@ -135,7 +137,31 @@ export async function getWikiStats(userId: string): Promise<{
   const topics = counts.get("topic") ?? 0;
   const concepts = counts.get("concept") ?? 0;
   const claims = counts.get("claim") ?? 0;
-  return { total: docSummary + topics + concepts + claims, docSummary, topics, concepts, claims };
+
+  // Count entries with 2+ source refs (multi-source fused entries) + total refs.
+  // sourceRefs is JSON, so we fetch all active entries' refs and count in memory.
+  // Wiki sizes are modest (hundreds, not millions) so this is acceptable.
+  const allRefs = await db.wikiEntry.findMany({
+    where: { userId, status: "active" },
+    select: { sourceRefs: true },
+  });
+  let multiSource = 0;
+  let totalSourceRefs = 0;
+  for (const entry of allRefs) {
+    try {
+      const refs = JSON.parse(entry.sourceRefs);
+      if (Array.isArray(refs)) {
+        totalSourceRefs += refs.length;
+        if (refs.length >= 2) multiSource++;
+      }
+    } catch { /* malformed — skip */ }
+  }
+
+  return {
+    total: docSummary + topics + concepts + claims,
+    docSummary, topics, concepts, claims,
+    multiSource, totalSourceRefs,
+  };
 }
 
 // ---- helpers ----

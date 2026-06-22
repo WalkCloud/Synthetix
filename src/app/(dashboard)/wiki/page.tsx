@@ -26,6 +26,8 @@ interface WikiStats {
   topics: number;
   concepts: number;
   claims: number;
+  multiSource: number;
+  totalSourceRefs: number;
 }
 
 interface WikiListResponse {
@@ -91,10 +93,10 @@ export default function WikiPage() {
         {/* Stats Ribbon — meaningful dimensions, not content-type split */}
         <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
           <StatCell value={stats?.total ?? 0} label={isZh ? "知识条目" : "Entries"} color="primary" />
-          <StatCell value={stats?.docSummary ?? 0} label={isZh ? "文档摘要" : "Doc Summaries"} color="blue" />
+          <StatCell value={stats?.multiSource ?? 0} label={isZh ? "多源融合" : "Multi-Source"} color="blue" />
           <StatCell value={`${avgConfidence}%`} label={isZh ? "平均置信度" : "Avg Confidence"} color="emerald" />
           <StatCell
-            value={data?.items.reduce((s, i) => s + i.sourceRefCount, 0) ?? 0}
+            value={stats?.totalSourceRefs ?? 0}
             label={isZh ? "来源引用" : "Source Refs"}
             color="amber"
           />
