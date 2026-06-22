@@ -8,8 +8,6 @@ import { LoadingState } from "@/components/shared/loading-state";
 import { useLocale } from "@/lib/i18n";
 import { toast } from "sonner";
 
-type EntryType = "doc_summary" | "topic" | "concept" | "claim";
-
 interface WikiListItem {
   id: string;
   type: string;
@@ -45,8 +43,8 @@ export default function WikiPage() {
 
   const [data, setData] = useState<WikiListResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
   const limit = 20;
 
@@ -54,7 +52,6 @@ export default function WikiPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (typeFilter !== "All") params.set("type", typeFilter);
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
       params.set("page", String(page));
       params.set("limit", String(limit));
@@ -67,62 +64,73 @@ export default function WikiPage() {
     } finally {
       setLoading(false);
     }
-  }, [typeFilter, searchQuery, page, isZh]);
+  }, [searchQuery, page, isZh]);
 
   useEffect(() => { void fetchEntries(); }, [fetchEntries]);
 
+  // Client-side sort (data already fetched, sort locally)
+  const sortedItems = (() => {
+    if (!data) return [];
+    const items = [...data.items];
+    if (sortBy === "confidence") items.sort((a, b) => b.confidence - a.confidence);
+    else if (sortBy === "sources") items.sort((a, b) => b.sourceRefCount - a.sourceRefCount);
+    else items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return items;
+  })();
+
   const totalPages = data ? Math.ceil(data.total / limit) : 1;
   const stats = data?.stats;
+  const avgConfidence = data && data.items.length > 0
+    ? Math.round((data.items.reduce((s, i) => s + i.confidence, 0) / data.items.length) * 100)
+    : 0;
 
   return (
     <div>
       <Header title={t.layout.sidebar.knowledgeWiki} />
       <div className="p-8">
-        {/* Stats Ribbon — mirrors the Document Library's 4-column pattern */}
+        {/* Stats Ribbon — meaningful dimensions, not content-type split */}
         <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
-          <StatCell value={stats?.total ?? 0} label={isZh ? "提炼条目" : "Entries"} color="primary" />
-          <StatCell value={stats?.topics ?? 0} label={isZh ? "主题" : "Topics"} color="blue" />
-          <StatCell value={stats?.concepts ?? 0} label={isZh ? "概念" : "Concepts"} color="emerald" />
-          <StatCell value={stats?.claims ?? 0} label={isZh ? "主张" : "Claims"} color="amber" />
+          <StatCell value={stats?.total ?? 0} label={isZh ? "知识条目" : "Entries"} color="primary" />
+          <StatCell value={stats?.docSummary ?? 0} label={isZh ? "文档摘要" : "Doc Summaries"} color="blue" />
+          <StatCell value={`${avgConfidence}%`} label={isZh ? "平均置信度" : "Avg Confidence"} color="emerald" />
+          <StatCell
+            value={data?.items.reduce((s, i) => s + i.sourceRefCount, 0) ?? 0}
+            label={isZh ? "来源引用" : "Source Refs"}
+            color="amber"
+          />
         </div>
 
-        {/* Filter pills + search — mirrors DocumentTable's filter row */}
+        {/* Search + sort — no type filter pills (types shown as inline badges) */}
         <div className="flex items-center gap-3 flex-wrap mb-4 animate-fade-in-up">
-          <div className="flex items-center gap-2 flex-wrap">
-            {["All", "doc_summary", "topic", "concept", "claim"].map((f) => (
-              <button
-                key={f}
-                onClick={() => { setTypeFilter(f); setPage(1); }}
-                className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${
-                  typeFilter === f
-                    ? "border-primary text-primary bg-primary-100"
-                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"
-                }`}
-              >
-                {typeLabel(f, isZh)}
-              </button>
-            ))}
-          </div>
-          <div className="relative w-[200px] ml-auto">
+          <div className="relative w-[200px]">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
               type="text"
-              placeholder={isZh ? "搜索条目..." : "Search entries..."}
+              placeholder={isZh ? "搜索知识..." : "Search knowledge..."}
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
               className="w-full py-2 pr-3 pl-9 border border-input rounded-lg shadow-sm text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
             />
           </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-3 py-2 border border-input rounded-lg text-[13px] bg-background text-foreground cursor-pointer focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="newest">{isZh ? "最近更新" : "Newest"}</option>
+            <option value="confidence">{isZh ? "置信度优先" : "High confidence"}</option>
+            <option value="sources">{isZh ? "多来源优先" : "Most sources"}</option>
+          </select>
         </div>
 
-        {/* Table container — mirrors DocumentTable's rounded-[16px] wrapper */}
+        {/* Table container */}
         <div className="bg-card border border-border rounded-[16px] overflow-hidden">
           {loading ? (
             <LoadingState message={isZh ? "加载中..." : "Loading..."} />
-          ) : !data || data.items.length === 0 ? (
+          ) : !data || sortedItems.length === 0 ? (
             <EmptyState
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16 text-muted-foreground">
@@ -130,7 +138,7 @@ export default function WikiPage() {
                   <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
                 </svg>
               }
-              title={isZh ? "暂无提炼条目" : "No distilled entries yet"}
+              title={isZh ? "暂无知识条目" : "No knowledge entries yet"}
               description={
                 isZh
                   ? "上传文档后，系统会自动从文档中提炼知识条目。"
@@ -143,7 +151,6 @@ export default function WikiPage() {
                 <tr>
                   {[
                     { label: isZh ? "条目" : "Entry", style: "w-full" },
-                    { label: isZh ? "类型" : "Type", style: "w-[110px]" },
                     { label: isZh ? "置信度" : "Confidence", style: "w-[100px]" },
                     { label: isZh ? "来源" : "Sources", style: "w-[80px]" },
                     { label: isZh ? "更新" : "Updated", style: "w-[100px]" },
@@ -151,7 +158,7 @@ export default function WikiPage() {
                   ].map((h, i) => (
                     <th
                       key={i}
-                      className={`text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-muted border-b border-border ${h.style} ${i === 0 ? "rounded-tl-[16px]" : ""} ${i === 5 ? "rounded-tr-[16px]" : ""}`}
+                      className={`text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-muted border-b border-border ${h.style} ${i === 0 ? "rounded-tl-[16px]" : ""} ${i === 4 ? "rounded-tr-[16px]" : ""}`}
                     >
                       {h.label}
                     </th>
@@ -159,7 +166,7 @@ export default function WikiPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((entry) => (
+                {sortedItems.map((entry) => (
                   <tr
                     key={entry.id}
                     onClick={() => router.push(`/wiki/${entry.id}`)}
@@ -167,19 +174,19 @@ export default function WikiPage() {
                   >
                     <td className="px-4 py-3.5">
                       <div className="min-w-0">
-                        <span className="block text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
-                          {entry.title}
-                        </span>
-                        <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
+                            {entry.title}
+                          </span>
+                          <TypeBadge type={entry.type} isZh={isZh} />
+                        </div>
+                        <span className="block text-xs text-muted-foreground line-clamp-1">
                           {entry.contentPreview}
                         </span>
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
-                      <TypeBadge type={entry.type} />
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="text-sm font-bold tabular-nums text-foreground">
+                      <span className={`text-sm font-bold tabular-nums ${entry.confidence >= 0.85 ? "text-emerald-600 dark:text-emerald-400" : entry.confidence >= 0.7 ? "text-foreground" : "text-muted-foreground"}`}>
                         {Math.round(entry.confidence * 100)}%
                       </span>
                     </td>
@@ -205,7 +212,7 @@ export default function WikiPage() {
           )}
         </div>
 
-        {/* Pagination — mirrors Library page's pagination */}
+        {/* Pagination */}
         {data && totalPages > 1 && (
           <div className="flex items-center justify-center gap-1 mt-6">
             <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
@@ -230,7 +237,7 @@ export default function WikiPage() {
   );
 }
 
-function StatCell({ value, label, color }: { value: number; label: string; color: string }) {
+function StatCell({ value, label, color }: { value: number | string; label: string; color: string }) {
   const colors: Record<string, string> = {
     primary: "bg-primary-100 text-primary dark:bg-primary/15",
     blue: "bg-blue-100 dark:bg-blue-950/35 text-blue-700 dark:text-blue-300",
@@ -239,9 +246,9 @@ function StatCell({ value, label, color }: { value: number; label: string; color
   };
   const icons: Record<string, React.ReactNode> = {
     primary: <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />,
-    blue: <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />,
-    emerald: <><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
-    amber: <><polyline points="20 6 9 17 4 12" /></>,
+    blue: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>,
+    emerald: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
+    amber: <><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></>,
   };
   return (
     <div className="bg-card border border-border rounded-[12px] p-4 flex items-center gap-3.5">
@@ -258,29 +265,25 @@ function StatCell({ value, label, color }: { value: number; label: string; color
   );
 }
 
-function TypeBadge({ type }: { type: string }) {
-  const config: Record<string, { label: string; classes: string }> = {
-    doc_summary: { label: "Summary", classes: "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-950/35 dark:text-violet-300 dark:border-violet-900/40" },
-    topic: { label: "Topic", classes: "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/35 dark:text-blue-300 dark:border-blue-900/40" },
-    concept: { label: "Concept", classes: "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/35 dark:text-emerald-300 dark:border-emerald-900/40" },
-    claim: { label: "Claim", classes: "bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/35 dark:text-amber-300 dark:border-amber-900/40" },
+/** Small inline badge — shows content type as metadata, not a filter dimension */
+function TypeBadge({ type, isZh }: { type: string; isZh: boolean }) {
+  const config: Record<string, string> = {
+    doc_summary: "bg-violet-50 text-violet-600 dark:bg-violet-950/35 dark:text-violet-300",
+    topic: "bg-blue-50 text-blue-600 dark:bg-blue-950/35 dark:text-blue-300",
+    concept: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/35 dark:text-emerald-300",
+    claim: "bg-amber-50 text-amber-600 dark:bg-amber-950/35 dark:text-amber-300",
   };
-  const c = config[type] || { label: type, classes: "bg-muted text-muted-foreground border-border" };
+  const labels: Record<string, [string, string]> = {
+    doc_summary: ["摘要", "Summary"],
+    topic: ["主题", "Topic"],
+    concept: ["概念", "Concept"],
+    claim: ["主张", "Claim"],
+  };
+  const cls = config[type] || "bg-muted text-muted-foreground";
+  const [zh, en] = labels[type] || [type, type];
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold border whitespace-nowrap ${c.classes}`}>
-      {c.label}
+    <span className={`text-[9px] px-1.5 py-0 rounded-full font-bold whitespace-nowrap shrink-0 ${cls}`}>
+      {isZh ? zh : en}
     </span>
   );
-}
-
-function typeLabel(type: string, isZh: boolean): string {
-  const labels: Record<string, [string, string]> = {
-    All: ["全部", "All"],
-    doc_summary: ["摘要", "Summaries"],
-    topic: ["主题", "Topics"],
-    concept: ["概念", "Concepts"],
-    claim: ["主张", "Claims"],
-  };
-  const pair = labels[type] || [type, type];
-  return isZh ? pair[0] : pair[1];
 }
