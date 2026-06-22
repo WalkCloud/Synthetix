@@ -4,6 +4,7 @@ import { useState, useEffect, use, Fragment } from "react";
 import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
+import { WikiPrecipCard } from "@/components/library/wiki-precip-card";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
 import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
@@ -247,6 +248,9 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
           {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "…"} />}
         </dl>
       </div>
+
+      {/* Knowledge synthesized from this document (Wiki layer) */}
+      {doc.status === "ready" && <WikiPrecipCard documentId={doc.id} />}
     </div>
   );
 }
