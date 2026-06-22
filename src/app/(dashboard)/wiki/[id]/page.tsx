@@ -83,7 +83,7 @@ export default function WikiDetailPage() {
   if (loading) {
     return (
       <div>
-        <Header title={t.layout.sidebar.knowledgeDistillate} />
+        <Header title={t.layout.sidebar.knowledgeWiki} />
         <div className="p-8"><LoadingState message={isZh ? "加载中..." : "Loading..."} /></div>
       </div>
     );
@@ -92,7 +92,7 @@ export default function WikiDetailPage() {
   if (!entry) {
     return (
       <div>
-        <Header title={t.layout.sidebar.knowledgeDistillate} />
+        <Header title={t.layout.sidebar.knowledgeWiki} />
         <div className="p-8">
           <EmptyState
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16"><circle cx="12" cy="12" r="10" /></svg>}
