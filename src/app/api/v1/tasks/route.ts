@@ -57,6 +57,7 @@ export async function GET(request: Request) {
         progress: t.progress,
         draftId: typeof input?.draftId === "string" ? input.draftId : null,
         sessionId: typeof input?.sessionId === "string" ? input.sessionId : null,
+        docId: typeof input?.docId === "string" ? input.docId : null,
         result,
         error: t.errorMessage,
         createdAt: t.createdAt.toISOString(),
