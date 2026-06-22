@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
 import { WikiPrecipCard } from "@/components/library/wiki-precip-card";
+import { WikiSynthesisStatus } from "@/components/library/wiki-synthesis-status";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
 import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
@@ -205,6 +206,9 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
   return (
     <div className="space-y-8">
       {doc.pipeline && <Pipeline pipeline={doc.pipeline} td={td} />}
+
+      {/* Wiki synthesis status (independent — runs after doc is ready) */}
+      <WikiSynthesisStatus documentId={doc.id} />
 
       {/* Key metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
