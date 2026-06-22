@@ -76,7 +76,7 @@ const en = {
       documentInit: "Document Init",
       documentLibrary: "Document Library",
       knowledgeSearch: "Knowledge Search",
-      knowledgeDistillate: "Distillate",
+      knowledgeWiki: "Knowledge Wiki",
       mindOrganization: "Mind Organization",
       documentWriting: "Document Writing",
       documentTopology: "Document Topology",
