@@ -45,205 +45,184 @@ export default function WikiPage() {
 
   const [data, setData] = useState<WikiListResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<EntryType | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
+  const limit = 20;
 
   const fetchEntries = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (typeFilter) params.set("type", typeFilter);
+      if (typeFilter !== "All") params.set("type", typeFilter);
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
       params.set("page", String(page));
-      params.set("limit", "20");
+      params.set("limit", String(limit));
       const res = await fetch(`/api/v1/wiki/entries?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch wiki entries");
+      if (!res.ok) throw new Error("Failed to fetch");
       const json = (await res.json()) as { data: WikiListResponse };
       setData(json.data);
     } catch {
-      toast.error(isZh ? "加载知识库失败" : "Failed to load knowledge base");
+      toast.error(isZh ? "加载失败" : "Failed to load");
     } finally {
       setLoading(false);
     }
   }, [typeFilter, searchQuery, page, isZh]);
 
-  useEffect(() => {
-    void fetchEntries();
-  }, [fetchEntries]);
+  useEffect(() => { void fetchEntries(); }, [fetchEntries]);
 
-  const totalPages = data ? Math.ceil(data.total / data.limit) : 1;
+  const totalPages = data ? Math.ceil(data.total / limit) : 1;
+  const stats = data?.stats;
 
   return (
     <div>
-      <Header title={t.layout.sidebar.knowledgeBase} />
+      <Header title={t.layout.sidebar.knowledgeDistillate} />
       <div className="p-8">
-        {/* Stats Ribbon */}
-        {data && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 animate-fade-in-up">
-            <StatCard
-              label={isZh ? "文档摘要" : "Doc Summaries"}
-              value={data.stats.docSummary}
-              color="violet"
-              icon={
-                <>
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </>
-              }
-            />
-            <StatCard
-              label={isZh ? "主题" : "Topics"}
-              value={data.stats.topics}
-              color="blue"
-              icon={
-                <>
-                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-                </>
-              }
-            />
-            <StatCard
-              label={isZh ? "概念" : "Concepts"}
-              value={data.stats.concepts}
-              color="emerald"
-              icon={
-                <>
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </>
-              }
-            />
-            <StatCard
-              label={isZh ? "主张" : "Claims"}
-              value={data.stats.claims}
-              color="amber"
-              icon={
-                <>
-                  <polyline points="20 6 9 17 4 12" />
-                </>
-              }
-            />
-          </div>
-        )}
+        {/* Stats Ribbon — mirrors the Document Library's 4-column pattern */}
+        <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
+          <StatCell value={stats?.total ?? 0} label={isZh ? "提炼条目" : "Entries"} color="primary" />
+          <StatCell value={stats?.topics ?? 0} label={isZh ? "主题" : "Topics"} color="blue" />
+          <StatCell value={stats?.concepts ?? 0} label={isZh ? "概念" : "Concepts"} color="emerald" />
+          <StatCell value={stats?.claims ?? 0} label={isZh ? "主张" : "Claims"} color="amber" />
+        </div>
 
-        {/* Filter + Search */}
-        <div className="flex items-center gap-3 mb-6 animate-fade-in-up">
-          <div className="flex gap-0.5 flex-wrap">
-            <FilterPill
-              active={typeFilter === null}
-              onClick={() => { setTypeFilter(null); setPage(1); }}
-            >
-              {isZh ? "全部" : "All"}
-            </FilterPill>
-            <FilterPill
-              active={typeFilter === "doc_summary"}
-              onClick={() => { setTypeFilter("doc_summary"); setPage(1); }}
-            >
-              {isZh ? "文档摘要" : "Summaries"}
-            </FilterPill>
-            <FilterPill
-              active={typeFilter === "topic"}
-              onClick={() => { setTypeFilter("topic"); setPage(1); }}
-            >
-              {isZh ? "主题" : "Topics"}
-            </FilterPill>
-            <FilterPill
-              active={typeFilter === "concept"}
-              onClick={() => { setTypeFilter("concept"); setPage(1); }}
-            >
-              {isZh ? "概念" : "Concepts"}
-            </FilterPill>
-            <FilterPill
-              active={typeFilter === "claim"}
-              onClick={() => { setTypeFilter("claim"); setPage(1); }}
-            >
-              {isZh ? "主张" : "Claims"}
-            </FilterPill>
+        {/* Filter pills + search — mirrors DocumentTable's filter row */}
+        <div className="flex items-center gap-3 flex-wrap mb-4 animate-fade-in-up">
+          <div className="flex items-center gap-2 flex-wrap">
+            {["All", "doc_summary", "topic", "concept", "claim"].map((f) => (
+              <button
+                key={f}
+                onClick={() => { setTypeFilter(f); setPage(1); }}
+                className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${
+                  typeFilter === f
+                    ? "border-primary text-primary bg-primary-100"
+                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"
+                }`}
+              >
+                {typeLabel(f, isZh)}
+              </button>
+            ))}
           </div>
-          <div className="relative flex-1 max-w-xs ml-auto">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <div className="relative w-[200px] ml-auto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
+              type="text"
+              placeholder={isZh ? "搜索条目..." : "Search entries..."}
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-              placeholder={isZh ? "搜索知识库..." : "Search knowledge base..."}
-              className="w-full py-2 pr-3 pl-9 border border-input rounded-lg shadow-sm text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
+              className="w-full py-2 pr-3 pl-9 border border-input rounded-lg shadow-sm text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
             />
           </div>
         </div>
 
-        {/* Entries List */}
-        {loading ? (
-          <LoadingState message={isZh ? "加载中..." : "Loading..."} />
-        ) : !data || data.items.length === 0 ? (
-          <EmptyState
-            icon={
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-              </svg>
-            }
-            title={isZh ? "知识库为空" : "Knowledge base is empty"}
-            description={
-              isZh
-                ? "上传文档后，系统会自动提取并综合知识到这里。"
-                : "Upload documents and the system will synthesize knowledge here automatically."
-            }
-          />
-        ) : (
-          <div className="space-y-3">
-            {data.items.map((entry, i) => (
-              <button
-                key={entry.id}
-                onClick={() => router.push(`/wiki/${entry.id}`)}
-                className="w-full text-left bg-card border border-border rounded-[16px] p-5 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer animate-fade-in-up"
-                style={{ animationDelay: `${Math.min(i * 0.03, 0.3)}s` }}
-              >
-                <div className="flex items-start justify-between gap-3 mb-1.5">
-                  <h3 className="font-semibold text-[15px] text-foreground truncate">
-                    {entry.title}
-                  </h3>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <TypeBadge type={entry.type} />
-                    <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
-                      {Math.round(entry.confidence * 100)}%
-                    </span>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">
-                  {entry.contentPreview}
-                </p>
-                <div className="flex items-center gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    </svg>
-                    {entry.sourceRefCount} {isZh ? "来源" : "sources"}
-                  </span>
-                  <span>{new Date(entry.updatedAt).toLocaleDateString(isZh ? "zh-CN" : "en-US")}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Table container — mirrors DocumentTable's rounded-[16px] wrapper */}
+        <div className="bg-card border border-border rounded-[16px] overflow-hidden">
+          {loading ? (
+            <LoadingState message={isZh ? "加载中..." : "Loading..."} />
+          ) : !data || data.items.length === 0 ? (
+            <EmptyState
+              icon={
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16 text-muted-foreground">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+              }
+              title={isZh ? "暂无提炼条目" : "No distilled entries yet"}
+              description={
+                isZh
+                  ? "上传文档后，系统会自动从文档中提炼知识条目。"
+                  : "Upload documents and the system will distill knowledge entries automatically."
+              }
+            />
+          ) : (
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  {[
+                    { label: isZh ? "条目" : "Entry", style: "w-full" },
+                    { label: isZh ? "类型" : "Type", style: "w-[110px]" },
+                    { label: isZh ? "置信度" : "Confidence", style: "w-[100px]" },
+                    { label: isZh ? "来源" : "Sources", style: "w-[80px]" },
+                    { label: isZh ? "更新" : "Updated", style: "w-[100px]" },
+                    { label: "", style: "w-[44px]" },
+                  ].map((h, i) => (
+                    <th
+                      key={i}
+                      className={`text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-muted border-b border-border ${h.style} ${i === 0 ? "rounded-tl-[16px]" : ""} ${i === 5 ? "rounded-tr-[16px]" : ""}`}
+                    >
+                      {h.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((entry) => (
+                  <tr
+                    key={entry.id}
+                    onClick={() => router.push(`/wiki/${entry.id}`)}
+                    className="border-b border-border last:border-b-0 hover:bg-primary/8 transition-colors cursor-pointer"
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="min-w-0">
+                        <span className="block text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
+                          {entry.title}
+                        </span>
+                        <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                          {entry.contentPreview}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <TypeBadge type={entry.type} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-sm font-bold tabular-nums text-foreground">
+                        {Math.round(entry.confidence * 100)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {entry.sourceRefCount}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(entry.updatedAt).toLocaleDateString(isZh ? "zh-CN" : "en-US")}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-muted-foreground">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
 
-        {/* Pagination */}
+        {/* Pagination — mirrors Library page's pagination */}
         {data && totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-8">
-            <PageButton onClick={() => setPage(page - 1)} disabled={page <= 1}>
-              ‹
-            </PageButton>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <PageButton key={p} active={p === page} onClick={() => setPage(p)}>
-                {p}
-              </PageButton>
-            ))}
-            <PageButton onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
-              ›
-            </PageButton>
+          <div className="flex items-center justify-center gap-1 mt-6">
+            <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
+              className="min-w-[36px] h-9 rounded-lg border border-border bg-card text-foreground text-sm font-medium cursor-pointer hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed">&laquo;</button>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let p: number;
+              if (totalPages <= 5) p = i + 1;
+              else if (page <= 3) p = i + 1;
+              else if (page >= totalPages - 2) p = totalPages - 4 + i;
+              else p = page - 2 + i;
+              return (
+                <button key={p} onClick={() => setPage(p)}
+                  className={`min-w-[36px] h-9 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${p === page ? "bg-primary text-white border-primary" : "border-border bg-card text-foreground hover:bg-secondary"}`}>{p}</button>
+              );
+            })}
+            <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}
+              className="min-w-[36px] h-9 rounded-lg border border-border bg-card text-foreground text-sm font-medium cursor-pointer hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed">&raquo;</button>
           </div>
         )}
       </div>
@@ -251,42 +230,31 @@ export default function WikiPage() {
   );
 }
 
-function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
-  const colorClasses: Record<string, string> = {
-    violet: "bg-violet-100 text-violet-600 dark:bg-violet-950/35 dark:text-violet-300",
-    blue: "bg-blue-100 text-blue-600 dark:bg-blue-950/35 dark:text-blue-300",
-    emerald: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/35 dark:text-emerald-300",
-    amber: "bg-amber-100 text-amber-600 dark:bg-amber-950/35 dark:text-amber-300",
+function StatCell({ value, label, color }: { value: number; label: string; color: string }) {
+  const colors: Record<string, string> = {
+    primary: "bg-primary-100 text-primary dark:bg-primary/15",
+    blue: "bg-blue-100 dark:bg-blue-950/35 text-blue-700 dark:text-blue-300",
+    emerald: "bg-emerald-100 dark:bg-emerald-950/35 text-emerald-700 dark:text-emerald-300",
+    amber: "bg-amber-100 dark:bg-amber-950/35 text-amber-700 dark:text-amber-300",
+  };
+  const icons: Record<string, React.ReactNode> = {
+    primary: <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />,
+    blue: <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />,
+    emerald: <><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+    amber: <><polyline points="20 6 9 17 4 12" /></>,
   };
   return (
     <div className="bg-card border border-border rounded-[12px] p-4 flex items-center gap-3.5">
-      <div className={`w-[42px] h-[42px] rounded-[12px] flex items-center justify-center shrink-0 ${colorClasses[color]}`}>
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          {icon}
+      <div className={`w-[42px] h-[42px] rounded-[12px] flex items-center justify-center shrink-0 ${colors[color]}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+          {icons[color]}
         </svg>
       </div>
       <div>
-        <div className="text-[22px] font-bold font-display tabular-nums text-foreground leading-tight">
-          {value}
-        </div>
+        <div className="text-[22px] font-bold text-foreground font-display tabular-nums">{value}</div>
         <div className="text-xs text-muted-foreground">{label}</div>
       </div>
     </div>
-  );
-}
-
-function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium transition-colors ${
-        active
-          ? "border-primary text-primary bg-primary-100 dark:bg-primary/15"
-          : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50 dark:hover:bg-primary/5"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -299,24 +267,20 @@ function TypeBadge({ type }: { type: string }) {
   };
   const c = config[type] || { label: type, classes: "bg-muted text-muted-foreground border-border" };
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold border ${c.classes}`}>
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold border whitespace-nowrap ${c.classes}`}>
       {c.label}
     </span>
   );
 }
 
-function PageButton({ active, disabled, onClick, children }: { active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`min-w-[36px] h-9 rounded-lg border text-sm font-medium transition-colors ${
-        active
-          ? "bg-primary text-white border-primary"
-          : "bg-card border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-      }`}
-    >
-      {children}
-    </button>
-  );
+function typeLabel(type: string, isZh: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    All: ["全部", "All"],
+    doc_summary: ["摘要", "Summaries"],
+    topic: ["主题", "Topics"],
+    concept: ["概念", "Concepts"],
+    claim: ["主张", "Claims"],
+  };
+  const pair = labels[type] || [type, type];
+  return isZh ? pair[0] : pair[1];
 }

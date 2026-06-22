@@ -74,7 +74,7 @@ export type TranslationSchema = {
       documentInit: string;
       documentLibrary: string;
       knowledgeSearch: string;
-      knowledgeBase: string;
+      knowledgeDistillate: string;
       mindOrganization: string;
       documentWriting: string;
       documentTopology: string;
