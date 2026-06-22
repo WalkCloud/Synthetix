@@ -80,6 +80,19 @@ export default function WikiDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!entry) return;
+    if (!confirm(isZh ? `确定删除"${entry.title}"？` : `Delete "${entry.title}"?`)) return;
+    try {
+      const res = await fetch(`/api/v1/wiki/entries/${entry.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      toast.success(isZh ? "已删除" : "Deleted");
+      router.push("/wiki");
+    } catch {
+      toast.error(isZh ? "删除失败" : "Delete failed");
+    }
+  }
+
   if (loading) {
     return (
       <div>
@@ -151,6 +164,16 @@ export default function WikiDetailPage() {
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
                     {isZh ? "编辑" : "Edit"}
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    {isZh ? "删除" : "Delete"}
                   </button>
                 </div>
               </>

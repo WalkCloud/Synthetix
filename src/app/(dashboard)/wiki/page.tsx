@@ -48,7 +48,55 @@ export default function WikiPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const limit = 20;
+
+  // Client-side sort (data already fetched, sort locally)
+  const sortedItems = (() => {
+    if (!data) return [];
+    const items = [...data.items];
+    if (sortBy === "confidence") items.sort((a, b) => b.confidence - a.confidence);
+    else if (sortBy === "sources") items.sort((a, b) => b.sourceRefCount - a.sourceRefCount);
+    else items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return items;
+  })();
+
+  // Reset selection when data changes (page/filter/search)
+  useEffect(() => { setSelectedIds(new Set()); }, [data]);
+
+  const allSelected = sortedItems.length > 0 && selectedIds.size === sortedItems.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(sortedItems.map((i) => i.id)));
+  }, [allSelected, sortedItems]);
+
+  const toggleOne = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  async function handleBatchDelete() {
+    if (!confirm(isZh ? `确定删除 ${selectedIds.size} 个条目？` : `Delete ${selectedIds.size} entries?`)) return;
+    try {
+      const res = await fetch("/api/v1/wiki/entries", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      toast.success(isZh ? `已删除 ${selectedIds.size} 个条目` : `Deleted ${selectedIds.size} entries`);
+      setSelectedIds(new Set());
+      void fetchEntries();
+    } catch {
+      toast.error(isZh ? "删除失败" : "Delete failed");
+    }
+  }
 
   const fetchEntries = useCallback(async () => {
     setLoading(true);
@@ -69,16 +117,6 @@ export default function WikiPage() {
   }, [searchQuery, page, isZh]);
 
   useEffect(() => { void fetchEntries(); }, [fetchEntries]);
-
-  // Client-side sort (data already fetched, sort locally)
-  const sortedItems = (() => {
-    if (!data) return [];
-    const items = [...data.items];
-    if (sortBy === "confidence") items.sort((a, b) => b.confidence - a.confidence);
-    else if (sortBy === "sources") items.sort((a, b) => b.sourceRefCount - a.sourceRefCount);
-    else items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    return items;
-  })();
 
   const totalPages = data ? Math.ceil(data.total / limit) : 1;
   const stats = data?.stats;
@@ -126,6 +164,29 @@ export default function WikiPage() {
             <option value="confidence">{isZh ? "置信度优先" : "High confidence"}</option>
             <option value="sources">{isZh ? "多来源优先" : "Most sources"}</option>
           </select>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 animate-fade-in-up">
+              <button
+                onClick={handleBatchDelete}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 text-[13px] font-medium whitespace-nowrap shadow-sm transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                {isZh ? "删除选中" : "Delete"} {selectedIds.size}
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Table container */}
@@ -151,16 +212,27 @@ export default function WikiPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
+                  <th className="w-[44px] px-4 py-3 bg-muted border-b border-border rounded-tl-[16px]">
+                    <label className="flex items-center justify-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                        onChange={toggleAll}
+                        className="w-4 h-4 rounded border-border text-primary accent-primary cursor-pointer"
+                      />
+                    </label>
+                  </th>
                   {[
                     { label: isZh ? "条目" : "Entry", style: "w-full" },
                     { label: isZh ? "置信度" : "Confidence", style: "w-[100px]" },
                     { label: isZh ? "来源" : "Sources", style: "w-[80px]" },
                     { label: isZh ? "更新" : "Updated", style: "w-[100px]" },
-                    { label: "", style: "w-[44px]" },
+                    { label: "", style: "w-[44px] rounded-tr-[16px]" },
                   ].map((h, i) => (
                     <th
                       key={i}
-                      className={`text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-muted border-b border-border ${h.style} ${i === 0 ? "rounded-tl-[16px]" : ""} ${i === 4 ? "rounded-tr-[16px]" : ""}`}
+                      className={`text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground px-4 py-3 bg-muted border-b border-border ${h.style}`}
                     >
                       {h.label}
                     </th>
@@ -168,12 +240,24 @@ export default function WikiPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedItems.map((entry) => (
+                {sortedItems.map((entry) => {
+                  const isSelected = selectedIds.has(entry.id);
+                  return (
                   <tr
                     key={entry.id}
                     onClick={() => router.push(`/wiki/${entry.id}`)}
-                    className="border-b border-border last:border-b-0 hover:bg-primary/8 transition-colors cursor-pointer"
+                    className={`border-b border-border last:border-b-0 transition-colors cursor-pointer ${isSelected ? "bg-primary/6" : "hover:bg-primary/8"}`}
                   >
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <label className="flex items-center justify-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleOne(entry.id)}
+                          className="w-4 h-4 rounded border-border text-primary accent-primary cursor-pointer"
+                        />
+                      </label>
+                    </td>
                     <td className="px-4 py-3.5">
                       <div className="min-w-0">
                         <span className="block text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
@@ -205,7 +289,8 @@ export default function WikiPage() {
                       </svg>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
