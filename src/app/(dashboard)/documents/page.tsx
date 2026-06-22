@@ -21,7 +21,15 @@ export default function DocumentsPage() {
   const [embedModel, setEmbedModel] = useState("");
   const [splitStrategy, setSplitStrategy] = useState("structure-llm");
   const [indexTarget, setIndexTarget] = useState("full");
-  const [indexMode, setIndexMode] = useState<"basic" | "graph">("graph");
+  // Default to "basic" (safe) rather than "graph": graph mode requires an
+  // embedding dim >= LIGHTRAG_MIN_DIM, and that dim is only known after it
+  // has been probed. A dedicated effect below upgrades to "graph" once the
+  // selected embedding model is confirmed compatible — covering BOTH the
+  // auto-selected default model (useEffect in fetchProviders) and manual
+  // changes. Previously the initial "graph" + a downgrade check that only
+  // fired on manual selection meant new users silently shipped "graph" with
+  // an unknown/null dim, and the backend then downgraded it with no feedback.
+  const [indexMode, setIndexMode] = useState<"basic" | "graph">("basic");
   const [autoSplit, setAutoSplit] = useState(true);
   const [processing, setProcessing] = useState(false);
   // False until the first /models/providers fetch settles. Gates the
@@ -30,13 +38,25 @@ export default function DocumentsPage() {
   // "genuinely unconfigured" before the fetch returns).
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
+  // Minimum embedding dimension LightRAG needs for knowledge-graph entity
+  // extraction. Mirrors isLightRAGCompatible() in src/lib/rag/dimension.ts.
+  const LIGHTRAG_MIN_DIM = 1536;
+
+  // Keep indexMode in sync with the selected embedding model's dimension.
+  // This fires for BOTH auto-selection (the fetch effect below calls
+  // setEmbedModel directly) and manual selection (handleEmbedModelChange),
+  // so the graph/basic choice always reflects the actually-selected model.
+  // Unknown dim (null/0) or < LIGHTRAG_MIN_DIM → basic; >= → graph.
+  useEffect(() => {
+    if (!embedModel) return;
+    const m = embedModels.find((x) => x.id === embedModel);
+    const dim = m?.embeddingDim ?? 0;
+    setIndexMode(dim >= LIGHTRAG_MIN_DIM ? "graph" : "basic");
+  }, [embedModel, embedModels]);
+
   const handleEmbedModelChange = useCallback((id: string) => {
     setEmbedModel(id);
-    const m = embedModels.find((x) => x.id === id);
-    if (m && (m.embeddingDim ?? 0) < 1536) {
-      setIndexMode("basic");
-    }
-  }, [embedModels]);
+  }, []);
 
   useEffect(() => {
     fetch("/api/v1/models/providers")

@@ -30,6 +30,42 @@ export async function POST(
     if (body.options) options = body.options as ProcessingOptions;
   } catch { /* ignore parse errors */ }
 
+  // Inherit the document's last processing options so that a re-index does
+  // not silently drop settings the user picked at upload time — notably
+  // indexMode:"graph", which is expensive to set up and was being lost on
+  // reprocess because callers (UI or API) rarely re-send the full options.
+  // We scan recent document_convert tasks for this doc and use the first one
+  // that carries a non-empty options object. Scanning several (not just the
+  // latest) matters: a prior reprocess that ran with empty {} options would
+  // otherwise shadow the original graph config, so inheritance would never
+  // recover it. Any field the caller explicitly provides still wins.
+  if (Object.keys(options).length === 0) {
+    const prevTasks = await db.$queryRawUnsafe<{ input_data: string | null }[]>(
+      `SELECT input_data FROM async_tasks
+       WHERE user_id = ?
+         AND type = 'document_convert'
+         AND input_data LIKE ?
+       ORDER BY created_at DESC LIMIT 10`,
+      user.id,
+      `%"docId":"${id}"%`,
+    );
+    for (const row of prevTasks) {
+      if (!row.input_data) continue;
+      try {
+        const prev = JSON.parse(row.input_data);
+        const prevOpts = prev?.options;
+        // Only inherit when the stored options actually carry meaningful
+        // settings (at least one key). An empty {} (e.g. from an earlier
+        // no-options reprocess) is skipped so we fall through to the real
+        // original config instead.
+        if (prevOpts && typeof prevOpts === "object" && Object.keys(prevOpts).length > 0) {
+          options = { ...prevOpts, ...options } as ProcessingOptions;
+          break;
+        }
+      } catch { /* malformed old task input — try the next row */ }
+    }
+  }
+
   // Dedupe: a rapid double-click or stale UI re-trigger used to enqueue two
   // full reprocess pipelines for the same docId, racing on chunks rows and
   // surfacing as the "converting → failed → ready" status flicker. If a

@@ -125,3 +125,9 @@ knip.json
 /.upload-tmp/
 embedding_manifest.json
 embeddings.bin
+
+# Windows reserved device name (cannot be deleted, must ignore)
+/nul
+
+# test fixtures
+/finance-cloud.docx

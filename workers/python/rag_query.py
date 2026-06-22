@@ -9,12 +9,19 @@ Supports all LightRAG query modes:
   - bypass   : LLM-only, no retrieval
 
 Usage:
-  python rag_query.py --user-id <uid> --query "<text>" --mode hybrid --limit 20
-         [--return-entities] [--return-relations]
-         [--embed-api-base <url>] [--embed-api-key <key>] [--embed-model <name>]
-         [--llm-api-base <url>] [--llm-api-key <key>] [--llm-model <name>]
+  CLI mode:
+    python rag_query.py --user-id <uid> --query "<text>" --mode hybrid --limit 20
+           [--return-entities] [--return-relations]
+           [--embed-api-base <url>] [--embed-api-key <key>] [--embed-model <name>]
+           [--llm-api-base <url>] [--llm-api-key <key>] [--llm-model <name>]
 
-Output: JSON to stdout
+  Daemon mode (via workers/python/daemon.py, op="query"):
+    handle_query(params) calls query_rag(**params) and returns the dict directly.
+    LightRAG instances are cached per working_dir so daemon-resident queries
+    skip the cold-start (import + storage load + JSON integrity scan) after the
+    first query for each user.
+
+Output: JSON to stdout (CLI mode) or returned dict (daemon mode).
 """
 import sys
 import json
@@ -49,6 +56,148 @@ def build_rank_score(rank: int, total: int) -> float:
     return max(0.25, 0.75 - t * 0.35)
 
 
+# ── Daemon-resident LightRAG instance cache ──────────────────────────────────
+# Keyed by working_dir so each user gets one resident LightRAG. When the daemon
+# is enabled, the second and later queries for a user skip:
+#   - Python interpreter start + heavy imports (daemon stays resident)
+#   - fix_corrupted_json_files + JSON/GraphML integrity scan
+#   - rag.initialize_storages() (already loaded into memory)
+# The cache is invalidated if embedding dimension or model changes, or if the
+# index lock is freshly held (data was re-indexed since the instance was built).
+_rag_cache: dict[str, dict] = {}
+
+
+def _cache_key(working_dir: str, embed_model: str, embed_dim: int) -> str:
+    return f"{working_dir}|{embed_model}|{embed_dim}"
+
+
+def _invalidate_rag_cache(working_dir: str | None = None) -> None:
+    """Drop cached LightRAG instances. If working_dir is given, drop only that
+    user's; otherwise drop everything (used on dimension/model change)."""
+    global _rag_cache
+    if working_dir is None:
+        _rag_cache = {}
+        return
+    keys_to_drop = [k for k in _rag_cache if k.startswith(f"{working_dir}|")]
+    for k in keys_to_drop:
+        # Best-effort close of any async storages the instance holds.
+        entry = _rag_cache.pop(k, None)
+        inst = entry.get("rag") if entry else None
+        _close_rag_safely(inst)
+
+
+def _close_rag_safely(rag) -> None:
+    if rag is None:
+        return
+    try:
+        # LightRAG storages expose finalize in >=1.2; older versions ignore it.
+        fin = getattr(rag, "finalize_storages", None)
+        if callable(fin):
+            asyncio.run(fin())
+    except Exception:
+        pass
+
+
+async def _get_or_build_rag(
+    working_dir: str,
+    embed_api_base: str,
+    embed_api_key: str,
+    embed_model: str,
+    embed_dim: int,
+    llm_func,
+    embedding_func,
+    rerank_kwargs: dict,
+    emit_timing=None,
+) -> tuple[object, bool]:
+    """Return (rag, fresh). If a resident instance matches the working_dir +
+    embedding config, reuse it; otherwise build a fresh one (running the JSON
+    integrity scan + storage load exactly once), cache it, and return fresh=True.
+
+    emit_timing(stage, ms) is called for the load stage on fresh builds.
+    """
+    key = _cache_key(working_dir, embed_model, embed_dim)
+    entry = _rag_cache.get(key)
+    if entry is not None:
+        cached_rag = entry.get("rag")
+        # Staleness guard: if an indexing lock appeared after we cached, the
+        # underlying data may have changed — drop and rebuild.
+        lock_file = os.path.join(working_dir, ".indexing.lock")
+        if cached_rag is not None and not os.path.exists(lock_file):
+            return cached_rag, False
+        # Fall through to rebuild.
+        _close_rag_safely(cached_rag)
+        _rag_cache.pop(key, None)
+
+    from lightrag import LightRAG
+
+    kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
+
+    # JSON/GraphML integrity scan — ONLY on fresh builds, not every query.
+    # This used to run on every single query, adding seconds of filesystem
+    # traversal + parse per call; daemon residency makes it a one-time cost.
+    fix_corrupted_json_files(working_dir)
+    import glob as _glob
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+        try:
+            with open(_fp, "r", encoding="utf-8") as _f:
+                json.load(_f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            try:
+                os.remove(_fp)
+            except OSError:
+                pass
+    # Also check graphml for corruption
+    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
+        try:
+            import xml.etree.ElementTree as ET
+            ET.parse(_fp)
+        except (ET.ParseError, UnicodeDecodeError, OSError):
+            try:
+                os.remove(_fp)
+            except OSError:
+                pass
+
+    try:
+        max_retries = 5
+        rag = None
+        for attempt in range(max_retries):
+            try:
+                rag = LightRAG(
+                    working_dir=working_dir,
+                    llm_model_func=llm_func,
+                    embedding_func=embedding_func,
+                    kv_storage=kv_storage,
+                    vector_storage=vector_storage,
+                    graph_storage=graph_storage,
+                    doc_status_storage=doc_status_storage,
+                    **storage_kwargs,
+                    **rerank_kwargs,
+                )
+                break
+            except Exception as e:
+                if "no element found" in str(e) and attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                raise
+    except Exception as e:
+        err = str(e)
+        if "Embedding dim mismatch" in err or "expected:" in err:
+            raise _EmbeddingMismatchError(err)
+        raise
+
+    _t_load0 = time.time()
+    await rag.initialize_storages()
+    if emit_timing is not None:
+        emit_timing("load", round((time.time() - _t_load0) * 1000.0))
+
+    _rag_cache[key] = {"rag": rag}
+    return rag, True
+
+
+class _EmbeddingMismatchError(Exception):
+    """Raised when the stored index was built with a different embedding dim."""
+
+
 async def query_rag(
     user_id: str,
     query_text: str,
@@ -67,20 +216,21 @@ async def query_rag(
     rerank_api_key: str = "",
     rerank_model: str = "",
 ) -> dict:
-    """Query LightRAG and return structured results: chunks, optional entities/relations."""
+    """Query LightRAG and return structured results: chunks, optional entities/relations.
+
+    Returns a dict (never prints). CLI main() prints it; daemon handle_query()
+    returns it over the wire so the resident process can reuse cached state.
+    """
     working_dir = os.path.join("data", "rag", user_id)
 
     if not os.path.exists(working_dir):
-        print(json.dumps({"chunks": [], "mode": mode}))
-        return
+        return {"chunks": [], "mode": mode}
 
     # Quick health check — fail fast when data is clearly unusable
-    import time as _time
-
     def _quick_health_check(wd: str) -> tuple:
         lock_file = os.path.join(wd, ".indexing.lock")
         if os.path.exists(lock_file):
-            lock_age = _time.time() - os.path.getmtime(lock_file)
+            lock_age = time.time() - os.path.getmtime(lock_file)
             if lock_age < 1800:
                 return False, "indexing in progress"
             else:
@@ -96,15 +246,11 @@ async def query_rag(
 
     ok, reason = _quick_health_check(working_dir)
     if not ok:
-        print(json.dumps({"chunks": [], "mode": mode, "warning": f"data unavailable: {reason}"}))
-        return
+        return {"chunks": [], "mode": mode, "warning": f"data unavailable: {reason}"}
 
-    from lightrag import LightRAG, QueryParam
     from lightrag.llm.openai import openai_embed
     from lightrag.utils import EmbeddingFunc
     from openai import AsyncOpenAI
-
-    kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
     import numpy as np
 
@@ -209,65 +355,35 @@ async def query_rag(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
-    fix_corrupted_json_files(working_dir)
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
-            
-    # Also check graphml for corruption
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
-        try:
-            import xml.etree.ElementTree as ET
-            ET.parse(_fp)
-        except (ET.ParseError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
+    from lightrag import QueryParam
+
+    def _emit_timing(stage, ms):
+        # Daemon routes stderr lines to Node; standalone CLI also prints them.
+        print(json.dumps({"type": "timing", "stage": stage, "ms": ms}), file=sys.stderr, flush=True)
 
     try:
-        import time
-        max_retries = 5
-        rag = None
-        for attempt in range(max_retries):
-            try:
-                rag = LightRAG(
-                    working_dir=working_dir,
-                    llm_model_func=llm_func,
-                    embedding_func=EmbeddingFunc(
-                        embedding_dim=eff_dim,
-                        max_token_size=8192,
-                        func=embedding_func,
-                        send_dimensions=True,
-                    ),
-                    kv_storage=kv_storage,
-                    vector_storage=vector_storage,
-                    graph_storage=graph_storage,
-                    doc_status_storage=doc_status_storage,
-                    **storage_kwargs,
-                    **rerank_kwargs,
-                )
-                break
-            except Exception as e:
-                if "no element found" in str(e) and attempt < max_retries - 1:
-                    time.sleep(1)
-                    continue
-                raise
-    except Exception as e:
-        err = str(e)
-        if "Embedding dim mismatch" in err or "expected:" in err:
-            print(json.dumps({
-                "error": err,
-                "mode": mode,
-                "warning": "Embedding dimension mismatch — the stored index was created with a different embedding model. Re-index documents with the current model to resolve.",
-            }))
-            return
-        raise
-
-    _t_load0 = time.time()
-    await rag.initialize_storages()
-    print(json.dumps({"type": "timing", "stage": "load", "ms": round((time.time() - _t_load0) * 1000.0)}), file=sys.stderr, flush=True)
+        rag, _fresh = await _get_or_build_rag(
+            working_dir,
+            embed_api_base,
+            embed_api_key,
+            embed_model,
+            eff_dim,
+            llm_func,
+            EmbeddingFunc(
+                embedding_dim=eff_dim,
+                max_token_size=8192,
+                func=embedding_func,
+                send_dimensions=True,
+            ),
+            rerank_kwargs,
+            emit_timing=_emit_timing,
+        )
+    except _EmbeddingMismatchError as e:
+        return {
+            "error": str(e),
+            "mode": mode,
+            "warning": "Embedding dimension mismatch — the stored index was created with a different embedding model. Re-index documents with the current model to resolve.",
+        }
 
     # Resolve mode aliases
     valid_modes = {"local", "global", "hybrid", "mix", "naive", "bypass"}
@@ -285,31 +401,33 @@ async def query_rag(
     try:
         _t_q0 = time.time()
         result = await rag.aquery_data(query_text, param=param)
-        print(json.dumps({
-            "type": "timing",
-            "stage": "query",
-            "ms": round((time.time() - _t_q0) * 1000.0),
-            "llm_calls": llm_stats["calls"],
-            "llm_ms": round(llm_stats["total_ms"]),
-        }), file=sys.stderr, flush=True)
+        _emit_timing("query", round((time.time() - _t_q0) * 1000.0))
+        _emit_timing("llm", round(llm_stats["total_ms"]))
         data = result.get("data", {}) if isinstance(result, dict) else {}
 
         chunks = data.get("chunks", [])
         entities = data.get("entities", [])
         relations = data.get("relationships", []) or data.get("relations", [])
 
+        # Recover per-chunk cosine distance. LightRAG's aquery_data already runs a
+        # vector search internally; we only do a SECOND vdb query to attach scores
+        # to chunk ids. On daemon-resident instances the vdb is in memory, so this
+        # is cheap — but we skip it entirely when aquery already exposed distances
+        # on the chunks (newer LightRAG builds include a `distance` field).
         cosine_map: dict[str, float] = {}
-        try:
-            vdb_results = await rag.chunks_vdb.query(
-                query_text, top_k=max(limit, len(chunks)) * 2
-            )
-            for vr in vdb_results:
-                cid = vr.get("id", "")
-                dist = vr.get("distance", 0.0)
-                if cid and isinstance(dist, (int, float)):
-                    cosine_map[cid] = float(dist)
-        except Exception:
-            pass
+        pre_exposed = any(isinstance(c, dict) and c.get("distance") is not None for c in chunks)
+        if not pre_exposed:
+            try:
+                vdb_results = await rag.chunks_vdb.query(
+                    query_text, top_k=max(limit, len(chunks)) * 2
+                )
+                for vr in vdb_results:
+                    cid = vr.get("id", "")
+                    dist = vr.get("distance", 0.0)
+                    if cid and isinstance(dist, (int, float)):
+                        cosine_map[cid] = float(dist)
+            except Exception:
+                pass
 
         output_chunks = []
         for i, chunk in enumerate(chunks):
@@ -325,8 +443,14 @@ async def query_rag(
                         title = m.group(2)
                         break
 
+            # Prefer the distance aquery already attached (newer builds), then
+            # the secondary vdb query map, then fall back to a rank-based score.
+            vector_score = None
+            if isinstance(chunk, dict) and chunk.get("distance") is not None:
+                vector_score = normalize_vector_score(chunk.get("distance"))
+            if vector_score is None:
+                vector_score = normalize_vector_score(cosine_map.get(chunk_id))
             rank_score = build_rank_score(i, len(chunks))
-            vector_score = normalize_vector_score(cosine_map.get(chunk_id))
             score = vector_score if vector_score is not None else rank_score
 
             output_chunks.append({
@@ -350,9 +474,9 @@ async def query_rag(
         if return_relations:
             output["relations"] = relations[:limit] if relations else []
 
-        print(json.dumps(output, ensure_ascii=False))
+        return output
     except Exception as e:
-        print(json.dumps({
+        return {
             "error": str(e),
             "mode": mode,
             "context": {
@@ -362,7 +486,7 @@ async def query_rag(
                 "has_vdb": os.path.exists(os.path.join(working_dir, "vdb_chunks.json")),
                 "has_lock": os.path.exists(os.path.join(working_dir, ".indexing.lock")),
             },
-        }))
+        }
 
 
 def main() -> None:
@@ -387,7 +511,7 @@ def main() -> None:
     parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 
-    asyncio.run(
+    result = asyncio.run(
         query_rag(
             user_id=args.user_id,
             query_text=args.query,
@@ -407,6 +531,7 @@ def main() -> None:
             rerank_model=args.rerank_model,
         )
     )
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
