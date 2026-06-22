@@ -5,12 +5,27 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { createRagContext } from "@/lib/rag/context";
 import { cosineSimilarity, bufferToFloat32 } from "@/lib/documents/embedder";
 import { spawnPythonJson } from "@/lib/python";
+import { pythonDaemon, isDaemonEnabled } from "@/lib/python-daemon";
 import { searchByKeyword } from "@/lib/search/fts";
 import { buildSearchExcerpt } from "@/lib/search/excerpt";
 import type { SearchResult, SearchRerankStatus } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
 const RAG_QUERY_SCRIPT = path.resolve(/* turbopackIgnore: true */ "workers/python/rag_query.py");
+// Daemon queries reuse a resident LightRAG instance after the first call per
+// user. The first daemon call pays the lightrag import + storage load + a
+// query-time LLM round-trip (mix/hybrid do keyword extraction), which can
+// itself take a while. We DON'T want a cold daemon to block the user for the
+// full 90s before falling back — a short daemon timeout makes the cold path
+// fail fast to spawn, while the daemon keeps warming in the background so the
+// NEXT query hits a resident instance. Once warm, real queries finish in 1-3s
+// well under this ceiling.
+// Daemon queries reuse a resident LightRAG instance after the first call per
+// user. The first call pays lightrag import + storage load + an embedding API
+// round-trip (~2s in practice); subsequent calls hit the cached instance and
+// finish in <1s. 60s gives headroom for a transiently slow embedding API
+// without the aggressive 90s-then-kill that the old spawn path used.
+const RAG_QUERY_DAEMON_TIMEOUT_MS = 60_000;
 const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
 const LIGHTRAG_NO_DATA_COOLDOWN_MS = 30 * 60 * 1000;
 const LIGHTRAG_INDEXING_COOLDOWN_MS = 5 * 60 * 1000;
@@ -69,6 +84,39 @@ export function mapRagChunkToSearchResult(input: {
   };
 }
 
+/**
+ * Build the kwargs dict shared by both the daemon and the spawn fallback.
+ * Daemon mode passes these as a JSON `params` object; spawn mode flattens them
+ * to CLI flags. Keeping construction in one place prevents drift.
+ */
+function buildRagQueryParams(
+  query: string,
+  userId: string,
+  limit: number,
+  mode: QueryMode,
+  embedDim: number,
+  embedConfig: { apiBase: string; apiKey: string; model: string },
+  llmConfig: { apiBase: string; apiKey: string; model: string },
+  rerankConfig?: { apiBase: string; apiKey: string; model: string },
+): Record<string, unknown> {
+  return {
+    user_id: userId,
+    query_text: query,
+    mode,
+    limit,
+    embed_api_base: embedConfig.apiBase,
+    embed_api_key: embedConfig.apiKey,
+    embed_model: embedConfig.model,
+    embed_dim: embedDim,
+    llm_api_base: llmConfig.apiBase,
+    llm_api_key: llmConfig.apiKey,
+    llm_model: llmConfig.model,
+    rerank_api_base: rerankConfig?.apiBase ?? "",
+    rerank_api_key: rerankConfig?.apiKey ?? "",
+    rerank_model: rerankConfig?.model ?? "",
+  };
+}
+
 async function searchViaLightRAG(
   query: string,
   userId: string,
@@ -79,26 +127,49 @@ async function searchViaLightRAG(
   llmConfig: { apiBase: string; apiKey: string; model: string },
   rerankConfig?: { apiBase: string; apiKey: string; model: string },
 ): Promise<{ chunks: RagChunkResult[]; mode: string; entities?: unknown[]; relations?: unknown[] }> {
-  const args = [
-    "--user-id", userId,
-    "--query", query,
-    "--mode", mode,
-    "--limit", String(limit),
-    "--embed-api-base", embedConfig.apiBase,
-    "--embed-api-key", embedConfig.apiKey,
-    "--embed-model", embedConfig.model,
-    "--llm-api-base", llmConfig.apiBase,
-    "--llm-api-key", llmConfig.apiKey,
-    "--llm-model", llmConfig.model,
-  ];
-  if (embedDim > 0) args.push("--embed-dim", String(embedDim));
-  if (rerankConfig) {
-    args.push(
-      "--rerank-api-base", rerankConfig.apiBase,
-      "--rerank-api-key", rerankConfig.apiKey,
-      "--rerank-model", rerankConfig.model,
-    );
+  // Preferred path: the long-lived daemon. After the first query per user it
+  // reuses a resident LightRAG instance, skipping interpreter start, lightrag
+  // import, the full-directory JSON/GraphML integrity scan, and storage load.
+  // Falls back transparently to a one-shot spawn if the daemon is disabled or
+  // errors — callers see identical output shape either way.
+  if (isDaemonEnabled()) {
+    try {
+      const params = buildRagQueryParams(query, userId, limit, mode, embedDim, embedConfig, llmConfig, rerankConfig);
+      const parsed = await pythonDaemon.call<RagQueryOutput>("query", params, {
+        timeoutMs: RAG_QUERY_DAEMON_TIMEOUT_MS,
+      });
+      if (parsed.error) throw new Error(parsed.error);
+      return {
+        chunks: parsed.chunks || [],
+        mode: parsed.mode || mode,
+        entities: parsed.entities,
+        relations: parsed.relations,
+      };
+    } catch (err) {
+      // Don't let a daemon hiccup (cold start, OOM restart, transient error)
+      // surface to the user — the spawn fallback produces the same result.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[semantic] daemon query failed, falling back to spawn:", msg);
+    }
   }
+
+  const params = buildRagQueryParams(query, userId, limit, mode, embedDim, embedConfig, llmConfig, rerankConfig);
+  const args: string[] = [
+    "--user-id", String(params.user_id),
+    "--query", String(params.query_text),
+    "--mode", String(params.mode),
+    "--limit", String(params.limit),
+    "--embed-api-base", String(params.embed_api_base),
+    "--embed-api-key", String(params.embed_api_key),
+    "--embed-model", String(params.embed_model),
+    "--llm-api-base", String(params.llm_api_base),
+    "--llm-api-key", String(params.llm_api_key),
+    "--llm-model", String(params.llm_model),
+    "--rerank-api-base", String(params.rerank_api_base),
+    "--rerank-api-key", String(params.rerank_api_key),
+    "--rerank-model", String(params.rerank_model),
+  ];
+  if (Number(params.embed_dim) > 0) args.push("--embed-dim", String(params.embed_dim));
 
   // 90s ceiling gives rag_query's bounded-retry LLM path (per-call 25s × 2
   // attempts) headroom. Normal hybrid/mix queries finish far sooner; this is
@@ -188,6 +259,33 @@ async function searchViaDirectEmbedding(
   })), inputTokens: embedTokens };
 }
 
+/**
+ * Run the keyword (FTS5) branch and resolve full content for its hits.
+ * Independent of the semantic branch — run in parallel with it.
+ */
+async function runKeywordBranch(
+  query: string,
+  userId: string,
+  limit: number,
+): Promise<SearchResult[]> {
+  let keywordResults = await searchByKeyword(query, userId, limit).catch(() => [] as SearchResult[]);
+  if (keywordResults.length === 0) return [];
+
+  const ids = keywordResults.map((r) => r.chunkId);
+  const chunks = await db.documentChunk.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, content: true },
+  });
+  const contentMap = new Map(chunks.map((c) => [c.id, c.content || ""]));
+  return keywordResults.map((r) => ({
+    ...r,
+    content: buildSearchExcerpt(contentMap.get(r.chunkId) || r.content || "", query, 360),
+    source: r.source || "keyword",
+    relevanceLabel: r.relevanceLabel || "keyword",
+    debug: { ...r.debug, keywordScore: r.score },
+  }));
+}
+
 export async function semanticSearch(
   query: string,
   userId: string,
@@ -203,6 +301,69 @@ export async function semanticSearch(
     throw new Error(`Semantic search unavailable: ${message}`);
   }
 
+  // Semantic + keyword branches are independent (different retrieval engines,
+  // different data sources) — run them in parallel and fuse with RRF when both
+  // resolve. The keyword branch used to be `await`ed AFTER the semantic branch,
+  // which added its full latency (incl. a possible first-call FTS rebuild) on
+  // top of the LightRAG query. Parallelizing hides it behind the slower branch.
+  const semanticPromise = runSemanticBranch(query, userId, limit, mode, ctx);
+  const keywordPromise = runKeywordBranch(query, userId, limit * 2);
+
+  const [semanticResults, keywordResults] = await Promise.all([semanticPromise, keywordPromise]);
+
+  const results = rrfFuse(semanticResults, keywordResults, limit, query);
+
+  // Attach images. Previously this looped every result and ran
+  // allImages.filter(...) inside — O(results × images). Build the index once
+  // so each lookup is O(1).
+  const matchedDocIds = [...new Set(results.map((r) => r.documentId))];
+  if (matchedDocIds.length > 0) {
+    const allImages = await db.documentImage.findMany({
+      where: { documentId: { in: matchedDocIds } },
+    });
+    if (allImages.length > 0) {
+      const imagesByDoc = new Map<string, typeof allImages>();
+      for (const img of allImages) {
+        const list = imagesByDoc.get(img.documentId);
+        if (list) list.push(img);
+        else imagesByDoc.set(img.documentId, [img]);
+      }
+      for (const result of results) {
+        const docImages = imagesByDoc.get(result.documentId);
+        if (docImages && docImages.length > 0) {
+          result.images = docImages.map((img) => ({
+            id: img.id,
+            documentId: img.documentId,
+            filename: img.filename,
+            url: `/api/v1/documents/${img.documentId}/images/${img.filename}`,
+            altText: img.altText,
+            mimeType: img.mimeType,
+            fileSize: img.fileSize,
+            width: img.width,
+            height: img.height,
+            pageNumber: img.pageNumber,
+          }));
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Semantic branch: try LightRAG (daemon first, spawn fallback inside), and on
+ * empty/failed LightRAG fall back to direct embedding scan. Returns the
+ * semantic result list — never throws (failures land in the direct-embedding
+ * fallback or return []).
+ */
+async function runSemanticBranch(
+  query: string,
+  userId: string,
+  limit: number,
+  mode: QueryMode,
+  ctx: Awaited<ReturnType<typeof createRagContext>>,
+): Promise<SearchResult[]> {
   let semanticResults: SearchResult[] = [];
 
   if (ctx.llmConfig && (lightRagCooldowns.get(userId) ?? 0) <= Date.now()) {
@@ -262,6 +423,13 @@ export async function semanticSearch(
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_INDEXING_COOLDOWN_MS);
       } else if (message.includes("404")) {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
+      } else if (message.includes("<timeout after")) {
+        // A timeout (daemon or spawn) is almost always a slow query-time LLM
+        // (mix/hybrid keyword extraction), NOT a data problem. Cooldown would
+        // suppress LightRAG for 5min and force every search onto the direct-
+        // embedding fallback — wrong call for a transient slow LLM. Log and
+        // move on; the next query will retry LightRAG immediately.
+        console.error("[semantic] LightRAG query timed out for user", userId, "(likely slow LLM, no cooldown set)");
       } else {
         lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
         console.error("[semantic] LightRAG query failed for user", userId, err instanceof Error ? err.stack : err);
@@ -283,51 +451,7 @@ export async function semanticSearch(
     }
   }
 
-  let keywordResults = await searchByKeyword(query, userId, limit * 2).catch(() => [] as SearchResult[]);
-
-  if (keywordResults.length > 0) {
-    const ids = keywordResults.map((r) => r.chunkId);
-    const chunks = await db.documentChunk.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, content: true },
-    });
-    const contentMap = new Map(chunks.map((c) => [c.id, c.content || ""]));
-    keywordResults = keywordResults.map((r) => ({
-      ...r,
-      content: buildSearchExcerpt(contentMap.get(r.chunkId) || r.content || "", query, 360),
-      source: r.source || "keyword",
-      relevanceLabel: r.relevanceLabel || "keyword",
-      debug: { ...r.debug, keywordScore: r.score },
-    }));
-  }
-
-  const results = rrfFuse(semanticResults, keywordResults, limit, query);
-
-  const matchedDocIds = [...new Set(results.map((r) => r.documentId))];
-  if (matchedDocIds.length > 0) {
-    const allImages = await db.documentImage.findMany({
-      where: { documentId: { in: matchedDocIds } },
-    });
-    for (const result of results) {
-      const docImages = allImages.filter((img) => img.documentId === result.documentId);
-      if (docImages.length > 0) {
-        result.images = docImages.map((img) => ({
-          id: img.id,
-          documentId: img.documentId,
-          filename: img.filename,
-          url: `/api/v1/documents/${img.documentId}/images/${img.filename}`,
-          altText: img.altText,
-          mimeType: img.mimeType,
-          fileSize: img.fileSize,
-          width: img.width,
-          height: img.height,
-          pageNumber: img.pageNumber,
-        }));
-      }
-    }
-  }
-
-  return results;
+  return semanticResults;
 }
 
 function rrfFuse(

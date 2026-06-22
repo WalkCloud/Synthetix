@@ -317,9 +317,19 @@ export function DocumentTable({
                       <td className="px-4 py-3.5 text-sm text-foreground">{formatFileSize(doc.originalSize)}</td>
                       <td className="px-4 py-3.5">
                         {ready ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300 whitespace-nowrap">
-                            {t.common.states.ready}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300 whitespace-nowrap">
+                              {t.common.states.ready}
+                            </span>
+                            {doc.conversionWarning && (
+                              <span
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300 cursor-help"
+                                title={doc.conversionWarning}
+                              >
+                                ⚠
+                              </span>
+                            )}
+                          </div>
                         ) : doc.status === "queued" ? (
                           // "Queued" sits between upload-finished and convert-started.
                           // The library API attaches queuePosition for these docs so

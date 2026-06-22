@@ -27,6 +27,12 @@ export interface DocumentMeta {
   tokenEstimate: number | null;
   wordCount: number | null;
   conversionMethod?: string | null;
+  /**
+   * Pipeline warnings surfaced to the user, e.g. a silent graph→basic
+   * downgrade when the embedding model dimension is below 1536. Multi-line
+   * when more than one warning accumulated. Optional: only present when set.
+   */
+  conversionWarning?: string | null;
   createdAt: string;
   updatedAt: string;
   chunks?: ChunkMeta[];

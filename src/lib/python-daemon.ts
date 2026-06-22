@@ -44,7 +44,7 @@ export function isDaemonEnabled(): boolean {
   return DAEMON_ENABLED;
 }
 
-export type DaemonOp = "chunk" | "index" | "ping";
+export type DaemonOp = "chunk" | "index" | "query" | "ping";
 
 export interface DaemonCallOptions {
   onProgressEvent?: (event: Record<string, unknown>) => void;

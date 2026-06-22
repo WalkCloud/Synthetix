@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
 import type { SearchResult } from "@/types/documents";
 import type { TopologyResponse } from "@/types/topology";
@@ -37,6 +39,7 @@ interface EntityEvidenceChunk {
 }
 
 export default function SearchPage() {
+  const router = useRouter();
   const { locale, t } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
@@ -336,10 +339,10 @@ export default function SearchPage() {
         setSearchResults(data.data);
         setLastSearchMode(searchMode);
       }
-      else { alert(data.error || t.errors.generationFailed); }
+      else { toast.error(data.error || t.errors.generationFailed); }
     } catch {
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
-      alert(t.errors.networkError);
+      toast.error(t.errors.networkError);
     } finally {
       setIsSearching(false);
     }
@@ -385,7 +388,7 @@ export default function SearchPage() {
               resultMode={visibleSearchState.resultMode}
               searchStage={searchStage}
               needsSearchForSelectedMode={visibleSearchState.needsSearchForSelectedMode}
-              onViewDocument={(id) => {}}
+              onViewDocument={(id) => router.push(`/library/${id}`)}
             />
           </>
         )}

@@ -1,17 +1,25 @@
 """Synthetix long-lived Python daemon.
 
 Hosts the per-document hot paths that previously cold-started Python on every
-call — `local_chunk.find_boundaries` (ONNX semantic chunking) and
-`rag_index.index_document` (LightRAG basic/graph indexing). Docling conversion
-is NOT hosted here (its torch footprint ~1.5-2.5GB is too heavy to keep
-resident; it stays a cache-backed one-shot spawn).
+call — `local_chunk.find_boundaries` (ONNX semantic chunking),
+`rag_index.index_document` (LightRAG basic/graph indexing), and
+`rag_query.query_rag` (semantic search). Docling conversion is NOT hosted here
+(its torch footprint ~1.5-2.5GB is too heavy to keep resident; it stays a
+cache-backed one-shot spawn).
+
+The query handler caches LightRAG instances per working_dir so the SECOND and
+later searches for a user skip the Python cold-start (interpreter + lightrag
+import), the full-directory JSON/GraphML integrity scan, and the
+`rag.initialize_storages()` load. First query pays it once; the daemon then
+stays resident (5min idle reaper releases RSS) and rebuilds lazily on reheat.
 
 Wire protocol (newline-delimited JSON):
-  Node -> daemon  (stdin):  {"id": <int>, "op": "chunk"|"index"|"ping", "params": {...}}
+  Node -> daemon  (stdin):  {"id": <int>, "op": "chunk"|"index"|"query"|"ping", "params": {...}}
   daemon -> Node  (stdout): {"id": <int>, "ok": true, "result": {...}}
                              {"id": <int>, "ok": false, "error": "<msg>", "exc_type": "<type>"}
   daemon -> Node  (stderr): one JSON object per line, dispatched by Node on `type`:
                              {"type":"progress",...}  {"type":"usage",...}  {"type":"rss","rss_mb":<int>}
+                             {"type":"timing","stage":"load|query|llm","ms":<int>}
                              (non-`{`-prefixed lines are library warnings and ignored)
 
 The daemon serves ONE request at a time (Node serializes via a mutex), so every
@@ -134,6 +142,28 @@ async def handle_index(params):
     return await rag_index.index_document(**params)
 
 
+async def handle_query(params):
+    """Semantic search via the resident LightRAG instance cache.
+
+    rag_query.query_rag already:
+      - caches LightRAG per working_dir (so storage load + JSON scan run once)
+      - returns a plain dict (we serialize it over the wire here)
+      - emits {"type":"timing",...} to stderr, which the daemon's sink forwards
+        to Node so semantic.ts can surface load/query/llm latencies if desired.
+
+    The daemon process itself stays warm across queries (5min idle reaper), so
+    Python interpreter start + lightrag/numpy/openai imports are amortized.
+
+    NOTE: lightrag/numpy/openai are pre-imported at daemon startup (see
+    _warm_imports below) rather than lazily inside query_rag. lightrag creates
+    module-global asyncio primitives at import time; importing it lazily inside
+    the daemon's running event loop deadlocks on those primitives. Pre-importing
+    at startup (before the loop starts) avoids this entirely.
+    """
+    import rag_query
+    return await rag_query.query_rag(**params)
+
+
 def handle_ping(_params):
     return {"pong": True}
 
@@ -141,6 +171,7 @@ def handle_ping(_params):
 HANDLERS = {
     "chunk": handle_chunk,
     "index": handle_index,
+    "query": handle_query,
     "ping": handle_ping,
 }
 
@@ -275,7 +306,53 @@ def _stdin_reader(loop, request_q):
         pass
 
 
+def _warm_imports():
+    """Pre-import heavy modules BEFORE the asyncio event loop starts.
+
+    lightrag (and its deps numpy/openai) create module-global asyncio primitives
+    at import time. If that import happens lazily inside a handler while the
+    daemon's event loop is already running, those primitives can bind to / block
+    the running loop and deadlock the query. Importing at startup (no loop yet)
+    is safe and also amortizes the ~1s import cost across all future queries.
+
+    The same deadlock affects onnxruntime: creating an ONNX InferenceSession
+    (via SentenceTransformer's first model load) from inside a running asyncio
+    loop hangs on Windows. Pre-initializing the ONNX session here — before the
+    loop starts — lets subsequent chunk calls reuse it without deadlocking.
+    Without this, every daemon chunk op times out (120s) and the caller falls
+    back to a slow one-shot spawn, making document conversion take ~10+ minutes.
+    """
+    try:
+        import lightrag  # noqa: F401
+        import lightrag.llm.openai  # noqa: F401
+        import numpy  # noqa: F401
+        import openai  # noqa: F401
+    except Exception:
+        # Don't crash a chunk-only daemon that doesn't have lightrag installed.
+        pass
+    try:
+        from sentence_transformers import SentenceTransformer
+        model_path = os.environ.get("LOCAL_EMBED_MODEL_PATH", "data/models/bge-small-zh-v1.5")
+        # Eagerly create the ONNX InferenceSession. This is the operation that
+        # deadlocks when first run inside the event loop; doing it here (pre-loop)
+        # initializes onnxruntime's session state so later handle_chunk calls —
+        # which reuse this exact model instance via local_chunk.get_model()'s
+        # module-level cache — never trigger session creation again.
+        SentenceTransformer(
+            model_path,
+            backend="onnx",
+            device="cpu",
+            model_kwargs={"file_name": "model.onnx"},
+        )
+    except Exception:
+        # Best-effort: a daemon without the ONNX model (or where the path is
+        # wrong) should still start — chunk calls will then fail with a clear
+        # error and the caller falls back to spawn, same as before.
+        pass
+
+
 def main():
+    _warm_imports()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     request_q = asyncio.Queue()
