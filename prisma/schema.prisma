@@ -19,12 +19,13 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  providers  ModelProvider[]
-  tasks      AsyncTask[]
-  tokenUsage TokenUsage[]
-  documents  Document[]
-  sessions   BrainstormSession[]
-  drafts     Draft[]
+  providers   ModelProvider[]
+  tasks       AsyncTask[]
+  tokenUsage  TokenUsage[]
+  documents   Document[]
+  sessions    BrainstormSession[]
+  drafts      Draft[]
+  wikiEntries WikiEntry[]
   @@map("users")
 }
 
@@ -339,4 +340,85 @@ model DocumentImage {
   @@index([documentId])
   @@unique([documentId, filename])
   @@map("document_images")
+}
+
+/// LLM-synthesized, human-readable knowledge entries that sit ABOVE the raw
+/// chunks and graph layers. Inspired by Karpathy's LLM-Wiki (a persistent,
+/// ever-accumulating Markdown wiki maintained by the LLM) and the OKF spec
+/// (portable Markdown + minimal frontmatter + link-as-graph).
+///
+/// Three entry types form the synthesized layer:
+///   - doc_summary: document-level abstract (one per document)
+///   - topic:       cross-cutting theme/concept group
+///   - concept:     a single defined notion
+///   - claim:       a discrete assertion with a confidence score
+///
+/// Lifecycle: created by `synthesizeDocument` (per-chunk incremental),
+/// updated by `updateWikiAfterSection` (writeback flywheel), and may be
+/// flagged `conflicting` by the `validate` pass (Phase 2).
+model WikiEntry {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  type            String // "doc_summary" | "topic" | "concept" | "claim"
+  title           String
+  /// OKF-style identity: URL-safe slug, unique per user. The "file path is
+  /// identity" principle from OKF, realized at the DB layer.
+  slug            String
+  content         String // Markdown body
+  /// JSON array of source references: [{documentId, chunkId?, entityId?}].
+  /// Lightweight JSON (not a join table) because source refs are many-to-many
+  /// and mutate frequently — mirrors the existing SectionReference.sourceType design.
+  sourceRefs      String    @default("[]") @map("source_refs")
+  confidence      Float     @default(0.8) // 0-1, LLM self-assessment or derived
+  status          String    @default("active") // active | superseded | conflicting
+  lastValidatedAt DateTime? @map("last_validated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links     WikiLink[]  @relation("WikiLinkFrom")
+  backlinks WikiLink[]  @relation("WikiLinkTo")
+  changeLog WikiChangeLog[]
+
+  @@unique([userId, slug])
+  @@index([userId, type])
+  @@index([userId, status])
+  @@map("wiki_entries")
+}
+
+/// Explicit typed edges between Wiki entries — the database realization of
+/// OKF's "Markdown links form the knowledge graph" principle. Enables graph
+/// traversal + visualization without re-parsing Markdown.
+model WikiLink {
+  id       String @id @default(uuid())
+  fromId   String @map("from_id")
+  toId     String @map("to_id")
+  relation String // "relates" | "supports" | "contradicts" | "derived_from"
+
+  from WikiEntry @relation("WikiLinkFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to   WikiEntry @relation("WikiLinkTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId, relation])
+  @@index([toId])
+  @@map("wiki_links")
+}
+
+/// Append-only change history — the machine-writable backing for the
+/// human-readable `log.md` (LLM-Wiki's schema layer). Every create / update /
+/// merge / supersede / conflict adds one row so users can audit how the
+/// knowledge base evolved over time.
+model WikiChangeLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  entryId   String?  @map("entry_id") // null = global event (e.g. full rebuild)
+  action    String // "create" | "update" | "merge" | "supersede" | "conflict"
+  summary   String // one human-readable line (a row in log.md)
+  detail    String? // JSON: before/after diff summary
+  createdAt DateTime @default(now()) @map("created_at")
+
+  entry WikiEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([entryId])
+  @@map("wiki_change_log")
 }
