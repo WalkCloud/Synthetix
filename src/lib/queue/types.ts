@@ -3,6 +3,7 @@ export type TaskType =
   | "document_cleanup"
   | "rag_embed_index"
   | "rag_index"
+  | "wiki_synthesize"
   | "outline_generate"
   | "draft_generate_all"
   | `_test_${string}`;
@@ -31,6 +32,10 @@ export interface ProcessingOptions {
   // (e.g. after a converter upgrade). Defaults to false so reprocess of an
   // unchanged source file is fast.
   forceReconnect?: boolean;
+  // When false, skip the Wiki synthesis phase (saves tokens). Defaults to true.
+  // Wiki synthesis runs AFTER basic index (+ optional graph) as an async,
+  // non-blocking phase that precipitates synthesized knowledge entries.
+  wikiEnabled?: boolean;
 }
 
 export interface TaskPayload {

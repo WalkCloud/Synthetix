@@ -10,3 +10,18 @@ import type { ProcessingOptions } from "@/lib/queue/types";
 export function shouldEnqueueGraphIndex(options: Pick<ProcessingOptions, "indexMode" | "indexTarget">): boolean {
   return options.indexMode === "graph" && (options.indexTarget || "full") === "full";
 }
+
+/**
+ * Returns true when Wiki synthesis should be enqueued AFTER basic index
+ * (+ optional graph) completes. Wiki synthesis is the final knowledge
+ * precipitation layer — it runs per-chunk (never overflows the LLM context
+ * window) and defaults to enabled. Users can opt out via `wikiEnabled: false`
+ * to save tokens on large bulk uploads.
+ *
+ * Requires full indexing (not "original" only) because Wiki synthesis reads
+ * the document's chunks.
+ */
+export function shouldEnqueueWikiSynthesis(options: Pick<ProcessingOptions, "wikiEnabled" | "indexTarget">): boolean {
+  if (options.wikiEnabled === false) return false;
+  return (options.indexTarget || "full") === "full";
+}

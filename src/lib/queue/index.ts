@@ -3,6 +3,7 @@ import { processRagEmbedIndex } from "./workers/rag-embed-index-worker";
 import { cleanupDeletedDocument } from "./workers/document-cleanup-worker";
 import { processDocumentGraph } from "./workers/document-graph-worker";
 import { processDocumentConvert } from "./workers/document-convert-worker";
+import { processWikiSynthesize } from "./workers/wiki-synthesize-worker";
 import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import { db } from "@/lib/db";
@@ -14,6 +15,7 @@ const LONG_DRAFT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const OUTLINE_GENERATE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — 4-level recursive expansion (parts→chapters→sections→subsections) fans out to many LLM calls
 const GRAPH_INDEX_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const DOCUMENT_CONVERT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const WIKI_SYNTHESIZE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — per-chunk LLM calls (fast each, but many for large docs)
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -31,6 +33,7 @@ const QUEUE_TOTAL_CONCURRENCY = readPositiveInt("QUEUE_TOTAL_CONCURRENCY", 1);
 const QUEUE_RAG_EMBED_CONCURRENCY = readPositiveInt("QUEUE_RAG_EMBED_CONCURRENCY", 1);
 const QUEUE_RAG_INDEX_CONCURRENCY = readPositiveInt("QUEUE_RAG_INDEX_CONCURRENCY", 1);
 const QUEUE_DOCUMENT_CONVERT_CONCURRENCY = readPositiveInt("QUEUE_DOCUMENT_CONVERT_CONCURRENCY", 1);
+const QUEUE_WIKI_SYNTHESIZE_CONCURRENCY = readPositiveInt("QUEUE_WIKI_SYNTHESIZE_CONCURRENCY", 1);
 
 let draining = false;
 
@@ -132,11 +135,13 @@ export function getQueue(): TaskQueue {
         outline_generate: OUTLINE_GENERATE_TIMEOUT_MS,
         rag_index: GRAPH_INDEX_TIMEOUT_MS,
         document_convert: DOCUMENT_CONVERT_TIMEOUT_MS,
+        wiki_synthesize: WIKI_SYNTHESIZE_TIMEOUT_MS,
       },
       taskConcurrency: {
         rag_embed_index: QUEUE_RAG_EMBED_CONCURRENCY,
         rag_index: QUEUE_RAG_INDEX_CONCURRENCY,
         document_convert: QUEUE_DOCUMENT_CONVERT_CONCURRENCY,
+        wiki_synthesize: QUEUE_WIKI_SYNTHESIZE_CONCURRENCY,
       },
     });
 
@@ -171,6 +176,14 @@ export function getQueue(): TaskQueue {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
       return processDocumentGraph(taskId);
+    });
+
+    queue.registerWorker("wiki_synthesize", async (
+      payload: TaskPayload,
+    ): Promise<TaskResult> => {
+      const taskId = payload.taskId as string;
+      if (!taskId) throw new Error("Missing taskId in payload");
+      return processWikiSynthesize(taskId);
     });
 
     queue.registerWorker("draft_generate_all", async (
