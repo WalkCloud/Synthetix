@@ -76,6 +76,7 @@ const zhCN = {
       documentInit: "文档初始化",
       documentLibrary: "文档库",
       knowledgeSearch: "知识检索",
+      knowledgeBase: "知识库",
       mindOrganization: "思路梳理",
       documentWriting: "文档撰写",
       documentTopology: "文档拓扑",
