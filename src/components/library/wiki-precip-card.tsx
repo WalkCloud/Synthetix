@@ -58,10 +58,10 @@ export function WikiPrecipCard({ documentId }: { documentId: string }) {
           </svg>
         </div>
         <h3 className="text-sm font-semibold text-foreground">
-          {isZh ? "知识沉淀" : "Knowledge Synthesized"}
+          {isZh ? "知识提炼" : "Distilled Knowledge"}
         </h3>
         <span className="text-xs text-muted-foreground ml-auto">
-          {isZh ? `本文档已沉淀到知识库` : "Precipitated to knowledge base"}
+          {isZh ? `本文档已提炼为知识条目` : "Distilled from this document"}
         </span>
       </div>
 
