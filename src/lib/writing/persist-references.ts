@@ -20,6 +20,16 @@ type WritingReference =
       content: string;
       score: number;
       images?: Array<{ id: string; documentId: string; filename: string; url: string; altText: string | null; mimeType: string; fileSize: number; width: number | null; height: number | null; pageNumber: number | null }>;
+    }
+  | {
+      sourceType: "wiki";
+      documentId?: string;
+      chunkId?: string;
+      documentName: string;
+      title?: string | null;
+      content: string;
+      score: number;
+      images?: Array<{ id: string; documentId: string; filename: string; url: string; altText: string | null; mimeType: string; fileSize: number; width: number | null; height: number | null; pageNumber: number | null }>;
     };
 
 // Backward-compatible alias for callers that pass plain rag references
@@ -54,6 +64,20 @@ export async function persistSectionReferences(
               content: rag.content || null,
               images: rag.images ? JSON.stringify(rag.images) : null,
               sourceType: "rag_graph" as const,
+            };
+          }
+          if ("sourceType" in ref && ref.sourceType === "wiki") {
+            const wiki = ref as unknown as RagReference;
+            return {
+              sectionId,
+              documentId: wiki.documentId || null,
+              chunkId: wiki.chunkId || null,
+              documentName: wiki.documentName,
+              relevanceScore: wiki.score,
+              sourceAnchor: wiki.title || null,
+              content: wiki.content || null,
+              images: wiki.images ? JSON.stringify(wiki.images) : null,
+              sourceType: "wiki" as const,
             };
           }
           // rag_chunk (default) — backward compatible with callers that don't set sourceType

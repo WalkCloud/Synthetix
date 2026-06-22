@@ -2,6 +2,7 @@ import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
+import { queryWikiForSection } from "@/lib/wiki/query";
 import {
   assembleContext,
   type ContextInput,
@@ -85,11 +86,51 @@ async function enrichSectionContext(
   }
 }
 
+/**
+ * Query the Wiki synthesized layer for a section (the "cheap retrieval" half
+ * of the LLM-Wiki flywheel). Returns entries that get injected into the
+ * context as higher-level knowledge, BEFORE raw RAG retrieval.
+ *
+ * Pure SQL — no LLM, no embeddings — so this is essentially free vs the
+ * semanticSearch call. When Wiki has good coverage, the RAG limit is
+ * halved (we already have synthesized knowledge, so fewer raw chunks needed).
+ */
+async function fetchWikiContext(
+  draftTitle: string,
+  section: ContextInput["section"] & { constraints?: string | null },
+  userId: string,
+): Promise<{ entries: NonNullable<ContextInput["wikiEntries"]>; usedEntryIds: string[] }> {
+  try {
+    const hidden = parseSectionConstraints(section.constraints);
+    const entries = await queryWikiForSection(
+      section,
+      draftTitle,
+      userId,
+      hidden.retrievalQuery,
+    );
+    return {
+      entries: entries.map((e) => ({
+        id: e.id,
+        title: e.title,
+        content: e.content,
+        confidence: e.confidence,
+        type: e.type,
+      })),
+      usedEntryIds: entries.map((e) => e.id),
+    };
+  } catch (err) {
+    // Wiki is a pure enhancement — never block generation on it.
+    console.warn("Wiki query failed (non-blocking):", err);
+    return { entries: [], usedEntryIds: [] };
+  }
+}
+
 async function fetchRagReferences(
   draftTitle: string,
   section: ContextInput["section"] & { constraints?: string | null },
   userId: string,
-  ragConfig?: RagConfig
+  ragConfig?: RagConfig,
+  limit: number = RAG_REFERENCE_LIMIT,
 ): Promise<ContextInput["ragReferences"]> {
   if (ragConfig?.mode === "off") {
     return [];
@@ -114,7 +155,7 @@ async function fetchRagReferences(
     .join(" ");
 
   try {
-    const results = await semanticSearch(query, userId, RAG_REFERENCE_LIMIT);
+    const results = await semanticSearch(query, userId, limit);
     let mapped = results
       .filter((result) => result.score >= MIN_COSINE_THRESHOLD)
       .map((result) => ({
@@ -151,6 +192,8 @@ export interface GenerationResult {
 export interface FullGenerationResult extends GenerationResult {
   modelConfigId: string;
   ragReferences: ContextInput["ragReferences"];
+  /** Wiki entries injected into the context (ids used by the writeback flywheel). */
+  wikiEntries: NonNullable<ContextInput["wikiEntries"]>;
 }
 
 function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | null }): RagConfig {
@@ -220,12 +263,28 @@ export async function generateSectionFull(
 
   const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
 
+  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
+  // has good coverage, halve the raw RAG limit — we already have synthesized
+  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
+  const wiki = await fetchWikiContext(draft.title, section, userId);
+  const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
+    documentName: "Knowledge Base",
+    title: e.title,
+    content: e.content,
+    score: e.confidence,
+    sourceType: "wiki" as const,
+  }));
+
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
     userId,
-    parseRagConfig(section)
+    parseRagConfig(section),
+    wiki.entries.length >= 3 ? Math.ceil(RAG_REFERENCE_LIMIT / 2) : RAG_REFERENCE_LIMIT,
   );
+
+  // Combine: Wiki references first (higher-level), then raw RAG
+  const allReferences = [...wikiRefs, ...ragReferences];
 
   const baseConstraints = buildEffectiveConstraints(
     section.constraints,
@@ -246,7 +305,8 @@ export async function generateSectionFull(
     draft,
     section,
     completedSections,
-    ragReferences,
+    ragReferences: allReferences,
+    wikiEntries: wiki.entries,
     constraints: effectiveConstraints,
   }, detectDocLocale(draft.title));
 
@@ -276,7 +336,8 @@ export async function generateSectionFull(
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
       modelConfigId,
-      ragReferences,
+      ragReferences: allReferences,
+      wikiEntries: wiki.entries,
     };
   } catch (error: unknown) {
     const message =
