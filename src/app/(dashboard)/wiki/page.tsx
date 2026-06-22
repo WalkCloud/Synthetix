@@ -76,7 +76,7 @@ export default function WikiPage() {
 
   return (
     <div>
-      <Header title={t.layout.sidebar.knowledgeDistillate} />
+      <Header title={t.layout.sidebar.knowledgeWiki} />
       <div className="p-8">
         {/* Stats Ribbon — mirrors the Document Library's 4-column pattern */}
         <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
