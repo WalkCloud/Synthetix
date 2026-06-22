@@ -4,7 +4,7 @@ import { useState, useEffect, use, Fragment } from "react";
 import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
-import { WikiPrecipCard } from "@/components/library/wiki-precip-card";
+import { WikiPrecipField } from "@/components/library/wiki-precip-card";
 import { WikiSynthesisStatus } from "@/components/library/wiki-synthesis-status";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
@@ -249,12 +249,12 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
           {chunks.length > 0 && <DetailField label={td.chunks} value={String(chunks.length)} />}
           {totalTokens > 0 && <DetailField label={`Tokens (${td.chunks.toLowerCase()})`} value={format.number(totalTokens)} />}
           {doc.conversionMethod && <DetailField label={td.conversionMethod} value={doc.conversionMethod} />}
-          {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "…"} />}
+          {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "..."} />}
+
+          {/* Knowledge distillation - integrated as a document property */}
+          {doc.status === "ready" && <WikiPrecipField documentId={doc.id} isZh={isZh} />}
         </dl>
       </div>
-
-      {/* Knowledge synthesized from this document (Wiki layer) */}
-      {doc.status === "ready" && <WikiPrecipCard documentId={doc.id} />}
     </div>
   );
 }
