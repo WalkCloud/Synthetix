@@ -10,8 +10,10 @@
  */
 
 import { db } from "@/lib/db";
+import type { LLMProvider } from "@/lib/llm/types";
 import { slugify } from "@/lib/wiki/slug";
 import { appendChangeLog } from "@/lib/wiki/index-md";
+import { MERGE_CONTENT_PROMPT } from "@/lib/wiki/prompts";
 import {
   type WikiEntryType,
   type WikiSourceRef,
@@ -21,6 +23,15 @@ import {
   type ExtractedClaim,
   WIKI_CONFIG,
 } from "@/lib/wiki/types";
+
+/**
+ * Minimal LLM client interface for the merger's fuse step. Uses the real
+ * LLMProvider type so chat() accepts properly-typed ChatMessage[].
+ */
+export interface MergeLLMClient {
+  provider: LLMProvider;
+  modelId: string;
+}
 
 /**
  * Token-level Jaccard similarity between two titles (after lowercasing +
@@ -94,6 +105,7 @@ export async function mergeEntry(
   sourceRef: WikiSourceRef,
   confidence: number,
   existingTitles: { title: string; slug: string }[],
+  llmClient?: MergeLLMClient,
 ): Promise<{ entryId: string; action: "create" | "update" | "skip"; slug: string }> {
   const decision = decideMerge(title, existingTitles);
   const boundedContent = content.slice(0, WIKI_CONFIG.entryContentCharLimit);
@@ -118,18 +130,32 @@ export async function mergeEntry(
     return { entryId: entry.id, action: "create", slug };
   }
 
-  // update: append with a dated separator (incremental, non-destructive)
+  // update: FUSE old + new via LLM into one coherent article (not append).
+  // If no LLM client available, fall back to simple append (keeps the
+  // function usable from pure-logic callers like tests).
   const existing = await db.wikiEntry.findUnique({
     where: { userId_slug: { userId, slug: decision.existingSlug } },
   });
   if (!existing) {
     // Race: entry was deleted between fetching titles and updating. Fallback to create.
-    return mergeEntry(userId, type, title, content, sourceRef, confidence, existingTitles);
+    return mergeEntry(userId, type, title, content, sourceRef, confidence, existingTitles, llmClient);
   }
 
-  const dateTag = new Date().toISOString().slice(0, 10);
-  const addition = `\n\n--- Update ${dateTag} ---\n${boundedContent}`;
-  const updatedContent = (existing.content + addition).slice(0, WIKI_CONFIG.entryContentCharLimit * 3);
+  // Fuse: LLM rewrites old+new into one comprehensive article
+  let fusedContent: string;
+  if (llmClient) {
+    try {
+      fusedContent = await fuseContent(existing.content, boundedContent, title, llmClient);
+    } catch (err) {
+      console.warn(`[wiki] Fuse failed for "${title}", falling back to append:`, err);
+      const dateTag = new Date().toISOString().slice(0, 10);
+      fusedContent = `${existing.content}\n\n--- Update ${dateTag} ---\n${boundedContent}`;
+    }
+  } else {
+    const dateTag = new Date().toISOString().slice(0, 10);
+    fusedContent = `${existing.content}\n\n--- Update ${dateTag} ---\n${boundedContent}`;
+  }
+  const updatedContent = fusedContent.slice(0, WIKI_CONFIG.entryContentCharLimit * 2);
 
   // Merge source refs (dedup by chunkId/entityId)
   const prevRefs = parseSourceRefs(existing.sourceRefs);
@@ -146,8 +172,33 @@ export async function mergeEntry(
       confidence: newConfidence,
     },
   });
-  await appendChangeLog(userId, existing.id, "update", `Updated "${existing.title}" (new source added)`);
+  await appendChangeLog(userId, existing.id, "update", `Updated "${existing.title}" (fused new source)`);
   return { entryId: existing.id, action: "update", slug: existing.slug };
+}
+
+/**
+ * LLM fusion: rewrite old + new content into ONE coherent, comprehensive
+ * article. This is the key difference from simple append — the result reads
+ * as if written by one expert, with all specifics from both sources preserved.
+ */
+async function fuseContent(
+  oldContent: string,
+  newContent: string,
+  title: string,
+  client: MergeLLMClient,
+): Promise<string> {
+  const response = await client.provider.chat({
+    model: client.modelId,
+    messages: [
+      { role: "system", content: MERGE_CONTENT_PROMPT },
+      {
+        role: "user",
+        content: `Entry title: ${title}\n\n=== EXISTING entry content ===\n${oldContent}\n\n=== NEW information to merge ===\n${newContent}\n\n=== Output the fused article below ===`,
+      },
+    ] as { role: "system" | "user"; content: string }[],
+    temperature: 0.3,
+  });
+  return response.content.trim();
 }
 
 /** Merge a batch of extracted topics (Phase A) for one chunk. */
@@ -156,6 +207,7 @@ export async function mergeChunkKnowledge(
   chunk: { documentId: string; chunkId: string; chunkIndex: number },
   knowledge: { topics: ExtractedTopic[]; concepts: ExtractedConcept[]; claims: ExtractedClaim[] },
   existingTitles: { title: string; slug: string }[],
+  llmClient?: MergeLLMClient,
 ): Promise<void> {
   const sourceRef: WikiSourceRef = {
     documentId: chunk.documentId,
@@ -164,13 +216,13 @@ export async function mergeChunkKnowledge(
   };
 
   for (const topic of knowledge.topics) {
-    await mergeEntry(userId, "topic", topic.title, topic.content, sourceRef, 0.8, existingTitles);
+    await mergeEntry(userId, "topic", topic.title, topic.content, sourceRef, 0.8, existingTitles, llmClient);
   }
   for (const concept of knowledge.concepts) {
-    await mergeEntry(userId, "concept", concept.title, concept.content, sourceRef, 0.8, existingTitles);
+    await mergeEntry(userId, "concept", concept.title, concept.content, sourceRef, 0.8, existingTitles, llmClient);
   }
   for (const claim of knowledge.claims) {
-    await mergeEntry(userId, "claim", claim.title, claim.content, sourceRef, claim.confidence, existingTitles);
+    await mergeEntry(userId, "claim", claim.title, claim.content, sourceRef, claim.confidence, existingTitles, llmClient);
   }
 }
 

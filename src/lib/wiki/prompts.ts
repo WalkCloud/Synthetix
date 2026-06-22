@@ -13,30 +13,41 @@
  * context window is never exceeded regardless of document size — the
  * document is processed chunk-by-chunk, never whole.
  */
-export const CHUNK_EXTRACTION_PROMPT = `You are a knowledge extraction assistant building a curated knowledge base from documents.
+export const CHUNK_EXTRACTION_PROMPT = `You are a knowledge extraction assistant building a curated, encyclopedia-quality knowledge base from documents.
 
 You will receive:
 1. A list of EXISTING knowledge base entry titles (to avoid duplication)
 2. The content of a single document chunk
 
-Extract the knowledge contributions of THIS chunk only. Output strict JSON with this exact schema:
+Extract the knowledge contributions of THIS chunk. Write each entry as a COMPLETE, self-contained knowledge article that someone could read on its own without needing the source document. Output strict JSON with this exact schema:
 {
   "microSummary": "one-sentence summary of what this chunk covers (max 100 chars)",
   "topics": [
-    {"title": "concise topic name", "content": "2-4 sentences synthesizing what this chunk says about this topic"}
+    {
+      "title": "specific topic name",
+      "content": "A comprehensive knowledge article (300-600 words) about this topic AS COVERED IN THIS CHUNK. Structure it with clear paragraphs covering: (1) what the topic is and why it matters, (2) the key technical/business details, specifications, or design decisions mentioned, (3) any concrete examples, metrics, or architecture choices. Include specific names, numbers, and configurations from the chunk — do NOT generalize them away. Write as authoritative reference content, not a summary."
+    }
   ],
   "concepts": [
-    {"title": "concept name", "content": "1-3 sentences defining/explaining this concept"}
+    {
+      "title": "concept name",
+      "content": "A thorough explanation (150-400 words) that defines the concept, explains how it works, and details its role/context in the source material. Include specifics — product names, version numbers, configuration details, relationships to other concepts."
+    }
   ],
   "claims": [
-    {"title": "factual assertion", "content": "the claim stated precisely", "confidence": 0.0-1.0}
+    {
+      "title": "specific factual assertion (one sentence)",
+      "content": "The full context behind the claim (100-300 words): what is asserted, what evidence or reasoning supports it, what are the specific conditions or constraints. Don't just restate — explain WHY it's claimed and what it means in practice.",
+      "confidence": 0.0-1.0
+    }
   ]
 }
 
 Rules:
-- Extract ONLY knowledge present in this chunk — do not infer beyond it.
-- If a topic/concept already exists in the provided title list, still extract it but MERGE by adding new information in "content".
-- Be specific: "REST API rate limiting" not "API".
+- Write SUBSTANTIAL content. A one-line definition is NOT acceptable — aim for reference-quality depth.
+- Include SPECIFICS from the chunk: exact numbers, product names, configuration values, architecture components. These are what make knowledge useful.
+- If a topic/concept already exists in the provided title list, still extract it with all NEW information from this chunk.
+- Be specific in titles: "Kubernetes ETCD Raft cluster high availability" not just "High availability".
 - Omit empty arrays — if a chunk has no concepts, return [].
 - Confidence: 0.9+ for explicit factual statements, 0.7-0.9 for strong inferences, below 0.7 for speculation.
 - Match the LANGUAGE of the chunk content (Chinese content → Chinese output).`;
@@ -109,3 +120,29 @@ export function buildExistingTitlesContext(titles: string[]): string {
   }
   return `Existing knowledge base entry titles (avoid duplicating these):\n${titles.map((t) => `- ${t}`).join("\n")}`;
 }
+
+/**
+ * Merge prompt: when a new chunk's knowledge matches an EXISTING entry,
+ * the LLM fuses old + new into ONE coherent, comprehensive article (not
+ * a simple append). This is what makes Wiki entries deep and integrated
+ * rather than a pile of disconnected per-chunk snippets.
+ */
+export const MERGE_CONTENT_PROMPT = `You are maintaining a high-quality knowledge base. A new piece of information has been extracted that relates to an EXISTING knowledge base entry. Your job is to MERGE them into a single, coherent, comprehensive article.
+
+You will receive:
+1. The EXISTING entry content (what's already in the knowledge base)
+2. The NEW information (extracted from a new document chunk)
+
+Output the FUSED content as plain text (NOT JSON). The result should be:
+- A single, well-structured article that reads as if written by one expert
+- COMPLETE — every key detail from BOTH old and new is preserved
+- Non-redundant — don't repeat the same point twice
+- Well-organized — use paragraphs naturally; if the topic is complex, use brief section markers
+- 300-800 words (or longer if the combined material warrants it)
+
+Rules:
+- Do NOT use "--- Update ---" separators or changelog markers. Write as one continuous article.
+- Do NOT lose specifics: numbers, names, configurations from both sources must survive.
+- If the new information CONTRADICTS the old, note the discrepancy explicitly: "注意：新信息与原有记录存在差异..."
+- Match the LANGUAGE of the content (Chinese content → Chinese output).
+- Output ONLY the fused article text, no meta-commentary.`;
