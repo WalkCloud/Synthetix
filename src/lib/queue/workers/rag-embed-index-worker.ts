@@ -8,7 +8,7 @@ import {
 } from "@/lib/documents/pipeline";
 import { autoTagDocument } from "@/lib/documents/auto-tagger";
 import { assertLatestRagEmbedIndexTask, SupersededRagEmbedIndexTaskError } from "@/lib/documents/processing-tasks";
-import { shouldEnqueueGraphIndex } from "./index-mode-flags";
+import { shouldEnqueueGraphIndex, shouldEnqueueWikiSynthesis } from "./index-mode-flags";
 
 export async function processRagEmbedIndex(
   taskId: string,
@@ -97,6 +97,20 @@ export async function processRagEmbedIndex(
       if (stillExists) {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit("rag_index", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        // NOTE: Wiki synthesis is enqueued by the graph worker after graph
+        // completes (so Wiki entries can reference extracted entities).
+        // See document-graph-worker.ts.
+      }
+    } else if (shouldEnqueueWikiSynthesis(ctx.options)) {
+      // No graph phase — the document is already `ready`. Enqueue Wiki
+      // synthesis directly as the final async knowledge-precipitation layer.
+      const stillExists = await db.document.findUnique({
+        where: { id: ctx.docId },
+        select: { id: true },
+      });
+      if (stillExists) {
+        const { getQueue } = await import("@/lib/queue");
+        await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
       }
     }
 
