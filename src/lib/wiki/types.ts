@@ -100,8 +100,8 @@ export const WIKI_CONFIG = {
   chunkMaxTokens: 2000,
   /** Max tokens of existing Wiki titles list included in the Phase A prompt. */
   titlesListMaxTokens: 400,
-  /** Char limit for a single entry's content (keeps entries modular/small). */
-  entryContentCharLimit: 800,
+  /** Char limit for a single entry's content (allows substantial reference-quality articles). */
+  entryContentCharLimit: 3000,
   /** Min title similarity (Jaccard on tokens) to consider two entries the same. */
   duplicateTitleThreshold: 0.45,
   /** How many chunks' micro-summaries can be combined before Phase B batches them. */
