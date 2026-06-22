@@ -15,7 +15,7 @@ const LONG_DRAFT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const OUTLINE_GENERATE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — 4-level recursive expansion (parts→chapters→sections→subsections) fans out to many LLM calls
 const GRAPH_INDEX_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const DOCUMENT_CONVERT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const WIKI_SYNTHESIZE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — per-chunk LLM calls (fast each, but many for large docs)
+const WIKI_SYNTHESIZE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — per-chunk LLM calls (fast each, but large docs have 80+ chunks)
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
