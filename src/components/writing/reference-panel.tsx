@@ -279,13 +279,20 @@ export function ReferencePanel({
   function referenceBadge(ref: Reference) {
     if (ref.sourceType === "rag_graph") {
       return (
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-600 border border-amber-100">
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-950/35 dark:text-amber-300 dark:border-amber-900/40">
           Graph
         </span>
       );
     }
+    if (ref.sourceType === "wiki") {
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-violet-50 text-violet-600 border border-violet-100 dark:bg-violet-950/35 dark:text-violet-300 dark:border-violet-900/40">
+          Wiki
+        </span>
+      );
+    }
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-600 border border-blue-100">
+      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/35 dark:text-blue-300 dark:border-blue-900/40">
         RAG
       </span>
     );

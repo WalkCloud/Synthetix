@@ -26,7 +26,17 @@ export interface ContextInput {
     title?: string | null;
     content: string;
     score: number;
-    sourceType?: "rag_chunk" | "rag_graph";
+    sourceType?: "rag_chunk" | "rag_graph" | "wiki";
+  }[];
+  /** Synthesized Wiki entries (the LLM-Wiki layer). Injected BEFORE ragReferences
+   *  so the LLM treats them as higher-level synthesized knowledge. Each entry's
+   *  id is collected for the writeback flywheel (confidence bump on citation). */
+  wikiEntries?: {
+    id: string;
+    title: string;
+    content: string;
+    confidence: number;
+    type: string;
   }[];
   constraints?: {
     referenceSections?: string[];
@@ -198,6 +208,42 @@ function buildCompletedSectionsSummary(
   ].join("\n");
 }
 
+/**
+ * Build the synthesized-knowledge context block from Wiki entries.
+ *
+ * This sits ABOVE the raw RAG references in the prompt so the LLM treats
+ * it as higher-level, already-synthesized knowledge (the LLM-Wiki flywheel:
+ * reuse accumulated knowledge instead of rediscovering it per query).
+ * Marked distinctly from "Reference Material" so the LLM knows it can lean
+ * on it more confidently.
+ */
+function buildWikiContextSection(
+  entries: NonNullable<ContextInput["wikiEntries"]>
+): string {
+  if (entries.length === 0) return "";
+
+  const WIKI_ENTRY_CHAR_LIMIT = 1000;
+  const WIKI_TOTAL_CHAR_LIMIT = 4000;
+
+  const sorted = [...entries].sort((a, b) => b.confidence - a.confidence);
+  const blocks: string[] = [];
+  let used = 0;
+  for (const entry of sorted) {
+    const header = `### ${entry.title} [${entry.type}, confidence: ${(entry.confidence * 100).toFixed(0)}%]\n`;
+    const remaining = WIKI_TOTAL_CHAR_LIMIT - used - header.length;
+    if (remaining <= 0) break;
+    const contentLimit = Math.min(WIKI_ENTRY_CHAR_LIMIT, remaining);
+    const body = entry.content.length > contentLimit
+      ? `${entry.content.slice(0, Math.max(0, contentLimit - 72)).trimEnd()}\n[truncated]`
+      : entry.content;
+    const block = `${header}${body}`;
+    blocks.push(block);
+    used += block.length;
+  }
+
+  return ["## Synthesized Knowledge Base", "", ...blocks].join("\n");
+}
+
 function buildRagReferencesSection(
   references: ContextInput["ragReferences"]
 ): string {
@@ -302,6 +348,15 @@ export function assembleContext(input: ContextInput, docLocale: DocumentLanguage
       isParent = Boolean(findOutlineNode(outlineData.sections, cleanTitle)?.children?.length);
     }
   } catch {}
+
+  // Wiki synthesized knowledge — injected BEFORE raw RAG references so the
+  // LLM treats it as higher-level, already-synthesized context (LLM-Wiki
+  // flywheel: reuse accumulated knowledge instead of rediscovering per query).
+  const wikiSection = buildWikiContextSection(input.wikiEntries ?? []);
+  if (wikiSection) {
+    userParts.push("");
+    userParts.push(wikiSection);
+  }
 
   const ragSection = buildRagReferencesSection(input.ragReferences);
   if (ragSection) {
