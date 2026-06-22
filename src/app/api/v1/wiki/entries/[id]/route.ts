@@ -123,3 +123,28 @@ export async function PATCH(
 
   return successResponse(updated);
 }
+
+/**
+ * DELETE /api/v1/wiki/entries/[id]
+ *
+ * Delete a single Wiki entry. Cascades to WikiLink + WikiChangeLog.
+ */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getAuthUser();
+  if (!user) return authErrorResponse();
+
+  const { id } = await params;
+
+  const result = await db.wikiEntry.deleteMany({
+    where: { id, userId: user.id },
+  });
+
+  if (result.count === 0) {
+    return errorResponse({ code: "notFound", message: "Wiki entry not found" }, 404);
+  }
+
+  return successResponse({ deleted: result.count });
+}

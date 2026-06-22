@@ -81,6 +81,34 @@ export async function GET(request: Request) {
   });
 }
 
+/**
+ * DELETE /api/v1/wiki/entries
+ *
+ * Batch delete Wiki entries. Body: { ids: string[] }
+ * Cascades to WikiLink + WikiChangeLog via Prisma relations.
+ */
+export async function DELETE(request: Request) {
+  const user = await getAuthUser();
+  if (!user) return authErrorResponse();
+
+  let body: { ids?: string[] };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return errorResponse({ code: "invalidBody", message: "Invalid JSON body" }, 400);
+  }
+
+  if (!Array.isArray(body.ids) || body.ids.length === 0) {
+    return errorResponse({ code: "missingIds", message: "ids array is required" }, 400);
+  }
+
+  const result = await db.wikiEntry.deleteMany({
+    where: { id: { in: body.ids }, userId: user.id },
+  });
+
+  return successResponse({ deleted: result.count });
+}
+
 function parseSourceRefCount(raw: string): number {
   try {
     const parsed = JSON.parse(raw);
