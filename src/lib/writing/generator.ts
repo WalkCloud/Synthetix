@@ -382,12 +382,27 @@ export async function generateSectionStream(
 
   const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
 
+  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
+  // has good coverage, halve the raw RAG limit — we already have synthesized
+  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
+  const wiki = await fetchWikiContext(draft.title, section, userId);
+  const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
+    documentName: "Knowledge Base",
+    title: e.title,
+    content: e.content,
+    score: e.confidence,
+    sourceType: "wiki" as const,
+  }));
+
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
     userId,
-    parseRagConfig(section)
+    parseRagConfig(section),
+    wiki.entries.length >= 3 ? Math.ceil(RAG_REFERENCE_LIMIT / 2) : RAG_REFERENCE_LIMIT,
   );
+
+  const allReferences = [...wikiRefs, ...ragReferences];
 
   const baseConstraints = buildEffectiveConstraints(
     section.constraints,
@@ -408,7 +423,8 @@ export async function generateSectionStream(
     draft,
     section,
     completedSections,
-    ragReferences,
+    ragReferences: allReferences,
+    wikiEntries: wiki.entries,
     constraints: effectiveConstraints,
   }, detectDocLocale(draft.title));
 
@@ -419,7 +435,7 @@ export async function generateSectionStream(
     stream: true,
   });
 
-  return { stream, modelConfigId, ragReferences };
+  return { stream, modelConfigId, ragReferences: allReferences, wikiEntries: wiki.entries, wikiEntryIds: wiki.usedEntryIds };
 }
 
 export interface ComparisonResult {
