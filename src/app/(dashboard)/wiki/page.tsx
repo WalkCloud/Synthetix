@@ -174,13 +174,10 @@ export default function WikiPage() {
                   >
                     <td className="px-4 py-3.5">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
-                            {entry.title}
-                          </span>
-                          <TypeBadge type={entry.type} isZh={isZh} />
-                        </div>
-                        <span className="block text-xs text-muted-foreground line-clamp-1">
+                        <span className="block text-sm font-semibold text-foreground hover:text-primary transition-colors truncate">
+                          {entry.title}
+                        </span>
+                        <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-1">
                           {entry.contentPreview}
                         </span>
                       </div>
@@ -265,25 +262,3 @@ function StatCell({ value, label, color }: { value: number | string; label: stri
   );
 }
 
-/** Small inline badge — shows content type as metadata, not a filter dimension */
-function TypeBadge({ type, isZh }: { type: string; isZh: boolean }) {
-  const config: Record<string, string> = {
-    doc_summary: "bg-violet-50 text-violet-600 dark:bg-violet-950/35 dark:text-violet-300",
-    topic: "bg-blue-50 text-blue-600 dark:bg-blue-950/35 dark:text-blue-300",
-    concept: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/35 dark:text-emerald-300",
-    claim: "bg-amber-50 text-amber-600 dark:bg-amber-950/35 dark:text-amber-300",
-  };
-  const labels: Record<string, [string, string]> = {
-    doc_summary: ["摘要", "Summary"],
-    topic: ["主题", "Topic"],
-    concept: ["概念", "Concept"],
-    claim: ["主张", "Claim"],
-  };
-  const cls = config[type] || "bg-muted text-muted-foreground";
-  const [zh, en] = labels[type] || [type, type];
-  return (
-    <span className={`text-[9px] px-1.5 py-0 rounded-full font-bold whitespace-nowrap shrink-0 ${cls}`}>
-      {isZh ? zh : en}
-    </span>
-  );
-}
