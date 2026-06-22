@@ -109,8 +109,7 @@ export default function WikiDetailPage() {
       <div className="p-6 md:p-8 space-y-6">
         {/* Detail fields — mirrors library/[id] DetailField grid pattern */}
         <div className="bg-card border border-border rounded-2xl p-5">
-          <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
-            <DetailField label={isZh ? "类型" : "Type"} value={<TypeBadge type={entry.type} />} />
+          <dl className="grid grid-cols-3 gap-x-6 gap-y-4">
             <DetailField label={isZh ? "置信度" : "Confidence"} value={`${Math.round(entry.confidence * 100)}%`} />
             <DetailField label={isZh ? "关联条目" : "Linked"} value={String(entry.links.length)} />
             <DetailField label={isZh ? "更新时间" : "Updated"} value={new Date(entry.updatedAt).toLocaleDateString(isZh ? "zh-CN" : "en-US")} />
@@ -234,17 +233,6 @@ function DetailField({ label, value }: { label: string; value: React.ReactNode }
       <dd className="text-sm text-foreground font-medium">{value}</dd>
     </div>
   );
-}
-
-function TypeBadge({ type }: { type: string }) {
-  const config: Record<string, { label: string; classes: string }> = {
-    doc_summary: { label: "Summary", classes: "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-950/35 dark:text-violet-300 dark:border-violet-900/40" },
-    topic: { label: "Topic", classes: "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/35 dark:text-blue-300 dark:border-blue-900/40" },
-    concept: { label: "Concept", classes: "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/35 dark:text-emerald-300 dark:border-emerald-900/40" },
-    claim: { label: "Claim", classes: "bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/35 dark:text-amber-300 dark:border-amber-900/40" },
-  };
-  const c = config[type] || { label: type, classes: "bg-muted text-muted-foreground border-border" };
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold border whitespace-nowrap ${c.classes}`}>{c.label}</span>;
 }
 
 function LinkIcon({ relation }: { relation: string }) {
