@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { invalidateResolveModelCache } from "@/lib/llm/resolve-model";
 import {
   modelMatchesDefaultSlot,
   normalizeDefaultSlot,
@@ -85,6 +86,10 @@ export async function PATCH(
       data: { isDefaultFor: null },
     });
   }
+
+  // Default-slot assignments drive resolveModel, which is cached for search
+  // latency. Drop this user's cache so the next search sees the new default.
+  invalidateResolveModelCache(user.id);
 
   const updated = await db.modelConfig.findUnique({
     where: { id: modelConfigId },

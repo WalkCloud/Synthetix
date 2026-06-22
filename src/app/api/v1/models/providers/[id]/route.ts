@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { toProviderDto } from "@/lib/models/provider-dto";
 import { providerUpdateSchema } from "@/lib/models/provider-schema";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { invalidateResolveModelCache } from "@/lib/llm/resolve-model";
 
 export async function GET(
   _request: Request,
@@ -86,6 +87,12 @@ export async function PUT(
     include: { models: true },
   });
 
+  // Replacing the provider's models invalidates any cached resolveModel hits
+  // (the old modelIds no longer resolve). Drop this user's cache.
+  if (models && models.length > 0) {
+    invalidateResolveModelCache(user.id);
+  }
+
   return successResponse(toProviderDto(provider));
 }
 
@@ -105,5 +112,8 @@ export async function DELETE(
   }
 
   await db.modelProvider.delete({ where: { id } });
+  // Deleting a provider cascades to its model configs; the cached resolveModel
+  // entries referencing them are now stale.
+  invalidateResolveModelCache(user.id);
   return successResponse({ success: true });
 }

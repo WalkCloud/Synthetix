@@ -55,3 +55,46 @@ export function isLightRAGCompatible(model: { embeddingDim?: number | null }): b
   // Only verified dimensions >= 1536 are LightRAG graph-mode compatible
   return dim >= 1536;
 }
+
+/**
+ * Minimum embedding dimension LightRAG requires for knowledge-graph entity
+ * extraction. Exposed so UI/backend share one source of truth instead of the
+ * magic 1536 being copy-pasted across layers.
+ */
+export const LIGHTRAG_MIN_DIM = 1536;
+
+export interface GraphDowngradeResult {
+  /** Final index mode after applying any necessary downgrade. */
+  indexMode: "basic" | "graph";
+  /** Whether a graph→basic downgrade happened (caller should warn the user). */
+  downgraded: boolean;
+}
+
+/**
+ * Decide whether a "graph" indexMode must be downgraded to "basic" because the
+ * embedding model's dimension is below the LightRAG minimum. Pure: no I/O, no
+ * side effects — the caller persists any warning. Centralizing this here keeps
+ * the downgrade rule identical across the pipeline and any future call sites.
+ */
+export function resolveGraphDowngrade(
+  requestedMode: "basic" | "graph",
+  model: { modelId: string; embeddingDim?: number | null },
+): GraphDowngradeResult {
+  if (requestedMode !== "graph") {
+    return { indexMode: requestedMode, downgraded: false };
+  }
+  if (isLightRAGCompatible(model)) {
+    return { indexMode: "graph", downgraded: false };
+  }
+  return { indexMode: "basic", downgraded: true };
+}
+
+/**
+ * Human-readable message for a graph→basic downgrade, shown to the user via
+ * the document's conversionWarning field so the empty knowledge graph has an
+ * explanation instead of looking like a silent success.
+ */
+export function graphDowngradeWarning(model: { modelId: string; embeddingDim?: number | null }): string {
+  const dim = model.embeddingDim ?? 0;
+  return `Knowledge graph disabled: embedding model "${model.modelId}" dimension (${dim > 0 ? dim : "unknown"}) is below the ${LIGHTRAG_MIN_DIM} minimum. Re-index after switching to a higher-dimension embedding model.`;
+}

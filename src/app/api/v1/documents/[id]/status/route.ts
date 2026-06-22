@@ -44,6 +44,10 @@ export async function GET(
     taskStatus: task?.status,
     progress: task?.progress || 0,
     error: task?.error_message,
+    // Surface silent pipeline downgrades (e.g. graph→basic when the embedding
+    // dim is below 1536) so the UI can warn the user instead of showing an
+    // empty knowledge graph with no explanation.
+    warning: doc.conversionWarning,
     graph: {
       requested: Boolean(graphTask),
       taskId: graphTask?.id,

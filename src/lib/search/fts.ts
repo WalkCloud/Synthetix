@@ -5,6 +5,13 @@ import type { SearchResult } from "@/types/documents";
 let ftsReady = false;
 let ftsIndexed = false;
 
+// Background reindex state: when a row-count mismatch is detected (e.g. after a
+// server restart where the in-process `ftsIndexed` flag reset but the FTS table
+// is stale), we kick off syncFtsIndex() WITHOUT blocking the current search.
+// The first search returns whatever FTS already has (possibly partial); the
+// background job refreshes the index so subsequent searches see the full set.
+let ftsBackgroundReindexing = false;
+
 export function stripFtsSnippetMarkup(value: string): string {
   return value.replace(/<\/?mark>/g, "");
 }
@@ -38,7 +45,26 @@ async function ensureFtsIndexed(): Promise<void> {
     `SELECT COUNT(*) as c FROM document_chunks`
   );
   if (chunkCount[0]?.c > 0) {
-    await syncFtsIndex();
+    // FTS is empty but chunks exist (typical after a server restart where the
+    // in-process ftsIndexed flag reset). Two scenarios:
+    //  - First-ever run / index genuinely empty: rebuild synchronously so this
+    //    search returns keyword hits. This is unavoidable once.
+    //  - We already kicked off a background rebuild on a previous call: skip
+    //    the duplicate work and let the current search run against the
+    //    (still-being-populated) FTS table.
+    if (ftsBackgroundReindexing) {
+      return;
+    }
+    ftsBackgroundReindexing = true;
+    // Detach from the request: run the rebuild in the background so the first
+    // search returns fast (with semantic + whatever FTS rows already exist).
+    // ftsIndexed flips true when the rebuild completes, so later searches skip
+    // this block entirely.
+    void syncFtsIndex().catch((err) => {
+      console.error("[fts] background reindex failed:", err);
+    }).finally(() => {
+      ftsBackgroundReindexing = false;
+    });
   }
   ftsIndexed = true;
 }

@@ -7,7 +7,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { buildEmbeddingManifest } from "@/lib/documents/embedding-manifest";
 import { LocalStorageAdapter, type StorageAdapter } from "@/lib/documents/storage";
-import { resolveEmbeddingDim, isLightRAGCompatible } from "@/lib/rag/dimension";
+import { resolveEmbeddingDim, isLightRAGCompatible, resolveGraphDowngrade, graphDowngradeWarning } from "@/lib/rag/dimension";
 import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
@@ -458,11 +458,26 @@ export async function indexDocument(
   const ragEmbedDim = await resolveEmbeddingDim(embedModel).catch(() => 768);
   embedModel.embeddingDim = ragEmbedDim;
 
-  let indexMode = options.indexMode || "basic";
-  if (indexMode === "graph" && !isLightRAGCompatible(embedModel)) {
+  let indexMode = (options.indexMode as "basic" | "graph") || "basic";
+  const { indexMode: resolvedMode, downgraded } = resolveGraphDowngrade(indexMode, embedModel);
+  if (downgraded) {
     console.warn(`Embedding model ${embedModel.modelId} (dim=${embedModel.embeddingDim}) not compatible with LightRAG graph mode (requires >= 1536), downgrading to basic`);
-    indexMode = "basic";
+    // Persist a user-visible warning so the silent downgrade does not look
+    // like a successful graph run. The document-graph worker calls this with
+    // indexMode "graph" and otherwise marks the task completed + doc ready,
+    // so without this trace the knowledge graph would simply appear empty.
+    // Prepend so multiple warnings accumulate rather than overwrite.
+    const warnMsg = graphDowngradeWarning(embedModel);
+    await db.document.update({
+      where: { id: docId },
+      data: {
+        conversionWarning: doc.conversionWarning
+          ? `${doc.conversionWarning}\n${warnMsg}`
+          : warnMsg,
+      },
+    }).catch(() => {});
   }
+  indexMode = resolvedMode;
 
   const ragChunksDir = outputDir;
   const ragEmbedConfig = embedModel.provider.apiBaseUrl
