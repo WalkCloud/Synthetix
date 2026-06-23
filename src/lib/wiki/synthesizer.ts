@@ -25,6 +25,10 @@ import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import { resolveLLMClient } from "@/lib/llm/client";
+import fs from "fs";
+import { promises as fsp } from "fs";
+import path from "path";
+import os from "os";
 import { estimateTokens } from "@/lib/documents/splitter";
 import type { ProcessingContext } from "@/lib/documents/pipeline";
 import {
@@ -71,15 +75,30 @@ export interface SynthChunk {
 export async function synthesizeDocument(
   ctx: ProcessingContext,
   chunks: SynthChunk[],
-): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean }> {
+): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean }> {
   if (chunks.length === 0) {
-    return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false };
+    return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true };
   }
 
   const client = await resolveWikiClient(ctx);
   if (!client) {
     console.warn("[wiki] No writing model configured — skipping synthesis");
-    return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false };
+    return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: chunks.length, completed: false };
+  }
+
+  // ---- Resume from checkpoint: skip already-processed chunks ----
+  // The progress file lives in the doc's wiki dir. On timeout/re-trigger,
+  // the worker reads this to continue from where it left off.
+  const progressFile = getWikiProgressPath(ctx.docId);
+  const checkpoint = readCheckpoint(progressFile);
+  const startIndex = checkpoint?.lastProcessedChunkIndex != null
+    ? checkpoint.lastProcessedChunkIndex + 1
+    : 0;
+
+  // Filter chunks to process (skip already-done ones)
+  const chunksToProcess = chunks.filter((c) => c.index >= startIndex);
+  if (startIndex > 0) {
+    console.log(`[wiki] Resuming from chunk ${startIndex} (${chunksToProcess.length}/${chunks.length} remaining)`);
   }
 
   const existingTitles = await getExistingTitles(ctx.doc.userId);
@@ -87,8 +106,13 @@ export async function synthesizeDocument(
   let updated = 0;
   const microSummaries: string[] = [];
 
+  // Load previously collected micro-summaries (for Phase B continuity)
+  if (checkpoint?.microSummaries) {
+    microSummaries.push(...checkpoint.microSummaries);
+  }
+
   // ---- Phase A: per-chunk incremental extraction + merge ----
-  for (const chunk of chunks) {
+  for (const chunk of chunksToProcess) {
     try {
       const knowledge = await extractChunkKnowledge(chunk, existingTitles, client);
       microSummaries.push(knowledge.microSummary);
@@ -105,15 +129,23 @@ export async function synthesizeDocument(
       const added = existingTitles.length - before;
       if (added > 0) created += added;
       else updated += knowledge.topics.length + knowledge.concepts.length + knowledge.claims.length - added;
-      // Above is approximate; precise counts come from mergeEntry returns, but
-      // for worker progress reporting an approximation is sufficient.
     } catch (err) {
       // A single chunk failing must not abort the whole document.
       console.warn(`[wiki] Chunk ${chunk.index} extraction failed (non-blocking):`, err);
       microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
     }
+
+    // Checkpoint after EACH chunk so a timeout never loses progress.
+    // This is the key to resume-on-retrigger: even if the task is killed
+    // mid-chunk, we've saved everything up to the previous chunk.
+    writeCheckpoint(progressFile, {
+      lastProcessedChunkIndex: chunk.index,
+      microSummaries,
+      totalChunks: chunks.length,
+    });
   }
 
+  // All chunks processed — Phase B can now run
   // ---- Phase B: layered document summary ----
   let docSummaryCreated = false;
   try {
@@ -123,10 +155,20 @@ export async function synthesizeDocument(
     console.warn(`[wiki] Doc summary generation failed (non-blocking):`, err);
   }
 
+  // Clear checkpoint (all done)
+  clearCheckpoint(progressFile);
+
   // Refresh the on-disk index.md so the user can browse the new state
   await regenerateIndexMd(ctx.doc.userId).catch(() => {});
 
-  return { entriesCreated: created, entriesUpdated: updated, docSummaryCreated };
+  return {
+    entriesCreated: created,
+    entriesUpdated: updated,
+    docSummaryCreated,
+    chunksProcessed: chunks.length,
+    chunksTotal: chunks.length,
+    completed: true,
+  };
 }
 
 /**
@@ -298,6 +340,48 @@ async function linkDocSummaryToTopics(
       })
       .catch(() => {});
   }
+}
+
+// ---- checkpoint (resume-on-timeout) ----
+
+interface WikiCheckpoint {
+  lastProcessedChunkIndex: number;
+  microSummaries: string[];
+  totalChunks: number;
+}
+
+/** Resolve the per-document wiki progress file path. */
+function getWikiProgressPath(docId: string): string {
+  const root = process.env.DB_PATH || path.join(os.homedir(), "synthetix-data");
+  return path.join(root, "wiki-progress", `${docId}.json`);
+}
+
+/** Read the checkpoint (returns null if none — first run). */
+function readCheckpoint(filePath: string): WikiCheckpoint | null {
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw) as WikiCheckpoint;
+    if (typeof parsed.lastProcessedChunkIndex === "number") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the checkpoint after each chunk (atomic-ish: mkdir + write). */
+function writeCheckpoint(filePath: string, data: WikiCheckpoint): void {
+  try {
+    fsp.mkdir(path.dirname(filePath), { recursive: true }).then(() => {
+      fsp.writeFile(filePath, JSON.stringify(data), "utf-8").catch(() => {});
+    }).catch(() => {});
+  } catch {
+    // Non-blocking — checkpoint is best-effort
+  }
+}
+
+/** Clear the checkpoint when all chunks are done. */
+function clearCheckpoint(filePath: string): void {
+  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
 }
 
 // ---- helpers ----
