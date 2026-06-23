@@ -15,7 +15,7 @@ import { synthesizeDocument, type SynthChunk } from "@/lib/wiki/synthesizer";
 
 export async function processWikiSynthesize(
   taskId: string,
-): Promise<{ ok: boolean; wiki?: { entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean } }> {
+): Promise<{ ok: boolean; wiki?: { entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean } }> {
   await db.asyncTask.update({
     where: { id: taskId },
     data: { status: "running", progress: 10 },
@@ -50,7 +50,7 @@ export async function processWikiSynthesize(
         where: { id: taskId },
         data: { status: "completed", progress: 100, resultData: JSON.stringify({ entriesCreated: 0, reason: "no chunks" }) },
       });
-      return { ok: true, wiki: { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false } };
+      return { ok: true, wiki: { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true } };
     }
 
     await db.asyncTask.update({
@@ -77,6 +77,9 @@ export async function processWikiSynthesize(
           entriesCreated: result.entriesCreated,
           entriesUpdated: result.entriesUpdated,
           docSummaryCreated: result.docSummaryCreated,
+          chunksProcessed: result.chunksProcessed,
+          chunksTotal: result.chunksTotal,
+          completed: result.completed,
         }),
       },
     });
