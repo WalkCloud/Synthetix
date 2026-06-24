@@ -40,8 +40,7 @@ interface WikiListResponse {
 
 export default function WikiPage() {
   const router = useRouter();
-  const { t, locale } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
 
   const [data, setData] = useState<WikiListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +81,7 @@ export default function WikiPage() {
   }, []);
 
   async function handleBatchDelete() {
-    if (!confirm(isZh ? `确定删除 ${selectedIds.size} 个条目？` : `Delete ${selectedIds.size} entries?`)) return;
+    if (!confirm(format.template(t.wiki.list.batchDeleteConfirm, { count: selectedIds.size }))) return;
     try {
       const res = await fetch("/api/v1/wiki/entries", {
         method: "DELETE",
@@ -90,11 +89,11 @@ export default function WikiPage() {
         body: JSON.stringify({ ids: [...selectedIds] }),
       });
       if (!res.ok) throw new Error("Delete failed");
-      toast.success(isZh ? `已删除 ${selectedIds.size} 个条目` : `Deleted ${selectedIds.size} entries`);
+      toast.success(format.template(t.wiki.list.deletedToast, { count: selectedIds.size }));
       setSelectedIds(new Set());
       void fetchEntries();
     } catch {
-      toast.error(isZh ? "删除失败" : "Delete failed");
+      toast.error(t.wiki.list.deleteFailedToast);
     }
   }
 
@@ -110,11 +109,11 @@ export default function WikiPage() {
       const json = (await res.json()) as { data: WikiListResponse };
       setData(json.data);
     } catch {
-      toast.error(isZh ? "加载失败" : "Failed to load");
+      toast.error(t.wiki.list.loadFailedToast);
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, page, isZh]);
+  }, [searchQuery, page, t.wiki.list.loadFailedToast]);
 
   useEffect(() => { void fetchEntries(); }, [fetchEntries]);
 
@@ -130,12 +129,12 @@ export default function WikiPage() {
       <div className="p-8">
         {/* Stats Ribbon — meaningful dimensions, not content-type split */}
         <div className="grid grid-cols-4 gap-4 mb-6 animate-fade-in-up">
-          <StatCell value={stats?.total ?? 0} label={isZh ? "知识条目" : "Entries"} color="primary" />
-          <StatCell value={stats?.multiSource ?? 0} label={isZh ? "多源融合" : "Multi-Source"} color="blue" />
-          <StatCell value={`${avgConfidence}%`} label={isZh ? "平均置信度" : "Avg Confidence"} color="emerald" />
+          <StatCell value={stats?.total ?? 0} label={t.wiki.list.statEntries} color="primary" />
+          <StatCell value={stats?.multiSource ?? 0} label={t.wiki.list.statMultiSource} color="blue" />
+          <StatCell value={`${avgConfidence}%`} label={t.wiki.list.statAvgConfidence} color="emerald" />
           <StatCell
             value={stats?.totalSourceRefs ?? 0}
-            label={isZh ? "来源引用" : "Source Refs"}
+            label={t.wiki.list.statSourceRefs}
             color="amber"
           />
         </div>
@@ -149,7 +148,7 @@ export default function WikiPage() {
             </svg>
             <input
               type="text"
-              placeholder={isZh ? "搜索知识..." : "Search knowledge..."}
+              placeholder={t.wiki.list.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
               className="w-full py-2 pr-3 pl-9 border border-input rounded-lg shadow-sm text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
@@ -160,12 +159,12 @@ export default function WikiPage() {
             onChange={(e) => setSortBy(e.target.value)}
             className="px-3 py-2 border border-input rounded-lg text-[13px] bg-background text-foreground cursor-pointer focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           >
-            <option value="newest">{isZh ? "最近更新" : "Newest"}</option>
-            <option value="confidence">{isZh ? "置信度优先" : "High confidence"}</option>
-            <option value="sources">{isZh ? "多来源优先" : "Most sources"}</option>
+            <option value="newest">{t.wiki.list.sortNewest}</option>
+            <option value="confidence">{t.wiki.list.sortConfidence}</option>
+            <option value="sources">{t.wiki.list.sortSources}</option>
           </select>
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 animate-fade-in-up">
+            <div className="ml-auto flex items-center gap-1 animate-fade-in-up">
               <button
                 onClick={handleBatchDelete}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 text-[13px] font-medium whitespace-nowrap shadow-sm transition-colors cursor-pointer"
@@ -174,7 +173,7 @@ export default function WikiPage() {
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
-                {isZh ? "删除选中" : "Delete"} {selectedIds.size}
+                {t.wiki.list.deleteSelected} {selectedIds.size}
               </button>
               <button
                 onClick={() => setSelectedIds(new Set())}
@@ -192,7 +191,7 @@ export default function WikiPage() {
         {/* Table container */}
         <div className="bg-card border border-border rounded-[16px] overflow-hidden">
           {loading ? (
-            <LoadingState message={isZh ? "加载中..." : "Loading..."} />
+            <LoadingState message={t.wiki.list.loading} />
           ) : !data || sortedItems.length === 0 ? (
             <EmptyState
               icon={
@@ -201,12 +200,8 @@ export default function WikiPage() {
                   <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
                 </svg>
               }
-              title={isZh ? "暂无知识条目" : "No knowledge entries yet"}
-              description={
-                isZh
-                  ? "上传文档后，系统会自动从文档中提炼知识条目。"
-                  : "Upload documents and the system will distill knowledge entries automatically."
-              }
+              title={t.wiki.list.emptyTitle}
+              description={t.wiki.list.emptyDesc}
             />
           ) : (
             <table className="w-full border-collapse">
@@ -224,10 +219,10 @@ export default function WikiPage() {
                     </label>
                   </th>
                   {[
-                    { label: isZh ? "条目" : "Entry", style: "w-full" },
-                    { label: isZh ? "置信度" : "Confidence", style: "w-[100px]" },
-                    { label: isZh ? "来源" : "Sources", style: "w-[80px]" },
-                    { label: isZh ? "更新" : "Updated", style: "w-[100px]" },
+                    { label: t.wiki.list.colEntry, style: "w-full" },
+                    { label: t.wiki.list.colConfidence, style: "w-[100px]" },
+                    { label: t.wiki.list.colSources, style: "w-[80px]" },
+                    { label: t.wiki.list.colUpdated, style: "w-[100px]" },
                     { label: "", style: "w-[44px] rounded-tr-[16px]" },
                   ].map((h, i) => (
                     <th
@@ -280,7 +275,7 @@ export default function WikiPage() {
                     </td>
                     <td className="px-4 py-3.5">
                       <span className="text-xs text-muted-foreground">
-                        {new Date(entry.updatedAt).toLocaleDateString(isZh ? "zh-CN" : "en-US")}
+                        {format.date(entry.updatedAt)}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
