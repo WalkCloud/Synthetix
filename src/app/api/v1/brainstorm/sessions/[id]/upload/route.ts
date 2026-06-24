@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { convertToMarkdown } from "@/lib/documents/converter";
-import { SUPPORTED_FORMATS } from "@/types/documents";
+import { SUPPORTED_FORMATS, BRAINSTORM_MAX_UPLOAD_BYTES, BRAINSTORM_MAX_CONTENT_CHARS } from "@/types/documents";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { resolveLocale } from "@/lib/i18n/server";
 import { getBrainstormMessages, isDefaultBrainstormTitle, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
@@ -53,14 +53,18 @@ export async function POST(
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   if (!SUPPORTED_FORMATS.includes(ext as typeof SUPPORTED_FORMATS[number])) {
-    return errorResponse(`Unsupported format: .${ext}`, 400);
+    return errorResponse({ code: "unsupportedFormat", message: `Unsupported format: .${ext}` }, 400);
+  }
+
+  if (file.size > BRAINSTORM_MAX_UPLOAD_BYTES) {
+    return errorResponse({ code: "fileTooLarge", message: `File exceeds ${BRAINSTORM_MAX_UPLOAD_BYTES / 1024 / 1024}MB limit` }, 400);
   }
 
   try {
     const fullText = await extractContent(file, user.id, sessionId);
 
-    const content = fullText.length > 4000
-      ? fullText.slice(0, 4000) + "\n\n...(document content truncated)"
+    const content = fullText.length > BRAINSTORM_MAX_CONTENT_CHARS
+      ? fullText.slice(0, BRAINSTORM_MAX_CONTENT_CHARS) + "\n\n...(document content truncated)"
       : fullText;
 
     const systemMsg = await db.message.create({

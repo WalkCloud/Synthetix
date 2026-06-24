@@ -19,13 +19,9 @@ interface SemanticResultsProps {
 export function SemanticResults({ results, isSearching, searchMode, resultMode = searchMode, searchStage, needsSearchForSelectedMode = false, onViewDocument }: SemanticResultsProps) {
   const { locale, t } = useLocale();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const isZh = locale === "zh-CN";
-  const semanticStages = isZh
-    ? ["初始化搜索引擎...", "正在向量化查询...", "正在扫描知识图谱...", "正在排序结果..."]
-    : ["Initializing search engine...", "Embedding your query...", "Scanning knowledge graph...", "Ranking results..."];
-  const keywordStages = isZh
-    ? ["正在分词...", "正在搜索索引...", "正在排序结果..."]
-    : ["Tokenizing query...", "Searching index...", "Ranking results..."];
+  const sr = t.search.semanticResults;
+  const semanticStages = sr.semanticStages;
+  const keywordStages = sr.keywordStages;
   return (
     <div className="space-y-3 animate-fade-in-up">
       {isSearching ? (
@@ -43,8 +39,8 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
               </p>
               <p className="text-[13px] text-muted-foreground">
                 {searchMode === "semantic"
-                  ? (isZh ? "语义检索会使用 AI 理解你的查询意图" : "Semantic search uses AI to understand your query deeply")
-                  : (isZh ? "关键词检索会匹配文档中的精确词项" : "Keyword search matches exact terms in your documents")}
+                  ? sr.semanticHint
+                  : sr.keywordHint}
               </p>
             </div>
             {searchMode === "semantic" && (
@@ -91,8 +87,8 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           }
-          title={searchMode === "semantic" ? (isZh ? "已切换到语义检索" : "Semantic search selected") : (isZh ? "已切换到关键词检索" : "Keyword search selected")}
-          description={searchMode === "semantic" ? (isZh ? "点击搜索查看语义检索结果。" : "Click search to view semantic results.") : (isZh ? "点击搜索查看关键词检索结果。" : "Click search to view keyword results.")}
+          title={searchMode === "semantic" ? sr.semanticSelected : sr.keywordSelected}
+          description={searchMode === "semantic" ? sr.semanticSelectedDesc : sr.keywordSelectedDesc}
         />
       ) : results.length === 0 ? (
         <EmptyState
@@ -164,7 +160,7 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
                     onClick={(e) => { e.stopPropagation(); setExpandedIndex(null); }}
                     className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground cursor-pointer"
                   >
-                    {isZh ? "收起" : "Collapse"}
+                    {sr.collapse}
                   </button>
                 </div>
               )}
@@ -177,8 +173,8 @@ export function SemanticResults({ results, isSearching, searchMode, resultMode =
                     {r.chunkId}
                   </span>
                   {r.title && <span>{r.title}</span>}
-                  {r.source && <span>{isZh ? "来源" : "Source"}: {r.source}</span>}
-                  {typeof r.rank === "number" && <span>{isZh ? "排序" : "Rank"}: #{r.rank}</span>}
+                  {r.source && <span>{sr.source}: {r.source}</span>}
+                  {typeof r.rank === "number" && <span>{sr.rank}: #{r.rank}</span>}
                 </div>
               )}
             </div>

@@ -45,8 +45,8 @@ function ModelPanel({
   sectionId?: string;
   sectionTitle?: string | null;
 }) {
-  const { locale, t } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t } = useLocale();
+  const ce = t.writing.compareExtra;
   const displayContent = content ? stripLeadingSectionTitle(content, sectionTitle) : null;
 
   return (
@@ -90,11 +90,11 @@ function ModelPanel({
             sectionTitle={sectionTitle}
           />
         ) : (
-          <div className="text-muted-foreground italic">{isZh ? "等待生成..." : "Waiting for generation..."}</div>
+          <div className="text-muted-foreground italic">{ce.waitingForGeneration}</div>
         )}
       </div>
       <div className="flex items-center justify-between px-[18px] py-3 border-t border-border bg-muted/40 text-[13px] text-muted-foreground font-medium">
-        <span>{displayContent ? `${countWords(displayContent)} ${isZh ? "字" : "words"}` : "—"}</span>
+        <span>{displayContent ? `${countWords(displayContent)} ${t.writing.editorExtra.words}` : "—"}</span>
         <button
           onClick={onSelect}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
@@ -112,7 +112,7 @@ function ModelPanel({
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
-          {isSelected ? (isZh ? "已选择" : "Selected") : (isZh ? "选择" : "Select")}
+          {isSelected ? ce.selected : ce.select}
         </button>
       </div>
     </div>
@@ -135,8 +135,8 @@ export function ComparisonView({
   sectionId,
   sectionTitle,
 }: ComparisonViewProps) {
-  const { locale, t } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t } = useLocale();
+  const ce = t.writing.compareExtra;
   const displayContentA = contentA ? stripLeadingSectionTitle(contentA, sectionTitle) : null;
   const displayContentB = contentB ? stripLeadingSectionTitle(contentB, sectionTitle) : null;
 
@@ -172,11 +172,11 @@ export function ComparisonView({
               sectionTitle={sectionTitle}
             />
           ) : (
-            <div className="text-muted-foreground italic">{isZh ? "等待生成..." : "Waiting for generation..."}</div>
+            <div className="text-muted-foreground italic">{ce.waitingForGeneration}</div>
           )}
         </div>
         <div className="flex items-center justify-between px-[18px] py-3 border-t border-border bg-muted/40 text-[13px] text-muted-foreground font-medium">
-          <span>{displayContentA ? `${countWords(displayContentA)} ${isZh ? "字" : "words"}` : "—"}</span>
+          <span>{displayContentA ? `${countWords(displayContentA)} ${t.writing.editorExtra.words}` : "—"}</span>
         </div>
       </div>
     );

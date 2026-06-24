@@ -5,8 +5,20 @@ export const SUPPORTED_FORMATS = [
 ] as const;
 export type SupportedFormat = typeof SUPPORTED_FORMATS[number];
 
+/**
+ * Brainstorm document upload limits. Requirements/background docs are
+ * expected to be modest; these caps prevent unreasonable uploads from
+ * blowing the LLM context window while still covering typical PRDs.
+ */
+export const BRAINSTORM_MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+export const BRAINSTORM_MAX_CONTENT_CHARS = 12000;
+
+/** Derived <input accept> string so frontend and backend stay in sync. */
+export const BRAINSTORM_ACCEPT = SUPPORTED_FORMATS.map((f) => `.${f}`).join(",");
+
 export type DocumentStatus =
   | "uploading"
+  | "pending"
   | "queued"
   | "converting"
   | "splitting"
@@ -66,12 +78,12 @@ export interface ChunkMeta {
   embedModel: string | null;
 }
 
-export interface TagMeta {
+interface TagMeta {
   id: string;
   name: string;
 }
 
-export interface DocumentImageMeta {
+interface DocumentImageMeta {
   id: string;
   documentId: string;
   filename: string;

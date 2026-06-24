@@ -18,6 +18,9 @@ interface OutlineGeneratePayload extends TaskPayload {
   sessionId: string;
   userId: string;
   locale?: string;
+  // Optional chat model override. When omitted, falls back to the user's
+  // default chat model via resolveModel("chat", userId).
+  modelConfigId?: string;
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> {
@@ -74,7 +77,7 @@ export async function generateOutline(
   payload: TaskPayload,
   onProgress: (progress: number) => void,
 ): Promise<TaskResult> {
-  const { taskId, sessionId, userId, locale: payloadLocale } = payload as OutlineGeneratePayload;
+  const { taskId, sessionId, userId, locale: payloadLocale, modelConfigId } = payload as OutlineGeneratePayload;
 
   onProgress(5);
 
@@ -86,7 +89,12 @@ export async function generateOutline(
 
   onProgress(10);
 
-  const chatModel = await resolveModel("chat", userId);
+  // Prefer a user-selected model (validated by the route) over the default
+  // chat model. Mirrors pipeline.ts:resolveProcessingModels' explicit-model
+  // pattern: a chosen ID wins, otherwise resolveModel picks the user default.
+  const chatModel = modelConfigId
+    ? await db.modelConfig.findUnique({ where: { id: modelConfigId }, include: { provider: true } })
+    : await resolveModel("chat", userId);
   if (!chatModel) throw new Error("No chat model configured");
   const modelId = chatModel.modelId;
 

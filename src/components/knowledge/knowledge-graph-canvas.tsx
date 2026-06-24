@@ -92,7 +92,7 @@ export function KnowledgeGraphCanvas({
   zoomRef,
 }: KnowledgeGraphCanvasProps) {
   const { resolvedTheme } = useTheme();
-  const { t, locale } = useLocale();
+  const { t, format } = useLocale();
   const [showAll, setShowAll] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -546,7 +546,7 @@ export function KnowledgeGraphCanvas({
   const selectedNode = selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null;
   const visibleCount = graphData.gNodes.length;
   const totalCount = nodes.length;
-  const isZh = locale === "zh-CN";
+  const dens = t.topology.density;
 
   return (
     <div
@@ -563,8 +563,8 @@ export function KnowledgeGraphCanvas({
           onClick={() => setShowAll((v) => !v)}
           className="absolute top-3 left-3 z-20 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/90 backdrop-blur-sm px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-sm hover:bg-secondary transition-colors cursor-pointer"
           title={showAll
-            ? (isZh ? "只显示主要实体" : "Show top entities only")
-            : (isZh ? `显示全部 ${totalCount} 个实体` : `Show all ${totalCount} entities`)}
+            ? dens.showTopTitle
+            : format.template(dens.showAllTitle, { count: totalCount })}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {showAll
@@ -572,8 +572,8 @@ export function KnowledgeGraphCanvas({
               : <><path d="M3 3h18v18H3z" opacity="0" /><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>}
           </svg>
           {showAll
-            ? (isZh ? "主要实体" : "Top entities")
-            : `${visibleCount}/${totalCount} ${isZh ? "实体" : "entities"}`}
+            ? dens.topEntitiesLabel
+            : `${visibleCount}/${totalCount} ${dens.entitiesLabel}`}
         </button>
       )}
 

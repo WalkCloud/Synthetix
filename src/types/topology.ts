@@ -57,5 +57,3 @@ export interface TopologyResponse {
   edges: TopologyEdge[];
   stats: TopologyStats;
 }
-
-export type GraphViewMode = "documents" | "knowledge";

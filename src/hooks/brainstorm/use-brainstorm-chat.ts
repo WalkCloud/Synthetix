@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import type { BrainstormClientMarker, BrainstormMessage, BrainstormSession, Phase } from "./types";
 import { getLocalizedError, useLocale } from "@/lib/i18n";
+import { SUPPORTED_FORMATS, BRAINSTORM_MAX_UPLOAD_BYTES } from "@/types/documents";
 
 function newClientMessageId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -123,6 +124,17 @@ export function useBrainstormChat({
 
   async function handleFileUpload(file: File) {
     if (!activeId || loading) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!SUPPORTED_FORMATS.includes(ext as typeof SUPPORTED_FORMATS[number])) {
+      setMessages((prev) => [...prev, systemMsg(t.brainstorm.upload.unsupportedFormat)]);
+      return;
+    }
+    if (file.size > BRAINSTORM_MAX_UPLOAD_BYTES) {
+      setMessages((prev) => [...prev, systemMsg(t.brainstorm.upload.fileTooLarge)]);
+      return;
+    }
+
     setLoading(true);
     const optId = newClientMessageId("opt-sys");
     setMessages((prev) => [...prev, { id: optId, sessionId: activeId, role: "system", content: format.template(t.brainstorm.uploadStatus, { fileName: file.name }), createdAt: new Date().toISOString() }]);

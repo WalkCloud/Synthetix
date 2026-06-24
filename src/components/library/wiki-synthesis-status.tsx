@@ -23,8 +23,7 @@ interface WikiTaskInfo {
  */
 export function WikiSynthesisStatus({ documentId }: { documentId: string }) {
   const router = useRouter();
-  const { locale } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t } = useLocale();
   const [task, setTask] = useState<WikiTaskInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -92,12 +91,10 @@ export function WikiSynthesisStatus({ documentId }: { documentId: string }) {
         </div>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">
-            {isZh ? "知识提炼进行中" : "Knowledge distillation in progress"}
+            {t.library.detail.wikiSynthesisTitle}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {isZh
-              ? "正在从文档块中逐个提取并综合知识条目，完成后可在「知识提炼」页面查看。"
-              : "Extracting and synthesizing knowledge entries per chunk. Available in Knowledge Wiki when complete."}
+            {t.library.detail.wikiSynthesisDesc}
           </p>
         </div>
         <span className="text-sm font-bold tabular-nums text-muted-foreground">{pct}%</span>

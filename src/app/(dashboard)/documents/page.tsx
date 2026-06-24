@@ -8,6 +8,7 @@ import { Spinner } from "@/components/shared/spinner";
 import { UploadZone } from "@/components/documents/upload-zone";
 import { UploadQueue } from "@/components/documents/upload-queue-panel";
 import type { UploadItem } from "@/components/documents/upload-queue-panel";
+import { ProcessingNotice } from "@/components/documents/processing-notice";
 import { ProcessingSettings, type ModelOption } from "@/components/documents/processing-settings";
 import { SUPPORTED_FORMATS } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
@@ -32,6 +33,15 @@ export default function DocumentsPage() {
   const [indexMode, setIndexMode] = useState<"basic" | "graph">("basic");
   const [autoSplit, setAutoSplit] = useState(true);
   const [processing, setProcessing] = useState(false);
+  // Snapshot of the most recent batch submitted via "Start Processing". Drives
+  // the friendly processing-time hint, which only makes sense AFTER the user
+  // has actually kicked off processing — not right after upload (upload only
+  // persists; processing starts on Start-Processing).
+  const [processedBatch, setProcessedBatch] = useState<{
+    totalBytes: number;
+    fileCount: number;
+    indexMode: "basic" | "graph";
+  } | null>(null);
   // False until the first /models/providers fetch settles. Gates the
   // "no models configured" warning so we don't flash it on every refresh
   // while the model list is still loading (empty arrays look identical to
@@ -110,7 +120,26 @@ export default function DocumentsPage() {
       toast.warning(t.errors.noEmbeddingUpload);
     }
 
+    // Client-side dedupe: a file with the same name AND same size is almost
+    // certainly identical. Skip the network round-trip (and the server's full
+    // save→hash→delete cycle) for files already in the queue, whether from a
+    // prior batch or repeated within this same drop. This also catches the
+    // case of dropping the same folder twice. Same-name/different-size (a
+    // legitimately different file that happens to share a name) is still sent.
+    const seen = new Set(
+      uploads.map((u) => `${u.name}::${u.size}`),
+    );
+
     for (const file of arr) {
+      const dedupeKey = `${file.name}::${file.size}`;
+      if (seen.has(dedupeKey)) {
+        const id = crypto.randomUUID();
+        setUploads((prev) => [...prev, { id, name: file.name, size: file.size, status: "duplicate", progress: 100 }]);
+        toast.info(t.documents.upload.duplicateSkipped.replace("{name}", file.name));
+        continue;
+      }
+      seen.add(dedupeKey);
+
       const id = crypto.randomUUID();
       const item: UploadItem = { id, name: file.name, size: file.size, status: "converting", progress: 50 };
       setUploads((prev) => [...prev, item]);
@@ -129,7 +158,11 @@ export default function DocumentsPage() {
         if (data.success) {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "complete", progress: 100, docId: data.data.document.id } : u));
         } else if (data.error === "DUPLICATE") {
-          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "complete", progress: 100, docId: data.existingId } : u));
+          // Server detected an identical file (SHA-256 match). Mark it as a
+          // duplicate rather than "complete" so the user sees it was skipped,
+          // and do NOT attach a docId so it's excluded from "Start Processing".
+          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "duplicate", progress: 100 } : u));
+          toast.info(t.documents.upload.duplicateSkipped.replace("{name}", file.name));
         } else {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: data.error } : u));
         }
@@ -137,7 +170,7 @@ export default function DocumentsPage() {
         setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: t.documents.upload.uploadFailed } : u));
       }
     }
-  }, [llmModel, embedModel, splitStrategy, indexTarget, indexMode, autoSplit, embedModels.length, t]);
+  }, [llmModel, embedModel, splitStrategy, indexTarget, indexMode, autoSplit, embedModels.length, uploads, t]);
 
   function removeUpload(id: string) {
     setUploads((prev) => prev.filter((u) => u.id !== id));
@@ -150,6 +183,11 @@ export default function DocumentsPage() {
       return;
     }
     setProcessing(true);
+    // Snapshot the batch BEFORE submitting so the hint reflects exactly what
+    // was sent, even if the user adds more files afterwards.
+    const batchTotalBytes = ready.reduce((sum, u) => sum + u.size, 0);
+    const batchFileCount = ready.length;
+    const batchIndexMode = indexMode;
     let success = 0;
     let fail = 0;
     for (const u of ready) {
@@ -181,6 +219,10 @@ export default function DocumentsPage() {
     setProcessing(false);
     if (fail === 0) {
       toast.success(`${success} ${t.documents.upload.queued}`);
+      setProcessedBatch({ totalBytes: batchTotalBytes, fileCount: batchFileCount, indexMode: batchIndexMode });
+    } else if (success > 0) {
+      toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
+      setProcessedBatch({ totalBytes: batchTotalBytes, fileCount: batchFileCount, indexMode: batchIndexMode });
     } else {
       toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
     }
@@ -225,6 +267,13 @@ export default function DocumentsPage() {
               )}
             </button>
           </div>
+        )}
+        {processedBatch && (
+          <ProcessingNotice
+            totalBytes={processedBatch.totalBytes}
+            fileCount={processedBatch.fileCount}
+            indexMode={processedBatch.indexMode}
+          />
         )}
       </div>
     </div>

@@ -8,7 +8,7 @@ interface CardSelectorProps {
   description: string;
   /** When true the card is non-interactive (e.g. a not-yet-available option). */
   disabled?: boolean;
-  /** Optional corner badge (e.g. "待开放"). Shown instead of the selection radio. */
+  /** Optional corner badge (e.g. "Coming soon"). Shown instead of the selection radio. */
   badge?: string;
 }
 

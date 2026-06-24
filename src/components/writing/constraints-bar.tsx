@@ -41,19 +41,19 @@ export function ConstraintsBar({
   isGenerating,
   onSaveWordLimit,
 }: ConstraintsBarProps) {
-  const { locale, t } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
+  const cx = t.writing.constraintsExtra;
   const noneLabel = t.common.states.none;
-  const autoDefault = isZh ? "自动默认" : "Auto Default";
-  const singleModel = isZh ? "单模型" : "Single model";
-  const compareModels = isZh ? "双模型对比" : "Compare two models";
+  const autoDefault = cx.autoDefault;
+  const singleModel = cx.singleModel;
+  const compareModels = cx.compareModels;
 
   return (
     <div className="mb-5 p-4 bg-card border border-border rounded-2xl shadow-sm">
       <div className="flex gap-2.5 flex-wrap items-end mb-3">
         <div className="min-w-[160px] flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            {isZh ? "参考章节" : "Reference Section"}
+            {cx.referenceSection}
           </label>
           <Select>
             <SelectTrigger className="w-full text-[13px]">
@@ -65,7 +65,7 @@ export function ConstraintsBar({
                 .filter((s) => s.status === "locked" || s.status === "summarized")
                 .map((s) => (
                   <SelectItem key={s.id} value={s.id}>
-                    {isZh ? "章节" : "Section"} {s.index + 1}. {s.title}
+                    {cx.sectionLabel} {s.index + 1}. {s.title}
                   </SelectItem>
                 ))}
             </SelectContent>
@@ -74,13 +74,13 @@ export function ConstraintsBar({
 
         <div className="w-[120px]">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            {isZh ? "字数上限" : "Word Limit"}
+            {cx.wordLimit}
           </label>
           <input
             type="number"
             className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             value={wordLimit}
-            placeholder={estimatedWords ? (isZh ? `建议 ${estimatedWords}` : `Recommended ${estimatedWords}`) : "500"}
+            placeholder={estimatedWords ? format.template(cx.recommended, { n: estimatedWords }) : "500"}
             onChange={(e) => onWordLimitChange(parseInt(e.target.value) || 500)}
             onBlur={() => onSaveWordLimit?.(wordLimit)}
           />
@@ -88,7 +88,7 @@ export function ConstraintsBar({
 
         <div className="min-w-[150px] flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            {isZh ? "生成模式" : "Generation Mode"}
+            {cx.generationMode}
           </label>
           <Select value={generationMode} onValueChange={(v) => onGenerationModeChange(v as GenerationMode)}>
             <SelectTrigger className="w-full text-[13px]">
@@ -169,14 +169,14 @@ export function ConstraintsBar({
       <div className="flex gap-2.5 items-end">
         <div className="flex-1">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-            {isZh ? "额外要求" : "Additional Requirements"}
+            {cx.additionalRequirements}
           </label>
           <input
             type="text"
             className="w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-muted/50 focus:bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
             placeholder={estimatedWords
-              ? (isZh ? `建议 ${estimatedWords} 字，例如“使用项目符号、包含示例”...` : `Recommended ${estimatedWords} words, e.g., "use bullet points, include examples"...`)
-              : (isZh ? "例如：包含时序图..." : "e.g., Include sequence diagrams...")
+              ? format.template(cx.recommendedWordsPlaceholder, { n: estimatedWords })
+              : cx.placeholderExample
             }
             value={additionalRequirements}
             onChange={(e) => onAdditionalRequirementsChange(e.target.value)}
@@ -193,7 +193,7 @@ export function ConstraintsBar({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          {isGenerating ? (isZh ? "生成中..." : "Generating...") : t.writing.sections.generate}
+          {isGenerating ? cx.generating : t.writing.sections.generate}
         </button>
       </div>
     </div>
