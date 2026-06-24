@@ -23,6 +23,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") || undefined;
   const q = searchParams.get("q") || "";
+  const documentIds = searchParams.getAll("documentId"); // supports multiple
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
 
@@ -38,6 +39,24 @@ export async function GET(request: Request) {
       { title: { contains: q } },
       { content: { contains: q } },
     ];
+  }
+
+  // Filter by source document(s). sourceRefs is JSON, so SQLite can't query
+  // it natively — fetch matching entry IDs first, then constrain the main query.
+  if (documentIds.length > 0) {
+    const allRefs = await db.wikiEntry.findMany({
+      where: { userId: user.id, status: "active" },
+      select: { id: true, sourceRefs: true },
+    });
+    const matchedIds = allRefs
+      .filter((e) => {
+        try {
+          const refs = JSON.parse(e.sourceRefs) as Array<{ documentId?: string }>;
+          return Array.isArray(refs) && refs.some((r) => r.documentId && documentIds.includes(r.documentId));
+        } catch { return false; }
+      })
+      .map((e) => e.id);
+    where.id = { in: matchedIds };
   }
 
   const [entries, total, stats] = await Promise.all([
