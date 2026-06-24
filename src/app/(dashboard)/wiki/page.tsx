@@ -81,13 +81,35 @@ export default function WikiPage() {
   // Reset selection when data changes (page/filter/search)
   useEffect(() => { setSelectedIds(new Set()); }, [data]);
 
-  const allSelected = sortedItems.length > 0 && selectedIds.size === sortedItems.length;
+  const totalEntries = data?.total ?? 0;
+  const allSelected = selectedIds.size > 0 && selectedIds.size === totalEntries;
+  // Indeterminate: some but not all selected (including cross-page selection)
   const someSelected = selectedIds.size > 0 && !allSelected;
+  // Current page fully selected?
+  const pageFullySelected = sortedItems.length > 0 && sortedItems.every((i) => selectedIds.has(i.id));
 
-  const toggleAll = useCallback(() => {
-    if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(sortedItems.map((i) => i.id)));
-  }, [allSelected, sortedItems]);
+  const toggleAll = useCallback(async () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    // Fetch ALL matching entry IDs (not just current page) so the user can
+    // batch-delete across all pages without clicking through pagination.
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      selectedDocIds.forEach((id) => params.append("documentId", id));
+      params.set("idsOnly", "true");
+      const res = await fetch(`/api/v1/wiki/entries?${params}`);
+      if (res.ok) {
+        const json = (await res.json()) as { data: { ids: string[] } };
+        setSelectedIds(new Set(json.data.ids));
+      }
+    } catch {
+      // Fallback: just select current page
+      setSelectedIds(new Set(sortedItems.map((i) => i.id)));
+    }
+  }, [allSelected, sortedItems, searchQuery, selectedDocIds]);
 
   const toggleOne = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -297,8 +319,8 @@ export default function WikiPage() {
                     <label className="flex items-center justify-center cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={allSelected}
-                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                        checked={pageFullySelected}
+                        ref={(el) => { if (el) el.indeterminate = someSelected && !pageFullySelected; }}
                         onChange={toggleAll}
                         className="w-4 h-4 rounded border-border text-primary accent-primary cursor-pointer"
                       />
@@ -306,9 +328,9 @@ export default function WikiPage() {
                   </th>
                   {[
                     { label: t.wiki.list.colEntry, style: "w-full" },
-                    { label: t.wiki.list.colConfidence, style: "w-[100px]" },
-                    { label: t.wiki.list.colSources, style: "w-[80px]" },
-                    { label: t.wiki.list.colUpdated, style: "w-[100px]" },
+                    { label: t.wiki.list.colConfidence, style: "min-w-[96px] whitespace-nowrap" },
+                    { label: t.wiki.list.colSources, style: "min-w-[72px] whitespace-nowrap" },
+                    { label: t.wiki.list.colUpdated, style: "min-w-[120px] whitespace-nowrap" },
                     { label: "", style: "w-[44px] rounded-tr-[16px]" },
                   ].map((h, i) => (
                     <th
@@ -350,17 +372,17 @@ export default function WikiPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className={`text-sm font-bold tabular-nums ${entry.confidence >= 0.85 ? "text-emerald-600 dark:text-emerald-400" : entry.confidence >= 0.7 ? "text-foreground" : "text-muted-foreground"}`}>
+                      <span className={`inline-block text-sm font-bold tabular-nums whitespace-nowrap ${entry.confidence >= 0.85 ? "text-emerald-600 dark:text-emerald-400" : entry.confidence >= 0.7 ? "text-foreground" : "text-muted-foreground"}`}>
                         {Math.round(entry.confidence * 100)}%
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className="text-sm text-muted-foreground tabular-nums">
+                      <span className="inline-block text-sm text-muted-foreground tabular-nums whitespace-nowrap">
                         {entry.sourceRefCount}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className="text-xs text-muted-foreground">
+                      <span className="inline-block text-xs text-muted-foreground whitespace-nowrap">
                         {format.date(entry.updatedAt)}
                       </span>
                     </td>
