@@ -271,11 +271,17 @@ async def index_document(
             async with llm_sem:
                 if history_messages is None:
                     history_messages = []
-                lang_instruction = "\n\nIMPORTANT: All extracted entity names, types, relationships, and descriptions MUST be in the PRIMARY LANGUAGE of the original text. If the text is mainly Chinese, output in Chinese. If English, output in English. Descriptions MUST be concise summaries of the entity, DO NOT output step-by-step processes or 'phase1 phase2' raw chunks."
+                # Output language is now controlled via addon_params["language"]
+                # (set above to follow the source text), so we do NOT re-inject a
+                # competing language instruction here — that would duplicate and
+                # potentially contradict the prompt template's own {language} slot.
+                # We keep only the description-quality constraint, which the prompt
+                # template does not cover.
+                quality_instruction = "\n\nIMPORTANT: Entity and relationship descriptions MUST be concise summaries (1-2 sentences). DO NOT output step-by-step processes, raw chunk text, or 'phase1 phase2' style content."
                 if system_prompt:
-                    system_prompt += lang_instruction
+                    system_prompt += quality_instruction
                 else:
-                    prompt += lang_instruction
+                    prompt += quality_instruction
                 clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
                 try:
                     return await openai_complete_if_cache(
@@ -348,12 +354,36 @@ async def index_document(
                     graph_storage=graph_storage,
                     doc_status_storage=doc_status_storage,
                     addon_params={
+                        # IMPORTANT: entity type strings MUST NOT contain "/", "\",
+                        # or any of ["'", "(", ")", "<", ">", "|"] — LightRAG's
+                        # _handle_single_entity_extraction rejects any extracted
+                        # entity whose type contains these chars (drops it silently).
+                        # The previous "Technology/技术" bilingual form caused EVERY
+                        # entity to be discarded as "invalid entity type", losing
+                        # precision while still paying the LLM cost. Use plain
+                        # English type names; the extraction prompt instructs the
+                        # model to emit entity *names/descriptions* in the source
+                        # language, so bilingual coverage is preserved at the value
+                        # level without breaking type validation.
                         "entity_types": [
-                            "Technology/技术", "Framework/框架", "Architecture/架构", "Protocol/协议",
-                            "Pattern/模式", "Concept/概念", "Algorithm/算法", "Component/组件",
-                            "Service/服务", "Platform/平台", "Module/模块", "Interface/接口",
-                            "Strategy/策略", "Mechanism/机制", "Pipeline/管道", "Workflow/工作流",
+                            "Technology", "Framework", "Architecture", "Protocol",
+                            "Pattern", "Concept", "Algorithm", "Component",
+                            "Service", "Platform", "Module", "Interface",
+                            "Strategy", "Mechanism", "Pipeline", "Workflow",
+                            "Organization", "Person", "Location", "Document",
                         ],
+                        # Output language: follow the SOURCE text language instead of
+                        # forcing English. Forcing English on a Chinese document both
+                        # degrades precision (entity names get lossy-translated, so
+                        # later Chinese queries fail to recall them) and slows the
+                        # model (extra translation reasoning per entity). Setting this
+                        # to an instruction string (rather than a fixed language name)
+                        # makes LightRAG's "{language}" prompt slot read naturally:
+                        # "...output must be written in `the same language as the
+                        # input text`". This is a plain string substitution, so any
+                        # phrasing works; proper nouns are still kept in their
+                        # original form per the prompt's own rule.
+                        "language": "the same language as the input text",
                     },
                     **storage_kwargs,
                     **rerank_kwargs,
@@ -383,7 +413,19 @@ async def index_document(
 
         if index_mode == "graph":
             from lightrag.base import DocStatus
-            print(f"Cleaning existing RAG chunks for document {doc_id} to prevent duplicate skipping...", file=sys.stderr)
+            # Clean ALL existing chunks for this document before graph extraction.
+            # The rag_embed_index worker runs a basic pass first (chunks stored,
+            # marked PROCESSED, but NO entities extracted). Graph mode MUST remove
+            # those chunks so LightRAG re-inserts them WITH entity extraction —
+            # otherwise ainsert() sees them as "already in storage" and skips,
+            # yielding zero entities.
+            #
+            # The cascade-rebuild cost of adelete_by_doc_id only bites when
+            # entities/relations already exist (re-indexing a previously-graphed
+            # doc). On the normal basic→graph path there are no entities yet, so
+            # deletion is cheap. To keep re-index affordable, we delete in a
+            # single batch loop rather than interleaving delete+insert.
+            print(f"Cleaning existing RAG chunks for document {doc_id} to enable graph extraction...", file=sys.stderr)
             emit_progress("cleanup", 28, "Cleaning previous document index")
             try:
                 all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
@@ -391,8 +433,10 @@ async def index_document(
                 if to_delete:
                     for chunk_id in to_delete:
                         await rag.adelete_by_doc_id(chunk_id)
-                    print(f"Successfully cleaned {len(to_delete)} existing chunks.", file=sys.stderr)
+                    print(f"Cleaned {len(to_delete)} existing chunks for graph re-extraction.", file=sys.stderr)
                     emit_progress("cleanup", 32, "Cleaned previous document index", total=len(to_delete))
+                else:
+                    print("No existing chunks to clean (fresh document).", file=sys.stderr)
             except Exception as cleanup_err:
                 print(f"Warning during pre-indexing cleanup: {cleanup_err}", file=sys.stderr)
 
