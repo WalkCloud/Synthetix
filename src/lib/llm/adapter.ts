@@ -59,14 +59,28 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
     if (params.response_format) body.response_format = params.response_format;
 
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: buildProviderHeaders(this.apiKey),
-      body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: buildProviderHeaders(this.apiKey),
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      // Network failure / DNS error / timeout — retryable. Mirrors the
+      // embedWithRetry pattern: a transient network blip must not sink a
+      // long-running multi-chunk pipeline (wiki synthesis, graph extraction).
+      if (remaining > 0) {
+        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.chatWithRetry(params, remaining - 1);
+      }
+      throw new Error(`Chat request failed (network): ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     if (!response.ok) {
-      if (response.status === 429 && remaining > 0) {
+      const retryable = response.status === 429 || response.status >= 500;
+      if (retryable && remaining > 0) {
         const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
         await new Promise((resolve) => setTimeout(resolve, delay));
         return this.chatWithRetry(params, remaining - 1);
