@@ -40,7 +40,8 @@ interface WikiListResponse {
 
 export default function WikiPage() {
   const router = useRouter();
-  const { t, format } = useLocale();
+  const { t, format, locale } = useLocale();
+  const isZh = locale === "zh-CN";
 
   const [data, setData] = useState<WikiListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,24 @@ export default function WikiPage() {
   const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [documents, setDocuments] = useState<{ id: string; name: string }[]>([]);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [docFilterOpen, setDocFilterOpen] = useState(false);
   const limit = 20;
+
+  // Load document list for the filter dropdown
+  useEffect(() => {
+    fetch("/api/v1/library/documents?page=1&limit=50&sort=createdAt&order=desc")
+      .then((r) => r.json())
+      .then((json) => {
+        const docs = (json.data || []).map((d: { id: string; originalName: string }) => ({
+          id: d.id,
+          name: d.originalName.replace(/\.[^.]+$/, ""),
+        }));
+        setDocuments(docs);
+      })
+      .catch(() => {});
+  }, []);
 
   // Client-side sort (data already fetched, sort locally)
   const sortedItems = (() => {
@@ -102,6 +120,7 @@ export default function WikiPage() {
     try {
       const params = new URLSearchParams();
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      selectedDocIds.forEach((id) => params.append("documentId", id));
       params.set("page", String(page));
       params.set("limit", String(limit));
       const res = await fetch(`/api/v1/wiki/entries?${params}`);
@@ -113,7 +132,7 @@ export default function WikiPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, page, t.wiki.list.loadFailedToast]);
+  }, [searchQuery, selectedDocIds, page, t.wiki.list.loadFailedToast]);
 
   useEffect(() => { void fetchEntries(); }, [fetchEntries]);
 
@@ -139,8 +158,75 @@ export default function WikiPage() {
           />
         </div>
 
-        {/* Search + sort — no type filter pills (types shown as inline badges) */}
+        {/* Search + filter + sort */}
         <div className="flex items-center gap-3 flex-wrap mb-4 animate-fade-in-up">
+          {/* Document filter dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setDocFilterOpen((v) => !v)}
+              className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
+                selectedDocIds.length > 0
+                  ? "border-primary text-primary bg-primary-100"
+                  : "border-input bg-background text-muted-foreground hover:border-primary hover:text-primary"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              {selectedDocIds.length > 0
+                ? `${selectedDocIds.length} ${isZh ? "个文档" : "docs"}`
+                : (isZh ? "全部文档" : "All docs")}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {docFilterOpen && (
+              <>
+                {/* Click-away overlay */}
+                <div className="fixed inset-0 z-10" onClick={() => setDocFilterOpen(false)} />
+                <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-lg shadow-lg max-h-[300px] overflow-y-auto min-w-[260px]">
+                  {documents.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      {isZh ? "暂无文档" : "No documents"}
+                    </div>
+                  ) : (
+                    documents.map((doc) => {
+                      const checked = selectedDocIds.includes(doc.id);
+                      return (
+                        <label
+                          key={doc.id}
+                          className="flex items-center gap-2 px-3 py-2 hover:bg-secondary cursor-pointer text-[13px]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedDocIds((prev) =>
+                                checked ? prev.filter((id) => id !== doc.id) : [...prev, doc.id]
+                              );
+                              setPage(1);
+                            }}
+                            className="w-4 h-4 rounded border-border text-primary accent-primary cursor-pointer"
+                          />
+                          <span className="text-foreground truncate">{doc.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                  {selectedDocIds.length > 0 && (
+                    <button
+                      onClick={() => { setSelectedDocIds([]); setPage(1); }}
+                      className="w-full text-left px-3 py-2 border-t border-border text-[13px] text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer"
+                    >
+                      {isZh ? "清除筛选" : "Clear filter"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="relative w-[200px]">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none">
               <circle cx="11" cy="11" r="8" />
