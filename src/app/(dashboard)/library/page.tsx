@@ -10,7 +10,7 @@ import { useLocale } from "@/lib/i18n";
 
 export default function LibraryPage() {
   const router = useRouter();
-  const { t, format } = useLocale();
+  const { t, format, locale } = useLocale();
 
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [total, setTotal] = useState(0);
@@ -30,10 +30,16 @@ export default function LibraryPage() {
     else { params.set("sort", "createdAt"); params.set("order", "desc"); }
     if (filterFormat !== "All") params.set("format", filterFormat.toLowerCase());
     if (filterStatus !== "all") params.set("status", filterStatus);
-    const res = await fetch(`/api/v1/library/documents?${params}`);
-    const data = await res.json();
-    if (data.success) { setDocuments(data.data); setTotal(data.total); }
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/v1/library/documents?${params}`);
+      const data = await res.json();
+      if (data.success) { setDocuments(data.data); setTotal(data.total); }
+    } catch {
+      // Transient fetch failure (dev recompilation, network blip). The polling
+      // interval will retry; keep the last successful data rather than clearing.
+    } finally {
+      setLoading(false);
+    }
   }, [sortBy, filterFormat, filterStatus]);
 
   useEffect(() => { fetchDocs(page); }, [page, fetchDocs]);
@@ -49,8 +55,15 @@ export default function LibraryPage() {
 
   async function handleDelete(docId: string) {
     if (!confirm(t.library.deleteConfirm)) return;
+    // Ask whether to also delete the document's Wiki entries
+    const isZh = locale === "zh-CN";
+    const deleteWiki = confirm(
+      isZh
+        ? "是否同时删除该文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。"
+        : "Also delete the Wiki entries distilled from this document?\nClick OK to delete, Cancel to keep them."
+    );
     try {
-      const res = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
+      const res = await fetch(`/api/v1/documents/${docId}?deleteWiki=${deleteWiki}`, { method: "DELETE" });
       if (!res.ok) return;
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
@@ -65,11 +78,17 @@ export default function LibraryPage() {
 
   async function handleBatchDelete(ids: string[]) {
     if (!confirm(format.template(t.library.batchDeleteConfirm, { count: ids.length }))) return;
+    const isZh = locale === "zh-CN";
+    const deleteWiki = confirm(
+      isZh
+        ? "是否同时删除这些文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。"
+        : "Also delete the Wiki entries distilled from these documents?\nClick OK to delete, Cancel to keep them."
+    );
     try {
       const res = await fetch("/api/v1/documents/batch", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ ids, deleteWiki }),
       });
       if (!res.ok) return;
       const text = await res.text();
