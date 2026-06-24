@@ -186,6 +186,8 @@ export type TranslationSchema = {
       fileEmpty: string;
       unsupportedFormat: string;
       noFileProvided: string;
+      largeFileQueued: string;
+      duplicateSkipped: string;
     };
     processing: {
       title: string;
@@ -232,6 +234,21 @@ export type TranslationSchema = {
       complete: string;
       queued: string;
       failed: string;
+      duplicate: string;
+      duplicateHint: string;
+    };
+    processingNotice: {
+      fastTitle: string;
+      mediumTitle: string;
+      slowTitle: string;
+      heavyTitle: string;
+      body: string;
+      graphBodySuffix: string;
+      seconds: string;
+      minutes: string;
+      mixed: string;
+      estimatedTime: string;
+      viewProgress: string;
     };
   };
   library: {
@@ -292,6 +309,23 @@ export type TranslationSchema = {
       documentDetails: string;
       conversionMethod: string;
       uploadedAgo: string;
+      overview: string;
+      format: string;
+      size: string;
+      status: string;
+      uploaded: string;
+      distilled: string;
+      chunksPanel: {
+        other: string;
+        noChunksYet: string;
+        chunksUnit: string;
+        topicGroupsUnit: string;
+        chunkN: string;
+        showAllChunks: string;
+        collapse: string;
+      };
+      wikiSynthesisTitle: string;
+      wikiSynthesisDesc: string;
     };
   };
   search: {
@@ -332,6 +366,22 @@ export type TranslationSchema = {
     loadingStageBuild: string;
     kgLoadingHint: string;
     kgLoadingEstimate: string;
+    semanticResults: {
+      semanticStages: string[];
+      keywordStages: string[];
+      semanticHint: string;
+      keywordHint: string;
+      semanticSelected: string;
+      semanticSelectedDesc: string;
+      keywordSelected: string;
+      keywordSelectedDesc: string;
+      collapse: string;
+      source: string;
+      rank: string;
+      hit: string;
+      match: string;
+      missingEntityGraph: string;
+    };
   };
   writing: {
     title: string;
@@ -398,6 +448,116 @@ export type TranslationSchema = {
       english: string;
       chinese: string;
     };
+    editorExtra: {
+      selectSection: string;
+      selectSectionDesc: string;
+      estimatedWords: string;
+      noWordEstimate: string;
+      pending: string;
+      words: string;
+      retrieving: string;
+      generating: string;
+      sectionProcessing: string;
+      saveEdit: string;
+      humanizing: string;
+      confirming: string;
+      selectModelFirst: string;
+      confirmSection: string;
+      aiThinking: string;
+      preparingGeneration: string;
+      reasoning: string;
+      searchingRefs: string;
+      retrievingLabel: string;
+      thinkingLabel: string;
+      writingLabel: string;
+      mayTakeSeconds: string;
+      writingInProgress: string;
+    };
+    referenceExtra: {
+      chartGenError: string;
+      uploadFailed: string;
+      ragReferences: string;
+      selectDocuments: string;
+      noDocumentsAvailable: string;
+      ragDisabledHint: string;
+      ragManual: string;
+      ragOff: string;
+      refSummary: string;
+      refSummaryPlural: string;
+      refImages: string;
+      insert: string;
+      previewHint: string;
+      imagePlaceholder: string;
+      genImageTitle: string;
+      genChartTitle: string;
+      uploadImageTitle: string;
+      importLabel: string;
+      history: string;
+      chart: string;
+      sectionNotes: string;
+      sectionNotesPlaceholder: string;
+    };
+    constraintsExtra: {
+      autoDefault: string;
+      singleModel: string;
+      compareModels: string;
+      referenceSection: string;
+      sectionLabel: string;
+      wordLimit: string;
+      recommended: string;
+      generationMode: string;
+      additionalRequirements: string;
+      recommendedWordsPlaceholder: string;
+      placeholderExample: string;
+      generating: string;
+    };
+    compareExtra: {
+      waitingForGeneration: string;
+      selected: string;
+      select: string;
+    };
+    draftList: {
+      deleteConfirm: string;
+      inProgress: string;
+      stopped: string;
+      idle: string;
+      drafting: string;
+      modifying: string;
+      emptySubtitle: string;
+      emptySubtitlePlural: string;
+      colTitle: string;
+      colSections: string;
+      colGeneration: string;
+      colLastUpdated: string;
+      done: string;
+      current: string;
+      generated: string;
+      openToReview: string;
+      stopping: string;
+      stop: string;
+    };
+    draftDetail: {
+      loadingDraft: string;
+      backToDrafts: string;
+      expandOutline: string;
+      collapseOutline: string;
+      generateFullDraftTitle: string;
+      generating: string;
+      starting: string;
+      generateFullDraft: string;
+      expandReference: string;
+      collapseReference: string;
+      fullDraftRunning: string;
+      fullDraftReady: string;
+      fullDraftStopped: string;
+      fullDraftFailed: string;
+      current: string;
+      reviewBeforeConfirm: string;
+      sections: string;
+      stopTitle: string;
+      stopping: string;
+      stop: string;
+    };
   };
   brainstorm: {
     title: string;
@@ -421,6 +581,11 @@ export type TranslationSchema = {
     uploadStatus: string;
     uploadPrompt: string;
     uploadFailed: string;
+    upload: {
+      title: string;
+      fileTooLarge: string;
+      unsupportedFormat: string;
+    };
     networkError: string;
     unknownError: string;
     errorPrefix: string;
@@ -454,12 +619,21 @@ export type TranslationSchema = {
       readyToGenerateButton: string;
       escapeHatchButton: string;
       readyHint: string;
+      modelLabel: string;
+      modelAutoDefault: string;
     };
     phases: {
       exploration: string;
       structuring: string;
       refinement: string;
     };
+    editOutline: {
+      sectionTitle: string;
+      subSectionTitle: string;
+      words: string;
+      addSubSection: string;
+    };
+    deleteSessionConfirm: string;
   };
   topology: {
     title: string;
@@ -474,6 +648,100 @@ export type TranslationSchema = {
     nodeTypes: {
       document: string;
       entity: string;
+    };
+    detailPanel: {
+      details: string;
+      mainDocType: string;
+      docStatusCompleted: string;
+      docStatusModifying: string;
+      docStatusDrafting: string;
+      coverageNoSections: string;
+      coverageHigh: string;
+      coverageMid: string;
+      coverageLow: string;
+      nextStepContinue: string;
+      nextStepCoverage: string;
+      nextStepReview: string;
+      loadingDetails: string;
+      documentStatus: string;
+      covered: string;
+      sections: string;
+      coverage: string;
+      references: string;
+      sources: string;
+      coverageInsight: string;
+      mostReferenced: string;
+      nextStep: string;
+      openWritingPage: string;
+      description: string;
+      referenceSources: string;
+      noMoreInfo: string;
+      viewInGraph: string;
+      refCount: string;
+      refCountPlural: string;
+    };
+    controls: {
+      selectDraft: string;
+      searchEntity: string;
+      focused: string;
+      backToCoreGraph: string;
+      entities: string;
+      relations: string;
+      hidden: string;
+      zoomIn: string;
+      zoomOut: string;
+      fitToScreen: string;
+    };
+    density: {
+      showTopTitle: string;
+      showAllTitle: string;
+      topEntitiesLabel: string;
+      entitiesLabel: string;
+    };
+  };
+  wiki: {
+    list: {
+      batchDeleteConfirm: string;
+      deletedToast: string;
+      deleteFailedToast: string;
+      loadFailedToast: string;
+      loading: string;
+      statEntries: string;
+      statMultiSource: string;
+      statAvgConfidence: string;
+      statSourceRefs: string;
+      searchPlaceholder: string;
+      sortNewest: string;
+      sortConfidence: string;
+      sortSources: string;
+      deleteSelected: string;
+      emptyTitle: string;
+      emptyDesc: string;
+      colEntry: string;
+      colConfidence: string;
+      colSources: string;
+      colUpdated: string;
+    };
+    detail: {
+      entryNotFoundToast: string;
+      loadFailedToast: string;
+      savedToast: string;
+      saveFailedToast: string;
+      deleteConfirm: string;
+      deletedToast: string;
+      deleteFailedToast: string;
+      loading: string;
+      notFoundTitle: string;
+      fieldConfidence: string;
+      fieldLinked: string;
+      fieldUpdated: string;
+      saving: string;
+      sources: string;
+      noSources: string;
+      doc: string;
+      chunk: string;
+      related: string;
+      referencedBy: string;
     };
   };
   models: {

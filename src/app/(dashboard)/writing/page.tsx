@@ -48,8 +48,8 @@ function generationColor(
 }
 
 export default function WritingListPage() {
-  const { locale, t, format } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
+  const dl = t.writing.draftList;
   const [drafts, setDrafts] = useState<DraftMeta[]>([]);
   const [tasks, setTasks] = useState<DraftGenerationTask[]>([]);
   const [total, setTotal] = useState(0);
@@ -59,25 +59,31 @@ export default function WritingListPage() {
 
   const fetchPageData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
-    const [draftRes, taskRes] = await Promise.all([
-      fetch("/api/v1/drafts"),
-      fetch("/api/v1/tasks?type=draft_generate_all&limit=100"),
-    ]);
-    const draftData = await draftRes.json();
-    const taskData = await taskRes.json();
-    if (draftData.success && Array.isArray(draftData.data)) {
-      setDrafts(draftData.data);
-      setTotal(draftData.total ?? 0);
+    try {
+      const [draftRes, taskRes] = await Promise.all([
+        fetch("/api/v1/drafts"),
+        fetch("/api/v1/tasks?type=draft_generate_all&limit=100"),
+      ]);
+      const draftData = await draftRes.json();
+      const taskData = await taskRes.json();
+      if (draftData.success && Array.isArray(draftData.data)) {
+        setDrafts(draftData.data);
+        setTotal(draftData.total ?? 0);
+      }
+      if (taskData.success && Array.isArray(taskData.data)) {
+        setTasks(
+          taskData.data.filter(
+            (task: DraftGenerationTask) =>
+              task.type === "draft_generate_all" && task.draftId,
+          ),
+        );
+      }
+    } catch {
+      // Transient fetch failure (dev recompilation, network blip). The polling
+      // interval will retry; keep the last successful data.
+    } finally {
+      if (showLoading) setLoading(false);
     }
-    if (taskData.success && Array.isArray(taskData.data)) {
-      setTasks(
-        taskData.data.filter(
-          (task: DraftGenerationTask) =>
-            task.type === "draft_generate_all" && task.draftId,
-        ),
-      );
-    }
-    if (showLoading) setLoading(false);
   }, []);
 
   useEffect(() => { fetchPageData(true); }, [fetchPageData]);
@@ -94,11 +100,11 @@ export default function WritingListPage() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!window.confirm(isZh ? "确定删除此草稿及其所有章节？此操作不可恢复。" : "Delete this draft and all its sections? This cannot be undone.")) return;
+      if (!window.confirm(dl.deleteConfirm)) return;
       const res = await fetch(`/api/v1/drafts/${id}`, { method: "DELETE" });
       if (res.ok) fetchPageData(false);
     },
-    [fetchPageData, isZh]
+    [fetchPageData, dl.deleteConfirm]
   );
 
   const handleStopTask = useCallback(async (taskId: string) => {
@@ -130,15 +136,15 @@ export default function WritingListPage() {
     if (task?.status === "pending") return t.common.states.pending;
     if (task?.status === "running") return t.writing.status.generating;
     if (task?.status === "completed") return t.common.states.completed;
-    if (totalSections > 0 && completed < totalSections) return isZh ? "进行中" : "In Progress";
+    if (totalSections > 0 && completed < totalSections) return dl.inProgress;
     if (totalSections > 0 && completed >= totalSections) return t.common.states.completed;
     if (task?.status === "failed") return t.common.states.failed;
-    if (task?.status === "cancelled") return isZh ? "已停止" : "Stopped";
-    return isZh ? "空闲" : "Idle";
+    if (task?.status === "cancelled") return dl.stopped;
+    return dl.idle;
   };
   const draftLabel = (status: string) => {
-    if (status === "drafting") return isZh ? "草稿中" : (statusLabels[status] || status);
-    if (status === "modifying") return isZh ? "修改中" : (statusLabels[status] || status);
+    if (status === "drafting") return dl.drafting;
+    if (status === "modifying") return dl.modifying;
     if (status === "completed") return t.common.states.completed;
     return statusLabels[status] || status;
   };
@@ -151,7 +157,7 @@ export default function WritingListPage() {
           <div>
             <h2 className="text-xl font-bold mb-1 text-foreground">{t.dashboard.recent.recentDrafts}</h2>
             <p className="text-sm text-muted-foreground">
-              {isZh ? `${total} 个草稿 - 继续写作，或从思路梳理开始新草稿。` : `${total} draft${total !== 1 ? "s" : ""} - continue writing or start a new draft from brainstorm.`}
+              {format.template(total !== 1 ? dl.emptySubtitlePlural : dl.emptySubtitle, { total })}
             </p>
           </div>
           <Link
@@ -196,19 +202,19 @@ export default function WritingListPage() {
                 <thead>
                   <tr className="border-b border-border bg-muted/50">
                     <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
-                      {isZh ? "标题" : "Title"}
+                      {dl.colTitle}
                     </th>
                     <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                       {t.library.table.status}
                     </th>
                     <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
-                      {isZh ? "章节" : "Sections"}
+                      {dl.colSections}
                     </th>
                     <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
-                      {isZh ? "生成状态" : "Generation"}
+                      {dl.colGeneration}
                     </th>
                     <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
-                      {isZh ? "最后更新" : "Last Updated"}
+                      {dl.colLastUpdated}
                     </th>
                     <th className="px-5 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                       {t.library.table.actions}
@@ -244,7 +250,7 @@ export default function WritingListPage() {
                         </span>
                       </td>
                       <td className="px-5 py-5 align-middle text-center text-sm font-medium text-muted-foreground">
-                        <div className="whitespace-nowrap">{completed}/{totalSections}{completed === totalSections ? ` ${isZh ? "已完成" : "done"}` : ""}</div>
+                        <div className="whitespace-nowrap">{completed}/{totalSections}{completed === totalSections ? ` ${dl.done}` : ""}</div>
                         <div className="mx-auto mt-1 h-1.5 w-full max-w-[120px] overflow-hidden rounded-full bg-secondary">
                           <div
                             className="h-full rounded-full bg-primary-600 transition-all duration-500"
@@ -263,10 +269,10 @@ export default function WritingListPage() {
                           {task?.status === "failed" && task.error
                             ? task.error
                             : taskResult.currentSectionTitle
-                              ? `${isZh ? "当前" : "Current"}: ${taskResult.currentSectionTitle}`
+                              ? `${dl.current}: ${taskResult.currentSectionTitle}`
                               : taskResult.total
-                                ? `${taskResult.generated ?? 0}/${taskResult.total} ${isZh ? "已生成" : "generated"}`
-                                : (isZh ? "打开草稿以审阅已生成章节" : "Open the draft to review generated sections")}
+                                ? `${taskResult.generated ?? 0}/${taskResult.total} ${dl.generated}`
+                                : dl.openToReview}
                         </div>
                       </td>
                       <td className="px-5 py-5 align-middle text-center text-sm text-muted-foreground whitespace-nowrap">
@@ -286,7 +292,7 @@ export default function WritingListPage() {
                               disabled={stoppingTaskId === task.id}
                               className="text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              {stoppingTaskId === task.id ? (isZh ? "停止中..." : "Stopping...") : (isZh ? "停止" : "Stop")}
+                              {stoppingTaskId === task.id ? dl.stopping : dl.stop}
                             </button>
                           )}
                           <button

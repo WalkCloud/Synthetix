@@ -9,7 +9,7 @@ export interface UploadItem {
   id: string;
   name: string;
   size: number;
-  status: "queued" | "converting" | "complete" | "failed";
+  status: "queued" | "converting" | "complete" | "failed" | "duplicate";
   progress: number;
   docId?: string;
   error?: string;
@@ -49,6 +49,9 @@ export function UploadQueue({ items, onRemove }: UploadQueueProps) {
                     <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${item.progress}%` }} />
                   </div>
                 )}
+                {item.status === "duplicate" && (
+                  <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{t.documents.uploadQueue.duplicateHint}</div>
+                )}
               </div>
               <div className="flex items-center gap-2 min-w-[140px] shrink-0">
                 {item.status === "converting" && (
@@ -62,6 +65,9 @@ export function UploadQueue({ items, onRemove }: UploadQueueProps) {
                 )}
                 {item.status === "queued" && (
                   <StatusBadge label={t.documents.uploadQueue.queued} variant="neutral" size="md" />
+                )}
+                {item.status === "duplicate" && (
+                  <StatusBadge label={t.documents.uploadQueue.duplicate} variant="warning" size="md" />
                 )}
                 {item.status === "failed" && (
                   <StatusBadge label={item.error || t.documents.uploadQueue.failed} variant="danger" size="md" />

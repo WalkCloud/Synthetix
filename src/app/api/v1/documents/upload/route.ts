@@ -4,8 +4,6 @@ import { getAuthUser } from "@/lib/auth/session";
 import { LocalStorageAdapter } from "@/lib/documents/storage";
 import { SUPPORTED_FORMATS } from "@/types/documents";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { getQueue } from "@/lib/queue";
-import type { ProcessingOptions } from "@/lib/queue/types";
 import crypto from "crypto";
 import { createReadStream, promises as fsp } from "fs";
 import { pipeline } from "stream/promises";
@@ -90,20 +88,13 @@ export async function POST(request: Request) {
 
   const updatedDoc = await db.document.update({
     where: { id: doc.id },
-    data: { originalHash: hash, originalPath: filePath, status: "queued" },
+    data: { originalHash: hash, originalPath: filePath, status: "pending" },
   });
 
-  const options: ProcessingOptions = {
-    llmModelId: (formData.get("llmModelId") as string) || undefined,
-    embedModelId: (formData.get("embedModelId") as string) || undefined,
-    contextUsage: formData.get("contextUsage") ? parseInt(formData.get("contextUsage") as string) : undefined,
-    splitStrategy: (formData.get("splitStrategy") as ProcessingOptions["splitStrategy"]) || undefined,
-    indexTarget: (formData.get("indexTarget") as ProcessingOptions["indexTarget"]) || undefined,
-    indexMode: (formData.get("indexMode") as ProcessingOptions["indexMode"]) || undefined,
-    autoSplit: formData.get("autoSplit") ? (formData.get("autoSplit") as string) === "true" : undefined,
-  };
-
-  void getQueue().submit("document_convert", { docId: doc.id, options }, user.id);
+  // NOTE: Processing does NOT start here. The document is persisted and left
+  // in "pending" until the user clicks "Start Processing", which calls
+  // /reprocess and submits the document_convert task. Uploading is a pure
+  // store; the processing options are sent by the Start-Processing call.
 
   return successResponse({ document: updatedDoc }, 201);
 }

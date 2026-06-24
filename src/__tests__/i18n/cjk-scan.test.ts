@@ -21,16 +21,33 @@ describe("CJK hardcoded string scan", () => {
 
   // Files/patterns to exclude (these are allowed to contain Chinese)
   const excludePatterns = [
+    // Locale data files
     path.join("lib", "i18n", "locales", "zh-CN.ts"),
-    path.join("lib", "prompts", "locales", "zh-CN-prompts.ts"),
+    path.join("lib", "i18n", "locales", "en.ts"),
     path.join("lib", "i18n", "client-errors.ts"),
     path.join("lib", "i18n", "format.ts"),
-    "__tests__",
+    path.join("lib", "i18n", "registry.ts"),
+    // Prompt localization data
+    path.join("lib", "prompts", "locales", "zh-CN-prompts.ts"),
+    path.join("lib", "prompts", "skills", "index.ts"),
+    path.join("lib", "wiki", "prompts.ts"),
+    path.join("lib", "prompts", "builders", "audit.ts"),
+    // Parser/regex files: Chinese tokens are match patterns, not UI strings
+    path.join("lib", "documents", "outline", "macro-split.ts"),
+    path.join("lib", "brainstorm", "outline-markdown.ts"),
+    path.join("lib", "brainstorm", "length-requirement.ts"),
     path.join("lib", "writing", "diagram-translate.ts"),
+    // CJK detection regexes (detect language, not display)
+    path.join("lib", "writing", "generator.ts"),
+    path.join("lib", "queue", "workers", "outline-worker.ts"),
+    "__tests__",
+    // Brainstorm prompt data
     path.join("lib", "brainstorm", "archetypes"),
     path.join("lib", "brainstorm", "outline-prompt.ts"),
     path.join("lib", "brainstorm", "summary-prompt.ts"),
     path.join("lib", "brainstorm", "messages.ts"),
+    // Brainstorm trigger regexes (match user Chinese input, not UI strings)
+    path.join("hooks", "brainstorm", "use-brainstorm-chat.ts"),
   ];
 
   function shouldExclude(filePath: string): boolean {
@@ -92,11 +109,9 @@ describe("CJK hardcoded string scan", () => {
       console.warn(`\n⚠ Found ${violations.length} CJK violation(s) in runtime code:\n${details}`);
     }
 
-    // Allow existing violations during migration, but cap them
-    // The goal is to reduce this to 0 over time
-    // Cap raised to 280 to accommodate UX improvements (KG density-toggle
-    // labels, brainstorm chat-trigger regex). These should be i18n'd to bring
-    // the count back down.
-    expect(violations.length).toBeLessThanOrEqual(280);
+    // Goal: zero unauthorized CJK hardcoded strings in runtime code.
+    // All UI strings are now routed through the i18n translation object.
+    // The cap stays at 0; any new hardcoded Chinese must go through i18n.
+    expect(violations.length).toBe(0);
   });
 });

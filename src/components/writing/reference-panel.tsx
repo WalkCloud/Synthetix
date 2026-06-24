@@ -68,8 +68,8 @@ export function ReferencePanel({
   activeMarker,
   onAssetConfirm,
 }: ReferencePanelProps) {
-  const { locale, t } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
+  const rx = t.writing.referenceExtra;
   const [imagePrompt, setImagePrompt] = useState("");
   const [generatingMethod, setGeneratingMethod] = useState<GeneratingMethod>(null);
   const [workspaceAssetId, setWorkspaceAssetId] = useState<string | null>(null);
@@ -223,7 +223,7 @@ export function ReferencePanel({
         toast.error(getLocalizedError(renderData));
       }
     } catch {
-      toast.error(isZh ? "图表生成发生异常，请重试。" : "An unexpected chart generation error occurred. Please try again.");
+      toast.error(rx.chartGenError);
     } finally {
       setGeneratingMethod(null);
     }
@@ -250,7 +250,7 @@ export function ReferencePanel({
         toast.error(getLocalizedError(data));
       }
     } catch {
-      toast.error(isZh ? "上传请求失败" : "Upload request failed");
+      toast.error(rx.uploadFailed);
     } finally {
       setGeneratingMethod(null);
       if (importInputRef.current) importInputRef.current.value = "";
@@ -272,8 +272,8 @@ export function ReferencePanel({
 
   const ragModes: { value: string; label: string }[] = [
     { value: "auto", label: t.writing.documentLanguage.auto },
-    { value: "manual", label: isZh ? "手动" : "Manual" },
-    { value: "off", label: isZh ? "关闭" : "Off" },
+    { value: "manual", label: rx.ragManual },
+    { value: "off", label: rx.ragOff },
   ];
 
   function referenceBadge(ref: Reference) {
@@ -307,7 +307,7 @@ export function ReferencePanel({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-foreground">
-              {isZh ? "RAG 参考资料" : "RAG References"}
+              {rx.ragReferences}
             </span>
             {references.length > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-600">{references.length}</span>
@@ -332,9 +332,9 @@ export function ReferencePanel({
 
         {sectionRagMode === "manual" && (
           <div className="mb-3 p-2.5 border border-border rounded-xl bg-muted/50 max-h-48 overflow-y-auto">
-            <p className="text-[11px] text-muted-foreground mb-2">{isZh ? "选择要用作参考资料的文档：" : "Select documents to use as references:"}</p>
+            <p className="text-[11px] text-muted-foreground mb-2">{rx.selectDocuments}</p>
             {documents.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground text-center py-2">{isZh ? "暂无可用文档" : "No documents available"}</p>
+              <p className="text-[11px] text-muted-foreground text-center py-2">{rx.noDocumentsAvailable}</p>
             ) : (
               documents.map((doc) => (
                 <label key={doc.id} className="flex items-center gap-2 py-1 px-1.5 hover:bg-card rounded-lg cursor-pointer transition-colors">
@@ -353,7 +353,7 @@ export function ReferencePanel({
 
         {sectionRagMode === "off" && (
           <div className="mb-3 px-3 py-2 bg-muted/50 border border-border rounded-xl">
-            <p className="text-[11px] text-muted-foreground">{isZh ? "该章节已关闭 RAG，生成时不会检索参考资料。" : "RAG is disabled for this section. No references will be retrieved during generation."}</p>
+            <p className="text-[11px] text-muted-foreground">{rx.ragDisabledHint}</p>
           </div>
         )}
 
@@ -409,7 +409,10 @@ export function ReferencePanel({
               {references.length > 3 && (
                 <div className="px-3 py-1.5 border-t border-border bg-muted/50 text-center">
                   <span className="text-[10px] text-muted-foreground">
-                    {isZh ? `${references.length} 条参考，来自 ${groupedReferences.length} 个文档` : `${references.length} references from ${groupedReferences.length} document${groupedReferences.length > 1 ? "s" : ""}`}
+                    {format.template(
+                      groupedReferences.length > 1 ? rx.refSummaryPlural : rx.refSummary,
+                      { refs: references.length, docs: groupedReferences.length },
+                    )}
                   </span>
                 </div>
               )}
@@ -422,7 +425,7 @@ export function ReferencePanel({
         <div className="mb-5 border-t border-border pt-4">
           <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-foreground">
             <span>📷</span>
-            <span>{isZh ? "参考图片" : "Ref Images"} ({allRefImages.length})</span>
+            <span>{rx.refImages} ({allRefImages.length})</span>
           </h4>
           <div className="grid grid-cols-3 gap-2">
             {allRefImages.map((img, idx) => (
@@ -446,7 +449,7 @@ export function ReferencePanel({
                       className="text-[11px] text-primary-600 hover:underline mt-0.5"
                       onClick={() => onInsertImage(img.url, img.altText || "")}
                     >
-                      {isZh ? "插入" : "Insert"}
+                      {rx.insert}
                     </button>
                   )}
                 </div>
@@ -506,7 +509,7 @@ export function ReferencePanel({
 
           return (
             <div className="mb-3 rounded-xl border border-dashed border-border bg-muted/30 h-[100px] flex items-center justify-center">
-              <p className="text-[11px] text-muted-foreground">{isZh ? "生成后将在此处显示预览" : "Preview will appear here after generation"}</p>
+              <p className="text-[11px] text-muted-foreground">{rx.previewHint}</p>
             </div>
           );
         })()}
@@ -514,7 +517,7 @@ export function ReferencePanel({
         {/* Prompt */}
         <textarea
           className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs text-foreground/75 bg-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none shadow-sm mb-2.5"
-          placeholder={isZh ? "描述你想生成的图片或图表..." : "Describe the image or diagram you want to generate..."}
+          placeholder={rx.imagePlaceholder}
           rows={3}
           value={imagePrompt}
           onChange={(e) => setImagePrompt(e.target.value)}
@@ -532,7 +535,7 @@ export function ReferencePanel({
           <button
             onClick={handleGen}
             disabled={generatingMethod !== null || !imagePrompt.trim()}
-            title={isZh ? "使用 AI 文生图模型生成图片" : "Generate an image with an AI text-to-image model"}
+            title={rx.genImageTitle}
             className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {generatingMethod === "gen" ? (
@@ -549,7 +552,7 @@ export function ReferencePanel({
           <button
             onClick={handleMermaid}
             disabled={generatingMethod !== null || !imagePrompt.trim()}
-            title={isZh ? "使用 LLM 生成 SVG 图表" : "Generate an SVG chart with an LLM"}
+            title={rx.genChartTitle}
             className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {generatingMethod === "mermaid" ? (
@@ -566,7 +569,7 @@ export function ReferencePanel({
           <button
             onClick={() => importInputRef.current?.click()}
             disabled={generatingMethod !== null}
-            title={isZh ? "从本机上传图片" : "Upload an image from your device"}
+            title={rx.uploadImageTitle}
             className="flex-1 flex items-center justify-center gap-1 px-2 py-2 border border-border rounded-xl text-xs font-semibold text-muted-foreground hover:bg-primary-50 hover:text-primary-600 hover:border-primary-300 transition-colors cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {generatingMethod === "import" ? (
@@ -578,7 +581,7 @@ export function ReferencePanel({
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             )}
-            {isZh ? "导入" : "Import"}
+            {rx.importLabel}
           </button>
         </div>
 
@@ -595,7 +598,7 @@ export function ReferencePanel({
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
                 <path d="M12 5v14M5 12h14" />
               </svg>
-              {isZh ? "插入" : "Insert"}
+              {rx.insert}
             </button>
           );
         })()}
@@ -603,7 +606,7 @@ export function ReferencePanel({
         {/* Asset history when no activeMarker */}
         {!activeMarker && readyAssets.length > 0 && (
           <div className="border-t border-border pt-3 mt-3">
-            <p className="text-[11px] text-muted-foreground mb-2">{isZh ? "历史记录" : "History"} ({readyAssets.length})</p>
+            <p className="text-[11px] text-muted-foreground mb-2">{rx.history} ({readyAssets.length})</p>
             <div className="space-y-1.5">
               {readyAssets.map((asset) => {
                 const serveUrl = `/api/v1/drafts/${draftId}/sections/${sectionId}/assets/${asset.id}/serve?v=${renderVer}`;
@@ -619,7 +622,7 @@ export function ReferencePanel({
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-medium text-foreground/75 truncate">{asset.title}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {asset.type === "mermaid" ? (isZh ? "图表" : "Chart") : t.writing.assets.images}
+                        {asset.type === "mermaid" ? rx.chart : t.writing.assets.images}
                       </p>
                     </div>
                     <div className="flex items-center gap-0.5">
@@ -653,11 +656,11 @@ export function ReferencePanel({
             <line x1="16" y1="13" x2="8" y2="13" />
             <line x1="16" y1="17" x2="8" y2="17" />
           </svg>
-          {isZh ? "章节备注" : "Section Notes"}
+          {rx.sectionNotes}
         </h4>
         <textarea
           className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground/75 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none shadow-sm"
-          placeholder={isZh ? "为该章节添加备注..." : "Add notes for this section..."}
+          placeholder={rx.sectionNotesPlaceholder}
           style={{ minHeight: "100px" }}
           value={sectionNotes}
           onChange={(e) => onSectionNotesChange(e.target.value)}
@@ -695,7 +698,7 @@ export function ReferencePanel({
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
                       <path d="M12 5v14M5 12h14" />
                     </svg>
-                    {isZh ? "插入" : "Insert"}
+                    {rx.insert}
                   </button>
                 )}
                 <button

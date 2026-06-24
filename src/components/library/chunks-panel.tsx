@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { ChunkContent } from "@/components/library/chunk-content";
+import { useLocale } from "@/lib/i18n";
 import type { ChunkMeta } from "@/types/documents";
 
 interface ChunksPanelProps {
   chunks: ChunkMeta[];
   docId: string;
-  isZh: boolean;
   format: { number: (value: number) => string };
 }
 
@@ -24,17 +24,19 @@ function topicColor(index: number): string {
 
 const CHUNKS_PER_TOPIC = 10;
 
-export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
+export function ChunksPanel({ chunks, docId, format }: ChunksPanelProps) {
+  const { t, format: fmt } = useLocale();
+  const cp = t.library.detail.chunksPanel;
   const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set());
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
 
   const topicGroups = useMemo(() => chunks.reduce((groups: Map<string, ChunkMeta[]>, chunk) => {
     const hp = chunk.headingPath || "";
-    const topic = hp.split(" > ")[0] || (isZh ? "\u5176\u4ed6" : "Other");
+    const topic = hp.split(" > ")[0] || cp.other;
     if (!groups.has(topic)) groups.set(topic, []);
     groups.get(topic)!.push(chunk);
     return groups;
-  }, new Map<string, ChunkMeta[]>()), [chunks, isZh]);
+  }, new Map<string, ChunkMeta[]>()), [chunks, cp.other]);
 
   function toggleChunk(idx: number) {
     setExpandedChunks((prev) => {
@@ -55,7 +57,7 @@ export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
   if (chunks.length === 0) {
     return (
       <div className="bg-card border rounded-2xl p-12 text-center text-muted-foreground">
-        {isZh ? "\u6682\u65e0\u68c0\u7d22\u5207\u7247" : "No retrieval chunks yet."}
+        {cp.noChunksYet}
       </div>
     );
   }
@@ -67,10 +69,10 @@ export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
       {/* Summary stats \u2014 pill style matching domain panel */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/20 text-xs font-medium text-blue-700 dark:text-blue-300">
-          <span className="font-bold">{chunks.length}</span> {isZh ? "\u4e2a\u5207\u7247" : "chunks"}
+          <span className="font-bold">{chunks.length}</span> {cp.chunksUnit}
         </span>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/60 text-xs font-medium text-muted-foreground">
-          <span className="font-bold text-foreground">{topicGroups.size}</span> {isZh ? "\u4e2a\u4e3b\u9898\u5206\u7ec4" : "topic groups"}
+          <span className="font-bold text-foreground">{topicGroups.size}</span> {cp.topicGroupsUnit}
         </span>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/60 text-xs font-medium text-muted-foreground">
           <span className="font-bold text-foreground">{format.number(totalTokens)}</span> tokens
@@ -108,7 +110,7 @@ export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
                         className="w-full text-left p-3"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-sm font-semibold text-foreground">{chunk.title || (isZh ? `\u5207\u7247 ${chunk.index + 1}` : `Chunk ${chunk.index + 1}`)}</span>
+                          <span className="text-sm font-semibold text-foreground">{chunk.title || fmt.template(cp.chunkN, { n: chunk.index + 1 })}</span>
                           <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0 tabular-nums">{format.number(chunk.tokenCount ?? 0)} tok</span>
                         </div>
                         {chunk.headingPath && <div className="mt-1 text-[11px] text-muted-foreground truncate">{chunk.headingPath}</div>}
@@ -129,7 +131,7 @@ export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
                     onClick={() => toggleTopic(topic)}
                     className="w-full text-center py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {isZh ? `\u663e\u793a\u5168\u90e8 ${topicChunks.length} \u4e2a\u5207\u7247` : `Show all ${topicChunks.length} chunks`}
+                    {fmt.template(cp.showAllChunks, { n: topicChunks.length })}
                   </button>
                 )}
                 {isExpanded && hasMore && (
@@ -138,7 +140,7 @@ export function ChunksPanel({ chunks, docId, isZh, format }: ChunksPanelProps) {
                     onClick={() => toggleTopic(topic)}
                     className="w-full text-center py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {isZh ? "\u6536\u8d77" : "Collapse"}
+                    {cp.collapse}
                   </button>
                 )}
               </div>

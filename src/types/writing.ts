@@ -39,7 +39,7 @@ export interface DraftMeta {
   progress?: DraftProgress;
 }
 
-export interface SectionReferenceMeta {
+interface SectionReferenceMeta {
   documentName: string;
   relevanceScore: number;
   sourceAnchor: string | null;
@@ -78,7 +78,7 @@ export interface SectionMeta {
   references?: SectionReferenceMeta[];
 }
 
-export interface SectionVersionMeta {
+interface SectionVersionMeta {
   id: string;
   sectionId: string;
   version: number;

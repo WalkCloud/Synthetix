@@ -28,8 +28,7 @@ interface WikiDetail {
 export default function WikiDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const { t, locale } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
 
   const [entry, setEntry] = useState<WikiDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +42,7 @@ export default function WikiDetailPage() {
       const res = await fetch(`/api/v1/wiki/entries/${params.id}`);
       if (!res.ok) {
         if (res.status === 404) {
-          toast.error(isZh ? "条目不存在" : "Entry not found");
+          toast.error(t.wiki.detail.entryNotFoundToast);
           router.push("/wiki");
           return;
         }
@@ -52,11 +51,11 @@ export default function WikiDetailPage() {
       const json = (await res.json()) as { data: WikiDetail };
       setEntry(json.data);
     } catch {
-      toast.error(isZh ? "加载失败" : "Failed to load");
+      toast.error(t.wiki.detail.loadFailedToast);
     } finally {
       setLoading(false);
     }
-  }, [params.id, router, isZh]);
+  }, [params.id, router, t.wiki.detail.entryNotFoundToast, t.wiki.detail.loadFailedToast]);
 
   useEffect(() => { void fetchEntry(); }, [fetchEntry]);
 
@@ -70,11 +69,11 @@ export default function WikiDetailPage() {
         body: JSON.stringify({ content: editContent }),
       });
       if (!res.ok) throw new Error("Save failed");
-      toast.success(isZh ? "已保存" : "Saved");
+      toast.success(t.wiki.detail.savedToast);
       setEditing(false);
       void fetchEntry();
     } catch {
-      toast.error(isZh ? "保存失败" : "Save failed");
+      toast.error(t.wiki.detail.saveFailedToast);
     } finally {
       setSaving(false);
     }
@@ -82,14 +81,14 @@ export default function WikiDetailPage() {
 
   async function handleDelete() {
     if (!entry) return;
-    if (!confirm(isZh ? `确定删除"${entry.title}"？` : `Delete "${entry.title}"?`)) return;
+    if (!confirm(format.template(t.wiki.detail.deleteConfirm, { title: entry.title }))) return;
     try {
       const res = await fetch(`/api/v1/wiki/entries/${entry.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
-      toast.success(isZh ? "已删除" : "Deleted");
+      toast.success(t.wiki.detail.deletedToast);
       router.push("/wiki");
     } catch {
-      toast.error(isZh ? "删除失败" : "Delete failed");
+      toast.error(t.wiki.detail.deleteFailedToast);
     }
   }
 
@@ -97,7 +96,7 @@ export default function WikiDetailPage() {
     return (
       <div>
         <Header title={t.layout.sidebar.knowledgeWiki} />
-        <div className="p-8"><LoadingState message={isZh ? "加载中..." : "Loading..."} /></div>
+        <div className="p-8"><LoadingState message={t.wiki.detail.loading} /></div>
       </div>
     );
   }
@@ -109,7 +108,7 @@ export default function WikiDetailPage() {
         <div className="p-8">
           <EmptyState
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-16 h-16"><circle cx="12" cy="12" r="10" /></svg>}
-            title={isZh ? "未找到条目" : "Entry not found"}
+            title={t.wiki.detail.notFoundTitle}
           />
         </div>
       </div>
@@ -123,9 +122,9 @@ export default function WikiDetailPage() {
         {/* Detail fields — mirrors library/[id] DetailField grid pattern */}
         <div className="bg-card border border-border rounded-2xl p-5">
           <dl className="grid grid-cols-3 gap-x-6 gap-y-4">
-            <DetailField label={isZh ? "置信度" : "Confidence"} value={`${Math.round(entry.confidence * 100)}%`} />
-            <DetailField label={isZh ? "关联条目" : "Linked"} value={String(entry.links.length)} />
-            <DetailField label={isZh ? "更新时间" : "Updated"} value={new Date(entry.updatedAt).toLocaleDateString(isZh ? "zh-CN" : "en-US")} />
+            <DetailField label={t.wiki.detail.fieldConfidence} value={`${Math.round(entry.confidence * 100)}%`} />
+            <DetailField label={t.wiki.detail.fieldLinked} value={String(entry.links.length)} />
+            <DetailField label={t.wiki.detail.fieldUpdated} value={format.date(entry.updatedAt)} />
           </dl>
         </div>
 
@@ -143,11 +142,11 @@ export default function WikiDetailPage() {
                 <div className="flex gap-2">
                   <button onClick={handleSave} disabled={saving}
                     className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer">
-                    {saving ? (isZh ? "保存中..." : "Saving...") : (isZh ? "保存" : "Save")}
+                    {saving ? t.wiki.detail.saving : t.common.actions.save}
                   </button>
                   <button onClick={() => setEditing(false)}
                     className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-secondary transition-colors cursor-pointer">
-                    {isZh ? "取消" : "Cancel"}
+                    {t.common.actions.cancel}
                   </button>
                 </div>
               </div>
@@ -163,7 +162,7 @@ export default function WikiDetailPage() {
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
-                    {isZh ? "编辑" : "Edit"}
+                    {t.common.actions.edit}
                   </button>
                   <button
                     onClick={handleDelete}
@@ -173,7 +172,7 @@ export default function WikiDetailPage() {
                       <polyline points="3 6 5 6 21 6" />
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
-                    {isZh ? "删除" : "Delete"}
+                    {t.common.actions.delete}
                   </button>
                 </div>
               </>
@@ -185,20 +184,20 @@ export default function WikiDetailPage() {
             {/* Sources */}
             <div className="bg-card border border-border rounded-xl p-4">
               <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-3">
-                {isZh ? "来源" : "Sources"}
+                {t.wiki.detail.sources}
               </h4>
               {entry.sourceRefs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{isZh ? "无来源记录" : "No sources recorded"}</p>
+                <p className="text-xs text-muted-foreground">{t.wiki.detail.noSources}</p>
               ) : (
                 <div className="space-y-2">
                   {entry.sourceRefs.map((ref, i) => (
                     <div key={i} className="rounded-lg bg-muted/30 p-2.5 border border-border">
                       <div className="text-xs font-medium text-foreground truncate">
-                        {isZh ? "文档" : "Doc"}: {ref.documentId.slice(0, 8)}…
+                        {t.wiki.detail.doc}: {ref.documentId.slice(0, 8)}…
                       </div>
                       {ref.chunkIndex !== undefined && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {isZh ? `块 #${ref.chunkIndex}` : `Chunk #${ref.chunkIndex}`}
+                          {format.template(t.wiki.detail.chunk, { n: ref.chunkIndex })}
                         </div>
                       )}
                     </div>
@@ -211,7 +210,7 @@ export default function WikiDetailPage() {
             {entry.links.length > 0 && (
               <div className="bg-card border border-border rounded-xl p-4">
                 <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-3">
-                  {isZh ? "关联条目" : "Related"}
+                  {t.wiki.detail.related}
                 </h4>
                 <div className="space-y-1">
                   {entry.links.map((link) => (
@@ -229,7 +228,7 @@ export default function WikiDetailPage() {
             {entry.backlinks.length > 0 && (
               <div className="bg-card border border-border rounded-xl p-4">
                 <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-3">
-                  {isZh ? "被引用" : "Referenced by"}
+                  {t.wiki.detail.referencedBy}
                 </h4>
                 <div className="space-y-1">
                   {entry.backlinks.map((link) => (

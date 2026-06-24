@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth/session";
-import type { AuthUser } from "@/types/auth";
 
 /** Stable error codes that map to frontend t.errors.* keys */
 export type ErrorCode =
@@ -18,6 +16,7 @@ export type ErrorCode =
   | "uploadFailed"
   | "noFileProvided"
   | "fileEmpty"
+  | "fileTooLarge"
   | "unsupportedFormat"
   | "passwordIncorrect"
   | "batchDeleteFailed"
@@ -28,14 +27,6 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Unknown error";
-}
-
-async function authOrError(): Promise<AuthUser> {
-  const user = await getAuthUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-  return user;
 }
 
 export function authErrorResponse() {

@@ -20,6 +20,11 @@ interface AdapterConfig {
 }
 
 const FETCH_TIMEOUT_MS = 300_000;
+// Embedding requests are short, bounded calls (no streaming). A 5-min timeout
+// let a single hung embed batch block the whole pipeline for up to 29 min
+// (5min × 3 retries). 90s is ample for a large batch while failing fast
+// enough that the retry loop recovers quickly.
+const EMBED_FETCH_TIMEOUT_MS = 90_000;
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -79,13 +84,33 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     }
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+
+      // Graceful degradation: some providers/models reject `response_format`
+      // (e.g. Doubao returns 400 "json_object is not supported by this model").
+      // Instead of forcing every caller to know which models support it, we
+      // retry once WITHOUT response_format — the caller's prompt + the JSON
+      // parser (safeJsonParse in wiki/generator) handle the looser output.
+      // This keeps JSON mode for models that DO support it (OpenAI, etc.)
+      // while not breaking on models that don't.
+      if (
+        response.status === 400 &&
+        params.response_format &&
+        /response_format/i.test(errorText) &&
+        remaining > 0
+      ) {
+        console.warn(`[llm] Model ${params.model} rejected response_format; retrying without JSON mode.`);
+        const { response_format: _drop, ...rest } = params;
+        void _drop;
+        return this.chatWithRetry(rest as ChatParams, 0);
+      }
+
       const retryable = response.status === 429 || response.status >= 500;
       if (retryable && remaining > 0) {
         const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
         await new Promise((resolve) => setTimeout(resolve, delay));
         return this.chatWithRetry(params, remaining - 1);
       }
-      const errorText = await response.text().catch(() => "");
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
     }
 
@@ -252,7 +277,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         method: "POST",
         headers: buildProviderHeaders(this.apiKey),
         body: JSON.stringify(body),
-      });
+      }, EMBED_FETCH_TIMEOUT_MS);
     } catch (err) {
       // Network failure / timeout — retryable. A single dropped connection must
       // not sink the whole rag_embed_index batch and force a full re-embed.

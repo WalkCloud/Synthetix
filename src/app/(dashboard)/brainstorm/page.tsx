@@ -9,6 +9,8 @@ import { useBrainstormOutline } from "@/hooks/brainstorm/use-brainstorm-outline"
 import { EditOutlineNode } from "@/components/brainstorm/edit-outline-node";
 import { DisplayOutlineNode } from "@/components/brainstorm/display-outline-node";
 import { useLocale } from "@/lib/i18n";
+import { BRAINSTORM_ACCEPT } from "@/types/documents";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   MessageSquare, LayoutList, Plus, Send, RefreshCw,
   Bot, User, Edit3, Loader2, Sparkles, Paperclip,
@@ -262,9 +264,9 @@ export default function BrainstormPage() {
 
             <div className="bg-muted/40 px-6 pb-6 pt-3 shrink-0 dark:bg-background/35">
               <div className="flex min-h-[52px] items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition-all focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary-500/10 dark:shadow-none">
-                <label className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-muted-foreground ${!sess.activeId || chat.isSending ? "pointer-events-none opacity-40" : ""}`} title={t.documents.upload.title}>
+                <label className={`relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-muted-foreground ${!sess.activeId || chat.isSending ? "pointer-events-none opacity-40" : ""}`} title={t.brainstorm.upload.title}>
                   <Paperclip className="h-4.5 w-4.5" />
-                  <input type="file" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md" className="absolute inset-0 cursor-pointer opacity-0"
+                  <input type="file" accept={BRAINSTORM_ACCEPT} className="absolute inset-0 cursor-pointer opacity-0"
                     disabled={!sess.activeId || chat.isSending}
                     onChange={(e) => { const file = e.target.files?.[0]; if (file) chat.handleFileUpload(file); e.target.value = ""; }}
                   />
@@ -289,6 +291,37 @@ export default function BrainstormPage() {
               <div className="flex items-center gap-2 font-display text-base font-bold text-foreground"><LayoutList className="h-[18px] w-[18px]" /> {t.writing.outline}</div>
               {sess.outline && <span className="font-sans text-xs font-semibold text-muted-foreground">~{outline.totalWords().toLocaleString()} {t.brainstorm.wordUnit}</span>}
             </div>
+
+            {/* Outline model selector — picks the chat model used to generate
+                the outline. Hidden while editing the outline (no generation
+                happens then) and when no session is active. "Auto Default"
+                (empty value) defers to the user's configured default chat model. */}
+            {sess.activeId && !outline.editing && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-4 py-2.5 dark:bg-background/35">
+                <label className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  {t.brainstorm.outlinePanel.modelLabel}
+                </label>
+                <Select
+                  value={outline.selectedModelId || "auto"}
+                  onValueChange={(v) => { if (v) outline.setSelectedModelId(v === "auto" ? "" : v); }}
+                >
+                  <SelectTrigger size="sm" className="h-8 flex-1 bg-card text-[13px]">
+                    <SelectValue>
+                      {outline.selectedModelId
+                        ? outline.chatModels.find((m) => m.id === outline.selectedModelId)?.modelName || outline.selectedModelId
+                        : t.brainstorm.outlinePanel.modelAutoDefault}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{t.brainstorm.outlinePanel.modelAutoDefault}</SelectItem>
+                    {outline.chatModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex flex-1 flex-col overflow-hidden p-6">
               {sess.outline ? (
                 <>

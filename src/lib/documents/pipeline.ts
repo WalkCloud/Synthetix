@@ -92,17 +92,26 @@ export async function persistEmbeddingUpdates(
     // Skipping missing rows is the right behaviour here: if a chunk is gone
     // its embedding is moot, and the surviving chunks should still get
     // persisted. Other errors still bubble up.
-    for (const u of batch) {
-      try {
-        await targetDb.documentChunk.update({
-          where: { id: u.chunkId },
-          data: { embedding: u.embedding, embedModel: u.embedModel },
-        });
-      } catch (err) {
-        const code = (err as { code?: string } | null)?.code;
-        if (code === "P2025") continue;
-        throw err;
-      }
+    //
+    // Run the batch with bounded concurrency (5) instead of strictly serial
+    // — on a 133-chunk document the serial path paid 133 sequential SQLite
+    // round-trips. Each update is independent (own row), so parallelism is
+    // safe; P2025 on any row is swallowed without affecting the others.
+    const DB_WRITE_CONCURRENCY = 5;
+    for (let j = 0; j < batch.length; j += DB_WRITE_CONCURRENCY) {
+      const slice = batch.slice(j, j + DB_WRITE_CONCURRENCY);
+      await Promise.all(slice.map(async (u) => {
+        try {
+          await targetDb.documentChunk.update({
+            where: { id: u.chunkId },
+            data: { embedding: u.embedding, embedModel: u.embedModel },
+          });
+        } catch (err) {
+          const code = (err as { code?: string } | null)?.code;
+          if (code === "P2025") return;
+          throw err;
+        }
+      }));
     }
   }
 }
@@ -370,10 +379,16 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const validChunks = chunksToEmbed;
   const validTexts = textsToEmbed;
 
-  const baseBatchSize = embedModel.embeddingBatchSize || 10;
+  // Smaller batches keep each embed API request light (~4 chunks ≈ 8-16k
+  // tokens) so the provider responds fast and is less likely to throttle.
+  // The old default of 10 produced ~40k-token batches that could stall for
+  // minutes or time out on large documents.
+  const baseBatchSize = embedModel.embeddingBatchSize || 4;
   const CONCURRENT_EMBED_BATCHES = 3;
   let totalEmbedTokens = 0;
   const writtenEmbeddings = new Map<string, Uint8Array>();
+  const totalToEmbed = validTexts.length;
+  let embeddedCount = 0;
 
   for (let i = 0; i < validTexts.length; i += baseBatchSize * CONCURRENT_EMBED_BATCHES) {
     const requests: Promise<{ embeddings: number[][]; inputTokens: number }>[] = [];
@@ -401,7 +416,17 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
         return { chunkId, embedding: embBuf, embedModel: embedModel.modelId };
       });
       await persistEmbeddingUpdates(updates);
+      embeddedCount += updates.length;
     }
+
+    // Report sub-progress within the embedding phase (40→68 range, matching
+    // the rag_embed_index worker's 40-70 embed→index split) so the document
+    // detail page shows advancement instead of a frozen 40% for minutes.
+    const embedProgress = 40 + Math.round((embeddedCount / Math.max(totalToEmbed, 1)) * 28);
+    await db.asyncTask.update({
+      where: { id: ctx.taskId },
+      data: { progress: embedProgress },
+    }).catch(() => undefined);
   }
 
   const embeddingsBinPath = path.join(ctx.outputDir, "embeddings.bin");

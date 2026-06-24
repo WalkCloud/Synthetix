@@ -4,8 +4,13 @@ import { deepClone, getByPath, updateByPath, removeByPath, addChildAtPath, renum
 import type { OutlineSection } from "@/lib/outline-tree";
 import type { BrainstormOutline, BrainstormSession, Phase } from "./types";
 import { useLocale } from "@/lib/i18n";
+import { parseCapabilities } from "@/lib/llm/capabilities";
+import type { ModelOption } from "@/types/writing";
 
 const POLL_INTERVAL = 1000;
+// Per-session localStorage key prefix for the user's outline-model choice.
+// Empty string (not persisted here) means "auto default".
+const MODEL_STORAGE_KEY = (sessionId: string) => `brainstorm-outline-model:${sessionId}`;
 
 interface UseBrainstormOutlineOptions {
   activeId: string | null;
@@ -32,6 +37,9 @@ export function useBrainstormOutline({
   const [editSections, setEditSections] = useState<OutlineSection[]>([]);
   const [editTitle, setEditTitle] = useState("");
   const [sectionNotes, setSectionNotes] = useState<{ num: string; title: string; notes: string }[]>([]);
+  const [chatModels, setChatModels] = useState<ModelOption[]>([]);
+  // Empty string means "auto default" (use the user's default chat model).
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -40,6 +48,47 @@ export function useBrainstormOutline({
   const backoffRef = useRef(POLL_INTERVAL);
   const MAX_RETRIES = 3;
   const MAX_BACKOFF = 12000;
+
+  // Load chat-capable models once for the outline model selector. Mirrors
+  // hooks/writing/use-model-selection.ts: fetch providers, flatten models,
+  // keep only those whose capabilities include "chat".
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/models/providers")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data.success) return;
+        const models: ModelOption[] = [];
+        for (const p of data.data as Array<{ models?: Array<{ id: string; modelName: string; capabilities: string }> }>) {
+          for (const m of p.models ?? []) {
+            if (parseCapabilities(m.capabilities).includes("chat")) {
+              models.push({ id: m.id, modelName: m.modelName, capabilities: m.capabilities });
+            }
+          }
+        }
+        setChatModels(models);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist + restore the per-session model choice via localStorage. A new
+  // session (or one with no stored choice) resets to "auto default".
+  useEffect(() => {
+    if (!activeId) return;
+    const stored = typeof window !== "undefined"
+      ? window.localStorage.getItem(MODEL_STORAGE_KEY(activeId))
+      : null;
+    setSelectedModelId(stored ?? "");
+  }, [activeId]);
+
+  const handleModelChange = useCallback((id: string) => {
+    setSelectedModelId(id);
+    if (activeId && typeof window !== "undefined") {
+      if (id) window.localStorage.setItem(MODEL_STORAGE_KEY(activeId), id);
+      else window.localStorage.removeItem(MODEL_STORAGE_KEY(activeId));
+    }
+  }, [activeId]);
 
   useEffect(() => {
     return () => {
@@ -147,7 +196,11 @@ export function useBrainstormOutline({
     setOutlineError(null);
     setLoading(true); setIsGeneratingOutline(true);
     try {
-      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, { method: "POST", headers: { "x-locale": locale } });
+      const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-locale": locale },
+        body: JSON.stringify({ modelConfigId: selectedModelId || undefined }),
+      });
       const d = await res.json();
       if (d.success && d.data?.taskId) {
         startPolling(d.data.taskId);
@@ -159,7 +212,7 @@ export function useBrainstormOutline({
       setOutlineError("Network error while starting outline generation.");
       setIsGeneratingOutline(false); setLoading(false);
     }
-  }, [activeId, locale, setLoading, startPolling]);
+  }, [activeId, locale, selectedModelId, setLoading, startPolling]);
 
   const startPollingExternal = useCallback((taskId: string) => {
     setIsGeneratingOutline(true);
@@ -211,7 +264,8 @@ export function useBrainstormOutline({
 
       const res = await fetch(`/api/v1/brainstorm/sessions/${activeId}/generate-outline`, {
         method: "POST",
-        headers: { "x-locale": locale },
+        headers: { "Content-Type": "application/json", "x-locale": locale },
+        body: JSON.stringify({ modelConfigId: selectedModelId || undefined }),
       });
       const d = await res.json();
       if (d.success && d.data?.taskId) {
@@ -301,6 +355,7 @@ export function useBrainstormOutline({
   return {
     isGeneratingOutline, confirming, editing, outlineError, editSections, editTitle, setEditTitle,
     sectionNotes,
+    chatModels, selectedModelId, setSelectedModelId: handleModelChange,
     generateOutline, clearOutline, regenerateOutline, confirmAndWrite,
     startEditing, cancelEditing, saveEditing,
     updateEditNode, removeEditNode, addEditChild, addEditSection,
