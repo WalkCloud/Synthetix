@@ -112,6 +112,7 @@ export async function synthesizeDocument(
   }
 
   // ---- Phase A: per-chunk incremental extraction + merge ----
+  let failedCount = 0;
   for (const chunk of chunksToProcess) {
     try {
       const knowledge = await extractChunkKnowledge(chunk, existingTitles, client);
@@ -140,6 +141,7 @@ export async function synthesizeDocument(
       });
     } catch (err) {
       // A single chunk failing must not abort the whole document.
+      failedCount++;
       console.warn(`[wiki] Chunk ${chunk.index} extraction failed (non-blocking):`, err);
       microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
 
@@ -151,6 +153,20 @@ export async function synthesizeDocument(
         totalChunks: chunks.length,
       });
     }
+  }
+
+  // If ALL chunks failed (e.g. network down, DNS unreachable), don't mark
+  // as completed — the user needs to know it failed and re-trigger.
+  if (chunksToProcess.length > 0 && failedCount === chunksToProcess.length) {
+    console.error(`[wiki] All ${failedCount} chunks failed for doc ${ctx.docId} — likely network/API issue`);
+    return {
+      entriesCreated: 0,
+      entriesUpdated: 0,
+      docSummaryCreated: false,
+      chunksProcessed: chunks.length - failedCount,
+      chunksTotal: chunks.length,
+      completed: false,
+    };
   }
 
   // All chunks processed — Phase B can now run
@@ -458,13 +474,46 @@ function chunkStringArray(arr: string[], maxChars: number): string[][] {
 }
 
 function safeJsonParse(raw: string): Record<string, unknown> | null {
+  // Without response_format enforcement, the model may wrap JSON in markdown
+  // fences OR surround it with conversational text ("Here is...:\n{...}").
+  // Strategy: strip code fences, then locate the outermost { ... } block.
+  const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+  // Fast path: the whole response is the JSON object.
   try {
-    const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
     const parsed = JSON.parse(cleaned);
     return typeof parsed === "object" && parsed !== null ? parsed : null;
   } catch {
-    return null;
+    // fall through to brace extraction
   }
+
+  // Slow path: extract the first balanced { ... } substring. Handles
+  // "Here is the result:\n{ \"microSummary\": ... }" and trailing prose.
+  const start = cleaned.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(cleaned.slice(start, i + 1));
+          return typeof parsed === "object" && parsed !== null ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function parseChunkKnowledge(raw: string): ChunkKnowledge {
