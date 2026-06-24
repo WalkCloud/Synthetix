@@ -90,9 +90,32 @@ export async function POST(
     where: { id },
     data: {
       status: "cancelled",
+      errorMessage: "Cancelled by user",
       updatedAt: new Date(),
     },
   });
+
+  // When a document_convert task is cancelled, reset the document's status
+  // back to "pending". Otherwise the document stays in "converting"/"queued"
+  // and recoverOrphanedPhaseOne (run on queue init / server restart) treats it
+  // as a crashed-mid-processing doc and RESUBMITS it — defeating the
+  // cancellation. Resetting to "pending" leaves it outside the recovery scan
+  // (which only covers queued/converting/splitting) and is semantically
+  // correct: the user can click "Start Processing" again to retry.
+  if (task.type === "document_convert") {
+    try {
+      const input = task.inputData ? JSON.parse(task.inputData) as { docId?: string } : {};
+      if (input.docId) {
+        await db.document.updateMany({
+          where: { id: input.docId, userId: user.id, status: { in: ["queued", "converting", "splitting"] } },
+          data: { status: "pending" },
+        }).catch(() => undefined);
+      }
+    } catch {
+      // Malformed inputData — the cancellation itself already succeeded;
+      // don't fail the response over a best-effort status reset.
+    }
+  }
 
   const response: ApiResponse = {
     success: true,

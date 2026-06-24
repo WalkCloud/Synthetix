@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/lib/i18n";
 
 interface WikiStatsForDoc {
   total: number;
@@ -14,8 +15,9 @@ interface WikiStatsForDoc {
  * Details dl-grid (not a separate card). Shows entry count as a clickable
  * link to the Knowledge Wiki page. Hidden when no entries exist.
  */
-export function WikiPrecipField({ documentId, isZh }: { documentId: string; isZh: boolean }) {
+export function WikiPrecipField({ documentId }: { documentId: string }) {
   const router = useRouter();
+  const { t } = useLocale();
   const [stats, setStats] = useState<WikiStatsForDoc | null>(null);
 
   useEffect(() => {
@@ -40,14 +42,14 @@ export function WikiPrecipField({ documentId, isZh }: { documentId: string; isZh
   return (
     <div>
       <dt className="text-xs text-muted-foreground mb-1">
-        {isZh ? "知识提炼" : "Distilled"}
+        {t.library.detail.distilled}
       </dt>
       <dd className="text-sm">
         <button
           onClick={() => router.push("/wiki")}
           className="inline-flex items-center gap-1 text-primary hover:underline font-medium cursor-pointer"
         >
-          {stats.total} {isZh ? "条目" : "entries"}
+          {stats.total} {t.wiki.list.statEntries}
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="9 18 15 12 9 6" />
           </svg>

@@ -6,7 +6,7 @@ Synthetix helps you turn reference material into structured, source-grounded dra
 
 > **Status**
 >
-> - Current version: `v0.5.3.0`
+> - Current version: see the `version` field in `package.json`
 > - Synthetix is an early open-source release.
 > - Local self-hosting is the primary deployment target today.
 > - APIs, UI flows, and deployment options may change as the project evolves.

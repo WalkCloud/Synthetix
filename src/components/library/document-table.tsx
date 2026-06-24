@@ -86,6 +86,7 @@ export function DocumentTable({
     all: t.library.filters.allStatuses,
     ready: t.common.states.ready,
     uploading: t.documents.uploadQueue.uploading,
+    pending: t.common.states.pending,
     queued: t.documents.uploadQueue.queued,
     converting: t.documents.uploadQueue.converting,
     splitting: t.documents.processing.splitStrategy,
@@ -142,6 +143,7 @@ export function DocumentTable({
             <SelectItem value="all">{statusLabels.all}</SelectItem>
             <SelectItem value="ready">{statusLabels.ready}</SelectItem>
             <SelectItem value="uploading">{statusLabels.uploading}</SelectItem>
+            <SelectItem value="pending">{statusLabels.pending}</SelectItem>
             <SelectItem value="queued">{statusLabels.queued}</SelectItem>
             <SelectItem value="converting">{statusLabels.converting}</SelectItem>
             <SelectItem value="splitting">{statusLabels.splitting}</SelectItem>
@@ -240,10 +242,10 @@ export function DocumentTable({
                   </th>
                   {[
                     { label: t.topology.nodeTypes.document, style: "w-full max-w-[360px]" },
-                    { label: t.library.table.chunks, style: "w-[100px]" },
-                    { label: t.library.table.size, style: "w-[90px]" },
-                    { label: t.library.actions.indexed, style: "w-[130px]" },
-                    { label: t.library.actions.date, style: "w-[110px]" },
+                    { label: t.library.table.chunks, style: "min-w-[100px] whitespace-nowrap" },
+                    { label: t.library.table.size, style: "min-w-[88px] whitespace-nowrap" },
+                    { label: t.library.actions.indexed, style: "min-w-[110px] whitespace-nowrap" },
+                    { label: t.library.actions.date, style: "min-w-[120px] whitespace-nowrap" },
                     { label: "", style: "w-[112px]" },
                   ].map((h) => (
                     <th
@@ -306,15 +308,15 @@ export function DocumentTable({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <div className="w-[60px] h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="w-[60px] h-1.5 bg-muted rounded-full overflow-hidden shrink-0">
                             <div className="h-full bg-primary rounded-full" style={{ width: `${chunkPct}%` }} />
                           </div>
-                          <span className="text-xs text-muted-foreground">{chunkCount}</span>
+                          <span className="text-xs text-muted-foreground tabular-nums">{chunkCount}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-foreground">{formatFileSize(doc.originalSize)}</td>
+                      <td className="px-4 py-3.5 text-sm text-foreground whitespace-nowrap">{formatFileSize(doc.originalSize)}</td>
                       <td className="px-4 py-3.5">
                         {ready ? (
                           <div className="flex items-center gap-1.5">
@@ -330,6 +332,16 @@ export function DocumentTable({
                               </span>
                             )}
                           </div>
+                        ) : doc.status === "pending" ? (
+                          // "Pending" = uploaded but "Start Processing" not
+                          // clicked yet. Neutral slate, NO spinner — distinct
+                          // from the amber spinner shown while actively
+                          // converting/embedding. No queuePosition (it isn't
+                          // in the processing queue).
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-400 whitespace-nowrap">
+                            <span className="inline-block">◷</span>
+                            {statusLabels.pending}
+                          </span>
                         ) : doc.status === "queued" ? (
                           // "Queued" sits between upload-finished and convert-started.
                           // The library API attaches queuePosition for these docs so

@@ -89,6 +89,7 @@ export function spawnPython(
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
 
     proc.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
     let stderrTail = "";
@@ -110,7 +111,13 @@ export function spawnPython(
       }
     });
 
+    // Node's spawn(timeout) sends SIGTERM; record it so the close handler can
+    // distinguish a genuine non-zero exit (real error) from a timeout kill.
     proc.on("close", (code: number | null) => {
+      if (timedOut) {
+        reject(new Error(`${script} timed out after ${timeout}ms`));
+        return;
+      }
       if (code !== 0) {
         const detail = [stderr, stdout].filter(Boolean).join("\n") || `code ${code}`;
         reject(new Error(`${script} failed:\n${detail}`));
@@ -130,6 +137,7 @@ export function spawnPython(
       }
     });
 
+    proc.on("timeout", () => { timedOut = true; });
     proc.on("error", (err: Error) => reject(err));
   });
 }

@@ -40,7 +40,7 @@ interface EntityEvidenceChunk {
 
 export default function SearchPage() {
   const router = useRouter();
-  const { locale, t } = useLocale();
+  const { locale, t, format } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
   const tabItems: { id: TabId; label: string }[] = [
@@ -90,10 +90,8 @@ export default function SearchPage() {
   useEffect(() => () => { stopKgLoadingTimer(); }, [stopKgLoadingTimer]);
 
   const missingEntityMessage = useCallback((entity: string) => (
-    locale === "zh-CN"
-      ? `未找到"${entity}"的关系图，已保留当前图谱。`
-      : `No relationship graph found for "${entity}". Keeping the current graph.`
-  ), [locale]);
+    format.template(t.search.semanticResults.missingEntityGraph, { entity })
+  ), [format, t.search.semanticResults.missingEntityGraph]);
 
   const loadKnowledgeGraph = useCallback(async (entity?: string) => {
     setKgLoading(true);

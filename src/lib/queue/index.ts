@@ -25,11 +25,14 @@ function readPositiveInt(name: string, fallback: number): number {
   return n;
 }
 
-// Default 1: every document processing stage (convert / embed / index)
-// shares this queue, so serialising at the queue level is the simplest way
-// to guarantee one document is fully processed before the next begins.
-// Override via QUEUE_TOTAL_CONCURRENCY env var if a host has spare capacity.
-const QUEUE_TOTAL_CONCURRENCY = readPositiveInt("QUEUE_TOTAL_CONCURRENCY", 1);
+// Default 2: document processing stages (convert / embed / index) are capped
+// at per-type concurrency 1 (see QUEUE_*_CONCURRENCY below) so they still
+// serialize one document at a time. The SECOND global slot guarantees
+// interactive tasks (outline_generate, draft_generate_all, wiki_synthesize)
+// can run even while a long document_convert occupies the first slot — so a
+// big upload never blocks brainstorming or writing. Override via
+// QUEUE_TOTAL_CONCURRENCY env var.
+const QUEUE_TOTAL_CONCURRENCY = readPositiveInt("QUEUE_TOTAL_CONCURRENCY", 2);
 const QUEUE_RAG_EMBED_CONCURRENCY = readPositiveInt("QUEUE_RAG_EMBED_CONCURRENCY", 1);
 const QUEUE_RAG_INDEX_CONCURRENCY = readPositiveInt("QUEUE_RAG_INDEX_CONCURRENCY", 1);
 const QUEUE_DOCUMENT_CONVERT_CONCURRENCY = readPositiveInt("QUEUE_DOCUMENT_CONVERT_CONCURRENCY", 1);
@@ -108,9 +111,15 @@ async function recoverOrphanedPhaseOne(): Promise<void> {
   // order, just like a freshly uploaded document would — but only if nothing
   // is already processing them (see resolveRecoveryOptions), and reusing the
   // original processing options so graph-mode intent survives a crash.
+  //
+  // NOTE: "uploading" and "pending" are intentionally excluded. "pending" is
+  // the terminal state for a document that was uploaded but never had
+  // "Start Processing" clicked — it must NOT be auto-processed on restart.
+  // "uploading" means the upload itself never finished confirming; treating
+  // either as orphaned would reprocess docs the user never asked to process.
   const orphaned = await db.document.findMany({
     where: {
-      status: { in: ["uploading", "queued", "converting", "splitting"] },
+      status: { in: ["queued", "converting", "splitting"] },
     },
     select: { id: true, userId: true },
   });

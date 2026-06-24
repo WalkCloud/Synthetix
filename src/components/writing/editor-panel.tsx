@@ -68,8 +68,8 @@ export function EditorPanel({
   onMarkerClick,
   pendingMarkerCount = 0,
 }: EditorPanelProps) {
-  const { locale, t } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
+  const ex = t.writing.editorExtra;
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
   const [wordLimit, setWordLimit] = useState(800);
   const [additionalRequirements, setAdditionalRequirements] = useState("");
@@ -199,8 +199,8 @@ export function EditorPanel({
     return (
       <div className="p-6 overflow-y-auto bg-muted/40 h-full flex items-center justify-center">
         <div className="text-center text-muted-foreground">
-          <p className="text-lg font-medium mb-1">{isZh ? "选择一个章节" : "Select a section"}</p>
-          <p className="text-sm">{isZh ? "从大纲中选择章节后开始写作。" : "Choose a section from the outline to start writing."}</p>
+          <p className="text-lg font-medium mb-1">{ex.selectSection}</p>
+          <p className="text-sm">{ex.selectSectionDesc}</p>
         </div>
       </div>
     );
@@ -228,7 +228,7 @@ export function EditorPanel({
           {getOutlineNumber(section, draftOutline)}. {section.title}
         </h2>
         <span className="text-[13px] text-muted-foreground font-medium">
-          {section.estimatedWords ? (isZh ? `预计约 ${section.estimatedWords} 字` : `Estimated ~${section.estimatedWords} words`) : (isZh ? "未设置字数预估" : "No word estimate")}
+          {section.estimatedWords ? format.template(ex.estimatedWords, { n: section.estimatedWords }) : ex.noWordEstimate}
           {section.description && ` — ${section.description}`}
           {pendingMarkerCount > 0 && (
             <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full text-[11px] font-semibold">
@@ -236,7 +236,7 @@ export function EditorPanel({
                 <rect x="2" y="2" width="12" height="12" rx="2" />
                 <path d="M2 6h12M6 2v12" />
               </svg>
-              {pendingMarkerCount} {isZh ? "待处理" : "pending"}
+              {pendingMarkerCount} {ex.pending}
             </span>
           )}
         </span>
@@ -281,7 +281,7 @@ export function EditorPanel({
               </div>
               <div className="px-[18px] py-3 border-t border-border bg-muted/40 flex items-center justify-between">
                 <span className="text-[13px] text-muted-foreground font-medium">
-                  {countWords(section.content)} {isZh ? "字" : "words"}
+                  {countWords(section.content)} {ex.words}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -317,10 +317,10 @@ export function EditorPanel({
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  {section.status === "retrieving" ? (isZh ? "正在检索参考资料..." : "Retrieving references...") : (isZh ? "正在生成..." : "Generation in progress...")}
+                  {section.status === "retrieving" ? ex.retrieving : ex.generating}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {isZh ? "该章节正在处理中。" : "This section is being processed."}
+                  {ex.sectionProcessing}
                 </p>
               </div>
             </div>
@@ -356,7 +356,7 @@ export function EditorPanel({
               }}
               className="px-4 py-1.5 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700 transition-colors cursor-pointer shadow-sm"
             >
-              {isZh ? "保存编辑" : "Save Edit"}
+              {ex.saveEdit}
             </button>
           </div>
         </div>
@@ -409,7 +409,7 @@ export function EditorPanel({
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
               </svg>
             )}
-            {isHumanizing ? (isZh ? "润色中..." : "Humanizing...") : t.writing.humanize.title}
+            {isHumanizing ? ex.humanizing : t.writing.humanize.title}
           </button>
           <button
             onClick={onConfirm}
@@ -429,7 +429,7 @@ export function EditorPanel({
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
-            {isConfirming ? (isZh ? "确认中..." : "Confirming...") : requiresModelSelection ? (isZh ? "请先选择模型内容" : "Select a model first") : (isZh ? "确认章节" : "Confirm Section")}
+            {isConfirming ? ex.confirming : requiresModelSelection ? ex.selectModelFirst : ex.confirmSection}
           </button>
         </div>
       )}
@@ -443,10 +443,10 @@ export function EditorPanel({
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  {isThinking ? (isZh ? "AI 正在思考..." : "AI is thinking...") : (isZh ? "正在准备生成..." : "Preparing generation...")}
+                  {isThinking ? ex.aiThinking : ex.preparingGeneration}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {isThinking ? (isZh ? "正在推理内容结构" : "Reasoning through the content structure") : (isZh ? "正在检索参考资料并构建上下文" : "Searching references & building context")}
+                  {isThinking ? ex.reasoning : ex.searchingRefs}
                 </p>
               </div>
             </div>
@@ -457,7 +457,7 @@ export function EditorPanel({
                   !isThinking ? "bg-primary-100 text-primary-700" : "bg-emerald-100 text-emerald-700"
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${!isThinking ? "bg-primary-500 animate-pulse" : "bg-emerald-500"}`} />
-                  {isZh ? "检索" : "Retrieving"}
+                  {ex.retrievingLabel}
                 </div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 text-muted-foreground self-center">
                   <polyline points="9 18 15 12 9 6" />
@@ -466,14 +466,14 @@ export function EditorPanel({
                   isThinking ? "bg-amber-100 text-amber-700" : "bg-secondary text-muted-foreground"
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${isThinking ? "bg-amber-500 animate-pulse" : "bg-muted"}`} />
-                  {isZh ? "思考" : "Thinking"}
+                  {ex.thinkingLabel}
                 </div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 text-muted-foreground self-center">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-secondary text-muted-foreground">
                   <span className="w-1.5 h-1.5 rounded-full bg-muted" />
-                  {isZh ? "写作" : "Writing"}
+                  {ex.writingLabel}
                 </div>
               </div>
 
@@ -496,7 +496,7 @@ export function EditorPanel({
                   style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.8s" }}
                 />
               ))}
-              <span className="text-xs text-muted-foreground ml-1">{isZh ? "这可能需要 10-30 秒" : "This may take 10-30 seconds"}</span>
+              <span className="text-xs text-muted-foreground ml-1">{ex.mayTakeSeconds}</span>
             </div>
           </div>
         </div>
@@ -510,9 +510,9 @@ export function EditorPanel({
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-              <span className="text-xs font-semibold text-primary-600 uppercase tracking-wider">{isZh ? "写作中" : "Writing"}</span>
+              <span className="text-xs font-semibold text-primary-600 uppercase tracking-wider">{ex.writingInProgress}</span>
             </div>
-            <span className="text-xs font-medium text-muted-foreground">{countWords(displayedContent)} {isZh ? "字" : "words"}</span>
+            <span className="text-xs font-medium text-muted-foreground">{countWords(displayedContent)} {ex.words}</span>
           </div>
           <div className="p-5 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
             {displayedContent}
@@ -532,7 +532,7 @@ export function EditorPanel({
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-xs font-semibold text-emerald-600">{modelAName}</span>
               </div>
-              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentA)} {isZh ? "字" : "words"}</span>
+              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentA)} {ex.words}</span>
             </div>
             <div className="p-4 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
               {displayContentA}
@@ -548,7 +548,7 @@ export function EditorPanel({
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                 <span className="text-xs font-semibold text-blue-600">{modelBName}</span>
               </div>
-              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentB)} {isZh ? "字" : "words"}</span>
+              <span className="text-xs font-medium text-muted-foreground">{countWords(displayContentB)} {ex.words}</span>
             </div>
             <div className="p-4 text-[15px] leading-loose text-foreground/75 whitespace-pre-wrap min-h-[200px]">
               {displayContentB}

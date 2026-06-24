@@ -5,6 +5,11 @@ import { spawnPythonJson } from "@/lib/python";
 
 const PYTHON_SCRIPT = path.resolve("workers/python/convert.py");
 
+// Match the queue-layer document_convert timeout (DOCUMENT_CONVERT_TIMEOUT_MS).
+// Large DOCX files (70MB+) can take 8-10 minutes to convert in Docling; the old
+// 10-minute ceiling was too close to that floor and caused spurious timeouts.
+const CONVERT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 // Bump when Docling behavior changes (e.g. code-fence export enabled) so every
 // cached conversion is invalidated at once. Stored in the sidecar and compared
 // on read; a mismatch forces a fresh conversion.
@@ -143,7 +148,7 @@ export async function convertDocumentFile(
   }
 
   const result = await spawnPythonJson<ConversionResult>(PYTHON_SCRIPT, [inputPath, outputDir], {
-    timeout: 600_000,
+    timeout: CONVERT_TIMEOUT_MS,
   });
 
   if (cacheKey) {

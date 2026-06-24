@@ -24,7 +24,7 @@ function formatBadgeColor(fmt: string): string {
 
 export default function DocumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { t, format, locale } = useLocale();
+  const { t, format } = useLocale();
   const [doc, setDoc] = useState<DocumentMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -49,9 +49,14 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     if (!doc.pipeline?.isProcessing) return;
 
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/v1/library/documents/${id}`);
-      const data = await res.json();
-      if (data.success) setDoc(data.data);
+      try {
+        const res = await fetch(`/api/v1/library/documents/${id}`);
+        const data = await res.json();
+        if (data.success) setDoc(data.data);
+      } catch {
+        // Transient fetch failure (dev recompilation, network blip). The
+        // polling interval will retry on the next tick.
+      }
     }, 4000);
     return () => clearInterval(interval);
   }, [id, doc?.pipeline?.isProcessing]);
@@ -60,16 +65,14 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   if (!doc) return <div><Header title={t.errors.notFound} /><div className="p-8">{t.errors.documentNotFound}</div></div>;
 
   const chunks = doc.chunks || [];
-  const isZh = locale === "zh-CN";
+  const td = t.library.detail;
 
   const totalTokens = chunks.reduce((sum, c) => sum + (c.tokenCount || 0), 0);
 
   const tabs: { key: Tab; label: string; badge?: string }[] = [
-    { key: "overview", label: isZh ? "概览" : "Overview" },
-    { key: "chunks", label: isZh ? "检索切片" : "Retrieval Chunks" },
+    { key: "overview", label: td.overview },
+    { key: "chunks", label: td.chunks },
   ];
-
-  const td = t.library.detail;
 
   return (
     <div>
@@ -104,7 +107,6 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
             doc={doc}
             chunks={chunks}
             totalTokens={totalTokens}
-            isZh={isZh}
             td={td}
             format={format}
             onSwitchTab={setActiveTab}
@@ -112,7 +114,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
         )}
 
         {activeTab === "chunks" && (
-          <ChunksPanel chunks={chunks} docId={doc.id} isZh={isZh} format={format} />
+          <ChunksPanel chunks={chunks} docId={doc.id} format={format} />
         )}
       </div>
     </div>
@@ -127,30 +129,14 @@ interface OverviewTabProps {
   doc: DocumentMeta;
   chunks: DocumentMeta["chunks"];
   totalTokens: number;
-  isZh: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   td: any;
   format: { number: (v: number) => string; fileSize: (v: number) => string; relativeTime: (d: Date | string) => string };
   onSwitchTab: (tab: Tab) => void;
 }
 
-function lineColor(from: Stage, to: Stage, accent?: "emerald" | "violet"): string {
-  if (from === "done" && (to === "done" || to === "active")) {
-    return accent === "violet" ? "bg-violet-300 dark:bg-violet-700" : "bg-emerald-300 dark:bg-emerald-700";
-  }
-  return "bg-border";
-}
-
 type Stage = "done" | "active" | "pending" | "failed";
 
-function StageSpacer() {
-  return (
-    <div className="invisible flex flex-col items-center">
-      <div className="w-5 h-5 rounded-full" />
-      <span className="text-[11px]">.</span>
-    </div>
-  );
-}
 
 interface PipelineProps {
   pipeline: DocumentPipeline;
@@ -163,13 +149,20 @@ function lineColorFor(from: Stage, to: Stage): string {
 }
 
 function Pipeline({ pipeline, td }: PipelineProps) {
+  const { t } = useLocale();
   const stages = pipeline.stages;
   return (
     <div className="bg-card border rounded-2xl p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-sm font-semibold text-foreground">{td.processingPipeline}</h3>
         {pipeline.isProcessing && (
-          <span className="text-xs font-medium text-orange-600 dark:text-orange-400 tabular-nums">{pipeline.overallPercent}%</span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-600 dark:text-orange-400">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping-slow" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500" />
+            </span>
+            {t.common.states.processing}
+          </span>
         )}
       </div>
 
@@ -178,17 +171,43 @@ function Pipeline({ pipeline, td }: PipelineProps) {
           <Fragment key={stage.key}>
             <div className="flex flex-col items-center shrink-0">
               <PipelineDot status={stage.status} />
-              <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(stage.status)}`}>{td[stage.key]}</span>
-              {stage.status === "active" && stage.progress != null && (
-                <span className="mt-0.5 text-[10px] tabular-nums text-orange-600 dark:text-orange-400">{stage.progress}%</span>
+              <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(stage.status)}`}>
+                {td[stage.key]}
+              </span>
+              {stage.status === "active" && (
+                <span className="mt-0.5 flex items-center gap-0.5">
+                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot [animation-delay:-0.3s]" />
+                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot [animation-delay:-0.15s]" />
+                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot" />
+                </span>
               )}
             </div>
             {idx < stages.length - 1 && (
-              <div className={`w-[120px] h-[2px] mt-[10px] rounded-full transition-colors ${lineColorFor(stage.status, stages[idx + 1].status)}`} />
+              <PipelineLine
+                from={stage.status}
+                to={stages[idx + 1].status}
+              />
             )}
           </Fragment>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The connector between two stages. When the NEXT stage is active (i.e. data
+ * is flowing into it), the line carries an animated gradient sheen so the
+ * pipeline reads as continuously progressing rather than frozen.
+ */
+function PipelineLine({ from, to }: { from: Stage; to: Stage }) {
+  const flowing = from === "done" && to === "active";
+  const cls = lineColorFor(from, to);
+  return (
+    <div className={`relative w-[120px] h-[2px] mt-[10px] rounded-full overflow-hidden ${cls}`}>
+      {flowing && (
+        <div className="absolute inset-0 pipeline-flow" aria-hidden />
+      )}
     </div>
   );
 }
@@ -200,8 +219,15 @@ function stageColor(status: Stage): string {
   return "text-muted-foreground";
 }
 
-function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, onSwitchTab }: OverviewTabProps) {
+function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitchTab }: OverviewTabProps) {
   const chunks = chunksRaw ?? [];
+  const { t } = useLocale();
+  const statusLabel = (status: string) =>
+    status === "ready" ? t.common.states.ready
+    : status === "failed" ? t.common.states.failed
+    : status === "indexing_graph" ? t.common.states.indexingGraph
+    : status === "pending" ? t.common.states.pending
+    : status;
 
   return (
     <div className="space-y-8">
@@ -236,14 +262,14 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
       <div className="bg-card border rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-foreground mb-4">{td.documentDetails}</h3>
         <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
-          <DetailField label={isZh ? "格式" : "Format"} value={doc.originalFormat.toUpperCase()} />
-          <DetailField label={isZh ? "大小" : "Size"} value={format.fileSize(doc.originalSize)} />
+          <DetailField label={td.format} value={doc.originalFormat.toUpperCase()} />
+          <DetailField label={td.size} value={format.fileSize(doc.originalSize)} />
           <DetailField
-            label={isZh ? "\u72b6\u6001" : "Status"}
-            value={doc.status === "ready" ? (isZh ? "\u5c31\u7eea" : "Ready") : doc.status === "failed" ? (isZh ? "\u5931\u8d25" : "Failed") : doc.status === "indexing_graph" ? (isZh ? "\u56fe\u8c31\u7d22\u5f15\u4e2d" : "Indexing graph") : doc.status}
-            tone={doc.status === "ready" ? "success" : doc.status === "failed" ? "danger" : "warning"}
+            label={td.status}
+            value={statusLabel(doc.status)}
+            tone={doc.status === "ready" ? "success" : doc.status === "failed" ? "danger" : doc.status === "pending" ? undefined : "warning"}
           />
-          <DetailField label={isZh ? "\u4e0a\u4f20\u65f6\u95f4" : "Uploaded"} value={format.relativeTime(doc.createdAt)} />
+          <DetailField label={td.uploaded} value={format.relativeTime(doc.createdAt)} />
           {doc.wordCount != null && <DetailField label={td.words} value={format.number(doc.wordCount)} />}
           {doc.tokenEstimate != null && <DetailField label={td.tokens} value={format.number(doc.tokenEstimate)} />}
           {chunks.length > 0 && <DetailField label={td.chunks} value={String(chunks.length)} />}
@@ -252,7 +278,7 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
           {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "..."} />}
 
           {/* Knowledge distillation - integrated as a document property */}
-          {doc.status === "ready" && <WikiPrecipField documentId={doc.id} isZh={isZh} />}
+          {doc.status === "ready" && <WikiPrecipField documentId={doc.id} />}
         </dl>
       </div>
     </div>
@@ -263,7 +289,8 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, isZh, td, format, on
  * Sub-components
  * ================================================================ */
 
-function StatusBadge({ status, isZh }: { status: string; isZh: boolean }) {
+function StatusBadge({ status }: { status: string }) {
+  const { t } = useLocale();
   const isReady = status === "ready";
   const isFailed = status === "failed";
   return (
@@ -275,31 +302,39 @@ function StatusBadge({ status, isZh }: { status: string; isZh: boolean }) {
       <span className={`w-1.5 h-1.5 rounded-full ${
         isReady ? "bg-emerald-500" : isFailed ? "bg-red-500" : "bg-orange-500 animate-pulse"
       }`} />
-      {isReady ? (isZh ? "就绪" : "Ready")
-       : isFailed ? (isZh ? "失败" : "Failed")
-       : (isZh ? "处理中" : "Processing")}
+      {isReady ? t.common.states.ready
+       : isFailed ? t.common.states.failed
+       : t.common.states.processing}
     </span>
   );
 }
 
 function PipelineDot({ status }: { status: "done" | "active" | "pending" | "failed" }) {
   return (
-    <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-      status === "done" ? "bg-emerald-500 dark:bg-emerald-400 ring-2 ring-emerald-200 dark:ring-emerald-800"
-      : status === "active" ? "bg-orange-500 dark:bg-orange-400 ring-2 ring-orange-200 dark:ring-orange-800 animate-pulse"
-      : status === "failed" ? "bg-red-500 dark:bg-red-400 ring-2 ring-red-200 dark:ring-red-800"
-      : "bg-border"
-    }`}>
-      {status === "done" && (
-        <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M5 13l4 4L19 7" />
-        </svg>
+    <div className="relative flex items-center justify-center shrink-0">
+      {status === "active" && (
+        <span className="absolute inline-flex h-5 w-5 rounded-full bg-orange-400/40 animate-ping-slow" aria-hidden />
       )}
-      {status === "failed" && (
-        <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M6 6l12 12M6 18L18 6" />
-        </svg>
-      )}
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 relative ${
+        status === "done" ? "bg-emerald-500 dark:bg-emerald-400 ring-2 ring-emerald-200 dark:ring-emerald-800"
+        : status === "active" ? "bg-orange-500 dark:bg-orange-400 ring-2 ring-orange-200 dark:ring-orange-800 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]"
+        : status === "failed" ? "bg-red-500 dark:bg-red-400 ring-2 ring-red-200 dark:ring-red-800"
+        : "bg-border"
+      }`}>
+        {status === "done" && (
+          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        )}
+        {status === "active" && (
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse-dot" />
+        )}
+        {status === "failed" && (
+          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M6 6l12 12M6 18L18 6" />
+          </svg>
+        )}
+      </div>
     </div>
   );
 }

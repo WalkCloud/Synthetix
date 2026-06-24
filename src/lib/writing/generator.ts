@@ -205,28 +205,6 @@ function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | n
   return { mode, documentIds };
 }
 
-async function generateSection(
-  draft: ContextInput["draft"],
-  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
-  completedSections: ContextInput["completedSections"],
-  userId: string,
-  constraints?: ContextInput["constraints"]
-): Promise<GenerationResult> {
-  const result = await generateSectionFull(
-    draft,
-    section,
-    completedSections,
-    userId,
-    constraints,
-  );
-
-  return {
-    content: result.content,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-  };
-}
-
 export async function generateSectionFull(
   draft: ContextInput["draft"],
   section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
@@ -436,106 +414,6 @@ export async function generateSectionStream(
   });
 
   return { stream, modelConfigId, ragReferences: allReferences, wikiEntries: wiki.entries, wikiEntryIds: wiki.usedEntryIds };
-}
-
-export interface ComparisonResult {
-  contentA: string;
-  contentB: string;
-  modelA: string;
-  modelB: string;
-  inputTokensA: number;
-  outputTokensA: number;
-  inputTokensB: number;
-  outputTokensB: number;
-  ragReferences: ContextInput["ragReferences"];
-}
-
-async function compareSection(
-  draft: ContextInput["draft"],
-  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
-  completedSections: ContextInput["completedSections"],
-  userId: string,
-  modelAConfig: { provider: unknown; modelId: string; modelConfigId?: string },
-  modelBConfig: { provider: unknown; modelId: string; modelConfigId?: string },
-  constraints?: ContextInput["constraints"]
-): Promise<ComparisonResult> {
-  const providerA = modelAConfig.provider as ReturnType<
-    typeof createLLMProvider
-  >;
-  const providerB = modelBConfig.provider as ReturnType<
-    typeof createLLMProvider
-  >;
-
-  const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
-
-  const ragReferences = await fetchRagReferences(
-    draft.title,
-    section,
-    userId,
-    parseRagConfig(section)
-  );
-
-  const baseConstraints = buildEffectiveConstraints(
-    section.constraints,
-    constraints,
-  );
-
-  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
-    ? {
-        ...baseConstraints,
-        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
-        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
-        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
-        additionalRequirements: baseConstraints?.additionalRequirements,
-      }
-    : undefined;
-
-  const messages = assembleContext({
-    draft,
-    section,
-    completedSections,
-    ragReferences,
-    constraints: effectiveConstraints,
-  }, detectDocLocale(draft.title));
-
-  const chatParams = {
-    messages,
-    temperature: GENERATION_TEMPERATURE,
-  };
-
-  try {
-    const [responseA, responseB] = await Promise.all([
-      providerA.chat({ ...chatParams, model: modelAConfig.modelId }),
-      providerB.chat({ ...chatParams, model: modelBConfig.modelId }),
-    ]);
-
-    if (!responseA.content.trim()) {
-      throw new Error(
-        `Model A (${modelAConfig.modelId}) returned empty content.`
-      );
-    }
-    if (!responseB.content.trim()) {
-      throw new Error(
-        `Model B (${modelBConfig.modelId}) returned empty content.`
-      );
-    }
-
-    return {
-      contentA: responseA.content,
-      contentB: responseB.content,
-      modelA: responseA.model,
-      modelB: responseB.model,
-      inputTokensA: responseA.inputTokens,
-      outputTokensA: responseA.outputTokens,
-      inputTokensB: responseB.inputTokens,
-      outputTokensB: responseB.outputTokens,
-      ragReferences,
-    };
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Unknown error";
-    throw new Error(`Section comparison failed: ${message}`);
-  }
 }
 
 export interface CompareStreamCallbacks {
