@@ -129,20 +129,28 @@ export async function synthesizeDocument(
       const added = existingTitles.length - before;
       if (added > 0) created += added;
       else updated += knowledge.topics.length + knowledge.concepts.length + knowledge.claims.length - added;
+
+      // Checkpoint ONLY on success — failed chunks stay at the previous
+      // checkpoint so a re-trigger retries them (network errors, timeouts
+      // are transient and should get another chance).
+      writeCheckpoint(progressFile, {
+        lastProcessedChunkIndex: chunk.index,
+        microSummaries,
+        totalChunks: chunks.length,
+      });
     } catch (err) {
       // A single chunk failing must not abort the whole document.
       console.warn(`[wiki] Chunk ${chunk.index} extraction failed (non-blocking):`, err);
       microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
-    }
 
-    // Checkpoint after EACH chunk so a timeout never loses progress.
-    // This is the key to resume-on-retrigger: even if the task is killed
-    // mid-chunk, we've saved everything up to the previous chunk.
-    writeCheckpoint(progressFile, {
-      lastProcessedChunkIndex: chunk.index,
-      microSummaries,
-      totalChunks: chunks.length,
-    });
+      // Do NOT advance checkpoint on failure — re-trigger will retry this chunk.
+      // But we DO save microSummaries so Phase B has continuity.
+      writeCheckpoint(progressFile, {
+        lastProcessedChunkIndex: chunk.index - 1, // stay before this chunk
+        microSummaries,
+        totalChunks: chunks.length,
+      });
+    }
   }
 
   // All chunks processed — Phase B can now run
