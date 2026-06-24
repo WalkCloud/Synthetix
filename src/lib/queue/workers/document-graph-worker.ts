@@ -4,7 +4,6 @@ import {
   loadProcessingTask,
   resolveProcessingModels,
 } from "@/lib/documents/pipeline";
-import { shouldEnqueueWikiSynthesis } from "./index-mode-flags";
 
 export function buildGraphTaskProgressUpdate(
   event: Record<string, unknown>,
@@ -76,21 +75,9 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
       data: { status: "ready" },
     }).catch(() => {});
 
-    // Graph just finished — now enqueue Wiki synthesis as the final, async
-    // knowledge-precipitation layer. It runs AFTER graph so Wiki entries can
-    // reference extracted entities. Non-blocking on document readiness (doc
-    // is already ready above). Guarded by the wikiEnabled flag so users can
-    // opt out to save tokens.
-    if (shouldEnqueueWikiSynthesis(ctx.options)) {
-      const stillExists = await db.document.findUnique({
-        where: { id: ctx.docId },
-        select: { id: true },
-      });
-      if (stillExists) {
-        const { getQueue } = await import("@/lib/queue");
-        await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
-      }
-    }
+    // NOTE: Wiki synthesis is now triggered by rag-embed-index-worker right
+    // after basic index completes (parallel with graph), NOT here. Wiki and
+    // graph are independent — both only need chunks, neither needs the other.
 
     return { ok: true, rag: indexResult?.rag, indexMode: indexResult?.indexMode };
   } catch (error) {
