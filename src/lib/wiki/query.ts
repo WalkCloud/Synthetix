@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { tokenizeChinese } from "@/lib/search/tokenizer";
-import type { WikiEntryView } from "@/lib/wiki/types";
+import type { WikiEntryView, WikiSourceRef } from "@/lib/wiki/types";
 
 /** Default cap on how many Wiki entries to inject into a section's context. */
 export const DEFAULT_WIKI_QUERY_LIMIT = 5;
@@ -115,6 +115,54 @@ export async function getEntriesForDocument(userId: string, documentId: string):
       }
     })
     .map(toView);
+}
+
+/**
+ * Delete all Wiki entries sourced from a specific document.
+ * Called when the user deletes a document and chooses to also delete its
+ * distilled knowledge. Entries with MULTIPLE source documents (fused entries)
+ * have only the matching ref removed, not the whole entry.
+ *
+ * Returns { deleted: number, updated: number }.
+ */
+export async function deleteEntriesForDocument(userId: string, documentId: string): Promise<{ deleted: number; updated: number }> {
+  const entries = await db.wikiEntry.findMany({
+    where: { userId, status: "active" },
+    select: { id: true, sourceRefs: true },
+  });
+
+  const toDelete: string[] = [];
+  const toUpdate: { id: string; sourceRefs: string }[] = [];
+
+  for (const entry of entries) {
+    let refs: WikiSourceRef[] = [];
+    try {
+      const parsed = JSON.parse(entry.sourceRefs);
+      if (Array.isArray(parsed)) refs = parsed;
+    } catch { continue; }
+
+    const filtered = refs.filter((r) => r.documentId !== documentId);
+
+    if (filtered.length === 0 && refs.length > 0) {
+      // All refs pointed to this doc — delete the entry
+      toDelete.push(entry.id);
+    } else if (filtered.length < refs.length) {
+      // Entry had other sources too — keep it, just remove this doc's ref
+      toUpdate.push({ id: entry.id, sourceRefs: JSON.stringify(filtered) });
+    }
+  }
+
+  // Delete entries whose only source was this document
+  if (toDelete.length > 0) {
+    await db.wikiEntry.deleteMany({ where: { id: { in: toDelete }, userId } });
+  }
+
+  // Update entries that had other sources (remove just this doc's ref)
+  for (const upd of toUpdate) {
+    await db.wikiEntry.update({ where: { id: upd.id }, data: { sourceRefs: upd.sourceRefs } }).catch(() => {});
+  }
+
+  return { deleted: toDelete.length, updated: toUpdate.length };
 }
 
 /** Aggregate counts for the Wiki browse page stats ribbon. */
