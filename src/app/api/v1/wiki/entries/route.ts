@@ -59,6 +59,17 @@ export async function GET(request: Request) {
     where.id = { in: matchedIds };
   }
 
+  // Lightweight mode: return ALL matching entry IDs (no pagination, no content).
+  // Used by the "select all" button to select across all pages.
+  if (searchParams.get("idsOnly") === "true") {
+    const allEntries = await db.wikiEntry.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    return successResponse({ ids: allEntries.map((e) => e.id), total: allEntries.length });
+  }
+
   const [entries, total, stats] = await Promise.all([
     db.wikiEntry.findMany({
       where,
