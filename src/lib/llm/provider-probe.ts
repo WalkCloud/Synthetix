@@ -190,19 +190,32 @@ export async function detectEmbeddingDim(
   // endpoint-specific path segments (e.g. /embeddings/multimodal → /embeddings).
   const urls = [actualBase, normalizedBase, originalUrl, ...FALLBACK_ENDPOINTS];
 
+  // Candidate dimensions probed largest-first. The goal is to find the
+  // MAXIMUM dimension the model genuinely supports, not a downgraded default.
+  // 2048 is included because many providers (Volcengine doubao, Dashscope v4)
+  // support it as the top end even though their no-arg default is smaller.
+  const DIMENSION_CANDIDATES = [3072, 2048, 1536, 1024, 768];
+
   for (const url of urls) {
-    // Probe from largest dimension down
-    for (const dim of [3072, 1536, 1024, 768]) {
+    // 1. Probe from the LARGEST dimension down, requiring an EXACT match.
+    //    Exact-match is essential: some providers (e.g. Dashscope v4) silently
+    //    downgrade an oversized `dimensions` request instead of erroring — so
+    //    "request 3072 → got 2048" must NOT be accepted as 3072. Only a request
+    //    that returns exactly the requested dim counts as "supported", and the
+    //    first (largest) such match is the model's true maximum.
+    for (const dim of DIMENSION_CANDIDATES) {
       for (const body of embeddingProbeBodies(model.modelId, dim)) {
         const result = await tryProbe(url, body);
         if (result === dim) return dim;
-        if (result !== null && result > 0) return result;
       }
     }
-    // Native dim (no dimensions param)
+    // 2. Fallback: native default dimension (no `dimensions` param).
+    //    Only reached if NO candidate returned an exact match — i.e. the model
+    //    does not honor the `dimensions` param at all (legacy/local models).
+    //    A non-exact positive result here is still better than nothing.
     for (const body of embeddingProbeBodies(model.modelId)) {
       const nativeDim = await tryProbe(url, body);
-      if (nativeDim) return nativeDim;
+      if (nativeDim && nativeDim > 0) return nativeDim;
     }
   }
   return null;
