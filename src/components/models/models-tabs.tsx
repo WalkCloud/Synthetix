@@ -146,7 +146,7 @@ export function ModelsTabs() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div>
       <div className="flex gap-2 border-b border-border mb-8 pb-px">
         {(["usage", "llm", "embedding", "rerank", "image"] as const).map((tabKey) => {
           const labels: Record<Tab, string> = { llm: t.models.tabs.llm, embedding: t.models.tabs.embedding, rerank: t.models.tabs.rerank, image: t.models.tabs.image, usage: t.models.tabs.usage };

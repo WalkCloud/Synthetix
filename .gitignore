@@ -131,3 +131,9 @@ embeddings.bin
 
 # test fixtures
 /finance-cloud.docx
+
+# Python virtual environment (not part of this JS project)
+.venv/
+
+# LiteLLM model reference catalog (large, regenerable)
+litellm-catalog.json

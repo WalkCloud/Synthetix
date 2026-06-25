@@ -229,6 +229,7 @@ export async function generateSectionFull(
     provider = createLLMProvider({
       apiBaseUrl: modelConfig.provider.apiBaseUrl,
       apiKey: modelConfig.provider.apiKey,
+      providerType: modelConfig.provider.providerType,
     });
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;
@@ -348,6 +349,7 @@ export async function generateSectionStream(
     provider = createLLMProvider({
       apiBaseUrl: modelConfig.provider.apiBaseUrl,
       apiKey: modelConfig.provider.apiKey,
+      providerType: modelConfig.provider.providerType,
     });
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;

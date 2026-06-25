@@ -54,6 +54,7 @@ export async function POST(
     const provider = createLLMProvider({
       apiBaseUrl: writingModel.provider.apiBaseUrl,
       apiKey: writingModel.provider.apiKey,
+      providerType: writingModel.provider.providerType,
     });
 
     const truncatedContent = content.slice(0, 3000);
