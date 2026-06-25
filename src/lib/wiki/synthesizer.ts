@@ -417,6 +417,7 @@ async function resolveWikiClient(ctx: ProcessingContext): Promise<WikiClient | n
       provider: createLLMProvider({
         apiBaseUrl: ctx.writingModel.provider.apiBaseUrl,
         apiKey: ctx.writingModel.provider.apiKey,
+        providerType: ctx.writingModel.provider.providerType,
       }),
       modelId: ctx.writingModel.modelId,
       modelConfigId: ctx.writingModel.id,

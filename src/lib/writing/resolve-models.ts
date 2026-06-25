@@ -7,6 +7,7 @@ interface ModelWithProvider {
   provider: {
     apiBaseUrl: string;
     apiKey: string;
+    providerType: string;
   };
 }
 

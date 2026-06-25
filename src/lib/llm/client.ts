@@ -19,6 +19,7 @@ export async function resolveLLMClient(
     provider: createLLMProvider({
       apiBaseUrl: model.provider.apiBaseUrl,
       apiKey: model.provider.apiKey,
+      providerType: model.provider.providerType,
     }),
     modelId: model.modelId,
     modelConfigId: model.id,
