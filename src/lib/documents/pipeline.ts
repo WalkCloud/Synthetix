@@ -514,7 +514,6 @@ export async function indexDocument(
   }
   indexMode = resolvedMode;
 
-  const ragChunksDir = outputDir;
   const ragEmbedConfig = embedModel.provider.apiBaseUrl
     ? buildEmbedConfig(embedModel)
     : undefined;
@@ -532,7 +531,33 @@ export async function indexDocument(
   } catch {}
 
   const embeddingsPath = `${outputDir}/embeddings.bin`;
-  const hasCachedEmbeddings = fs.existsSync(embeddingsPath);
+
+  // ── Graph contextual-prefix chunks (design §9) ────────────────────────────
+  // In graph mode, prefer contextual-prefix chunks (small retrieval chunks +
+  // their owning Segment's title/summary) over raw retrieval chunks. This
+  // keeps entity-extraction fidelity HIGH (small chunks) while restoring the
+  // domain context that prevents garbage entities. When contextual chunks are
+  // built we MUST NOT reuse retrieval's embeddings.bin — the prefixed text
+  // differs from retrieval text, so reusing embeddings would misalign.
+  let ragChunksDir = outputDir;
+  let graphContextual = false;
+  if (indexMode === "graph") {
+    try {
+      const { buildGraphContextualChunks } = await import("@/lib/documents/graph-chunks");
+      const built = await buildGraphContextualChunks(docId, outputDir);
+      if (built) {
+        ragChunksDir = built.dir;
+        graphContextual = built.contextual;
+        console.log(`[graph] doc ${docId}: using ${built.count} contextual chunks (prefixes=${built.contextual})`);
+      }
+    } catch (err) {
+      console.warn(`[graph] contextual chunk build failed for doc ${docId}, using retrieval chunks:`, err);
+    }
+  }
+
+  // Disable embeddings.bin reuse when using contextual graph chunks (text
+  // differs). Otherwise reuse the cache when available.
+  const hasCachedEmbeddings = !graphContextual && fs.existsSync(embeddingsPath);
 
   const indexResult = await indexWithLightRAG(
     docId, doc.userId, ragChunksDir, indexMode, ragEmbedDim,
