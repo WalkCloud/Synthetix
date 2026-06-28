@@ -9,7 +9,6 @@
  * open in Obsidian or any text editor).
  */
 
-import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
 import os from "os";

@@ -23,11 +23,8 @@ export async function processDocumentSegment(
     data: { status: "running", progress: 10 },
   });
 
-  let docId: string | undefined;
-
   try {
     const ctx = await loadProcessingTask(taskId);
-    docId = ctx.docId;
     await resolveProcessingModels(ctx);
 
     await db.asyncTask.update({

@@ -46,16 +46,6 @@ export function splitMarkdown(
   return splitByLines(markdown, maxTokens, options.minTokens || 256);
 }
 
-export function documentHasStructure(markdown: string): boolean {
-  // Check if there are markdown headings
-  if (splitByHeadings(markdown).length > 1) return true;
-
-  // Check if there are plain-text section titles
-  if (extractSectionTitles(markdown).length >= 3) return true;
-
-  return false;
-}
-
 // ── Section title extraction (plain text headings) ──
 
 export function extractSectionTitles(markdown: string): string[] {

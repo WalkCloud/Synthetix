@@ -23,6 +23,28 @@ export type PipelineStageKey =
 
 export type PipelineStageStatus = "done" | "active" | "pending" | "failed";
 
+/**
+ * A single, consistent display status for a document — used by BOTH the
+ * library list and the document detail page so they never disagree.
+ *
+ * Semantics:
+ *   - "ready"      : every stage + branch complete (full pipeline done)
+ *   - "enhancing"  : basic retrieval usable (linear chain done) but Graph/Wiki
+ *                    branches still running — the doc is searchable NOW
+ *   - "processing" : somewhere in the linear chain (convert/split/embed/index)
+ *   - "failed"     : a required stage failed
+ *   - "pending"    : uploaded but "Start Processing" not clicked yet
+ *
+ * This mirrors DocumentPipeline.isReady / isBasicReady so the list's badge and
+ * the detail page's badge show the same thing.
+ */
+export type DocumentDisplayStatus =
+  | "ready"
+  | "enhancing"
+  | "processing"
+  | "failed"
+  | "pending";
+
 export interface PipelineStageView {
   /** i18n key under `library.detail` (e.g. "stageGraph"). */
   key: PipelineStageKey;
@@ -104,6 +126,28 @@ const taskActive = (t?: PipelineTaskView | null): boolean =>
   !!t && (t.status === "running" || t.status === "pending");
 const taskDone = (t?: PipelineTaskView | null): boolean => !!t && t.status === "completed";
 const taskFailed = (t?: PipelineTaskView | null): boolean => !!t && t.status === "failed";
+
+/**
+ * Compute a single display status from the same task inputs as the pipeline.
+ * This is the SOURCE OF TRUTH for status badges so the library list and the
+ * detail page can never diverge. Both call this with the same task rows.
+ *
+ * `doc.status` is the legacy coarse DB status; it is used only to distinguish
+ * the "uploaded but not started" (pending) case and the failed case when no
+ * tasks exist yet.
+ */
+export function computeDisplayStatus(
+  pipeline: DocumentPipeline,
+  docStatus: string,
+): DocumentDisplayStatus {
+  if (pipeline.isReady) return "ready";
+  if (pipeline.isFailed) return "failed";
+  if (pipeline.isBasicReady) return "enhancing";
+  // Before the linear chain finishes: "pending" (not started) vs "processing".
+  if (docStatus === "pending" || docStatus === "uploading") return "pending";
+  return "processing";
+}
+
 
 export function computeDocumentPipeline({
   doc,

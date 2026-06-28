@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { computeDocumentPipeline, type PipelineTaskView } from "@/lib/documents/pipeline-stages";
-import { shouldEnqueueGraphIndex } from "@/lib/queue/workers/index-mode-flags";
+import { computeDocumentPipeline, computeDisplayStatus, type PipelineTaskView } from "@/lib/documents/pipeline-stages";
+import { shouldEnqueueGraphIndex, shouldEnqueueWikiSynthesis } from "@/lib/queue/workers/index-mode-flags";
 import type { ProcessingOptions } from "@/lib/queue/types";
 
 export async function GET(
@@ -37,7 +37,7 @@ export async function GET(
     where: {
       userId: user.id,
       inputData: { contains: `"docId":"${id}"` },
-      type: { in: ["document_convert", "rag_embed_index", "rag_index"] },
+      type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
     },
     orderBy: { createdAt: "desc" },
     select: { type: true, status: true, progress: true, inputData: true },
@@ -46,23 +46,29 @@ export async function GET(
   const convertRow = latest("document_convert");
   const embedRow = latest("rag_embed_index");
   const graphRow = latest("rag_index");
+  const wikiRow = latest("wiki_synthesize");
 
   const toView = (t?: { status: string; progress: number }): PipelineTaskView | null =>
     t ? { status: t.status, progress: t.progress } : null;
 
-  // graphMode: derived from the user's original processing options (stored on
-  // the document_convert task input), or truthfully true if a rag_index task
-  // was ever enqueued for this doc.
+  // graphMode / wikiEnabled: derived from the user's original processing
+  // options (stored on the document_convert task input), or truthfully true if
+  // the corresponding task was ever enqueued for this doc.
   let graphMode = false;
+  let wikiEnabled = false;
   if (convertRow?.inputData) {
     try {
       const parsed = JSON.parse(convertRow.inputData) as { options?: ProcessingOptions };
-      if (parsed.options) graphMode = shouldEnqueueGraphIndex(parsed.options);
+      if (parsed.options) {
+        graphMode = shouldEnqueueGraphIndex(parsed.options);
+        wikiEnabled = shouldEnqueueWikiSynthesis(parsed.options);
+      }
     } catch {
       /* malformed input — ignore */
     }
   }
   graphMode = graphMode || !!graphRow;
+  wikiEnabled = wikiEnabled || !!wikiRow;
 
   const pipeline = computeDocumentPipeline({
     doc: {
@@ -73,12 +79,15 @@ export async function GET(
     convertTask: toView(convertRow ?? undefined),
     embedTask: toView(embedRow ?? undefined),
     graphTask: toView(graphRow ?? undefined),
+    wikiTask: toView(wikiRow ?? undefined),
     graphMode,
+    wikiEnabled,
   });
 
   return successResponse({
     ...doc,
     tags: doc.tags.map((dt) => dt.tag),
     pipeline,
+    displayStatus: computeDisplayStatus(pipeline, doc.status),
   });
 }
