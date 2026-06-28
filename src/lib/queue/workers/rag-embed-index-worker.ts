@@ -78,6 +78,12 @@ export async function processRagEmbedIndex(
       if (stillExists) {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        // LLM-guided domain segmentation runs in parallel with wiki. It produces
+        // DocumentSegment[] (Wiki's preferred input + Graph's contextual-prefix
+        // source). Wiki starts on chunks immediately and does NOT wait for it;
+        // if segments finish first they improve quality on future reprocess.
+        // Skip for tiny docs (no segmentation benefit) — threshold ~ a few atoms.
+        await getQueue().submit("document_segment", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
       }
     }
 

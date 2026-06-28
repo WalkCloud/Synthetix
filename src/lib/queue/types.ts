@@ -1,6 +1,7 @@
 export type TaskType =
   | "document_convert"
   | "document_cleanup"
+  | "document_segment"
   | "rag_embed_index"
   | "rag_index"
   | "wiki_synthesize"
