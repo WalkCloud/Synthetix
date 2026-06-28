@@ -15,7 +15,7 @@ import { synthesizeDocument, type SynthChunk } from "@/lib/wiki/synthesizer";
 
 export async function processWikiSynthesize(
   taskId: string,
-): Promise<{ ok: boolean; wiki?: { entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean } }> {
+): Promise<{ ok: boolean; wiki?: Awaited<ReturnType<typeof synthesizeDocument>> }> {
   await db.asyncTask.update({
     where: { id: taskId },
     data: { status: "running", progress: 10 },
@@ -36,21 +36,71 @@ export async function processWikiSynthesize(
       data: { progress: 30 },
     });
 
-    // Load chunks from the DB — NOT the full markdown. This is the key to
-    // never overflowing the LLM context: the synthesizer processes one chunk
-    // at a time regardless of total document size.
-    const chunks = await db.documentChunk.findMany({
+    // ── Input unit selection: prefer DocumentSegments, fall back to chunks ──
+    // Segments are LLM-induced domain units with larger, coherent context —
+    // the Wiki's preferred input (better quality, less fragmentation). Wiki is
+    // submitted in parallel with document_segment, so segments may not exist
+    // yet on the first run; in that case we use chunks (the pre-segmentation
+    // behaviour). This keeps Wiki non-blocking on segmentation.
+    const segments = await db.documentSegment.findMany({
       where: { documentId: ctx.docId },
       orderBy: { index: "asc" },
-      select: { id: true, index: true, content: true, tokenCount: true, title: true },
     });
 
-    if (chunks.length === 0) {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: { status: "completed", progress: 100, resultData: JSON.stringify({ entriesCreated: 0, reason: "no chunks" }) },
+    let synthChunks: SynthChunk[];
+    let inputUnitType: "segment" | "chunk";
+
+    if (segments.length >= 2) {
+      // Reconstruct each segment's text from its atom range for full context.
+      const atoms = await db.documentAtom.findMany({
+        where: { documentId: ctx.docId },
+        orderBy: { index: "asc" },
+        select: { index: true, content: true },
       });
-      return { ok: true, wiki: { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true } };
+      const atomByIndex = new Map(atoms.map((a) => [a.index, a.content]));
+      synthChunks = segments.map((seg) => {
+        const parts: string[] = [];
+        for (let i = seg.startAtomIndex; i <= seg.endAtomIndex; i++) {
+          const text = atomByIndex.get(i);
+          if (text) parts.push(text);
+        }
+        const content = parts.join("\n\n");
+        return {
+          id: seg.id,
+          index: seg.index,
+          content,
+          tokenCount: seg.tokenCount ?? undefined,
+          title: seg.title,
+        };
+      });
+      inputUnitType = "segment";
+      console.log(`[wiki] doc ${ctx.docId}: using ${synthChunks.length} segments as input (vs ${await db.documentChunk.count({ where: { documentId: ctx.docId } }).catch(() => 0)} chunks)`);
+    } else {
+      // Fallback: load chunks from the DB — NOT the full markdown. This keeps
+      // the LLM context-bounded: the synthesizer processes one unit at a time
+      // regardless of total document size.
+      const chunks = await db.documentChunk.findMany({
+        where: { documentId: ctx.docId },
+        orderBy: { index: "asc" },
+        select: { id: true, index: true, content: true, tokenCount: true, title: true },
+      });
+
+      if (chunks.length === 0) {
+        await db.asyncTask.update({
+          where: { id: taskId },
+          data: { status: "completed", progress: 100, resultData: JSON.stringify({ entriesCreated: 0, reason: "no chunks" }) },
+        });
+        return { ok: true, wiki: { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true } };
+      }
+
+      synthChunks = chunks.map((c) => ({
+        id: c.id,
+        index: c.index,
+        content: c.content,
+        tokenCount: c.tokenCount,
+        title: c.title,
+      }));
+      inputUnitType = "chunk";
     }
 
     await db.asyncTask.update({
@@ -58,29 +108,56 @@ export async function processWikiSynthesize(
       data: { progress: 50 },
     });
 
-    const synthChunks: SynthChunk[] = chunks.map((c) => ({
-      id: c.id,
-      index: c.index,
-      content: c.content,
-      tokenCount: c.tokenCount,
-      title: c.title,
-    }));
+    const result = await synthesizeDocument(ctx, synthChunks, (processed, total, phase = "extract") => {
+      const frac = total > 0 ? processed / total : 0;
+      const [floor, ceil] = phase === "merge" ? [65, 88] : phase === "summary" ? [88, 98] : [30, 65];
+      const pct = Math.round(floor + frac * (ceil - floor));
+      // Fire-and-forget: never let a progress write block or fail the task.
+      db.asyncTask.update({ where: { id: taskId }, data: { progress: pct } }).catch(() => {});
+    });
 
-    const result = await synthesizeDocument(ctx, synthChunks);
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: {
+        progress: 98,
+      },
+    });
+
+    const resultData = JSON.stringify({
+      inputUnitType,
+      inputUnitCount: synthChunks.length,
+      entriesCreated: result.entriesCreated,
+      entriesUpdated: result.entriesUpdated,
+      docSummaryCreated: result.docSummaryCreated,
+      chunksProcessed: result.chunksProcessed,
+      chunksTotal: result.chunksTotal,
+      chunksFailed: result.chunksFailed,
+      extractionMs: result.extractionMs,
+      mergeMs: result.mergeMs,
+      summaryMs: result.summaryMs,
+      fusionCalls: result.fusionCalls,
+      completed: result.completed,
+    });
+
+    if (!result.completed) {
+      await db.asyncTask.update({
+        where: { id: taskId },
+        data: {
+          status: "failed",
+          progress: 100,
+          errorMessage: "Wiki synthesis did not complete",
+          resultData,
+        },
+      });
+      return { ok: false, wiki: result };
+    }
 
     await db.asyncTask.update({
       where: { id: taskId },
       data: {
         status: "completed",
         progress: 100,
-        resultData: JSON.stringify({
-          entriesCreated: result.entriesCreated,
-          entriesUpdated: result.entriesUpdated,
-          docSummaryCreated: result.docSummaryCreated,
-          chunksProcessed: result.chunksProcessed,
-          chunksTotal: result.chunksTotal,
-          completed: result.completed,
-        }),
+        resultData,
       },
     });
 
