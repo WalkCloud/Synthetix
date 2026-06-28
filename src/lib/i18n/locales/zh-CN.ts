@@ -230,6 +230,21 @@ const zhCN = {
       graphDimUnknown: "Embedding 维度尚未验证，请先在模型管理中执行“测试连接”。",
       graphDimTooSmall: "当前模型维度（{dim}）低于知识图谱抽取所需的 1536 下限，请改用更高维度的 Embedding 模型。",
       graphDesc: "图谱模式会抽取实体和关系，用于增强检索和拓扑分析。",
+      // 知识模式 —— 面向用户的"分析深度"单一选项。用结果导向的平实语言，
+      // 不向用户暴露内部术语（分块/LightRAG/嵌入维度）。
+      knowledgeMode: "分析深度",
+      kmRecommended: "推荐",
+      kmStandard: "标准检索",
+      kmStandardDesc: "对文档进行语义检索。最快、token 消耗最少。",
+      kmGraph: "知识图谱",
+      kmGraphDesc: "检索 + 实体与关系图谱，用于拓扑分析。",
+      kmWiki: "知识提炼",
+      kmWikiDesc: "检索 + 综合的百科式知识条目。",
+      kmFull: "完整分析",
+      kmFullDesc: "检索 + 知识图谱 + 提炼条目。理解最全面。",
+      kmGraphNeedsEmbed: "请先选择嵌入模型，以启用知识图谱选项。",
+      kmGraphDimUnknown: "嵌入维度尚未验证。请在模型管理中测试连接，以启用知识图谱选项。",
+      kmGraphDimTooSmall: "当前嵌入维度（{dim}）低于知识图谱所需的 1536 下限，请使用更高维度的模型。",
     },
     uploadQueue: {
       uploading: "上传中...",
