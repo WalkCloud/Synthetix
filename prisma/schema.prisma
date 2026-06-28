@@ -131,6 +131,8 @@ model Document {
   children Document[]   @relation("DocumentSplit")
   parent   Document?    @relation("DocumentSplit", fields: [parentId], references: [id], onDelete: Cascade)
   chunks   DocumentChunk[]
+  atoms    DocumentAtom[]
+  segments DocumentSegment[]
   tags     DocumentTag[]
   images   DocumentImage[]
 
@@ -157,6 +159,67 @@ model DocumentChunk {
 
   @@index([documentId])
   @@map("document_chunks")
+}
+
+/// Atomic, locatable structural unit of a document — the coordinate system for
+/// LLM-guided domain segmentation. Persisted/enriched form of AtomicSpan
+/// (src/lib/documents/outline/spans.ts). Boundaries (DocumentSegment.start/
+/// endAtomIndex) reference this index; page numbers here are display metadata,
+/// NOT the boundary truth (charStart/charEnd + atom index are authoritative).
+model DocumentAtom {
+  id           String   @id @default(uuid())
+  documentId   String   @map("document_id")
+  index        Int
+  spanId       String?  @map("span_id")        // matches AtomicSpan.id (s_0000)
+  blockType    String                            // heading|paragraph|table|code|list|other|unknown
+  content      String
+  tokenCount   Int?     @map("token_count")
+  headingPath  String?  @map("heading_path")
+  headingLevel Int?     @map("heading_level")
+  pageStart    Int?     @map("page_start")      // from structure.json; PDF reliable, DOCX may be null
+  pageEnd      Int?     @map("page_end")
+  charStart    Int?     @map("char_start")      // primary boundary coord (document-type independent)
+  charEnd      Int?     @map("char_end")
+  textPreview  String?  @map("text_preview")    // first ~120 chars, for LLM window signatures
+  keywords     String?                            // JSON array of keywords, for candidate-boundary detection
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, index])
+  @@map("document_atoms")
+}
+
+/// LLM-induced domain/topic unit of a document — the primary input for Wiki
+/// synthesis and the context source for Graph contextual-prefix chunks. The
+/// title/summary are NOT a fixed taxonomy; the LLM infers them per document to
+/// stay general across languages and document types.
+model DocumentSegment {
+  id                 String   @id @default(uuid())
+  documentId         String   @map("document_id")
+  index              Int
+  title              String
+  summary            String?                            // <=300 chars; used as Graph chunk context prefix
+  startAtomIndex     Int       @map("start_atom_index")
+  endAtomIndex       Int       @map("end_atom_index")   // inclusive
+  pageStart          Int?      @map("page_start")
+  pageEnd            Int?      @map("page_end")
+  headingPath        String?   @map("heading_path")
+  tokenCount         Int?      @map("token_count")
+  contentPath        String?   @map("content_path")     // large content stored on disk; DB keeps metadata
+  sourceAtomIds      String    @default("[]") @map("source_atom_ids")     // JSON
+  sourceChunkIds     String?   @map("source_chunk_ids") // JSON; filled AFTER oversize re-split (see §7.3)
+  segmentationMethod String    @default("llm")          // llm|hybrid|fallback
+  segmentationReason String?   @map("segmentation_reason")
+  confidence         Float     @default(0.8)
+  contentHash        String?   @map("content_hash")     // future incremental reprocess; MVP = full rebuild
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, index])
+  @@map("document_segments")
 }
 
 model Tag {

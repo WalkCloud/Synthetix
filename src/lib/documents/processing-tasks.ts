@@ -101,6 +101,32 @@ export async function assertLatestRagEmbedIndexTask(userId: string, docId: strin
 }
 
 /**
+ * Cancel any pending/running follow-up tasks (graph extraction, wiki synthesis)
+ * for a document. These are now enqueued EARLY by rag-embed-index-worker
+ * (wiki right after embedding, graph after basic-or-skip), so a reprocess must
+ * tear them down alongside the embed/index task to avoid orphan workers racing
+ * the fresh convert pipeline on the same chunk rows.
+ *
+ * Cancelled-but-still-running Python graph extraction is additionally waited
+ * out via waitForDocActiveTasksToSettle (which includes 'rag_index').
+ */
+export async function cancelActiveFollowupTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void> {
+  await db.asyncTask.updateMany({
+    where: {
+      userId,
+      type: { in: ["rag_index", "wiki_synthesize", "document_segment"] },
+      status: { in: ["pending", "running"] },
+      inputData: { contains: `"docId":"${docId}"` },
+      ...(exceptTaskId ? { id: { not: exceptTaskId } } : {}),
+    },
+    data: {
+      status: "cancelled",
+      errorMessage: "Superseded by newer document processing task",
+    },
+  });
+}
+
+/**
  * Wait until no document-processing task for `docId` is still in `running`
  * status. Cancellation only flips the DB status; the in-memory worker may
  * still be mid-write. Callers that need to mutate `documentChunk` rows
@@ -122,7 +148,7 @@ export async function waitForDocActiveTasksToSettle(
     const rows = await db.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM async_tasks
        WHERE user_id = ?
-         AND type IN ('document_convert', 'rag_embed_index', 'rag_index')
+         AND type IN ('document_convert', 'rag_embed_index', 'rag_index', 'wiki_synthesize', 'document_segment')
          AND status = 'running'
          AND input_data LIKE ?
        LIMIT 1`,
