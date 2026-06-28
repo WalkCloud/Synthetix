@@ -122,34 +122,43 @@ export async function GET(request: Request) {
       })
     : [];
   // Index tasks by docId for quick lookup (latest of each type per doc).
-  const tasksByDoc = new Map<string, Record<string, { status: string; progress: number }>>();
+  // We keep the convert task's inputData so we can read the user's Knowledge
+  // Mode (graphMode/wikiEnabled) from the stored options — matching the detail
+  // page exactly, even before enhancement tasks start.
+  const tasksByDoc = new Map<string, { convertInputData?: string; tasks: Record<string, { status: string; progress: number }> }>();
   for (const t of branchTasks) {
     try {
       const parsed = JSON.parse(t.inputData ?? "{}") as { docId?: string };
       const did = parsed.docId;
       if (!did || !docIds.includes(did)) continue;
-      const bucket = tasksByDoc.get(did) ?? {};
-      if (!bucket[t.type]) bucket[t.type] = { status: t.status, progress: t.progress };
-      tasksByDoc.set(did, bucket);
+      const entry = tasksByDoc.get(did) ?? { tasks: {} };
+      if (t.type === "document_convert" && !entry.convertInputData) {
+        entry.convertInputData = t.inputData ?? undefined;
+      }
+      if (!entry.tasks[t.type]) entry.tasks[t.type] = { status: t.status, progress: t.progress };
+      tasksByDoc.set(did, entry);
     } catch {
       /* malformed input — skip */
     }
   }
 
   const { computeDocumentPipeline, computeDisplayStatus } = await import("@/lib/documents/pipeline-stages");
+  const { derivePipelineModes } = await import("@/lib/queue/workers/index-mode-flags");
 
   return NextResponse.json({
     success: true,
     data: documents.map((d) => {
-      const bucket = tasksByDoc.get(d.id) ?? {};
+      const entry = tasksByDoc.get(d.id);
+      const bucket = entry?.tasks ?? {};
       const convertRow = bucket["document_convert"];
       const embedRow = bucket["rag_embed_index"];
       const graphRow = bucket["rag_index"];
       const wikiRow = bucket["wiki_synthesize"];
-      // graphMode / wikiEnabled: truthfully true if the corresponding enhancement
-      // task was ever enqueued for this doc (so the branch renders at all).
-      const graphMode = !!graphRow;
-      const wikiEnabled = !!wikiRow;
+      // graphMode / wikiEnabled: derived the SAME way as the detail page — from
+      // the convert task's stored options (the user's Knowledge Mode), with task
+      // presence as a truthful backstop. This keeps the list's pipeline/branch
+      // rendering identical to the detail page's.
+      const { graphMode, wikiEnabled } = derivePipelineModes(entry?.convertInputData, !!graphRow, !!wikiRow);
       const pipeline = computeDocumentPipeline({
         doc: { status: d.status, originalPath: d.originalPath, conversionMethod: d.conversionMethod },
         convertTask: convertRow ?? null,

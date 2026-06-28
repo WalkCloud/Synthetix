@@ -2,8 +2,7 @@ import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { computeDocumentPipeline, computeDisplayStatus, type PipelineTaskView } from "@/lib/documents/pipeline-stages";
-import { shouldEnqueueGraphIndex, shouldEnqueueWikiSynthesis } from "@/lib/queue/workers/index-mode-flags";
-import type { ProcessingOptions } from "@/lib/queue/types";
+import { derivePipelineModes } from "@/lib/queue/workers/index-mode-flags";
 
 export async function GET(
   _request: Request,
@@ -51,24 +50,15 @@ export async function GET(
   const toView = (t?: { status: string; progress: number }): PipelineTaskView | null =>
     t ? { status: t.status, progress: t.progress } : null;
 
-  // graphMode / wikiEnabled: derived from the user's original processing
-  // options (stored on the document_convert task input), or truthfully true if
-  // the corresponding task was ever enqueued for this doc.
-  let graphMode = false;
-  let wikiEnabled = false;
-  if (convertRow?.inputData) {
-    try {
-      const parsed = JSON.parse(convertRow.inputData) as { options?: ProcessingOptions };
-      if (parsed.options) {
-        graphMode = shouldEnqueueGraphIndex(parsed.options);
-        wikiEnabled = shouldEnqueueWikiSynthesis(parsed.options);
-      }
-    } catch {
-      /* malformed input — ignore */
-    }
-  }
-  graphMode = graphMode || !!graphRow;
-  wikiEnabled = wikiEnabled || !!wikiRow;
+  // graphMode / wikiEnabled: derived the SAME way as the library list — from
+  // the convert task's stored options (the user's Knowledge Mode), with task
+  // presence as a truthful backstop. Shared via derivePipelineModes() so the
+  // list and detail views never disagree about which branches to render.
+  const { graphMode, wikiEnabled } = derivePipelineModes(
+    convertRow?.inputData ?? null,
+    !!graphRow,
+    !!wikiRow,
+  );
 
   const pipeline = computeDocumentPipeline({
     doc: {
