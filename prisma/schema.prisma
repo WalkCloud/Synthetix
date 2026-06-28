@@ -171,7 +171,7 @@ model DocumentAtom {
   documentId   String   @map("document_id")
   index        Int
   spanId       String?  @map("span_id")        // matches AtomicSpan.id (s_0000)
-  blockType    String                            // heading|paragraph|table|code|list|other|unknown
+  blockType    String   @map("block_type")                // heading|paragraph|table|code|list|other|unknown
   content      String
   tokenCount   Int?     @map("token_count")
   headingPath  String?  @map("heading_path")
@@ -209,7 +209,7 @@ model DocumentSegment {
   contentPath        String?   @map("content_path")     // large content stored on disk; DB keeps metadata
   sourceAtomIds      String    @default("[]") @map("source_atom_ids")     // JSON
   sourceChunkIds     String?   @map("source_chunk_ids") // JSON; filled AFTER oversize re-split (see §7.3)
-  segmentationMethod String    @default("llm")          // llm|hybrid|fallback
+  segmentationMethod String    @default("llm") @map("segmentation_method")          // llm|hybrid|fallback
   segmentationReason String?   @map("segmentation_reason")
   confidence         Float     @default(0.8)
   contentHash        String?   @map("content_hash")     // future incremental reprocess; MVP = full rebuild
