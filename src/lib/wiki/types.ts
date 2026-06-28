@@ -137,10 +137,16 @@ export const WIKI_CONFIG = {
   docSummaryBatchChars: 6000,
   /** Local scheduler ceiling; provider-side AdaptiveLimiter still decides real concurrency. */
   extractSchedulerConcurrency: 16,
-  /** Max high-value items accepted from one chunk; avoids noisy LLM over-extraction. */
-  maxTopicsPerChunk: 5,
-  maxConceptsPerChunk: 8,
-  maxClaimsPerChunk: 8,
+  /** Max high-value items accepted from one chunk/segment; avoids noisy LLM
+   *  over-extraction that produces many tiny low-value fragments. Tightened
+   *  (was 5/8/8) to favor fewer, stronger, reference-quality entries. */
+  maxTopicsPerChunk: 3,
+  maxConceptsPerChunk: 4,
+  maxClaimsPerChunk: 3,
+  /** Minimum content length for a Wiki entry to be kept. Entries shorter than
+   *  this after merge are dropped (or merged into the closest existing entry) —
+   *  they add noise without reference value. Tuned to exclude one-line stubs. */
+  minEntryContentChars: 80,
   /** Wide output budgets; truncated responses are retried with a larger budget. */
   extractionMaxTokens: 4096,
   extractionRetryMaxTokens: 8192,

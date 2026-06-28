@@ -139,7 +139,9 @@ describe("OpenAICompatibleAdapter", () => {
         maxTokens: 100,
       });
 
-      expect(result).toEqual({
+      // Use toMatchObject so adding new response fields (finishReason, rateLimit)
+      // doesn't break this contract test — we only assert the fields we rely on.
+      expect(result).toMatchObject({
         content: "Hello, world!",
         inputTokens: 10,
         outputTokens: 5,

@@ -70,8 +70,17 @@ export async function GET(request: Request) {
       ? [tag.toLowerCase()]
       : undefined;
 
+  // A document is "pending" between upload and Start-Processing: the file is
+  // persisted and ready to process, but the user hasn't actually kicked off the
+  // pipeline yet. Surfacing those in the library is confusing — it looks like
+  // processing is stuck. So we hide pending from the default list and only
+  // return them when the user explicitly filters by status=pending.
   const where: Record<string, unknown> = { userId: user.id };
-  if (status) where.status = status;
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = { not: "pending" };
+  }
   if (format) where.originalFormat = format;
   if (tagNames && tagNames.length === 1) {
     where.tags = { some: { tag: { name: tagNames[0] } } };
@@ -97,13 +106,66 @@ export async function GET(request: Request) {
   const queuedIds = documents.filter((d) => d.status === "queued").map((d) => d.id);
   const queuePositions = await resolveQueuePositions(user.id, queuedIds);
 
+  // Compute a consistent display status for each doc so the list badge matches
+  // the detail-page pipeline badge. We need each doc's latest convert/embed/
+  // graph/wiki task to know whether enhancement branches are still running.
+  const docIds = documents.map((d) => d.id);
+  const branchTasks = docIds.length
+    ? await db.asyncTask.findMany({
+        where: {
+          userId: user.id,
+          inputData: { contains: `"docId":"` },
+          type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { type: true, status: true, progress: true, inputData: true },
+      })
+    : [];
+  // Index tasks by docId for quick lookup (latest of each type per doc).
+  const tasksByDoc = new Map<string, Record<string, { status: string; progress: number }>>();
+  for (const t of branchTasks) {
+    try {
+      const parsed = JSON.parse(t.inputData ?? "{}") as { docId?: string };
+      const did = parsed.docId;
+      if (!did || !docIds.includes(did)) continue;
+      const bucket = tasksByDoc.get(did) ?? {};
+      if (!bucket[t.type]) bucket[t.type] = { status: t.status, progress: t.progress };
+      tasksByDoc.set(did, bucket);
+    } catch {
+      /* malformed input — skip */
+    }
+  }
+
+  const { computeDocumentPipeline, computeDisplayStatus } = await import("@/lib/documents/pipeline-stages");
+
   return NextResponse.json({
     success: true,
-    data: documents.map((d) => ({
-      ...d,
-      tags: d.tags.map((dt) => dt.tag),
-      ...(queuePositions.has(d.id) ? { queuePosition: queuePositions.get(d.id) } : {}),
-    })),
+    data: documents.map((d) => {
+      const bucket = tasksByDoc.get(d.id) ?? {};
+      const convertRow = bucket["document_convert"];
+      const embedRow = bucket["rag_embed_index"];
+      const graphRow = bucket["rag_index"];
+      const wikiRow = bucket["wiki_synthesize"];
+      // graphMode / wikiEnabled: truthfully true if the corresponding enhancement
+      // task was ever enqueued for this doc (so the branch renders at all).
+      const graphMode = !!graphRow;
+      const wikiEnabled = !!wikiRow;
+      const pipeline = computeDocumentPipeline({
+        doc: { status: d.status, originalPath: d.originalPath, conversionMethod: d.conversionMethod },
+        convertTask: convertRow ?? null,
+        embedTask: embedRow ?? null,
+        graphTask: graphRow ?? null,
+        wikiTask: wikiRow ?? null,
+        graphMode,
+        wikiEnabled,
+      });
+      return {
+        ...d,
+        tags: d.tags.map((dt) => dt.tag),
+        displayStatus: computeDisplayStatus(pipeline, d.status),
+        ...(queuePositions.has(d.id) ? { queuePosition: queuePositions.get(d.id) } : {}),
+      };
+    }),
     total,
     page,
     limit,

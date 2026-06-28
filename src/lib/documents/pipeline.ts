@@ -7,7 +7,7 @@ import { recordTokenUsage } from "@/lib/llm/usage";
 import { float32ToBuffer } from "@/lib/documents/embedder";
 import { buildEmbeddingManifest } from "@/lib/documents/embedding-manifest";
 import { LocalStorageAdapter, type StorageAdapter } from "@/lib/documents/storage";
-import { resolveEmbeddingDim, isLightRAGCompatible, resolveGraphDowngrade, graphDowngradeWarning } from "@/lib/rag/dimension";
+import { resolveEmbeddingDim, resolveGraphDowngrade, graphDowngradeWarning } from "@/lib/rag/dimension";
 import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
 import { spawnPythonJson } from "@/lib/python";
 import { isDaemonEnabled, pythonDaemon } from "@/lib/python-daemon";
