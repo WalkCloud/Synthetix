@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDocumentPipeline } from "@/lib/documents/pipeline-stages";
+import { computeDocumentPipeline, computeDisplayStatus } from "@/lib/documents/pipeline-stages";
 
 type DocLike = { status: string; originalPath?: string | null; conversionMethod?: string | null };
 const doc = (over: Partial<DocLike> = {}): DocLike => ({
@@ -238,5 +238,62 @@ describe("computeDocumentPipeline", () => {
     expect(p.branches.map((b) => b.key)).toEqual(["stageWiki"]);
     expect(branchKey(p).stageWiki).toBe("active");
     expect(p.isReady).toBe(false); // wiki still running
+  });
+});
+
+describe("computeDisplayStatus (consistent list vs detail)", () => {
+  const mk = (over: Parameters<typeof computeDocumentPipeline>[0]) =>
+    computeDisplayStatus(computeDocumentPipeline(over), over.doc.status);
+
+  it("returns 'enhancing' when basic retrieval ready but graph branch running (list must match detail)", () => {
+    // This is the exact scenario that previously made the list show "ready"
+    // while the detail pipeline showed graph "active" — they must now agree.
+    const ds = mk({
+      doc: doc({ status: "ready", conversionMethod: "docling" }),
+      convertTask: task("completed", 100),
+      embedTask: task("completed", 100),
+      graphTask: task("running", 40),
+      graphMode: true,
+      wikiEnabled: true,
+    });
+    expect(ds).toBe("enhancing");
+  });
+
+  it("returns 'ready' only when ALL stages + branches complete", () => {
+    const ds = mk({
+      doc: doc({ status: "ready", conversionMethod: "docling" }),
+      convertTask: task("completed", 100),
+      embedTask: task("completed", 100),
+      graphTask: task("completed", 100),
+      wikiTask: task("completed", 100),
+      graphMode: true,
+      wikiEnabled: true,
+    });
+    expect(ds).toBe("ready");
+  });
+
+  it("returns 'processing' mid-linear-chain (convert active)", () => {
+    const ds = mk({
+      doc: doc({ status: "converting" }),
+      convertTask: task("running", 30),
+      graphMode: true,
+      wikiEnabled: false,
+    });
+    expect(ds).toBe("processing");
+  });
+
+  it("returns 'pending' for an uploaded-but-not-started doc", () => {
+    const ds = mk({ doc: doc({ status: "pending" }), graphMode: false, wikiEnabled: false });
+    expect(ds).toBe("pending");
+  });
+
+  it("returns 'failed' when a required stage failed", () => {
+    const ds = mk({
+      doc: doc({ status: "failed" }),
+      convertTask: task("failed", 0),
+      graphMode: true,
+      wikiEnabled: false,
+    });
+    expect(ds).toBe("failed");
   });
 });

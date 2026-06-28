@@ -630,18 +630,29 @@ function parseArray(v: unknown): Record<string, unknown>[] {
 
 function parseTopic(o: Record<string, unknown>): ChunkKnowledge["topics"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
-  return { title: o.title, content: o.content };
+  const title = o.title.trim();
+  const content = o.content.trim();
+  // Drop trivial stubs — they add noise without reference value. A real topic
+  // needs a meaningful title and at least minEntryContentChars of substance.
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
+  return { title, content };
 }
 
 function parseConcept(o: Record<string, unknown>): ChunkKnowledge["concepts"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
-  return { title: o.title, content: o.content };
+  const title = o.title.trim();
+  const content = o.content.trim();
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
+  return { title, content };
 }
 
 function parseClaim(o: Record<string, unknown>): ChunkKnowledge["claims"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
+  const title = o.title.trim();
+  const content = o.content.trim();
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
   const confidence = typeof o.confidence === "number" ? Math.max(0, Math.min(1, o.confidence)) : 0.7;
-  return { title: o.title, content: o.content, confidence };
+  return { title, content, confidence };
 }
 
 /**

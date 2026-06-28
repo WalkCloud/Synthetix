@@ -57,6 +57,13 @@ export interface DocumentMeta {
    */
   pipeline?: DocumentPipeline;
   /**
+   * Single consistent display status shared by the library list and the detail
+   * page so the two never disagree (e.g. "enhancing" = basic retrieval ready
+   * but Graph/Wiki still running). Computed server-side via computeDisplayStatus
+   * from the same task-driven pipeline. Optional: legacy docs may omit it.
+   */
+  displayStatus?: "ready" | "enhancing" | "processing" | "failed" | "pending";
+  /**
    * Position in the global document-convert queue (1-indexed). Only set when
    * `status === "queued"`. The library API computes this on the fly from
    * pending/running async_tasks. `total` is the total number of queued docs
