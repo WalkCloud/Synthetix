@@ -228,6 +228,19 @@ export type TranslationSchema = {
       graphDimUnknown: string;
       graphDimTooSmall: string;
       graphDesc: string;
+      knowledgeMode: string;
+      kmRecommended: string;
+      kmStandard: string;
+      kmStandardDesc: string;
+      kmGraph: string;
+      kmGraphDesc: string;
+      kmWiki: string;
+      kmWikiDesc: string;
+      kmFull: string;
+      kmFullDesc: string;
+      kmGraphNeedsEmbed: string;
+      kmGraphDimUnknown: string;
+      kmGraphDimTooSmall: string;
     };
     uploadQueue: {
       uploading: string;
