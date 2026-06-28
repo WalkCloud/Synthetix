@@ -37,6 +37,7 @@ export type TranslationSchema = {
       completed: string;
       cancelled: string;
       indexingGraph: string;
+      enhancing: string;
       comingSoon: string;
       none: string;
       all: string;
@@ -243,6 +244,7 @@ export type TranslationSchema = {
       slowTitle: string;
       heavyTitle: string;
       body: string;
+      queuedBody: string;
       graphBodySuffix: string;
       seconds: string;
       minutes: string;
@@ -290,6 +292,8 @@ export type TranslationSchema = {
     };
     deleteConfirm: string;
     batchDeleteConfirm: string;
+    deleteWikiPrompt: string;
+    batchDeleteWikiPrompt: string;
     reindex: string;
     viewDocument: string;
     detail: {
@@ -300,9 +304,14 @@ export type TranslationSchema = {
       stageEmbed: string;
       stageIndex: string;
       stageGraph: string;
+      stageWiki: string;
       stageAnalyze: string;
       stageClassify: string;
       stagePersist: string;
+      pipelineStagesDone: string;
+      pipelineReadySummary: string;
+      pipelineFailedSummary: string;
+      pipelineBasicReadyHint: string;
       words: string;
       tokens: string;
       chunks: string;
@@ -696,7 +705,7 @@ export type TranslationSchema = {
       showTopTitle: string;
       showAllTitle: string;
       topEntitiesLabel: string;
-      entitiesLabel: string;
+      allEntitiesLabel: string;
     };
   };
   wiki: {
@@ -715,6 +724,10 @@ export type TranslationSchema = {
       sortConfidence: string;
       sortSources: string;
       deleteSelected: string;
+      docsSelected: string;
+      allDocs: string;
+      noDocuments: string;
+      clearFilter: string;
       emptyTitle: string;
       emptyDesc: string;
       colEntry: string;

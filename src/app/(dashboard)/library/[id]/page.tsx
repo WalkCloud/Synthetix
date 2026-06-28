@@ -5,10 +5,9 @@ import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
 import { WikiPrecipField } from "@/components/library/wiki-precip-card";
-import { WikiSynthesisStatus } from "@/components/library/wiki-synthesis-status";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
-import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
+import type { DocumentPipeline, PipelineStageKey, PipelineStageStatus } from "@/lib/documents/pipeline-stages";
 
 type Tab = "overview" | "chunks";
 
@@ -135,84 +134,267 @@ interface OverviewTabProps {
   onSwitchTab: (tab: Tab) => void;
 }
 
-type Stage = "done" | "active" | "pending" | "failed";
-
-
 interface PipelineProps {
   pipeline: DocumentPipeline;
   td: Record<string, string>;
 }
 
-function lineColorFor(from: Stage, to: Stage): string {
-  if (from === "done" && (to === "done" || to === "active")) return "bg-emerald-300 dark:bg-emerald-700";
-  return "bg-border";
-}
+/**
+ * Per-stage line icons (stroke, 24px grid). Rendered inside the node tile
+ * unless the stage is done (then a checkmark takes over).
+ */
+const STAGE_ICONS: Record<PipelineStageKey, React.ReactElement> = {
+  stageUpload: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  ),
+  stageConvert: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" /><polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" /><line x1="4" y1="4" x2="9" y2="9" />
+    </svg>
+  ),
+  stageSplit: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="3" x2="12" y2="21" /><line x1="6" y1="9" x2="18" y2="9" /><line x1="6" y1="15" x2="18" y2="15" />
+    </svg>
+  ),
+  stageEmbed: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+    </svg>
+  ),
+  stageIndex: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  ),
+  stageGraph: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="6" r="2" /><circle cx="19" cy="6" r="2" /><circle cx="12" cy="18" r="2" /><line x1="6.5" y1="7" x2="11" y2="16" /><line x1="17.5" y1="7" x2="13" y2="16" /><line x1="7" y1="6" x2="17" y2="6" />
+    </svg>
+  ),
+  stageWiki: (
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  ),
+};
 
+/**
+ * Processing Pipeline — a flowing-track design.
+ *
+ * Design principles (per user feedback):
+ *   1. NO percentages. A frozen percentage reads as "stuck" even while work
+ *      continues (LLM calls vary wildly in duration). Instead, an active
+ *      stage shows a perpetual flowing animation — "if it's moving, it's
+ *      alive".
+ *   2. One continuous track conveys progression without implying precise
+ *      completion. Done segments fill solid; the active segment carries a
+ *      flowing sheen; future segments stay muted.
+ *   3. Graph + Wiki sit side-by-side at the end (not a forked circuit). They
+ *      run in parallel, so showing them as peers at the same height is both
+ *      truthful and visually calm.
+ */
 function Pipeline({ pipeline, td }: PipelineProps) {
   const { t } = useLocale();
-  const stages = pipeline.stages;
+  const linear = pipeline.stages;
+  const branches = pipeline.branches;
+  // The full ordered list of nodes to render on the track: linear stages,
+  // then each parallel branch as its own node. Branches are peers (same
+  // height), rendered after the last linear stage.
+  const nodes: { key: string; status: PipelineStageStatus; isBranch: boolean }[] = [
+    ...linear.map((s) => ({ key: s.key, status: s.status, isBranch: false })),
+    ...branches.map((b) => ({ key: b.key, status: b.status, isBranch: true })),
+  ];
+
   return (
     <div className="bg-card border rounded-2xl p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-sm font-semibold text-foreground">{td.processingPipeline}</h3>
-        {pipeline.isProcessing && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-600 dark:text-orange-400">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping-slow" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500" />
-            </span>
-            {t.common.states.processing}
-          </span>
-        )}
+        <PipelineStatusBadge pipeline={pipeline} />
       </div>
 
-      <div className="flex items-start gap-0 flex-wrap justify-center">
-        {stages.map((stage, idx) => (
-          <Fragment key={stage.key}>
-            <div className="flex flex-col items-center shrink-0">
-              <PipelineDot status={stage.status} />
-              <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(stage.status)}`}>
-                {td[stage.key]}
-              </span>
-              {stage.status === "active" && (
-                <span className="mt-0.5 flex items-center gap-0.5">
-                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot [animation-delay:-0.3s]" />
-                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot [animation-delay:-0.15s]" />
-                  <span className="h-1 w-1 rounded-full bg-orange-400 animate-bounce-dot" />
-                </span>
-              )}
-            </div>
-            {idx < stages.length - 1 && (
-              <PipelineLine
-                from={stage.status}
-                to={stages[idx + 1].status}
+      {/* Nodes row. Each node = icon tile + label. Connectors are drawn
+          between siblings as flowing segments. */}
+      <div className="flex items-start justify-center gap-0 flex-wrap">
+        {nodes.map((node, idx) => (
+          <Fragment key={node.key}>
+            <PipelineNode nodeKey={node.key as PipelineStageKey} status={node.status} label={td[node.key as PipelineStageKey] ?? node.key} />
+            {idx < nodes.length - 1 && (
+              <PipelineSegment
+                from={nodes[idx].status}
+                to={nodes[idx + 1].status}
               />
             )}
           </Fragment>
         ))}
       </div>
+
+      {/* Foot summary: a calm, percentage-free status line. */}
+      <PipelineFoot pipeline={pipeline} td={td} />
     </div>
   );
 }
 
-/**
- * The connector between two stages. When the NEXT stage is active (i.e. data
- * is flowing into it), the line carries an animated gradient sheen so the
- * pipeline reads as continuously progressing rather than frozen.
- */
-function PipelineLine({ from, to }: { from: Stage; to: Stage }) {
-  const flowing = from === "done" && to === "active";
-  const cls = lineColorFor(from, to);
+/** Top-right status badge (processing / ready / failed). */
+function PipelineStatusBadge({ pipeline }: { pipeline: DocumentPipeline }) {
+  const { t } = useLocale();
+  if (pipeline.isReady) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
+        {t.common.states.ready}
+      </span>
+    );
+  }
+  // Basic retrieval is usable even while Graph/Wiki branches are still running.
+  // Show a distinct "Ready · enhancing" badge instead of generic "Processing".
+  if (pipeline.isBasicReady) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-600 dark:text-sky-400">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75 animate-ping-slow" />
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-sky-500" />
+        </span>
+        {t.common.states.enhancing}
+      </span>
+    );
+  }
+  if (pipeline.isFailed) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 6l12 12M6 18L18 6" /></svg>
+        {t.common.states.failed}
+      </span>
+    );
+  }
   return (
-    <div className={`relative w-[120px] h-[2px] mt-[10px] rounded-full overflow-hidden ${cls}`}>
-      {flowing && (
-        <div className="absolute inset-0 pipeline-flow" aria-hidden />
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-600 dark:text-orange-400">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping-slow" />
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500" />
+      </span>
+      {t.common.states.processing}
+    </span>
+  );
+}
+
+/** A stage icon tile (Ø36) with status styling + an active pulse ring. */
+function PipelineNode({ nodeKey, status, label }: { nodeKey: PipelineStageKey; status: PipelineStageStatus; label: string }) {
+  const icon = STAGE_ICONS[nodeKey];
+  const isDone = status === "done";
+  const isActive = status === "active";
+  const isFailed = status === "failed";
+
+  return (
+    <div className="flex flex-col items-center shrink-0 w-[68px]">
+      <div className="relative flex items-center justify-center">
+        {/* Active pulse ring — a soft expanding halo. Replaces the old
+            three-dot bounce; reads as "this is the live one". */}
+        {isActive && (
+          <span className="absolute inline-flex h-9 w-9 rounded-xl bg-orange-400/30 animate-ping-slow" aria-hidden />
+        )}
+        <div
+          className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+            isDone
+              ? "bg-emerald-500 text-white dark:bg-emerald-500"
+              : isActive
+              ? "bg-orange-500 text-white dark:bg-orange-500 shadow-[0_0_0_4px_rgba(249,115,22,0.15)]"
+              : isFailed
+              ? "bg-red-500 text-white"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {isDone ? (
+            <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7" /></svg>
+          ) : (
+            icon
+          )}
+        </div>
+      </div>
+      <span className={`mt-2 text-[11px] font-medium whitespace-nowrap ${stageColor(status)}`}>
+        {label}
+      </span>
+      {/* Active indicator: a subtle perpetual shimmer under the label,
+          replacing any percentage. "Moving = alive". */}
+      {isActive && (
+        <span className="mt-1 h-0.5 w-7 rounded-full bg-orange-400/40 overflow-hidden">
+          <span className="block h-full w-3 rounded-full bg-orange-500 animate-segment-shimmer" />
+        </span>
       )}
     </div>
   );
 }
 
-function stageColor(status: Stage): string {
+/**
+ * The connector between two nodes. Done→done is a solid filled segment;
+          done→active carries the flowing sheen so data reads as travelling into
+ * the live stage; anything touching pending is muted.
+ */
+function PipelineSegment({ from, to }: { from: PipelineStageStatus; to: PipelineStageStatus }) {
+  const filled = from === "done";
+  const flowing = from === "done" && to === "active";
+  return (
+    <div className={`relative w-[44px] h-[2px] mt-[17px] rounded-full overflow-hidden shrink-0 ${filled ? "bg-emerald-300 dark:bg-emerald-700" : "bg-border"}`}>
+      {flowing && <div className="absolute inset-0 pipeline-flow" aria-hidden />}
+    </div>
+  );
+}
+
+/** Calm, percentage-free footer summarizing progress as a count of stages. */
+function PipelineFoot({ pipeline, td }: { pipeline: DocumentPipeline; td: Record<string, string> }) {
+  const { t } = useLocale();
+  if (pipeline.isReady) {
+    return (
+      <div className="mt-6 pt-4 border-t border-border text-center text-xs text-muted-foreground">
+        {t.library.detail.pipelineReadySummary ?? "All stages complete"}
+      </div>
+    );
+  }
+  if (pipeline.isFailed) {
+    return (
+      <div className="mt-6 pt-4 border-t border-border text-center text-xs text-red-600 dark:text-red-400">
+        {t.library.detail.pipelineFailedSummary ?? "Processing failed — you can retry"}
+      </div>
+    );
+  }
+  const all = [...pipeline.stages, ...pipeline.branches];
+  const doneCount = all.filter((s) => s.status === "done").length;
+  const total = all.length;
+  // Which stage(s) are active right now — name them so the user knows what's
+  // happening, without a misleading percentage.
+  const activeNames = all
+    .filter((s) => s.status === "active")
+    .map((s) => td[s.key] ?? s.key);
+  const activeLabel = activeNames.length > 0 ? activeNames.join(" · ") : null;
+  // When the linear chain is done but branches are still running, prefix the
+  // footer with a "ready to use" hint so the user knows they don't have to wait.
+  const basicReadyHint = pipeline.isBasicReady
+    ? (t.library.detail.pipelineBasicReadyHint ?? "Ready to use — still enhancing:")
+    : null;
+  return (
+    <div className="mt-6 pt-4 border-t border-border flex items-center justify-center gap-2 text-xs text-muted-foreground">
+      {basicReadyHint && <span className="text-sky-600 dark:text-sky-400">{basicReadyHint}</span>}
+      <span className="font-medium text-foreground">{doneCount}/{total}</span>
+      <span>{t.library.detail.pipelineStagesDone ?? "stages done"}</span>
+      {activeLabel && (
+        <>
+          <span className="text-border">·</span>
+          <span className="inline-flex items-center gap-1.5 text-orange-600 dark:text-orange-400">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping-slow" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500" />
+            </span>
+            {activeLabel}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function stageColor(status: PipelineStageStatus): string {
   if (status === "done") return "text-emerald-600 dark:text-emerald-400";
   if (status === "active") return "text-orange-600 dark:text-orange-400";
   if (status === "failed") return "text-red-600 dark:text-red-400";
@@ -232,9 +414,6 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
   return (
     <div className="space-y-8">
       {doc.pipeline && <Pipeline pipeline={doc.pipeline} td={td} />}
-
-      {/* Wiki synthesis status (independent — runs after doc is ready) */}
-      <WikiSynthesisStatus documentId={doc.id} />
 
       {/* Key metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -306,36 +485,6 @@ function StatusBadge({ status }: { status: string }) {
        : isFailed ? t.common.states.failed
        : t.common.states.processing}
     </span>
-  );
-}
-
-function PipelineDot({ status }: { status: "done" | "active" | "pending" | "failed" }) {
-  return (
-    <div className="relative flex items-center justify-center shrink-0">
-      {status === "active" && (
-        <span className="absolute inline-flex h-5 w-5 rounded-full bg-orange-400/40 animate-ping-slow" aria-hidden />
-      )}
-      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 relative ${
-        status === "done" ? "bg-emerald-500 dark:bg-emerald-400 ring-2 ring-emerald-200 dark:ring-emerald-800"
-        : status === "active" ? "bg-orange-500 dark:bg-orange-400 ring-2 ring-orange-200 dark:ring-orange-800 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]"
-        : status === "failed" ? "bg-red-500 dark:bg-red-400 ring-2 ring-red-200 dark:ring-red-800"
-        : "bg-border"
-      }`}>
-        {status === "done" && (
-          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <path d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-        {status === "active" && (
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse-dot" />
-        )}
-        {status === "failed" && (
-          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <path d="M6 6l12 12M6 18L18 6" />
-          </svg>
-        )}
-      </div>
-    </div>
   );
 }
 

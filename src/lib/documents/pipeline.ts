@@ -9,7 +9,6 @@ import { buildEmbeddingManifest } from "@/lib/documents/embedding-manifest";
 import { LocalStorageAdapter, type StorageAdapter } from "@/lib/documents/storage";
 import { resolveEmbeddingDim, isLightRAGCompatible, resolveGraphDowngrade, graphDowngradeWarning } from "@/lib/rag/dimension";
 import { buildEmbedConfig, type EmbedConfig } from "@/lib/rag/context";
-import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { spawnPythonJson } from "@/lib/python";
 import { isDaemonEnabled, pythonDaemon } from "@/lib/python-daemon";
 import type { ProcessingOptions } from "@/lib/queue/types";
@@ -158,6 +157,7 @@ export async function loadProcessingTask(taskId: string): Promise<ProcessingCont
 export async function convertDocument(
   ctx: ProcessingContext,
   storage: StorageAdapter,
+  onProgressEvent?: (event: Record<string, unknown>) => void,
 ): Promise<string> {
   const outputDir = storage.getDocumentDir(ctx.docId, ctx.doc.userId);
 
@@ -176,6 +176,7 @@ export async function convertDocument(
     ctx.doc.originalPath,
     outputDir,
     cacheKey,
+    onProgressEvent,
   );
 
   ctx.outputDir = outputDir;
@@ -384,31 +385,44 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   // The old default of 10 produced ~40k-token batches that could stall for
   // minutes or time out on large documents.
   const baseBatchSize = embedModel.embeddingBatchSize || 4;
-  const CONCURRENT_EMBED_BATCHES = 3;
   let totalEmbedTokens = 0;
   const writtenEmbeddings = new Map<string, Uint8Array>();
   const totalToEmbed = validTexts.length;
   let embeddedCount = 0;
 
-  for (let i = 0; i < validTexts.length; i += baseBatchSize * CONCURRENT_EMBED_BATCHES) {
-    const requests: Promise<{ embeddings: number[][]; inputTokens: number }>[] = [];
-    const offsets: number[] = [];
+  // Submit ALL batches at once and let the adaptive limiter (wired into
+  // provider.embed) pace them against the provider's real capacity. This
+  // replaces the old fixed `CONCURRENT_EMBED_BATCHES = 3` round-robin, which
+  // (a) hard-coded a guess at provider capacity and (b) suffered head-of-line
+  // blocking — a whole round waited on its slowest batch. With the limiter,
+  // each batch's acquire() blocks until budget is free, so batches flow
+  // through as fast as the provider allows, with no wasted round-trip idle.
+  const batchStarts: number[] = [];
+  for (let i = 0; i < validTexts.length; i += baseBatchSize) {
+    batchStarts.push(i);
+  }
 
-    for (let j = 0; j < CONCURRENT_EMBED_BATCHES; j++) {
-      const start = i + j * baseBatchSize;
-      if (start >= validTexts.length) break;
+  // Track completion for progress reporting. Each batch reports independently
+  // as it finishes (order is arbitrary), so the progress bar advances smoothly
+  // instead of stepping per-round.
+  const reportProgress = (justEmbedded: number): void => {
+    embeddedCount += justEmbedded;
+    const embedProgress = 40 + Math.round((embeddedCount / Math.max(totalToEmbed, 1)) * 28);
+    void db.asyncTask.update({
+      where: { id: ctx.taskId },
+      data: { progress: embedProgress },
+    }).catch(() => undefined);
+  };
+
+  await Promise.all(
+    batchStarts.map(async (start) => {
       const end = Math.min(start + baseBatchSize, validTexts.length);
-      offsets.push(start);
-      requests.push(provider.embed(validTexts.slice(start, end), embedModel.modelId, embedModel.embeddingDim ?? undefined));
-    }
-
-    const results = await Promise.all(requests);
-
-    for (let ri = 0; ri < results.length; ri++) {
-      const embedResult = results[ri];
+      const embedResult = await provider.embed(
+        validTexts.slice(start, end),
+        embedModel.modelId,
+        embedModel.embeddingDim ?? undefined,
+      );
       totalEmbedTokens += embedResult.inputTokens;
-      const start = offsets[ri];
-
       const updates = embedResult.embeddings.map((emb, ei) => {
         const embBuf = float32ToBuffer(new Float32Array(emb));
         const chunkId = validChunks[start + ei].id;
@@ -416,18 +430,9 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
         return { chunkId, embedding: embBuf, embedModel: embedModel.modelId };
       });
       await persistEmbeddingUpdates(updates);
-      embeddedCount += updates.length;
-    }
-
-    // Report sub-progress within the embedding phase (40→68 range, matching
-    // the rag_embed_index worker's 40-70 embed→index split) so the document
-    // detail page shows advancement instead of a frozen 40% for minutes.
-    const embedProgress = 40 + Math.round((embeddedCount / Math.max(totalToEmbed, 1)) * 28);
-    await db.asyncTask.update({
-      where: { id: ctx.taskId },
-      data: { progress: embedProgress },
-    }).catch(() => undefined);
-  }
+      reportProgress(updates.length);
+    }),
+  );
 
   const embeddingsBinPath = path.join(ctx.outputDir, "embeddings.bin");
   const validEmbeddings: Uint8Array[] = [];
@@ -474,8 +479,13 @@ export async function indexDocument(
 ): Promise<{ rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string } | null> {
   const { docId, doc, outputDir, embedModel, writingModel, options } = ctx;
 
-  await syncFtsIndexForDocument(docId).catch((err) => { console.warn("FTS index sync failed:", err); });
-
+  // NOTE: FTS sync is intentionally NOT done here. It was previously called
+  // inline, which coupled "keyword index availability" to "LightRAG index".
+  // After the pipeline parallelization, graph-mode documents skip this
+  // function entirely (graph deletes any basic output anyway) — so an inline
+  // FTS call here would silently drop keyword search for every graph-mode
+  // document. Callers now own FTS explicitly so it runs unconditionally,
+  // regardless of whether the LightRAG basic pass is skipped.
   const indexTarget = options.indexTarget || "full";
   const needRag = indexTarget === "full";
   if (!needRag || !embedModel) return null;
@@ -551,7 +561,8 @@ export async function indexDocument(
     },
   ).catch((err) => {
     console.warn("LightRAG indexing failed (non-blocking):", err);
-    return { status: "failed", chunks: 0, error: String(err) };
+    const timeoutOccurred = !!(err as Error & { timeoutOccurred?: boolean })?.timeoutOccurred;
+    return { status: "failed", chunks: 0, error: String(err), timeoutOccurred };
   });
 
   return { rag: indexResult, indexMode };
@@ -569,7 +580,7 @@ async function indexWithLightRAG(
   rerankConfig?: { apiBase: string; apiKey: string; model: string },
   onProgressEvent?: (event: Record<string, unknown>) => void,
   onUsageEvent?: (event: Record<string, unknown>) => void,
-): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }> {
+): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string>; error?: string; timeoutOccurred?: boolean }> {
   // Build the kwargs dict for rag_index.index_document(**params). The daemon
   // takes this verbatim; the spawn fallback rebuilds argv from the same dict so
   // the two paths can never diverge.
@@ -602,23 +613,19 @@ async function indexWithLightRAG(
   // spawned daemon pays interpreter + lightrag import + storage-load (the
   // doc_status store accumulates across documents) which can exceed 120s on a
   // cold daemon. 300s covers that cold path; subsequent ops reuse the resident
-  // daemon and finish in seconds. Graph mode keeps its long LLM-bound budget.
-  const timeoutMs = indexMode === "graph" ? 900_000 : 300_000;
+  // daemon and finish in seconds. Graph mode is LLM-bound and can run for a
+  // long time on large documents; its budget is now configurable so a hard
+  // 15-minute ceiling doesn't silently kill big-graph extraction.
+  //
+  // Env: GRAPH_PYTHON_INDEX_TIMEOUT_MS (default 4h, aligned with the queue's
+  // rag_index task timeout). RAG_PYTHON_INDEX_TIMEOUT_MS covers basic mode.
+  const defaultGraphTimeout = Number(process.env.GRAPH_PYTHON_INDEX_TIMEOUT_MS) || 14_400_000;
+  const defaultBasicTimeout = Number(process.env.RAG_PYTHON_INDEX_TIMEOUT_MS) || 300_000;
+  const timeoutMs = indexMode === "graph" ? defaultGraphTimeout : defaultBasicTimeout;
 
-  if (isDaemonEnabled()) {
-    try {
-      return await pythonDaemon.call<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>(
-        "index",
-        params,
-        { onProgressEvent, onUsageEvent, timeoutMs },
-      );
-    } catch (err) {
-      console.warn("[daemon] index op failed, falling back to spawn:", err instanceof Error ? err.message : err);
-    }
-  }
-
-  // Fallback (daemon disabled or failed): rebuild argv from the same params and
-  // spawn rag_index.py one-shot — identical to the pre-daemon behavior.
+  // argv for the spawn fallback (rebuilt from the same params dict so the two
+  // paths can never diverge). Built up front so both daemon-failure fallback
+  // and the no-daemon path share it.
   const args = [
     "--doc-id", String(params.doc_id),
     "--user-id", String(params.user_id),
@@ -649,11 +656,43 @@ async function indexWithLightRAG(
       "--rerank-model", String(params.rerank_model),
     );
   }
-  return spawnPythonJson(RAG_INDEX_SCRIPT, args, {
-    timeout: timeoutMs,
-    onProgressEvent,
-    onUsageEvent,
-  });
+
+  // Tag errors that are actually timeouts so callers (graph worker) can record
+  // `timeoutOccurred` in resultData instead of a misleading "failed" reason.
+  // Both code paths reject with messages containing "timeout" / "timed out".
+  const tagTimeout = <T>(p: Promise<T>): Promise<T> =>
+    p.catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = /timed? out|<timeout/i.test(msg);
+      if (isTimeout) {
+        const wrapped = err instanceof Error ? err : new Error(msg);
+        (wrapped as Error & { timeoutOccurred?: boolean }).timeoutOccurred = true;
+        throw wrapped;
+      }
+      throw err;
+    });
+  const runSpawn = () => tagTimeout(
+    spawnPythonJson(RAG_INDEX_SCRIPT, args, {
+      timeout: timeoutMs,
+      onProgressEvent,
+      onUsageEvent,
+    }) as Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>,
+  );
+
+  if (isDaemonEnabled()) {
+    try {
+      return await tagTimeout(pythonDaemon.call<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>(
+        "index",
+        params,
+        { onProgressEvent, onUsageEvent, timeoutMs },
+      ));
+    } catch (err) {
+      console.warn("[daemon] index op failed, falling back to spawn:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Fallback (daemon disabled or failed): spawn rag_index.py one-shot.
+  return await runSpawn();
 }
 
 export function splitByLinesInternal(
