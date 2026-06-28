@@ -18,7 +18,8 @@ export type PipelineStageKey =
   | "stageSplit"
   | "stageEmbed"
   | "stageIndex"
-  | "stageGraph";
+  | "stageGraph"
+  | "stageWiki";
 
 export type PipelineStageStatus = "done" | "active" | "pending" | "failed";
 
@@ -30,12 +31,42 @@ export interface PipelineStageView {
   progress: number | null;
 }
 
+/**
+ * A branch that runs IN PARALLEL with other branches after the linear
+ * stages finish (Graph extraction and Wiki synthesis are submitted together
+ * and complete in arbitrary order). Unlike linear stages, branches do NOT
+ * enforce monotonic ordering against each other — each is independent.
+ */
+export interface PipelineBranchView {
+  /** i18n key under `library.detail` (e.g. "stageGraph"). */
+  key: PipelineStageKey;
+  status: PipelineStageStatus;
+  /** 0–100 when this branch is active, otherwise null. */
+  progress: number | null;
+}
+
 export interface DocumentPipeline {
+  /** Linear, strictly-ordered stages (Upload → Index). */
   stages: PipelineStageView[];
+  /**
+   * Parallel branches that fork after the linear stages. In graph mode this
+   * is [Graph, Wiki]; in basic mode it's [Wiki] (no Graph). Each branch's
+   * status/progress is independent of the others. Empty when there is no
+   * synthesis/graph work (e.g. legacy docs).
+   */
+  branches: PipelineBranchView[];
   isProcessing: boolean;
   isReady: boolean;
+  /**
+   * True once the LINEAR chain (Upload → Index) is done, i.e. basic retrieval
+   * (embedding + FTS) is usable — even if Graph/Wiki branches are still
+   * running. This decouples "document is searchable" from "all enhancements
+   * finished", so the UI can tell the user they can start using the doc while
+   * the graph/wiki branches continue in the background.
+   */
+  isBasicReady: boolean;
   isFailed: boolean;
-  /** 0–100 aggregate progress across all stages. */
+  /** 0–100 aggregate progress across all stages + branches. */
   overallPercent: number;
   graphMode: boolean;
 }
@@ -59,7 +90,10 @@ export interface ComputeDocumentPipelineArgs {
   convertTask?: PipelineTaskView | null;
   embedTask?: PipelineTaskView | null;
   graphTask?: PipelineTaskView | null;
+  wikiTask?: PipelineTaskView | null;
   graphMode: boolean;
+  /** Whether wiki synthesis will/does run for this doc (gated on processing options). */
+  wikiEnabled?: boolean;
 }
 
 const clampPct = (n: number | undefined | null): number =>
@@ -76,14 +110,16 @@ export function computeDocumentPipeline({
   convertTask,
   embedTask,
   graphTask,
+  wikiTask,
   graphMode,
+  wikiEnabled = true,
 }: ComputeDocumentPipelineArgs): DocumentPipeline {
   // Defensive fallback: a doc with no pipeline tasks at all (e.g. processed
   // before tasks existed). Reflect documents.status best-effort so the UI
   // never shows an all-pending pipeline for an obviously-ready doc.
-  if (!convertTask && !embedTask && !graphTask) {
-    if (doc.status === "ready") return readyPipeline(graphMode);
-    if (doc.status === "failed") return failedPipeline(graphMode);
+  if (!convertTask && !embedTask && !graphTask && !wikiTask) {
+    if (doc.status === "ready") return readyPipeline(graphMode, wikiEnabled);
+    if (doc.status === "failed") return failedPipeline(graphMode, wikiEnabled);
   }
 
   const uploadDone = !!doc.originalPath;
@@ -133,24 +169,16 @@ export function computeDocumentPipeline({
     indexStatus = "pending";
   }
 
-  // ---- Graph (optional, rag_index task) ----
-  let graphStatus: PipelineStageStatus = "pending";
-  if (taskFailed(graphTask)) graphStatus = "failed";
-  else if (taskDone(graphTask)) graphStatus = "done";
-  else if (taskActive(graphTask)) graphStatus = "active";
-  // else pending (incl. graphTask undefined: not submitted/claimed yet)
-
-  // Enforce monotonic ordering: a stage cannot be done/active if a required
-  // predecessor hasn't finished. This collapses impossible "skip-ahead"
-  // states (e.g. embed active while convert still pending due to a stale
-  // task row) into a consistent forward-only progression.
+  // ---- Linear stages: enforce monotonic ordering (forward-only) ----
+  // Graph + Wiki are NOT part of the linear chain: they run in parallel after
+  // index completes, in arbitrary order, so they are computed independently
+  // as branches below.
   const order: PipelineStageStatus[] = [
     uploadDone ? "done" : "active",
     convertStatus,
     splitStatus,
     embedStatus,
     indexStatus,
-    ...(graphMode ? [graphStatus] : []),
   ];
   const normalized = enforceMonotonic(order);
 
@@ -161,24 +189,64 @@ export function computeDocumentPipeline({
     { key: "stageEmbed", status: normalized[3], progress: stageProgress(normalized[3], embedTask?.progress) },
     { key: "stageIndex", status: normalized[4], progress: stageProgress(normalized[4], embedTask?.progress) },
   ];
+
+  // ---- Parallel branches: Graph + Wiki fork off after the linear stages ----
+  // Each branch is independent — Graph and Wiki are submitted together and
+  // complete in arbitrary order, so neither forces the other's status. A
+  // branch can only be active/done once the linear chain (index) is done.
+  const indexDone = normalized[4] === "done";
+  const indexFailed = normalized[4] === "failed";
+  const linearReachedBranches = indexDone || indexFailed;
+
+  const branches: PipelineBranchView[] = [];
+
   if (graphMode) {
-    stages.push({
+    let graphStatus: PipelineStageStatus;
+    if (taskFailed(graphTask)) graphStatus = "failed";
+    else if (taskDone(graphTask)) graphStatus = "done";
+    else if (taskActive(graphTask)) graphStatus = indexDone ? "active" : "pending";
+    else graphStatus = "pending";
+    // If the linear chain failed before reaching the branches, a branch can't
+    // be active — collapse to pending.
+    if (indexFailed) graphStatus = "pending";
+    branches.push({
       key: "stageGraph",
-      status: normalized[5],
-      progress: stageProgress(normalized[5], graphTask?.progress),
+      status: graphStatus,
+      progress: stageProgress(linearReachedBranches ? graphStatus : "pending", graphTask?.progress),
     });
   }
 
-  const isReady = stages.every((s) => s.status === "done");
-  const hasFailure = stages.some((s) => s.status === "failed");
+  if (wikiEnabled) {
+    let wikiStatus: PipelineStageStatus;
+    if (taskFailed(wikiTask)) wikiStatus = "failed";
+    else if (taskDone(wikiTask)) wikiStatus = "done";
+    else if (taskActive(wikiTask)) wikiStatus = indexDone ? "active" : "pending";
+    else wikiStatus = "pending";
+    if (indexFailed) wikiStatus = "pending";
+    branches.push({
+      key: "stageWiki",
+      status: wikiStatus,
+      progress: stageProgress(linearReachedBranches ? wikiStatus : "pending", wikiTask?.progress),
+    });
+  }
+
+  const all = [...stages, ...branches];
+  const isReady = all.every((s) => s.status === "done");
+  // Basic retrieval is ready once every LINEAR stage (Upload → Index) is done,
+  // regardless of whether the Graph/Wiki branches have finished. Branch
+  // failures don't un-ready the linear chain (a graph failure soft-lands).
+  const isBasicReady = stages.every((s) => s.status === "done");
+  const hasFailure = all.some((s) => s.status === "failed");
   const isProcessing = !isReady && !hasFailure;
 
   return {
     stages,
+    branches,
     isProcessing,
     isReady,
+    isBasicReady,
     isFailed: hasFailure,
-    overallPercent: overallPercent(stages),
+    overallPercent: overallPercent(all),
     graphMode,
   };
 }
@@ -223,7 +291,7 @@ function overallPercent(stages: PipelineStageView[]): number {
   return Math.round(((doneCount + activeFrac) / stages.length) * 100);
 }
 
-function readyPipeline(graphMode: boolean): DocumentPipeline {
+function readyPipeline(graphMode: boolean, wikiEnabled: boolean): DocumentPipeline {
   const stages: PipelineStageView[] = [
     { key: "stageUpload", status: "done", progress: null },
     { key: "stageConvert", status: "done", progress: null },
@@ -231,11 +299,13 @@ function readyPipeline(graphMode: boolean): DocumentPipeline {
     { key: "stageEmbed", status: "done", progress: null },
     { key: "stageIndex", status: "done", progress: null },
   ];
-  if (graphMode) stages.push({ key: "stageGraph", status: "done", progress: null });
-  return { stages, isProcessing: false, isReady: true, isFailed: false, overallPercent: 100, graphMode };
+  const branches: PipelineBranchView[] = [];
+  if (graphMode) branches.push({ key: "stageGraph", status: "done", progress: null });
+  if (wikiEnabled) branches.push({ key: "stageWiki", status: "done", progress: null });
+  return { stages, branches, isProcessing: false, isReady: true, isBasicReady: true, isFailed: false, overallPercent: 100, graphMode };
 }
 
-function failedPipeline(graphMode: boolean): DocumentPipeline {
+function failedPipeline(graphMode: boolean, wikiEnabled: boolean): DocumentPipeline {
   const stages: PipelineStageView[] = [
     { key: "stageUpload", status: "done", progress: null },
     { key: "stageConvert", status: "failed", progress: null },
@@ -243,6 +313,8 @@ function failedPipeline(graphMode: boolean): DocumentPipeline {
     { key: "stageEmbed", status: "pending", progress: null },
     { key: "stageIndex", status: "pending", progress: null },
   ];
-  if (graphMode) stages.push({ key: "stageGraph", status: "pending", progress: null });
-  return { stages, isProcessing: false, isReady: false, isFailed: true, overallPercent: 0, graphMode };
+  const branches: PipelineBranchView[] = [];
+  if (graphMode) branches.push({ key: "stageGraph", status: "pending", progress: null });
+  if (wikiEnabled) branches.push({ key: "stageWiki", status: "pending", progress: null });
+  return { stages, branches, isProcessing: false, isReady: false, isBasicReady: false, isFailed: true, overallPercent: 0, graphMode };
 }
