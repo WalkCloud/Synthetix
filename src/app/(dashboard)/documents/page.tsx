@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import { toast } from "sonner";
@@ -9,38 +10,32 @@ import { UploadZone } from "@/components/documents/upload-zone";
 import { UploadQueue } from "@/components/documents/upload-queue-panel";
 import type { UploadItem } from "@/components/documents/upload-queue-panel";
 import { ProcessingNotice } from "@/components/documents/processing-notice";
-import { ProcessingSettings, type ModelOption } from "@/components/documents/processing-settings";
+import { ProcessingSettings, type ModelOption, type KnowledgeMode, knowledgeModeToOptions } from "@/components/documents/processing-settings";
 import { SUPPORTED_FORMATS } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
 
 export default function DocumentsPage() {
+  const router = useRouter();
   const { t } = useLocale();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [llmModels, setLlmModels] = useState<ModelOption[]>([]);
   const [embedModels, setEmbedModels] = useState<ModelOption[]>([]);
   const [llmModel, setLlmModel] = useState("");
   const [embedModel, setEmbedModel] = useState("");
-  const [splitStrategy, setSplitStrategy] = useState("structure-llm");
-  const [indexTarget, setIndexTarget] = useState("full");
-  // Default to "basic" (safe) rather than "graph": graph mode requires an
-  // embedding dim >= LIGHTRAG_MIN_DIM, and that dim is only known after it
-  // has been probed. A dedicated effect below upgrades to "graph" once the
-  // selected embedding model is confirmed compatible — covering BOTH the
-  // auto-selected default model (useEffect in fetchProviders) and manual
-  // changes. Previously the initial "graph" + a downgrade check that only
-  // fired on manual selection meant new users silently shipped "graph" with
-  // an unknown/null dim, and the backend then downgraded it with no feedback.
-  const [indexMode, setIndexMode] = useState<"basic" | "graph">("basic");
-  const [autoSplit, setAutoSplit] = useState(true);
+  // The single user-facing "how deeply should we analyze this document?" choice.
+  // Replaces the old splitStrategy / indexTarget / indexMode / autoSplit quartet.
+  // `full` is the recommended default; the ProcessingSettings component disables
+  // graph-requiring cards and falls back when the selected embedding model can't
+  // support graph extraction (dim < 1536).
+  const [knowledgeMode, setKnowledgeMode] = useState<KnowledgeMode>("full");
   const [processing, setProcessing] = useState(false);
-  // Snapshot of the most recent batch submitted via "Start Processing". Drives
-  // the friendly processing-time hint, which only makes sense AFTER the user
-  // has actually kicked off processing — not right after upload (upload only
-  // persists; processing starts on Start-Processing).
-  const [processedBatch, setProcessedBatch] = useState<{
+  // Live snapshot of the uploaded-but-not-yet-processed files. Drives a
+  // pre-Start-Processing time estimate so users know large batches will take a
+  // while before they commit to running them. Derived from the completed
+  // uploads whenever the queue changes; cleared once processing is kicked off.
+  const [uploadedBatch, setUploadedBatch] = useState<{
     totalBytes: number;
     fileCount: number;
-    indexMode: "basic" | "graph";
   } | null>(null);
   // False until the first /models/providers fetch settles. Gates the
   // "no models configured" warning so we don't flash it on every refresh
@@ -48,25 +43,25 @@ export default function DocumentsPage() {
   // "genuinely unconfigured" before the fetch returns).
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
-  // Minimum embedding dimension LightRAG needs for knowledge-graph entity
-  // extraction. Mirrors isLightRAGCompatible() in src/lib/rag/dimension.ts.
-  const LIGHTRAG_MIN_DIM = 1536;
-
-  // Keep indexMode in sync with the selected embedding model's dimension.
-  // This fires for BOTH auto-selection (the fetch effect below calls
-  // setEmbedModel directly) and manual selection (handleEmbedModelChange),
-  // so the graph/basic choice always reflects the actually-selected model.
-  // Unknown dim (null/0) or < LIGHTRAG_MIN_DIM → basic; >= → graph.
-  useEffect(() => {
-    if (!embedModel) return;
-    const m = embedModels.find((x) => x.id === embedModel);
-    const dim = m?.embeddingDim ?? 0;
-    setIndexMode(dim >= LIGHTRAG_MIN_DIM ? "graph" : "basic");
-  }, [embedModel, embedModels]);
-
   const handleEmbedModelChange = useCallback((id: string) => {
     setEmbedModel(id);
   }, []);
+
+  // Keep the pre-Start-Processing batch snapshot in sync with completed
+  // uploads. This drives the "this will take a while" hint shown before the
+  // user kicks off processing. We recompute from the queue so it stays correct
+  // as files finish uploading or are removed.
+  useEffect(() => {
+    const ready = uploads.filter((u) => u.status === "complete" && u.docId);
+    if (processing || ready.length === 0) {
+      setUploadedBatch(null);
+      return;
+    }
+    setUploadedBatch({
+      totalBytes: ready.reduce((sum, u) => sum + u.size, 0),
+      fileCount: ready.length,
+    });
+  }, [uploads, processing]);
 
   useEffect(() => {
     fetch("/api/v1/models/providers")
@@ -115,10 +110,15 @@ export default function DocumentsPage() {
     if (arr.length === 0) return;
 
     // Warn if no embedding model configured
-    const effectiveIndexTarget = embedModels.length === 0 ? "original" : indexTarget;
     if (embedModels.length === 0) {
       toast.warning(t.errors.noEmbeddingUpload);
     }
+
+    // Resolve the user's Knowledge Mode into the backend processing options.
+    // When no embedding model is configured, force indexTarget to "original"
+    // (skip embedding) — the upload still persists, processing just won't index.
+    const opts = knowledgeModeToOptions(knowledgeMode);
+    const effectiveIndexTarget = embedModels.length === 0 ? "original" : opts.indexTarget;
 
     // Client-side dedupe: a file with the same name AND same size is almost
     // certainly identical. Skip the network round-trip (and the server's full
@@ -148,10 +148,10 @@ export default function DocumentsPage() {
       fd.append("file", file);
       if (llmModel) fd.append("llmModelId", llmModel);
       if (embedModel) fd.append("embedModelId", embedModel);
-      fd.append("splitStrategy", splitStrategy);
+      fd.append("splitStrategy", opts.splitStrategy);
       fd.append("indexTarget", effectiveIndexTarget);
-      fd.append("indexMode", indexMode);
-      fd.append("autoSplit", String(autoSplit));
+      fd.append("indexMode", opts.indexMode);
+      fd.append("autoSplit", String(opts.autoSplit));
       try {
         const res = await fetch("/api/v1/documents/upload", { method: "POST", body: fd });
         const data = await res.json();
@@ -170,7 +170,7 @@ export default function DocumentsPage() {
         setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: t.documents.upload.uploadFailed } : u));
       }
     }
-  }, [llmModel, embedModel, splitStrategy, indexTarget, indexMode, autoSplit, embedModels.length, uploads, t]);
+  }, [llmModel, embedModel, knowledgeMode, embedModels.length, uploads, t]);
 
   function removeUpload(id: string) {
     setUploads((prev) => prev.filter((u) => u.id !== id));
@@ -183,11 +183,10 @@ export default function DocumentsPage() {
       return;
     }
     setProcessing(true);
-    // Snapshot the batch BEFORE submitting so the hint reflects exactly what
-    // was sent, even if the user adds more files afterwards.
-    const batchTotalBytes = ready.reduce((sum, u) => sum + u.size, 0);
-    const batchFileCount = ready.length;
-    const batchIndexMode = indexMode;
+    // The pre-Start-Processing hint has served its purpose; clear it so the
+    // submitted-batch hint (set below on success) is the one the user sees.
+    setUploadedBatch(null);
+    const opts = knowledgeModeToOptions(knowledgeMode);
     let success = 0;
     let fail = 0;
     for (const u of ready) {
@@ -199,10 +198,11 @@ export default function DocumentsPage() {
               options: {
                 llmModelId: llmModel || undefined,
                 embedModelId: embedModel || undefined,
-                splitStrategy,
-                indexTarget: embedModels.length === 0 ? "original" : indexTarget,
-                indexMode,
-                autoSplit,
+                splitStrategy: opts.splitStrategy,
+                indexTarget: embedModels.length === 0 ? "original" : opts.indexTarget,
+                indexMode: opts.indexMode,
+                wikiEnabled: opts.wikiEnabled,
+                autoSplit: opts.autoSplit,
               },
           }),
         });
@@ -217,12 +217,13 @@ export default function DocumentsPage() {
       }
     }
     setProcessing(false);
-    if (fail === 0) {
-      toast.success(`${success} ${t.documents.upload.queued}`);
-      setProcessedBatch({ totalBytes: batchTotalBytes, fileCount: batchFileCount, indexMode: batchIndexMode });
-    } else if (success > 0) {
-      toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
-      setProcessedBatch({ totalBytes: batchTotalBytes, fileCount: batchFileCount, indexMode: batchIndexMode });
+    if (success > 0) {
+      if (fail === 0) {
+        toast.success(`${success} ${t.documents.upload.queued}`);
+      } else {
+        toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
+      }
+      router.push("/library");
     } else {
       toast.warning(`${success} ${t.documents.upload.queued}, ${fail} ${t.common.states.failed}`);
     }
@@ -234,16 +235,21 @@ export default function DocumentsPage() {
       <div className="p-8">
         <UploadZone onFiles={handleFiles} />
         <UploadQueue items={uploads} onRemove={removeUpload} />
+        {uploadedBatch && (
+          <ProcessingNotice
+            totalBytes={uploadedBatch.totalBytes}
+            fileCount={uploadedBatch.fileCount}
+            indexMode={knowledgeModeToOptions(knowledgeMode).indexMode}
+            variant="queued"
+          />
+        )}
         <ProcessingSettings
           llmModels={llmModels} embedModels={embedModels}
           llmModel={llmModel} embedModel={embedModel}
           modelsLoaded={modelsLoaded}
-          splitStrategy={splitStrategy}
-          indexTarget={indexTarget} indexMode={indexMode} autoSplit={autoSplit}
+          knowledgeMode={knowledgeMode}
           onLlmModelChange={setLlmModel} onEmbedModelChange={handleEmbedModelChange}
-          onSplitStrategyChange={setSplitStrategy}
-          onIndexTargetChange={setIndexTarget} onIndexModeChange={setIndexMode}
-          onAutoSplitChange={setAutoSplit}
+          onKnowledgeModeChange={setKnowledgeMode}
         />
         {uploads.length > 0 && (
           <div className="flex justify-end animate-fade-in-up">
@@ -267,13 +273,6 @@ export default function DocumentsPage() {
               )}
             </button>
           </div>
-        )}
-        {processedBatch && (
-          <ProcessingNotice
-            totalBytes={processedBatch.totalBytes}
-            fileCount={processedBatch.fileCount}
-            indexMode={processedBatch.indexMode}
-          />
         )}
       </div>
     </div>

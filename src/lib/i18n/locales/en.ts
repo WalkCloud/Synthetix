@@ -230,6 +230,22 @@ const en = {
       graphDimUnknown: "Embedding dimension not verified. Test Connection in Model Management first.",
       graphDimTooSmall: "Current model dimension ({dim}) is below the 1536 minimum required for knowledge graph extraction. Use a higher-dimension embedding model.",
       graphDesc: "Graph mode extracts entities and relations for enhanced retrieval and topology.",
+      // Knowledge Mode — the single user-facing "how deeply should we analyze
+      // this document?" choice. Plain, outcome-oriented language; no internal
+      // terms (chunk/LightRAG/embedding) leak to the user.
+      knowledgeMode: "Analysis depth",
+      kmRecommended: "Recommended",
+      kmStandard: "Standard retrieval",
+      kmStandardDesc: "Semantic search over the document. Fastest, fewest tokens.",
+      kmGraph: "Knowledge graph",
+      kmGraphDesc: "Retrieval plus an entity & relationship graph for topology.",
+      kmWiki: "Knowledge distillation",
+      kmWikiDesc: "Retrieval plus synthesized, encyclopedia-style knowledge entries.",
+      kmFull: "Full analysis",
+      kmFullDesc: "Retrieval + knowledge graph + distilled entries. Best understanding.",
+      kmGraphNeedsEmbed: "Select an embedding model to enable knowledge graph options.",
+      kmGraphDimUnknown: "Embedding dimension not verified. Test Connection in Model Management to enable knowledge graph options.",
+      kmGraphDimTooSmall: "Current embedding dimension ({dim}) is below the 1536 minimum for the knowledge graph. Use a higher-dimension model.",
     },
     uploadQueue: {
       uploading: "Uploading...",
