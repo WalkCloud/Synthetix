@@ -237,7 +237,7 @@ async function llmGlobalPlan(
     ],
     temperature: 0.2,
     response_format: { type: "json_object" },
-    maxTokens: 4096,
+    maxTokens: 8192,
   };
 
   const response = await llm.provider.chat(params);
@@ -253,7 +253,17 @@ async function llmGlobalPlan(
   }).catch(() => undefined);
 
   const plan = parsePlanResponse(response.content);
-  if (!plan) throw new Error("LLM returned unparseable segmentation plan");
+  if (!plan) {
+    // Log a preview so segmentation failures are diagnosable. Truncated
+    // responses (maxTokens too low for large docs) are the most common cause.
+    const preview = response.content.slice(0, 300).replace(/\s+/g, " ");
+    const finishReason = response.finishReason ? ` (finishReason=${response.finishReason})` : "";
+    console.warn(
+      `[segmentation] unparseable plan for doc ${ctx.docId}${finishReason}; windows=${windows.length} ` +
+      `inputTokens=${inputTokens} outputTokens=${outputTokens}; content preview: "${preview}..."`,
+    );
+    throw new Error(`LLM returned unparseable segmentation plan${finishReason}`);
+  }
   return { plan, tokens: inputTokens + outputTokens };
 }
 
