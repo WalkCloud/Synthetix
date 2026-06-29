@@ -79,10 +79,6 @@ interface ProcessingSettingsProps {
   onKnowledgeModeChange: (v: KnowledgeMode) => void;
 }
 
-function formatTokens(n: number): string {
-  return n.toLocaleString();
-}
-
 export function ProcessingSettings({
   llmModels, embedModels, llmModel, embedModel, modelsLoaded,
   knowledgeMode,
@@ -90,14 +86,8 @@ export function ProcessingSettings({
 }: ProcessingSettingsProps) {
   const { t } = useLocale();
 
-  // Compute auto chunk size — based on embedding model's max input tokens
-  const DEFAULT_EMBED_MAX_TOKENS = 8192;
+  // The selected embedding model drives the graph-capability gate below.
   const selectedEmbed = embedModels.find((m) => m.id === embedModel);
-  const embedMaxTokens = (selectedEmbed?.contextWindow ?? 0) > 0
-    ? selectedEmbed!.contextWindow!
-    : DEFAULT_EMBED_MAX_TOKENS;
-  const isUsingDefaultEmbed = !selectedEmbed || (selectedEmbed.contextWindow ?? 0) === 0;
-  const chunkMaxTokens = Math.floor(embedMaxTokens * 0.9);
 
   const hasNoModels = llmModels.length === 0 && embedModels.length === 0;
   const hasNoEmbed = embedModels.length === 0;
@@ -238,25 +228,6 @@ export function ProcessingSettings({
                 )}
               </SelectContent>
             </Select>
-          </div>
-
-          {/* Auto chunk size display (informational, derived from embedding model) */}
-          <div className="col-span-2">
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.autoChunkSize}</label>
-            <div className="px-3.5 py-2.5 bg-muted/50 rounded-lg border border-border">
-              <span className="text-[14px] font-semibold text-primary">{formatTokens(chunkMaxTokens)}</span>
-              <span className="text-[12px] text-muted-foreground ml-1">tokens</span>
-              <p className="text-[12px] text-muted-foreground mt-1">
-                {!isUsingDefaultEmbed
-                  ? t.documents.processing.autoChunkSizeDesc
-                      .replace("{tokens}", formatTokens(chunkMaxTokens))
-                      .replace("{context}", formatTokens(embedMaxTokens))
-                      .replace("{model}", selectedEmbed?.modelName || "")
-                  : t.documents.processing.defaultChunkSize
-                      .replace("{tokens}", formatTokens(chunkMaxTokens))
-                      .replace("{context}", formatTokens(DEFAULT_EMBED_MAX_TOKENS))}
-              </p>
-            </div>
           </div>
 
           {/* Knowledge Mode — the single user-facing "how deep?" choice.
