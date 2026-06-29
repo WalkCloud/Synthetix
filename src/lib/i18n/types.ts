@@ -232,12 +232,16 @@ export type TranslationSchema = {
       kmRecommended: string;
       kmStandard: string;
       kmStandardDesc: string;
+      kmStandardDetail: string;
       kmGraph: string;
       kmGraphDesc: string;
+      kmGraphDetail: string;
       kmWiki: string;
       kmWikiDesc: string;
+      kmWikiDetail: string;
       kmFull: string;
       kmFullDesc: string;
+      kmFullDetail: string;
       kmGraphNeedsEmbed: string;
       kmGraphDimUnknown: string;
       kmGraphDimTooSmall: string;
