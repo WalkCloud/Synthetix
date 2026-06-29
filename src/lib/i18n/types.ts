@@ -199,9 +199,6 @@ export type TranslationSchema = {
       llmModel: string;
       embeddingModel: string;
       selectModel: string;
-      autoChunkSize: string;
-      autoChunkSizeDesc: string;
-      defaultChunkSize: string;
       noModelsWarning: string;
       noEmbeddingWarning: string;
       noLlmWarning: string;
