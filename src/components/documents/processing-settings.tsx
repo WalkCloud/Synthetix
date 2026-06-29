@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocale } from "@/lib/i18n";
@@ -118,28 +119,43 @@ export function ProcessingSettings({
         ? t.documents.processing.kmGraphDimTooSmall.replace("{dim}", String(embedDim))
         : null;
 
-  // Knowledge Mode cards. (Recommended) marker on `full`.
-  const modes: { key: KnowledgeMode; label: string; desc: string; recommended?: boolean; disabled?: boolean }[] = [
+  // Knowledge Mode cards stay lean (title + one-line gist). The full
+  // explanation — a single flowing sentence covering what you get and when to
+  // pick it — appears in a panel below ONLY after the user clicks a card, so
+  // the default view is uncluttered and the tip feels like a helpful response
+  // to their selection.
+  const modes: {
+    key: KnowledgeMode;
+    label: string;
+    desc: string;
+    detail: string;
+    recommended?: boolean;
+    disabled?: boolean;
+  }[] = [
     {
       key: "standard",
       label: t.documents.processing.kmStandard,
       desc: t.documents.processing.kmStandardDesc,
+      detail: t.documents.processing.kmStandardDetail,
     },
     {
       key: "graph",
       label: t.documents.processing.kmGraph,
       desc: t.documents.processing.kmGraphDesc,
+      detail: t.documents.processing.kmGraphDetail,
       disabled: !graphCapable,
     },
     {
       key: "wiki",
       label: t.documents.processing.kmWiki,
       desc: t.documents.processing.kmWikiDesc,
+      detail: t.documents.processing.kmWikiDetail,
     },
     {
       key: "full",
       label: t.documents.processing.kmFull,
       desc: t.documents.processing.kmFullDesc,
+      detail: t.documents.processing.kmFullDetail,
       recommended: true,
       disabled: !graphCapable,
     },
@@ -151,6 +167,12 @@ export function ProcessingSettings({
   const effectiveMode = modes.find((m) => m.key === knowledgeMode && !m.disabled)
     ? knowledgeMode
     : (knowledgeMode === "graph" || knowledgeMode === "full" ? "wiki" : knowledgeMode);
+  // The full data for the selected mode — drives the detail panel.
+  const selectedModeData = modes.find((m) => m.key === effectiveMode) ?? null;
+  // The detail panel only appears AFTER the user clicks a card, not on initial
+  // load. Reset whenever the selected mode changes so the panel always reflects
+  // the latest click.
+  const [detailVisible, setDetailVisible] = useState(false);
 
   return (
     <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
@@ -238,7 +260,10 @@ export function ProcessingSettings({
           </div>
 
           {/* Knowledge Mode — the single user-facing "how deep?" choice.
-              Replaces Split Strategy + Index Target + Index Mode + Auto-split. */}
+              Replaces Split Strategy + Index Target + Index Mode + Auto-split.
+              Cards stay lean (title + one-line gist); selecting one reveals a
+              contextual detail panel below with "what you get / best for",
+              matching the app's select-then-show-detail pattern. */}
           <div className="col-span-2">
             <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">
               {t.documents.processing.knowledgeMode}
@@ -251,26 +276,44 @@ export function ProcessingSettings({
                     key={m.key}
                     type="button"
                     disabled={m.disabled}
-                    onClick={() => !m.disabled && onKnowledgeModeChange(m.key)}
-                    className={`text-left p-3.5 rounded-xl border transition-all relative ${
+                    onClick={() => {
+                      if (m.disabled) return;
+                      onKnowledgeModeChange(m.key);
+                      setDetailVisible(true);
+                    }}
+                    className={`text-left px-3.5 py-2.5 rounded-xl border transition-all relative ${
                       selected
                         ? "border-primary bg-primary/8 ring-1 ring-primary/30"
                         : "border-border bg-card hover:border-primary/40 hover:bg-primary/4"
                     } ${m.disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
                   >
                     {m.recommended && (
-                      <span className="absolute top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
+                      <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
                         {t.documents.processing.kmRecommended}
                       </span>
                     )}
-                    <div className={`text-[13px] font-semibold mb-1 ${selected ? "text-primary" : "text-foreground"}`}>
+                    <div className={`text-[13px] font-semibold ${selected ? "text-primary" : "text-foreground"}`}>
                       {m.label}
                     </div>
-                    <p className="text-[11px] text-muted-foreground leading-snug">{m.desc}</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{m.desc}</p>
                   </button>
                 );
               })}
             </div>
+
+            {/* Detail tip for the SELECTED mode — appears ONLY after the user
+                clicks a card, as a single flowing sentence. Feels like a helpful
+                response to the selection rather than static clutter. */}
+            {detailVisible && selectedModeData && (
+              <div className="mt-3 px-4 py-3 bg-muted/50 rounded-xl border border-border animate-fade-in-up flex gap-2.5">
+                <svg className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+                <p className="text-[12px] text-foreground/80 leading-relaxed">{selectedModeData.detail}</p>
+              </div>
+            )}
+
             {graphBlockedReason && (
               <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
                 {graphBlockedReason}

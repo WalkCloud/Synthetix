@@ -231,19 +231,25 @@ const en = {
       graphDimTooSmall: "Current model dimension ({dim}) is below the 1536 minimum required for knowledge graph extraction. Use a higher-dimension embedding model.",
       graphDesc: "Graph mode extracts entities and relations for enhanced retrieval and topology.",
       // Knowledge Mode — the single user-facing "how deeply should we analyze
-      // this document?" choice. Plain, outcome-oriented language; no internal
+      // this document?" choice. Cards stay lean (title + one-line gist); the
+      // full explanation is a single flowing sentence (km*Detail) shown in a
+      // tip panel that appears only after the user clicks a card. No internal
       // terms (chunk/LightRAG/embedding) leak to the user.
       knowledgeMode: "Analysis depth",
       kmRecommended: "Recommended",
       kmStandard: "Standard retrieval",
-      kmStandardDesc: "Semantic search over the document. Fastest, fewest tokens.",
+      kmStandardDesc: "Search by meaning, not just keywords.",
+      kmStandardDetail: "You get semantic and keyword search across the document — fast and light on tokens. Best for quick lookups, small documents, or when you simply need to find information.",
       kmGraph: "Knowledge graph",
-      kmGraphDesc: "Retrieval plus an entity & relationship graph for topology.",
+      kmGraphDesc: "Also map entities and their relationships.",
+      kmGraphDetail: "You get search plus an interactive graph of the people, products, and concepts in the document and how they connect — ideal for understanding relationships, exploring the topology view, or working with complex, interlinked material.",
       kmWiki: "Knowledge distillation",
-      kmWikiDesc: "Retrieval plus synthesized, encyclopedia-style knowledge entries.",
-      kmFull: "Full analysis",
-      kmFullDesc: "Retrieval + knowledge graph + distilled entries. Best understanding.",
       kmGraphNeedsEmbed: "Select an embedding model to enable knowledge graph options.",
+      kmWikiDesc: "Also distill into encyclopedia-style articles.",
+      kmWikiDetail: "You get search plus a curated knowledge base of concise, synthesized topic entries distilled from the document — great for research, building a reusable knowledge base, or digesting long reports.",
+      kmFull: "Full analysis",
+      kmFullDesc: "Everything: search, graph, and articles.",
+      kmFullDetail: "You get all three layers — search, an interactive relationship graph, and a distilled knowledge base — for the deepest understanding. Recommended for most documents and whenever you want the richest, most complete analysis.",
       kmGraphDimUnknown: "Embedding dimension not verified. Test Connection in Model Management to enable knowledge graph options.",
       kmGraphDimTooSmall: "Current embedding dimension ({dim}) is below the 1536 minimum for the knowledge graph. Use a higher-dimension model.",
     },
