@@ -1,7 +1,9 @@
 {
   "name": "synthetix",
   "version": "0.10.9",
+  "description": "Self-hostable AI writing workbench for traceable long-form documents.",
   "license": "Apache-2.0",
+  "author": "Synthetix",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,8 +11,16 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "e2e": "playwright test",
+    "e2e:smoke": "playwright test --grep @smoke",
+    "e2e:full": "playwright test --grep @full",
+    "e2e:report": "playwright show-report e2e/.report",
+    "electron:dev": "pnpm build && tsc -p electron/tsconfig.json && cross-env-shell ELECTRON_IS_DEV=1 \"electron dist/electron-main/main.js\"",
+    "electron:compile": "tsc -p electron/tsconfig.json",
+    "electron:build": "node scripts/build-electron.mjs"
   },
+  "main": "dist/electron-main/main.js",
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@node-rs/jieba": "^2.0.1",
@@ -40,6 +50,7 @@
     "zod": "^4.4.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.13",
@@ -49,6 +60,9 @@
     "@types/react-dom": "^19",
     "@types/uuid": "^11.0.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "playwright": "^1.59.1",
@@ -60,6 +74,8 @@
     "onlyBuiltDependencies": [
       "@prisma/engines",
       "better-sqlite3",
+      "electron",
+      "electron-builder",
       "msw",
       "prisma",
       "sharp",
