@@ -1,4 +1,4 @@
-"""Local semantic chunking via ONNX bge-small-zh-v1.5.
+"""Local semantic chunking via an ONNX embedding model.
 
 Reads a JSON batch from stdin, computes per-batch sentence embeddings and
 cosine-similarity-based boundary detection, then writes per-batch boundaries
@@ -28,22 +28,68 @@ import os
 import sys
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
-MODEL_PATH = os.environ.get("LOCAL_EMBED_MODEL_PATH", "data/models/bge-small-zh-v1.5")
+MODEL_PATH = os.environ.get("LOCAL_EMBED_MODEL_PATH", "data/models/gte-multilingual-base")
+# Max sequence length passed to the tokenizer. GTE-multilingual supports 8192;
+# chunking sentences are short, but cap defensively to bound memory.
+MAX_SEQ_LENGTH = int(os.environ.get("LOCAL_EMBED_MAX_SEQ_LENGTH", "8192"))
 
 _model = None
+
+
+class OnnxEmbedder:
+    """Direct ONNX Runtime + tokenizer embedder.
+
+    Replaces the previous sentence_transformers.SentenceTransformer load path.
+    ST cannot load GTE-multilingual-base because its `model_type: "new"` is a
+    GTE-private architecture transformers doesn't recognise, and the ONNX build
+    relies on remote custom modeling code. But the exported ONNX graph already
+    bakes in the full pipeline (incl. pooling → `sentence_embedding` output),
+    so we run it directly with onnxruntime + the (standard) tokenizer. This
+    also drops the torch dependency at inference time entirely.
+    """
+
+    def __init__(self, model_path: str):
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        # Disable the default graph optimisation level touching thread pool
+        # sizing — the caller (buildPythonSpawnEnv) already caps ORT threads.
+        self.session = ort.InferenceSession(
+            os.path.join(model_path, "model.onnx"),
+            providers=["CPUExecutionProvider"],
+        )
+        self._dim = self.session.get_outputs()[0].shape[-1]
+
+    def encode(self, sentences: list[str], normalize_embeddings: bool = True) -> np.ndarray:
+        enc = self.tokenizer(
+            sentences,
+            padding=True,
+            truncation=True,
+            max_length=MAX_SEQ_LENGTH,
+            return_tensors="np",
+        )
+        outputs = self.session.run(
+            ["sentence_embedding"],
+            {
+                "input_ids": enc["input_ids"].astype("int64"),
+                "attention_mask": enc["attention_mask"].astype("int64"),
+            },
+        )
+        embeddings = outputs[0]
+        if normalize_embeddings:
+            # L2-normalize so dot product == cosine similarity.
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            embeddings = embeddings / norms
+        return embeddings
 
 
 def get_model():
     global _model
     if _model is None:
-        _model = SentenceTransformer(
-            MODEL_PATH,
-            backend="onnx",
-            device="cpu",
-            model_kwargs={"file_name": "model.onnx"},
-        )
+        _model = OnnxEmbedder(MODEL_PATH)
     return _model
 
 

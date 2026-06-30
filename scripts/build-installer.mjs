@@ -311,8 +311,13 @@ function main() {
 const PYTHON_UNUSED_PACKAGES = [
   // AWS / cloud SDKs — never imported by any worker.
   "aws_cdk", "aws-cdk.assets-handlers", "aws-cdk", "boto3", "botocore", "s3transfer", "jmespath",
-  // torchvision / torchgen / functorch — torch is kept, these are not imported.
-  "torchvision", "torchgen", "functorch", "torch_tensorrt",
+  // torchvision / functorch / torch_tensorrt — torch is kept, these are not
+  // imported by workers. NOTE: torchgen is deliberately NOT removed here — it
+  // is a torch *internal* module (torch.utils._python_dispatch imports it at
+  // load time), so removing it breaks `import torch`, which breaks
+  // transformers + sentence_transformers. Removing it had silently corrupted
+  // the chunking pipeline.
+  "torchvision", "functorch", "torch_tensorrt",
   // opencv — not imported by workers (docling uses it only for some parsers;
   // we drop it and rely on the default pipeline; re-add if conversion fails).
   "cv2", "opencv_python",
