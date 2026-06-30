@@ -316,11 +316,11 @@ def _warm_imports():
     is safe and also amortizes the ~1s import cost across all future queries.
 
     The same deadlock affects onnxruntime: creating an ONNX InferenceSession
-    (via SentenceTransformer's first model load) from inside a running asyncio
-    loop hangs on Windows. Pre-initializing the ONNX session here — before the
-    loop starts — lets subsequent chunk calls reuse it without deadlocking.
-    Without this, every daemon chunk op times out (120s) and the caller falls
-    back to a slow one-shot spawn, making document conversion take ~10+ minutes.
+    (via the embedder's first model load) from inside a running asyncio loop
+    hangs on Windows. Pre-initializing the ONNX session here — before the loop
+    starts — lets subsequent chunk calls reuse it without deadlocking. Without
+    this, every daemon chunk op times out (120s) and the caller falls back to a
+    slow one-shot spawn, making document conversion take ~10+ minutes.
     """
     try:
         import lightrag  # noqa: F401
@@ -331,19 +331,16 @@ def _warm_imports():
         # Don't crash a chunk-only daemon that doesn't have lightrag installed.
         pass
     try:
-        from sentence_transformers import SentenceTransformer
-        model_path = os.environ.get("LOCAL_EMBED_MODEL_PATH", "data/models/bge-small-zh-v1.5")
-        # Eagerly create the ONNX InferenceSession. This is the operation that
-        # deadlocks when first run inside the event loop; doing it here (pre-loop)
-        # initializes onnxruntime's session state so later handle_chunk calls —
-        # which reuse this exact model instance via local_chunk.get_model()'s
-        # module-level cache — never trigger session creation again.
-        SentenceTransformer(
-            model_path,
-            backend="onnx",
-            device="cpu",
-            model_kwargs={"file_name": "model.onnx"},
-        )
+        # Eagerly create the ONNX InferenceSession via local_chunk's embedder.
+        # This is the operation that deadlocks when first run inside the event
+        # loop; doing it here (pre-loop) initializes onnxruntime's session state
+        # so later handle_chunk calls — which reuse this exact model instance
+        # via local_chunk.get_model()'s module-level cache — never trigger
+        # session creation again. Goes through OnnxEmbedder (onnxruntime +
+        # tokenizer directly), not sentence_transformers (GTE-multilingual's
+        # private architecture isn't loadable via ST).
+        from local_chunk import get_model
+        get_model()
     except Exception:
         # Best-effort: a daemon without the ONNX model (or where the path is
         # wrong) should still start — chunk calls will then fail with a clear

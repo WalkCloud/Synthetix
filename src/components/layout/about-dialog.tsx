@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import Image from "next/image";
 import { useLocale } from "@/lib/i18n";
 
 const APP_VERSION = "0.5.3.0";
@@ -24,21 +25,13 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
       <DialogContent className="sm:max-w-[380px]">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <svg
-              className="w-9 h-9 text-primary shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <line x1="10" y1="9" x2="8" y2="9" />
-            </svg>
+            <Image
+              src="/logo.png"
+              alt="Synthetix"
+              width={36}
+              height={36}
+              className="shrink-0"
+            />
             <div>
               <DialogTitle className="text-lg">{t.layout.about.title}</DialogTitle>
               <DialogDescription className="text-xs">
