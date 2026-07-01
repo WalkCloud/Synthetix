@@ -36,16 +36,38 @@ export async function GET(
     where: {
       userId: user.id,
       inputData: { contains: `"docId":"${id}"` },
-      type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
+      type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize", "document_segment"] },
     },
     orderBy: { createdAt: "desc" },
-    select: { type: true, status: true, progress: true, inputData: true },
+    select: { type: true, status: true, progress: true, inputData: true, createdAt: true, updatedAt: true },
   });
   const latest = (type: string) => tasks.find((t) => t.type === type);
   const convertRow = latest("document_convert");
   const embedRow = latest("rag_embed_index");
   const graphRow = latest("rag_index");
   const wikiRow = latest("wiki_synthesize");
+
+  // Processing duration: measured for the LATEST processing run only (a
+  // reprocess creates a fresh batch of tasks). We take the latest
+  // document_convert task as the batch start, then find all tasks created at
+  // or after it (the same pipeline run) and compute earliest-start →
+  // latest-completed-end. This avoids summing across multiple reprocess runs
+  // (which would show a meaningless multi-hour span). null while still
+  // processing or if no tasks exist.
+  let processingDurationMs: number | null = null;
+  if (convertRow) {
+    const batchStart = convertRow.createdAt;
+    const batchTasks = tasks.filter((t) => t.createdAt >= batchStart);
+    if (batchTasks.length > 0) {
+      const earliestStart = batchTasks.reduce((min, t) => (t.createdAt < min ? t.createdAt : min), batchStart);
+      const finishedTasks = batchTasks.filter((t) => t.status === "completed" || t.status === "failed");
+      if (finishedTasks.length > 0) {
+        const latestEnd = finishedTasks.reduce((max, t) => (t.updatedAt > max ? t.updatedAt : max), finishedTasks[0].updatedAt);
+        processingDurationMs = latestEnd.getTime() - earliestStart.getTime();
+        if (processingDurationMs < 0) processingDurationMs = null;
+      }
+    }
+  }
 
   const toView = (t?: { status: string; progress: number }): PipelineTaskView | null =>
     t ? { status: t.status, progress: t.progress } : null;
@@ -79,5 +101,6 @@ export async function GET(
     tags: doc.tags.map((dt) => dt.tag),
     pipeline,
     displayStatus: computeDisplayStatus(pipeline, doc.status),
+    processingDurationMs,
   });
 }

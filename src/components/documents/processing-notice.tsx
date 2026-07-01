@@ -16,6 +16,15 @@ interface ProcessingNoticeProps {
   fileCount: number;
   /** Current index mode — graph extraction roughly multiplies the time. */
   indexMode: "basic" | "graph";
+  /**
+   * Where the notice is shown.
+   * - "queued": files are uploaded but processing hasn't started yet — the user
+   *   still has to click "Start Processing". Copy frames the time as a heads-up
+   *   for the upcoming run.
+   * - "submitted": processing has actually been kicked off. Copy frames it as a
+   *   background job the user can walk away from.
+   */
+  variant?: "queued" | "submitted";
 }
 
 interface TierStyle {
@@ -83,7 +92,12 @@ function TierIcon({ level }: { level: ProcessingLevel }) {
   );
 }
 
-export function ProcessingNotice({ totalBytes, fileCount, indexMode }: ProcessingNoticeProps) {
+export function ProcessingNotice({
+  totalBytes,
+  fileCount,
+  indexMode,
+  variant = "submitted",
+}: ProcessingNoticeProps) {
   const { t, format } = useLocale();
   if (totalBytes <= 0 || fileCount <= 0) return null;
 
@@ -91,6 +105,11 @@ export function ProcessingNotice({ totalBytes, fileCount, indexMode }: Processin
   const graphMode = indexMode === "graph";
   const estimate = estimateProcessingRange(totalBytes, graphMode);
   const style = TIER_STYLES[estimate.level];
+
+  // The "queued" variant (pre-Start-Processing) uses a dedicated body so the
+  // messaging is accurate: nothing is running yet, this is an estimate of the
+  // upcoming run. The "submitted" variant keeps the original post-submit copy.
+  const bodyText = variant === "queued" ? n.queuedBody : n.body;
 
   const titleKey =
     estimate.level === "fast" ? n.fastTitle
@@ -125,7 +144,7 @@ export function ProcessingNotice({ totalBytes, fileCount, indexMode }: Processin
           </div>
 
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {n.body}
+            {bodyText}
             {graphMode && n.graphBodySuffix}
           </p>
 

@@ -28,6 +28,7 @@ from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+from adaptive_limiter import wrap_llm_func
 
 
 def emit_progress(stage: str, progress: int, message: str, **extra) -> None:
@@ -85,6 +86,71 @@ def get_insert_batch_size(index_mode: str, env: dict | None = None) -> int:
     if index_mode == "graph":
         return int(source.get("LIGHTRAG_GRAPH_INSERT_BATCH_SIZE", source.get("LIGHTRAG_INSERT_BATCH_SIZE", "5")))
     return int(source.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
+
+
+def should_bulk_insert_graph(env: dict | None = None) -> bool:
+    source = env if env is not None else os.environ
+    return str(source.get("LIGHTRAG_GRAPH_BULK_INSERT", "false")).lower() in {"1", "true", "yes", "on"}
+
+
+def _read_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _llm_error_message(error: Exception) -> str:
+    return f"{type(error).__name__}: {error}".lower()
+
+
+def _is_transient_llm_connection_error(error: Exception) -> bool:
+    msg = _llm_error_message(error)
+    markers = (
+        "apiconnectionerror",
+        "connection error",
+        "connecterror",
+        "connect error",
+        "getaddrinfo failed",
+        "name resolution",
+        "temporary failure in name resolution",
+        "timeout",
+        "timed out",
+        "etimedout",
+        "econnreset",
+        "connection reset",
+        "connection refused",
+        "remote protocol error",
+    )
+    return any(marker in msg for marker in markers)
+
+
+def _graph_llm_retry_delay_ms(base_ms: int, attempt: int) -> int:
+    factors = (1, 2.5, 5)
+    if attempt <= len(factors):
+        return int(base_ms * factors[attempt - 1])
+    return int(base_ms * factors[-1] * (2 ** (attempt - len(factors))))
+
+
+async def _call_graph_llm_with_connection_retry(call, sleep_fn=asyncio.sleep) -> str:
+    retries = _read_positive_int("GRAPH_LLM_CONNECTION_RETRIES", 3)
+    base_ms = _read_positive_int("GRAPH_LLM_CONNECTION_BACKOFF_MS", 2000)
+    for attempt in range(retries + 1):
+        try:
+            return await call()
+        except Exception as error:
+            if attempt >= retries or not _is_transient_llm_connection_error(error):
+                raise
+            delay_ms = _graph_llm_retry_delay_ms(base_ms, attempt + 1)
+            print(
+                f"WARNING: Graph LLM connection error, retrying in {delay_ms / 1000:.1f}s "
+                f"(attempt {attempt + 1}/{retries}): {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            await sleep_fn(delay_ms / 1000)
+    raise RuntimeError("Graph LLM connection retry exhausted")
 
 
 def sort_chunk_files(files: list[str]) -> list[str]:
@@ -260,56 +326,60 @@ async def index_document(
     graph_token_tracker = StdoutTokenTracker(module="graph")
 
     if index_mode == "graph" and llm_api_base and llm_model:
-        import asyncio
-        llm_sem = asyncio.Semaphore(2)
-        async def llm_func(
+        # The raw LLM call (no concurrency control here — that's delegated to
+        # the adaptive limiter via wrap_llm_func below). Concurrency is now
+        # self-tuning: the limiter slow-starts to probe the provider's true
+        # capacity and paces every extraction round-trip against it, replacing
+        # the old hardcoded Semaphore(2). See adaptive_limiter.py + the design
+        # doc docs/llm-concurrency-adaptive-limiter-2026-06-26.md.
+        async def raw_llm_func(
             prompt: str,
             system_prompt: str | None = None,
             history_messages: list | None = None,
             **kwargs,
         ) -> str:
-            async with llm_sem:
-                if history_messages is None:
-                    history_messages = []
-                # Output language is now controlled via addon_params["language"]
-                # (set above to follow the source text), so we do NOT re-inject a
-                # competing language instruction here — that would duplicate and
-                # potentially contradict the prompt template's own {language} slot.
-                # We keep only the description-quality constraint, which the prompt
-                # template does not cover.
-                quality_instruction = "\n\nIMPORTANT: Entity and relationship descriptions MUST be concise summaries (1-2 sentences). DO NOT output step-by-step processes, raw chunk text, or 'phase1 phase2' style content."
-                if system_prompt:
-                    system_prompt += quality_instruction
-                else:
-                    prompt += quality_instruction
-                clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
-                try:
-                    return await openai_complete_if_cache(
-                        model=llm_model,
-                        prompt=prompt,
-                        system_prompt=system_prompt,
-                        history_messages=history_messages,
-                        base_url=llm_api_base,
-                        api_key=llm_api_key,
-                        token_tracker=graph_token_tracker,
-                        **clean_kwargs,
-                    )
-                except Exception as e:
-                    err_msg = str(e).lower()
-                    if "response_format" in err_msg or "invalid_request" in err_msg:
-                        for bad_key in ("response_format", "keyword_extraction"):
-                            clean_kwargs.pop(bad_key, None)
-                        return await openai_complete_if_cache(
-                            model=llm_model,
-                            prompt=prompt,
-                            system_prompt=system_prompt,
-                            history_messages=history_messages,
-                            base_url=llm_api_base,
-                            api_key=llm_api_key,
-                            token_tracker=graph_token_tracker,
-                            **clean_kwargs,
-                        )
-                    raise
+            if history_messages is None:
+                history_messages = []
+            # Output language is now controlled via addon_params["language"]
+            # (set above to follow the source text), so we do NOT re-inject a
+            # competing language instruction here — that would duplicate and
+            # potentially contradict the prompt template's own {language} slot.
+            # We keep only the description-quality constraint, which the prompt
+            # template does not cover.
+            quality_instruction = "\n\nIMPORTANT: Entity and relationship descriptions MUST be concise summaries (1-2 sentences). DO NOT output step-by-step processes, raw chunk text, or 'phase1 phase2' style content."
+            if system_prompt:
+                system_prompt += quality_instruction
+            else:
+                prompt += quality_instruction
+            clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+
+            async def call_openai():
+                return await openai_complete_if_cache(
+                    model=llm_model,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    base_url=llm_api_base,
+                    api_key=llm_api_key,
+                    token_tracker=graph_token_tracker,
+                    **clean_kwargs,
+                )
+
+            try:
+                return await _call_graph_llm_with_connection_retry(call_openai)
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "response_format" in err_msg or "invalid_request" in err_msg:
+                    for bad_key in ("response_format", "keyword_extraction"):
+                        clean_kwargs.pop(bad_key, None)
+                    return await _call_graph_llm_with_connection_retry(call_openai)
+                raise
+
+        # Per-provider limiter key. Prefixed "graph:" so graph-extraction
+        # capacity is tracked separately from the Node-side wiki/embed limiter
+        # (different call patterns), while still persisted to the shared file.
+        provider_key = f"graph:{llm_api_base.rstrip('/')}"
+        llm_func = wrap_llm_func(raw_llm_func, provider_key)
     else:
         async def llm_func(*args, **kwargs) -> str:
             return ""
@@ -462,7 +532,8 @@ async def index_document(
             progress = 40 + int((done / max(total, 1)) * 50)
             emit_progress("indexing", progress, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=done, total=total)
 
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=(index_mode == "graph"), on_progress=_report_index_progress)
+        force_serial = index_mode == "graph" and not should_bulk_insert_graph()
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
         emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
 
     if index_mode == "graph" and llm_api_base and llm_model:

@@ -1,4 +1,4 @@
-# 纯本地语义文档拆分架构：ONNX + bge-small-zh-v1.5
+# 纯本地语义文档拆分架构：ONNX + gte-multilingual-base
 
 ## 1. 设计目标
 
@@ -34,8 +34,8 @@ Phase 2: macro AST split (Node, ~10ms)
 Phase 3: local micro split (1 次 Python, ~4-6s)
   |-- Node 收集所有超限 macro chunk → 一次批量传给 Python
   |-- Python:
-  |     1. 加载 ONNX bge-small-zh-v1.5 模型 (一次性, ~1-2s)
-  |     2. encode all sentences → 512-dim vectors (~3ms/句)
+|     1. 加载 ONNX gte-multilingual-base 模型 (一次性, ~1-2s)
+|     2. encode all sentences → 768-dim vectors (~3ms/句)
   |     3. cosine similarity → 谷底检测 (sim < 0.55)
   |     4. jump-merge: 跳过孤立低相似度点 (约束 maxTokens)
   |     5. 返回每个 batch 的边界索引
@@ -86,17 +86,26 @@ const safeMaxTokens = chunkMaxTokens - BREADCRUMB_BUFFER;
 ## 4. 环境依赖
 
 ```
-Python requirements.txt 追加:
-  sentence-transformers>=4.0.0
-  optimum[onnxruntime]>=1.20.0
+Python requirements.txt:
+  onnxruntime>=1.20.0            # 直接加载 ONNX InferenceSession
+  transformers>=4.44.0           # 仅用 AutoTokenizer (XLM-RoBERTa)
 
 模型文件:
-  data/models/bge-small-zh-v1.5/  (gitignored)
+  data/models/gte-multilingual-base/  (gitignored)
+    config.json, model.onnx, quantize_config.json,
+    tokenizer.json, tokenizer_config.json
 
 环境变量:
   ORT_DISABLE_ALL=1
-  LOCAL_EMBED_MODEL_PATH=data/models/bge-small-zh-v1.5
+  LOCAL_EMBED_MODEL_PATH=data/models/gte-multilingual-base
+  LOCAL_EMBED_MAX_SEQ_LENGTH=8192
 ```
+
+> 注：GTE-multilingual-base 的 `model_type: "new"` 是 GTE 私有架构，
+> `sentence_transformers` 无法加载。`local_chunk.py` 的 `OnnxEmbedder`
+> 直接用 onnxruntime + transformers tokenizer 运行导出的 ONNX 图
+> （图内已内联 pooling → `sentence_embedding` 输出），无需
+> sentence-transformers / optimum。
 
 ## 5. 文件清单
 
@@ -126,7 +135,7 @@ src/__tests__/documents/outline/
 
 ```
 src/lib/documents/pipeline.ts      -- splitAndPersistChunks 接入新流水线
-workers/python/requirements.txt    -- 追加 sentence-transformers, optimum
+workers/python/requirements.txt    -- 追加 onnxruntime, transformers
 ```
 
 ### 删除

@@ -6,6 +6,24 @@ import {
 } from "@/lib/documents/processing-tasks";
 import type { ProcessingOptions } from "@/lib/queue/types";
 
+export function buildConvertTaskProgressUpdate(
+  event: Record<string, unknown>,
+  now = new Date(),
+): { progress: number; resultData: string } {
+  const rawProgress = typeof event.progress === "number" ? event.progress : 10;
+  const progress = Math.max(5, Math.min(99, rawProgress));
+  return {
+    progress,
+    resultData: JSON.stringify({
+      stage: typeof event.stage === "string" ? event.stage : "converting",
+      message: typeof event.message === "string" ? event.message : "Converting document",
+      processed: typeof event.processed === "number" ? event.processed : undefined,
+      total: typeof event.total === "number" ? event.total : undefined,
+      lastHeartbeatAt: now.toISOString(),
+    }),
+  };
+}
+
 export async function processDocumentConvert(
   taskId: string,
 ): Promise<{ ok: boolean; docId?: string; superseded?: boolean }> {
@@ -36,7 +54,12 @@ export async function processDocumentConvert(
   await assertLatestDocumentConvertTask(userId, docId, taskId);
 
   try {
-    await runPhaseOne(docId, options);
+    await runPhaseOne(docId, options, async (event) => {
+      await db.asyncTask.update({
+        where: { id: taskId },
+        data: buildConvertTaskProgressUpdate(event),
+      });
+    });
     return { ok: true, docId };
   } catch (error) {
     if (error instanceof SupersededDocumentProcessingTaskError) {

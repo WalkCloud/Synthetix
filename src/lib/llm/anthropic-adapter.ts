@@ -7,11 +7,18 @@ import type {
   ModelInfo,
 } from "./types";
 import type { ChatMessage } from "./types";
+import { computeBackoffMs, delay } from "./retry-after";
+import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
+import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 
 interface AdapterConfig {
   baseUrl: string;
   apiKey?: string;
+  /** Per-provider key for the adaptive limiter. Omit to disable (tests). */
+  providerKey?: string;
 }
+
+type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
 
 const FETCH_TIMEOUT_MS = 300_000;
 const STREAM_READ_TIMEOUT_MS = 120_000; // 2 min timeout per read
@@ -79,17 +86,61 @@ function splitSystemMessage(messages: ChatMessage[]): {
 export class AnthropicAdapter implements LLMProvider {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
+  /** Resolved lazily on first use so the constructor stays sync. */
+  private limiterPromise: Promise<AdaptiveLimiter | null> | null = null;
+  /** Cached after first await for sync access from the retry loop. */
+  private limiter: AdaptiveLimiter | null = null;
 
   constructor(config: AdapterConfig) {
     this.baseUrl = config.baseUrl;
     this.apiKey = config.apiKey;
+    if (config.providerKey) {
+      this.limiterPromise = getLimiter(config.providerKey).then((l) => {
+        this.limiter = l;
+        return l;
+      });
+    }
+  }
+
+  /** Same anti-thundering-herd hook as the OpenAI adapter. Best-effort. */
+  private notifyLimiterRateLimited(headers: Headers | null): void {
+    if (!this.limiter) return;
+    try {
+      const rateLimit = headers ? parseRateLimitHeaders(headers) : undefined;
+      void this.limiter.notifyRateLimited(rateLimit);
+    } catch (err) {
+      console.warn("[llm] failed to notify limiter of rate-limit:", err);
+    }
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
-    return this.chatWithRetry(params, 3);
+    const limiter = this.limiterPromise ? await this.limiterPromise : null;
+    const est = estimateMessagesTokens(params.messages) + (params.maxTokens ?? DEFAULT_MAX_TOKENS);
+    const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
+    const started = Date.now();
+    try {
+      const res = await this.chatWithRetry(params, 3);
+      if (release) {
+        void release({
+          status: 200,
+          actualTokens: res.inputTokens + res.outputTokens,
+          latencyMs: Date.now() - started,
+          rateLimit: res.rateLimit,
+        });
+      }
+      return res;
+    } catch (err) {
+      if (release) {
+        const is429 = err instanceof Error && /429|503|rate limit|overload/i.test(err.message);
+        void release(
+          is429 ? { status: 429, actualTokens: est, latencyMs: Date.now() - started } : undefined,
+        );
+      }
+      throw err;
+    }
   }
 
-  private async chatWithRetry(params: ChatParams, remaining: number): Promise<ChatResponse> {
+  private async chatWithRetry(params: ChatParams, remaining: number): Promise<ChatResponseWithRateLimit> {
     const url = buildMessagesUrl(this.baseUrl);
     const { system, messages } = splitSystemMessage(params.messages);
     const body: Record<string, unknown> = {
@@ -115,8 +166,7 @@ export class AnthropicAdapter implements LLMProvider {
       // Network failure / DNS error / timeout — retryable. A transient blip
       // must not sink a long-running multi-step pipeline.
       if (remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await delay(computeBackoffMs(null, remaining));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (network): ${err instanceof Error ? err.message : String(err)}`);
@@ -125,9 +175,11 @@ export class AnthropicAdapter implements LLMProvider {
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
       const retryable = response.status === 429 || response.status >= 500;
+      if (response.status === 429 || response.status === 503) {
+        this.notifyLimiterRateLimited(response.headers);
+      }
       if (retryable && remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
@@ -137,6 +189,7 @@ export class AnthropicAdapter implements LLMProvider {
       content?: Array<{ type: string; text?: string }>;
       usage?: { input_tokens?: number; output_tokens?: number };
       model?: string;
+      stop_reason?: string | null;
     };
 
     const content =
@@ -150,13 +203,40 @@ export class AnthropicAdapter implements LLMProvider {
       inputTokens: data.usage?.input_tokens ?? estimateMessagesTokens(params.messages),
       outputTokens: data.usage?.output_tokens ?? estimateTokens(content),
       model: data.model ?? params.model,
+      finishReason: data.stop_reason ?? undefined,
+      rateLimit: parseRateLimitHeaders(response.headers),
     };
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<ChatChunk> {
-    const generator = this.chatStreamWithRetry(params, 3);
-    for await (const chunk of generator) {
-      yield chunk;
+    const limiter = this.limiterPromise ? await this.limiterPromise : null;
+    const est = estimateMessagesTokens(params.messages) + (params.maxTokens ?? DEFAULT_MAX_TOKENS);
+    const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
+    const started = Date.now();
+    let lastInputTokens: number | undefined;
+    let lastOutputTokens: number | undefined;
+    let failed = false;
+    try {
+      const generator = this.chatStreamWithRetry(params, 3);
+      for await (const chunk of generator) {
+        if (chunk.inputTokens !== undefined) lastInputTokens = chunk.inputTokens;
+        if (chunk.outputTokens !== undefined) lastOutputTokens = chunk.outputTokens;
+        yield chunk;
+      }
+    } catch (err) {
+      failed = true;
+      if (release) {
+        const is429 = err instanceof Error && /429|503|rate limit|overload/i.test(err.message);
+        void release(
+          is429 ? { status: 429, actualTokens: est, latencyMs: Date.now() - started } : undefined,
+        );
+      }
+      throw err;
+    } finally {
+      if (release && !failed) {
+        const actual = (lastInputTokens ?? est) + (lastOutputTokens ?? 0);
+        void release({ status: 200, actualTokens: actual, latencyMs: Date.now() - started });
+      }
     }
   }
 
@@ -179,9 +259,12 @@ export class AnthropicAdapter implements LLMProvider {
     });
 
     if (!response.ok) {
-      if (response.status === 429 && remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+      const retryable = response.status === 429 || response.status >= 500;
+      if (response.status === 429 || response.status === 503) {
+        this.notifyLimiterRateLimited(response.headers);
+      }
+      if (retryable && remaining > 0) {
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;

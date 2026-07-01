@@ -13,11 +13,24 @@ import {
   buildModelsUrl,
   buildProviderHeaders,
 } from "./provider-endpoints";
+import { computeBackoffMs, delay } from "./retry-after";
+import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
+import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 
 interface AdapterConfig {
   baseUrl: string;
   apiKey?: string;
+  /**
+   * Per-provider key for the adaptive limiter (see adaptive-limiter.ts).
+   * When provided, chat/embed/chatStream acquire capacity before each call
+   * and release it with the response's rate-limit headers, so the limiter
+   * learns the provider's true ceiling. Omit to disable limiting (tests).
+   */
+  providerKey?: string;
 }
+
+type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
+type EmbedResponseWithRateLimit = EmbedResponse & { rateLimit?: RateLimitInfo };
 
 const FETCH_TIMEOUT_MS = 300_000;
 // Embedding requests are short, bounded calls (no streaming). A 5-min timeout
@@ -43,17 +56,71 @@ function estimateMessagesTokens(messages: ChatParams["messages"]): number {
 export class OpenAICompatibleAdapter implements LLMProvider {
   private readonly normalizedBase: string;
   private readonly apiKey?: string;
+  /** Resolved lazily on first use so the constructor stays sync. */
+  private limiterPromise: Promise<AdaptiveLimiter | null> | null = null;
+  /** Resolved limiter instance, cached after first await for sync access
+   *  from the retry loop (notifyRateLimited on a mid-retry 429). */
+  private limiter: AdaptiveLimiter | null = null;
 
   constructor(config: AdapterConfig) {
     this.normalizedBase = normalizeProviderBaseUrl(config.baseUrl);
     this.apiKey = config.apiKey;
+    if (config.providerKey) {
+      // Lazily fetch the shared limiter for this provider. Memoised so all
+      // calls on this adapter share one instance.
+      this.limiterPromise = getLimiter(config.providerKey).then((l) => {
+        this.limiter = l;
+        return l;
+      });
+    }
+  }
+
+  /**
+   * Notify the limiter of a 429/503 the instant we see it (inside the retry
+   * loop), so it can trigger single-flight cooldown for ALL callers on this
+   * provider before sibling requests pile into the same wall. This is the
+   * anti-thundering-herd / anti-ban measure. Best-effort: never throws.
+   */
+  private notifyLimiterRateLimited(headers: Headers | null): void {
+    if (!this.limiter) return;
+    try {
+      const rateLimit = headers ? parseRateLimitHeaders(headers) : undefined;
+      void this.limiter.notifyRateLimited(rateLimit);
+    } catch (err) {
+      console.warn("[llm] failed to notify limiter of rate-limit:", err);
+    }
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
-    return this.chatWithRetry(params, 3);
+    const limiter = this.limiterPromise ? await this.limiterPromise : null;
+    const est = estimateMessagesTokens(params.messages) + (params.maxTokens ?? 1024);
+    const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
+    const started = Date.now();
+    try {
+      const res = await this.chatWithRetry(params, 3);
+      // Feed the success outcome (status 200, real token counts) back to the
+      // limiter so it can grow the budget (slow-start / additive increase).
+      if (release) {
+        const actual = res.inputTokens + res.outputTokens;
+        void release({ status: 200, actualTokens: actual, latencyMs: Date.now() - started, rateLimit: res.rateLimit });
+      }
+      return res;
+    } catch (err) {
+      // On failure we still release capacity. If the failure was a 429 that
+      // exhausted retries, signal it so the limiter shrinks + cools down.
+      if (release) {
+        const is429 = err instanceof Error && /429|503|rate limit|overload/i.test(err.message);
+        void release(
+          is429
+            ? { status: 429, actualTokens: est, latencyMs: Date.now() - started }
+            : undefined,
+        );
+      }
+      throw err;
+    }
   }
 
-  private async chatWithRetry(params: ChatParams, remaining: number): Promise<ChatResponse> {
+  private async chatWithRetry(params: ChatParams, remaining: number): Promise<ChatResponseWithRateLimit> {
     const url = buildChatCompletionsUrl(this.normalizedBase);
     const body: Record<string, unknown> = {
       model: params.model,
@@ -76,8 +143,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       // embedWithRetry pattern: a transient network blip must not sink a
       // long-running multi-chunk pipeline (wiki synthesis, graph extraction).
       if (remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await delay(computeBackoffMs(null, remaining));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (network): ${err instanceof Error ? err.message : String(err)}`);
@@ -106,16 +172,24 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       }
 
       const retryable = response.status === 429 || response.status >= 500;
+      if (response.status === 429 || response.status === 503) {
+        // Notify the limiter IMMEDIATELY so sibling in-flight requests on the
+        // same provider enter single-flight cooldown (anti-thundering-herd),
+        // including the final failed attempt when no retry remains.
+        this.notifyLimiterRateLimited(response.headers);
+      }
       if (retryable && remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        // Honour the server's Retry-After if given — strict providers (Volcengine,
+        // some OpenAI proxies) ban clients that ignore it and retry on their own
+        // clock. Falls back to jittered exponential when no hint is present.
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
     }
 
     const data = (await response.json()) as {
-      choices: Array<{ message: { content: string; reasoning_content?: string } }>;
+      choices: Array<{ message: { content: string; reasoning_content?: string }; finish_reason?: string | null }>;
       usage: { prompt_tokens: number; completion_tokens: number };
       model: string;
     };
@@ -127,13 +201,40 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       inputTokens: data.usage?.prompt_tokens ?? estimateMessagesTokens(params.messages),
       outputTokens: data.usage?.completion_tokens ?? estimateTokens(content),
       model: data.model ?? params.model,
+      finishReason: data.choices[0]?.finish_reason ?? undefined,
+      rateLimit: parseRateLimitHeaders(response.headers),
     };
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<ChatChunk> {
-    const generator = this.chatStreamWithRetry(params, 3);
-    for await (const chunk of generator) {
-      yield chunk;
+    const limiter = this.limiterPromise ? await this.limiterPromise : null;
+    const est = estimateMessagesTokens(params.messages) + (params.maxTokens ?? 1024);
+    const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
+    const started = Date.now();
+    let lastInputTokens: number | undefined;
+    let lastOutputTokens: number | undefined;
+    let failed = false;
+    try {
+      const generator = this.chatStreamWithRetry(params, 3);
+      for await (const chunk of generator) {
+        if (chunk.inputTokens !== undefined) lastInputTokens = chunk.inputTokens;
+        if (chunk.outputTokens !== undefined) lastOutputTokens = chunk.outputTokens;
+        yield chunk;
+      }
+    } catch (err) {
+      failed = true;
+      if (release) {
+        const is429 = err instanceof Error && /429|503|rate limit|overload/i.test(err.message);
+        void release(
+          is429 ? { status: 429, actualTokens: est, latencyMs: Date.now() - started } : undefined,
+        );
+      }
+      throw err;
+    } finally {
+      if (release && !failed) {
+        const actual = (lastInputTokens ?? est) + (lastOutputTokens ?? 0);
+        void release({ status: 200, actualTokens: actual, latencyMs: Date.now() - started });
+      }
     }
   }
 
@@ -156,16 +257,42 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     });
 
     if (!response.ok) {
-      if (response.status === 429 && remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+      const errorText = await response.text().catch(() => "");
+
+      // Graceful degradation: mirror chatWithRetry's response_format fallback.
+      // Some providers/models reject `response_format` on the streaming endpoint
+      // too (e.g. Doubao/火山方舟 returns 400 "json_object is not supported by
+      // this model"). The non-stream chat() already retries without JSON mode;
+      // chatStream must do the same or outline generation (which streams) fails
+      // on these models even though wiki synthesis (non-stream) succeeds.
+      if (
+        response.status === 400 &&
+        params.response_format &&
+        /response_format/i.test(errorText) &&
+        remaining > 0
+      ) {
+        console.warn(`[llm] Model ${params.model} rejected response_format on stream; retrying without JSON mode.`);
+        const { response_format: _drop, ...rest } = params;
+        void _drop;
+        const retry = this.chatStreamWithRetry(rest as ChatParams, 0);
+        for await (const chunk of retry) {
+          yield chunk;
+        }
+        return;
+      }
+
+      const retryable = response.status === 429 || response.status >= 500;
+      if (response.status === 429 || response.status === 503) {
+        this.notifyLimiterRateLimited(response.headers);
+      }
+      if (retryable && remaining > 0) {
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;
         }
         return;
       }
-      const errorText = await response.text().catch(() => "");
       throw new Error(`Chat stream request failed (${response.status}): ${errorText || response.statusText}`);
     }
 
@@ -258,7 +385,30 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   }
 
   async embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse> {
-    return this.embedWithRetry(texts, model, dimensions, 3);
+    const limiter = this.limiterPromise ? await this.limiterPromise : null;
+    const est = estimateTokens(texts.join("\n")) + 64;
+    const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
+    const started = Date.now();
+    try {
+      const res = await this.embedWithRetry(texts, model, dimensions, 3);
+      if (release) {
+        void release({
+          status: 200,
+          actualTokens: res.inputTokens || est,
+          latencyMs: Date.now() - started,
+          rateLimit: res.rateLimit,
+        });
+      }
+      return res;
+    } catch (err) {
+      if (release) {
+        const is429 = err instanceof Error && /429|503|rate limit|overload/i.test(err.message);
+        void release(
+          is429 ? { status: 429, actualTokens: est, latencyMs: Date.now() - started } : undefined,
+        );
+      }
+      throw err;
+    }
   }
 
   private async embedWithRetry(
@@ -266,7 +416,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     model: string | undefined,
     dimensions: number | undefined,
     remaining: number,
-  ): Promise<EmbedResponse> {
+  ): Promise<EmbedResponseWithRateLimit> {
     const url = buildEmbeddingsUrl(this.normalizedBase);
     const body: Record<string, unknown> = { input: texts, model: model || "text-embedding" };
     if (dimensions) body.dimensions = dimensions;
@@ -282,8 +432,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       // Network failure / timeout — retryable. A single dropped connection must
       // not sink the whole rag_embed_index batch and force a full re-embed.
       if (remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await delay(computeBackoffMs(null, remaining));
         return this.embedWithRetry(texts, model, dimensions, remaining - 1);
       }
       throw new Error(`Embed request failed (network): ${err instanceof Error ? err.message : String(err)}`);
@@ -291,9 +440,11 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
     if (!response.ok) {
       const retryable = response.status === 429 || response.status >= 500;
+      if (response.status === 429 || response.status === 503) {
+        this.notifyLimiterRateLimited(response.headers);
+      }
       if (retryable && remaining > 0) {
-        const delay = Math.pow(2, 4 - remaining) * 1000; // 2s, 4s, 8s
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
         return this.embedWithRetry(texts, model, dimensions, remaining - 1);
       }
       const errorText = await response.text().catch(() => "");
@@ -308,6 +459,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     return {
       embeddings: data.data.map((item) => item.embedding),
       inputTokens: data.usage?.prompt_tokens ?? estimateTokens(texts.join("\n")),
+      rateLimit: parseRateLimitHeaders(response.headers),
     };
   }
 

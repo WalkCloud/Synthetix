@@ -22,6 +22,7 @@ vi.mock("@/lib/queue", () => ({
 vi.mock("@/lib/documents/processing-tasks", () => ({
   cancelActiveDocumentConvertTasks: () => Promise.resolve(),
   cancelActiveRagEmbedIndexTasks: () => Promise.resolve(),
+  cancelActiveFollowupTasks: () => Promise.resolve(),
   waitForDocActiveTasksToSettle: () => Promise.resolve(),
 }));
 

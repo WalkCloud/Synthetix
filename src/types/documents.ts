@@ -47,6 +47,12 @@ export interface DocumentMeta {
   conversionWarning?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Total processing duration in milliseconds, from the earliest processing
+   * task (convert) to the latest completed task. null while still processing
+   * or if no processing tasks exist. Only present on detail responses.
+   */
+  processingDurationMs?: number | null;
   chunks?: ChunkMeta[];
   tags?: TagMeta[];
   /**

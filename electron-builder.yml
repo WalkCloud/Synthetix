@@ -108,8 +108,10 @@ nsis:
   shortcutName: Synthetix
   uninstallDisplayName: Synthetix
 
-# Compression: maximum to shrink the 1.4GB CPython payload.
-compression: maximum
+# Compression: normal (not maximum). Maximum compresses slightly smaller but
+# significantly slows install extraction for large payloads. Normal is the
+# recommended default — install speed matters more than a few MB of size.
+compression: normal
 
 # Do NOT rebuild native modules for Electron's ABI. The bundled Next.js app
 # runs as a standalone node process (spawned by the main process), not inside

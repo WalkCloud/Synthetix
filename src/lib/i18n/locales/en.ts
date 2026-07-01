@@ -315,6 +315,9 @@ const en = {
     batchDeleteConfirm: "Delete {count} selected documents and all their chunks?",
     deleteWikiPrompt: "Also delete the Wiki entries distilled from this document?\nClick OK to delete, Cancel to keep them.",
     batchDeleteWikiPrompt: "Also delete the Wiki entries distilled from these documents?\nClick OK to delete, Cancel to keep them.",
+    keepWiki: "Keep document only",
+    deleteAll: "Delete all",
+    deleting: "Deleting...",
     reindex: "Re-index",
     viewDocument: "View full document",
     detail: {
@@ -339,6 +342,8 @@ const en = {
       documentDetails: "Document Details",
       conversionMethod: "Conversion Method",
       uploadedAgo: "Uploaded {time} ago",
+      processingTime: "Processing Time",
+      processingInProgress: "Processing",
       overview: "Overview",
       format: "Format",
       size: "Size",
