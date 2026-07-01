@@ -165,7 +165,9 @@ export function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white dark:bg-sidebar border-r flex flex-col z-50">
-      <div className="h-16 shrink-0 flex items-center gap-3 px-6 border-b border-border">
+      {/* Top brand block doubles as the window drag handle (titleBarStyle:hidden
+          overlay mode). The Image/h1 are non-interactive so the whole bar drags. */}
+      <div className="app-drag h-16 shrink-0 flex items-center gap-3 px-6 border-b border-border">
         <Image
           src="/logo.png"
           alt="Synthetix"

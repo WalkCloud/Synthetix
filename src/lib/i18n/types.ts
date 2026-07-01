@@ -308,6 +308,9 @@ export type TranslationSchema = {
     batchDeleteConfirm: string;
     deleteWikiPrompt: string;
     batchDeleteWikiPrompt: string;
+    keepWiki: string;
+    deleteAll: string;
+    deleting: string;
     reindex: string;
     viewDocument: string;
     detail: {
@@ -332,6 +335,8 @@ export type TranslationSchema = {
       documentDetails: string;
       conversionMethod: string;
       uploadedAgo: string;
+      processingTime: string;
+      processingInProgress: string;
       overview: string;
       format: string;
       size: string;

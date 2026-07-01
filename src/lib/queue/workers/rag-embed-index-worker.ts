@@ -65,11 +65,15 @@ export async function processRagEmbedIndex(
     });
 
     // ── 3. Wiki synthesis — submit EARLY, parallel to graph/basic ────────────
-    // Wiki reads ONLY DB chunk rows (content/index/title), never embeddings,
-    // FTS, or LightRAG. It is therefore ready to run the instant embedding's
-    // oversize-chunk re-split has finalized the chunk table. Submitting it
-    // here — before the long graph/basic phase — means distilled knowledge
-    // appears in parallel with graph extraction instead of after it.
+    // Wiki is NO LONGER submitted here. It used to run in parallel with
+    // document_segment, but that meant wiki started before segments existed and
+    // fell back to processing raw chunks (40 small units → ~195 fragmented
+    // entries). Now wiki is submitted by the document_segment worker AFTER
+    // segmentation succeeds, so wiki always uses the larger, coherent segments
+    // (9 units → ~30-50 complete entries). Wiki's startup is delayed by the
+    // segmentation duration (~6 min), but quality improves dramatically.
+    // If segmentation is disabled/unsupported, the segment worker's failure
+    // path still submits wiki (falling back to chunks) so wiki is never skipped.
     if (shouldEnqueueWikiSynthesis(ctx.options)) {
       const stillExists = await db.document.findUnique({
         where: { id: ctx.docId },
@@ -77,12 +81,9 @@ export async function processRagEmbedIndex(
       });
       if (stillExists) {
         const { getQueue } = await import("@/lib/queue");
-        await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
-        // LLM-guided domain segmentation runs in parallel with wiki. It produces
-        // DocumentSegment[] (Wiki's preferred input + Graph's contextual-prefix
-        // source). Wiki starts on chunks immediately and does NOT wait for it;
-        // if segments finish first they improve quality on future reprocess.
-        // Skip for tiny docs (no segmentation benefit) — threshold ~ a few atoms.
+        // LLM-guided domain segmentation runs now. On success it submits
+        // wiki_synthesize (so wiki reads segments, not chunks). On failure it
+        // submits wiki_synthesize anyway (chunk fallback).
         await getQueue().submit("document_segment", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
       }
     }

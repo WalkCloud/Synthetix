@@ -10,10 +10,84 @@
 
 import { db } from "@/lib/db";
 import { tokenizeChinese } from "@/lib/search/tokenizer";
+import type { LLMProvider } from "@/lib/llm/types";
 import type { WikiEntryView, WikiSourceRef } from "@/lib/wiki/types";
 
 /** Default cap on how many Wiki entries to inject into a section's context. */
 export const DEFAULT_WIKI_QUERY_LIMIT = 5;
+
+/**
+ * Whether LLM-based query rewriting is enabled for Wiki retrieval. MemoRAG-style
+ * "memory-guided retrieval": rewrite the section query into Wiki-title-aligned
+ * search terms so semantically-related entries that don't keyword-match the raw
+ * query can still be recalled by the SQL LIKE path. Off = pure tokenized SQL
+ * (the original behavior). Default on.
+ */
+const WIKI_QUERY_REWRITE_ENABLED = process.env.WIKI_QUERY_REWRITE !== "off";
+
+/** Prompt that turns a section brief into Wiki-title-aligned search terms. */
+const WIKI_REWRITE_PROMPT = `You expand a writing-section brief into search terms that would match a knowledge-wiki's entry titles and content.
+
+Given the document title, section title, description, and key points, output 5-8 concise search terms (keywords, synonyms, hypernyms, related concepts) most likely to appear in a wiki entry title or body about this topic. Favor noun phrases and domain terminology over full sentences.
+
+Rules:
+- Output ONLY a JSON object: {"terms": ["term1", "term2", ...]}
+- 5-8 terms, each 1-4 words, deduplicated
+- Match the language of the input (Chinese input → Chinese terms)
+- Do NOT invent facts; only broaden/align the existing query vocabulary`;
+
+/**
+ * Use an LLM to rewrite a section brief into Wiki-title-aligned search terms.
+ *
+ * This is the "memory-guided retrieval" step borrowed from MemoRAG: instead of
+ * feeding the raw section text to the SQL LIKE matcher (which misses entries
+ * whose wording differs from the query), we ask the LLM for the vocabulary a
+ * Wiki entry on this topic would actually use. The returned terms are merged
+ * with the tokenizer's terms in {@link queryWikiForSection}.
+ *
+ * Non-blocking: on any failure (LLM error, bad JSON, timeout) returns an empty
+ * array so the caller falls back to tokenized-only matching.
+ */
+export async function rewriteWikiQuery(
+  section: { title: string; description?: string | null; keyPoints?: string | null },
+  draftTitle: string,
+  provider: LLMProvider,
+  modelId: string,
+  retrievalQuery?: string | null,
+): Promise<string[]> {
+  if (!WIKI_QUERY_REWRITE_ENABLED) return [];
+
+  const context = [
+    `Document: ${draftTitle}`,
+    section.title && `Section: ${section.title}`,
+    section.description && `Scope: ${section.description}`,
+    section.keyPoints && `Key points: ${section.keyPoints}`,
+    retrievalQuery && `Retrieval intent: ${retrievalQuery}`,
+  ].filter(Boolean).join("\n");
+
+  try {
+    const response = await provider.chat({
+      model: modelId,
+      messages: [
+        { role: "system", content: WIKI_REWRITE_PROMPT },
+        { role: "user", content: context },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0,
+    });
+    const parsed = JSON.parse(response.content.trim()) as Record<string, unknown>;
+    const terms = parsed.terms;
+    if (!Array.isArray(terms)) return [];
+    return terms
+      .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+      .map((t) => t.trim())
+      .slice(0, 12);
+  } catch {
+    // Wiki is a pure enhancement — never block on the rewrite.
+    return [];
+  }
+}
+
 
 /**
  * Find Wiki entries relevant to a section being generated.
@@ -32,18 +106,29 @@ export async function queryWikiForSection(
   userId: string,
   retrievalQuery?: string | null,
   limit = DEFAULT_WIKI_QUERY_LIMIT,
+  rewrittenTerms?: string[],
 ): Promise<WikiEntryView[]> {
   const queryText = buildQueryText(section, draftTitle, retrievalQuery);
-  if (!queryText.trim()) return [];
+  if (!queryText.trim() && (!rewrittenTerms || rewrittenTerms.length === 0)) return [];
 
-  const terms = extractSearchTerms(queryText);
-  if (terms.length === 0) return [];
+  const tokenizedTerms = extractSearchTerms(queryText);
+  // Dedupe rewritten vs tokenized (case-insensitive). Rewritten terms that
+  // overlap with tokenized ones are dropped from the rewritten set so they
+  // don't get double-weighted; they keep their (higher) rewritten weight.
+  const rewrittenLower = new Set(tokenizedTerms.map((t) => t.toLowerCase()));
+  const uniqueRewritten = (rewrittenTerms ?? []).filter(
+    (t) => t.trim() && !rewrittenLower.has(t.trim().toLowerCase()),
+  );
+
+  // All terms (for the SQL OR clause) — deduped, capped.
+  const allTerms = [...tokenizedTerms, ...uniqueRewritten].slice(0, 30);
+  if (allTerms.length === 0) return [];
 
   // Build OR conditions for each term against title + content.
   // SQLite LIKE is case-insensitive for ASCII by default; for CJK we rely on
-  // substring match (each CJK char is its own token).
-  const titleConditions = terms.map((t) => ({ title: { contains: t } }));
-  const contentConditions = terms.map((t) => ({ content: { contains: t } }));
+  // substring match (each multi-char CJK token is its own unit).
+  const titleConditions = allTerms.map((t) => ({ title: { contains: t } }));
+  const contentConditions = allTerms.map((t) => ({ content: { contains: t } }));
 
   const entries = await db.wikiEntry.findMany({
     where: {
@@ -60,24 +145,34 @@ export async function queryWikiForSection(
 
   if (entries.length === 0) return [];
 
-  // Score: title matches weigh 3x content matches; confidence is a multiplier.
+  // Score with source-aware weighting:
+  //   - title match > content match (3x vs 1x), as before
+  //   - LLM-rewritten terms weigh 2x tokenized terms: they are deliberately
+  //     chosen to align with wiki vocabulary, so a hit on a rewritten term is
+  //     a stronger relevance signal than a generic tokenized word.
+  //   - confidence is a multiplier so high-confidence entries surface first.
+  // A minimum raw score (before confidence) of 2 is required — this filters
+  // out entries that match only a single tokenized term in content (score 1),
+  // which was the main source of irrelevant noise.
+  const MIN_RELEVANCE_SCORE = 2;
+  const rewrittenSet = new Set(uniqueRewritten.map((t) => t.toLowerCase()));
   const scored = entries.map((e) => {
-    let score = 0;
+    let rawScore = 0;
     const titleLower = e.title.toLowerCase();
     const contentLower = e.content.toLowerCase();
-    for (const term of terms) {
+    for (const term of allTerms) {
       const tl = term.toLowerCase();
-      if (titleLower.includes(tl)) score += 3;
-      if (contentLower.includes(tl)) score += 1;
+      const weight = rewrittenSet.has(tl) ? 2 : 1;
+      if (titleLower.includes(tl)) rawScore += 3 * weight;
+      if (contentLower.includes(tl)) rawScore += 1 * weight;
     }
-    // Normalize by confidence so high-confidence entries surface first
-    score *= 0.5 + e.confidence * 0.5;
-    return { entry: e, score };
+    return { entry: e, rawScore, score: rawScore * (0.5 + e.confidence * 0.5) };
   });
 
   scored.sort((a, b) => b.score - a.score);
 
   return scored
+    .filter((s) => s.rawScore >= MIN_RELEVANCE_SCORE)
     .slice(0, limit)
     .filter((s) => s.score > 0)
     .map((s) => toView(s.entry));
@@ -214,13 +309,22 @@ export async function getWikiStats(userId: string): Promise<{
 
 // ---- helpers ----
 
+/**
+ * Build the text used to derive search terms for a section.
+ *
+ * IMPORTANT: the draft (document) title is deliberately EXCLUDED. An earlier
+ * version concatenated it, but a generic doc title like "企业管理系统设计文档"
+ * injects terms ("企业", "管理", "系统", "设计", "文档") that match almost
+ * every wiki entry and drown out the section's own relevance signal. Wiki
+ * entries describe distilled knowledge about a TOPIC, so only the section's
+ * title/scope/key-points/retrieval-intent are relevant for matching.
+ */
 function buildQueryText(
   section: { title: string; description?: string | null; keyPoints?: string | null },
-  draftTitle: string,
+  _draftTitle: string,
   retrievalQuery?: string | null,
 ): string {
   const parts = [
-    draftTitle,
     section.title,
     section.description,
     section.keyPoints,
@@ -233,6 +337,13 @@ function buildQueryText(
  * Extract search terms using the same jieba tokenizer as FTS (ensures CJK
  * is segmented consistently with the rest of the search pipeline).
  * Dedupes + drops trivially short tokens.
+ *
+ * NOTE: single CJK characters are intentionally NOT added as standalone terms.
+ * An earlier version emitted every CJK char in the query text, which made
+ * `content LIKE '%的%'` / `LIKE '%设%'` match almost every wiki entry and
+ * flooded results with irrelevant noise. Only multi-character tokens (jieba
+ * words or latin terms ≥2 chars) are kept — this keeps the LIKE clauses
+ * selective enough to recall genuinely relevant entries.
  */
 function extractSearchTerms(text: string): string[] {
   // tokenizeChinese returns a space-joined string of jieba-cut tokens.
@@ -242,20 +353,10 @@ function extractSearchTerms(text: string): string[] {
   const out: string[] = [];
   for (const tok of tokens) {
     const t = tok.trim();
-    if (t.length < 2) continue; // skip single chars (unless CJK — handled below)
+    if (t.length < 2) continue; // single chars (latin or CJK) are too noisy
     if (seen.has(t.toLowerCase())) continue;
     seen.add(t.toLowerCase());
     out.push(t);
-  }
-  // Also include individual CJK chars (each is meaningful for substring match)
-  const cjk = text.match(/[\u4e00-\u9fff]/g);
-  if (cjk) {
-    for (const ch of [...new Set(cjk)]) {
-      if (!seen.has(ch)) {
-        seen.add(ch);
-        out.push(ch);
-      }
-    }
   }
   return out.slice(0, 20); // cap terms to avoid huge OR clause
 }

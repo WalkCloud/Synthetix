@@ -6,11 +6,12 @@ import { Header } from "@/components/layout/header";
 import type { DocumentMeta } from "@/types/documents";
 import { StatsRibbon } from "@/components/library/stats-ribbon";
 import { DocumentTable } from "@/components/library/document-table";
+import { DeleteDocumentDialog } from "@/components/documents/delete-document-dialog";
 import { useLocale } from "@/lib/i18n";
 
 export default function LibraryPage() {
   const router = useRouter();
-  const { t, format, locale } = useLocale();
+  const { t, format } = useLocale();
 
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [total, setTotal] = useState(0);
@@ -21,6 +22,17 @@ export default function LibraryPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [quickSearch, setQuickSearch] = useState("");
   const limit = 20;
+
+  // 删除确认对话框状态（替代原生 confirm）
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    docId?: string;
+    documentName?: string;
+    batch?: boolean;
+    count?: number;
+    ids?: string[];
+  }>({ open: false });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchDocs = useCallback(async (p: number) => {
     setLoading(true);
@@ -53,49 +65,50 @@ export default function LibraryPage() {
     return () => clearInterval(interval);
   }, [documents, page, fetchDocs]);
 
-  async function handleDelete(docId: string) {
-    if (!confirm(t.library.deleteConfirm)) return;
-    // Ask whether to also delete the document's Wiki entries
-    const isZh = locale === "zh-CN";
-    const deleteWiki = confirm(
-      isZh
-        ? "是否同时删除该文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。"
-        : "Also delete the Wiki entries distilled from this document?\nClick OK to delete, Cancel to keep them."
-    );
+  // 打开单文档删除确认对话框（实际删除在 handleConfirmDelete 里执行）
+  function handleDelete(docId: string) {
+    const doc = documents.find((d) => d.id === docId);
+    setDeleteDialog({ open: true, docId, documentName: doc?.originalName });
+  }
+
+  // 打开批量删除确认对话框
+  function handleBatchDelete(ids: string[]) {
+    setDeleteDialog({ open: true, batch: true, count: ids.length, ids });
+  }
+
+  // 对话框确认回调：deleteWiki=true 彻底删除，false 仅删文档保留 Wiki
+  async function handleConfirmDelete(deleteWiki: boolean) {
+    const { docId, batch, ids } = deleteDialog;
+    if (!docId && !batch) return;
+    setDeleting(true);
     try {
-      const res = await fetch(`/api/v1/documents/${docId}?deleteWiki=${deleteWiki}`, { method: "DELETE" });
-      if (!res.ok) return;
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-      if (data.success) {
-        setDocuments((prev) => prev.filter((d) => d.id !== docId));
-        setTotal((prev) => prev - 1);
+      if (batch && ids) {
+        const res = await fetch("/api/v1/documents/batch", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, deleteWiki }),
+        });
+        if (res.ok) {
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          if (data.success) fetchDocs(page);
+        }
+      } else if (docId) {
+        const res = await fetch(`/api/v1/documents/${docId}?deleteWiki=${deleteWiki}`, { method: "DELETE" });
+        if (res.ok) {
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          if (data.success) {
+            setDocuments((prev) => prev.filter((d) => d.id !== docId));
+            setTotal((prev) => prev - 1);
+          }
+        }
       }
     } catch (e) {
       console.error("Delete failed:", e);
-    }
-  }
-
-  async function handleBatchDelete(ids: string[]) {
-    if (!confirm(format.template(t.library.batchDeleteConfirm, { count: ids.length }))) return;
-    const isZh = locale === "zh-CN";
-    const deleteWiki = confirm(
-      isZh
-        ? "是否同时删除这些文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。"
-        : "Also delete the Wiki entries distilled from these documents?\nClick OK to delete, Cancel to keep them."
-    );
-    try {
-      const res = await fetch("/api/v1/documents/batch", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, deleteWiki }),
-      });
-      if (!res.ok) return;
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-      if (data.success) fetchDocs(page);
-    } catch (e) {
-      console.error("Batch delete failed:", e);
+    } finally {
+      setDeleting(false);
+      setDeleteDialog({ open: false });
     }
   }
 
@@ -165,6 +178,16 @@ export default function LibraryPage() {
           </div>
         )}
       </div>
+
+      <DeleteDocumentDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => !deleting && setDeleteDialog((prev) => ({ ...prev, open }))}
+        documentName={deleteDialog.documentName}
+        batch={deleteDialog.batch}
+        count={deleteDialog.count}
+        deleting={deleting}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

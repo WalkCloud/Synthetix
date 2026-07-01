@@ -174,7 +174,7 @@ UI 提供：
 1. `sanitizeMarkdown` 清理 Markdown。
 2. `splitByMacroAST` 识别标题、纯文本标题、代码块、表格等宏观结构。
 3. `coalesceMacroChunks` 合并过小相邻块。
-4. `microSplitByLocalSemantic` 调用 `workers/python/local_chunk.py`，使用本地 ONNX `bge-small-zh-v1.5` 对句子做相似度边界检测。
+4. `microSplitByLocalSemantic` 调用 `workers/python/local_chunk.py`，使用本地 ONNX `gte-multilingual-base` 对句子做相似度边界检测。
 5. `injectBreadcrumbs` 注入标题路径。
 6. `enforceEmbeddingSafeChunks` 保证 embedding 安全。
 

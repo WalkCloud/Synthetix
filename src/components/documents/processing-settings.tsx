@@ -159,10 +159,11 @@ export function ProcessingSettings({
     : (knowledgeMode === "graph" || knowledgeMode === "full" ? "wiki" : knowledgeMode);
   // The full data for the selected mode — drives the detail panel.
   const selectedModeData = modes.find((m) => m.key === effectiveMode) ?? null;
-  // The detail panel only appears AFTER the user clicks a card, not on initial
-  // load. Reset whenever the selected mode changes so the panel always reflects
-  // the latest click.
-  const [detailVisible, setDetailVisible] = useState(false);
+  // The detail panel is visible by default so the pre-selected mode (Full
+  // analysis) shows its explanation on first load — matching the expectation
+  // that a selected card has an active tip. Clicking any (other) card keeps it
+  // visible and updates the tip to that card.
+  const [detailVisible, setDetailVisible] = useState(true);
 
   return (
     <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">

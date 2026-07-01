@@ -5,6 +5,7 @@ import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
 import { waitForDocActiveTasksToSettle } from "@/lib/documents/processing-tasks";
+import { deleteEntriesForDocument } from "@/lib/wiki/query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
 // chunk triggers an LLM call. We must let the in-flight Python subprocess exit
@@ -89,6 +90,18 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     }
 
     await deps.deleteDocumentFiles(userId, docId);
+
+    // Wiki orphan cleanup (always runs): even when the DELETE request did NOT
+    // pass deleteWiki=true (e.g. user dismissed the confirm prompt), a deleted
+    // document leaves dangling Wiki entries whose source_refs point at a doc
+    // that no longer exists. This removes those references (and deletes any
+    // entry whose only source was this doc), keeping the Wiki consistent with
+    // the document set. Mirrors the RAG orphan cleanup below.
+    try {
+      await deleteEntriesForDocument(userId, docId);
+    } catch (error) {
+      issues.push("Wiki orphan cleanup skipped: " + (error instanceof Error ? error.message : String(error)));
+    }
 
     const remaining = await deps.countDocuments(userId);
     if (remaining === 0) {

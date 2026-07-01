@@ -2,7 +2,7 @@ import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
-import { queryWikiForSection } from "@/lib/wiki/query";
+import { queryWikiForSection, rewriteWikiQuery } from "@/lib/wiki/query";
 import {
   assembleContext,
   type ContextInput,
@@ -99,14 +99,29 @@ async function fetchWikiContext(
   draftTitle: string,
   section: ContextInput["section"] & { constraints?: string | null },
   userId: string,
+  provider: ReturnType<typeof createLLMProvider>,
+  modelId: string,
 ): Promise<{ entries: NonNullable<ContextInput["wikiEntries"]>; usedEntryIds: string[] }> {
   try {
     const hidden = parseSectionConstraints(section.constraints);
+    // MemoRAG-style memory-guided retrieval: rewrite the section brief into
+    // Wiki-title-aligned search terms so semantically-related entries that
+    // don't keyword-match the raw query can be recalled. Non-blocking: an
+    // empty array on failure falls back to tokenized-only matching.
+    const rewrittenTerms = await rewriteWikiQuery(
+      section,
+      draftTitle,
+      provider,
+      modelId,
+      hidden.retrievalQuery,
+    );
     const entries = await queryWikiForSection(
       section,
       draftTitle,
       userId,
       hidden.retrievalQuery,
+      undefined,
+      rewrittenTerms,
     );
     return {
       entries: entries.map((e) => ({
@@ -245,7 +260,7 @@ export async function generateSectionFull(
   // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
   // has good coverage, halve the raw RAG limit — we already have synthesized
   // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId);
+  const wiki = await fetchWikiContext(draft.title, section, userId, provider, modelId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,
@@ -365,7 +380,7 @@ export async function generateSectionStream(
   // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
   // has good coverage, halve the raw RAG limit — we already have synthesized
   // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId);
+  const wiki = await fetchWikiContext(draft.title, section, userId, provider, modelId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,

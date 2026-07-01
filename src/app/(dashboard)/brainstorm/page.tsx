@@ -294,8 +294,11 @@ export default function BrainstormPage() {
 
             {/* Outline model selector — picks the chat model used to generate
                 the outline. Hidden while editing the outline (no generation
-                happens then) and when no session is active. "Auto Default"
-                (empty value) defers to the user's configured default chat model. */}
+                happens then) and when no session is active. Empty value defers
+                to the user's configured default chat model; the trigger shows
+                that model's real name with a localized "default" suffix instead
+                of a vague "auto" label so the user always knows which model
+                will run. */}
             {sess.activeId && !outline.editing && (
               <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-4 py-2.5 dark:bg-background/35">
                 <label className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -307,16 +310,34 @@ export default function BrainstormPage() {
                 >
                   <SelectTrigger size="sm" className="h-8 flex-1 bg-card text-[13px]">
                     <SelectValue>
-                      {outline.selectedModelId
-                        ? outline.chatModels.find((m) => m.id === outline.selectedModelId)?.modelName || outline.selectedModelId
-                        : t.brainstorm.outlinePanel.modelAutoDefault}
+                      {(() => {
+                        // Empty value = use default. Show the default model's
+                        // real name with the localized "default" suffix so the
+                        // user knows what will run. Fall back to the generic
+                        // label only when no model is flagged as default.
+                        const id = outline.selectedModelId;
+                        if (id) {
+                          return outline.chatModels.find((m) => m.id === id)?.modelName || id;
+                        }
+                        const def = outline.chatModels.find((m) => m.id === outline.defaultModelId);
+                        return def
+                          ? `${def.modelName}（${t.models.models.isDefault}）`
+                          : t.brainstorm.outlinePanel.modelAutoDefault;
+                      })()}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">{t.brainstorm.outlinePanel.modelAutoDefault}</SelectItem>
-                    {outline.chatModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>
-                    ))}
+                    {outline.defaultModelId && (
+                      <SelectItem value="auto">
+                        {outline.chatModels.find((m) => m.id === outline.defaultModelId)?.modelName}
+                        （{t.models.models.isDefault}）
+                      </SelectItem>
+                    )}
+                    {outline.chatModels
+                      .filter((m) => m.id !== outline.defaultModelId)
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

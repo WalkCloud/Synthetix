@@ -313,6 +313,9 @@ const zhCN = {
     batchDeleteConfirm: "确定删除 {count} 个选中文档及其所有分块？",
     deleteWikiPrompt: "是否同时删除该文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。",
     batchDeleteWikiPrompt: "是否同时删除这些文档提炼出的知识条目？\n点击确定删除知识条目，点击取消保留。",
+    keepWiki: "仅删文档，保留知识",
+    deleteAll: "彻底删除",
+    deleting: "删除中...",
     reindex: "重建索引",
     viewDocument: "查看完整文档",
     detail: {
@@ -337,6 +340,8 @@ const zhCN = {
       documentDetails: "文档详情",
       conversionMethod: "转换方式",
       uploadedAgo: "{time}前上传",
+      processingTime: "处理时间",
+      processingInProgress: "处理中",
       overview: "概览",
       format: "格式",
       size: "大小",

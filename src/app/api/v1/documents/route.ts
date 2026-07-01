@@ -36,7 +36,16 @@ export async function GET(request: Request) {
 
   const where: Record<string, unknown> = { userId: user.id };
   const status = searchParams.get("status");
-  if (status) where.status = status;
+  // A document is "pending" between upload and Start-Processing: the file is
+  // persisted but the user hasn't kicked off the pipeline. Hide pending from the
+  // default list (kept consistent with the library route) unless the caller
+  // explicitly asks for it. This keeps the dashboard/recent-docs counts and the
+  // library list in sync.
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = { not: "pending" };
+  }
   const format = searchParams.get("format");
   if (format) where.originalFormat = format;
 

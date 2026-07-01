@@ -403,13 +403,38 @@ function stageColor(status: PipelineStageStatus): string {
 
 function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitchTab }: OverviewTabProps) {
   const chunks = chunksRaw ?? [];
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  // Prefer displayStatus (pipeline-derived: distinguishes "enhancing" while
+  // graph/wiki branches still run from a true "ready"). Falls back to the raw
+  // doc.status for legacy docs without a computed pipeline.
+  const effectiveStatus = doc.displayStatus ?? doc.status;
   const statusLabel = (status: string) =>
     status === "ready" ? t.common.states.ready
     : status === "failed" ? t.common.states.failed
+    : status === "enhancing" ? t.common.states.enhancing
+    : status === "processing" ? t.common.states.processing
     : status === "indexing_graph" ? t.common.states.indexingGraph
     : status === "pending" ? t.common.states.pending
     : status;
+
+  // Format processing duration (ms) → "10分30秒" / "1h 5m 20s". null/undefined
+  // while still processing shows "处理中". Falls back to "—" when no data.
+  const formatDuration = (ms: number | null | undefined): string => {
+    if (ms == null || ms <= 0) return "—";
+    const totalSec = Math.round(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const zh = locale === "zh-CN";
+    if (zh) {
+      if (h > 0) return `${h}时${m}分`;
+      if (m > 0) return `${m}分${s}秒`;
+      return `${s}秒`;
+    }
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
 
   return (
     <div className="space-y-8">
@@ -445,8 +470,8 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
           <DetailField label={td.size} value={format.fileSize(doc.originalSize)} />
           <DetailField
             label={td.status}
-            value={statusLabel(doc.status)}
-            tone={doc.status === "ready" ? "success" : doc.status === "failed" ? "danger" : doc.status === "pending" ? undefined : "warning"}
+            value={statusLabel(effectiveStatus)}
+            tone={effectiveStatus === "ready" ? "success" : effectiveStatus === "failed" ? "danger" : effectiveStatus === "pending" ? undefined : "warning"}
           />
           <DetailField label={td.uploaded} value={format.relativeTime(doc.createdAt)} />
           {doc.wordCount != null && <DetailField label={td.words} value={format.number(doc.wordCount)} />}
@@ -455,6 +480,11 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
           {totalTokens > 0 && <DetailField label={`Tokens (${td.chunks.toLowerCase()})`} value={format.number(totalTokens)} />}
           {doc.conversionMethod && <DetailField label={td.conversionMethod} value={doc.conversionMethod} />}
           {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "..."} />}
+          {doc.processingDurationMs != null && effectiveStatus === "ready" ? (
+            <DetailField label={td.processingTime} value={formatDuration(doc.processingDurationMs)} />
+          ) : effectiveStatus !== "ready" && effectiveStatus !== "pending" ? (
+            <DetailField label={td.processingTime} value={td.processingInProgress} tone="warning" />
+          ) : null}
 
           {/* Knowledge distillation - integrated as a document property */}
           {doc.status === "ready" && <WikiPrecipField documentId={doc.id} />}
