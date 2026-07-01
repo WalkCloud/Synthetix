@@ -13,6 +13,7 @@ interface ConstraintsBarProps {
   models: ModelOption[];
   selectedModelA: string;
   selectedModelB: string;
+  defaultModelId: string | null;
   onGenerationModeChange: (mode: GenerationMode) => void;
   onWordLimitChange: (limit: number) => void;
   onAdditionalRequirementsChange: (req: string) => void;
@@ -32,6 +33,7 @@ export function ConstraintsBar({
   models,
   selectedModelA,
   selectedModelB,
+  defaultModelId,
   onGenerationModeChange,
   onWordLimitChange,
   onAdditionalRequirementsChange,
@@ -44,9 +46,49 @@ export function ConstraintsBar({
   const { t, format } = useLocale();
   const cx = t.writing.constraintsExtra;
   const noneLabel = t.common.states.none;
-  const autoDefault = cx.autoDefault;
+  const defaultSuffix = `（${t.models.models.isDefault}）`;
   const singleModel = cx.singleModel;
   const compareModels = cx.compareModels;
+
+  // Builds the trigger display value for a model selector. The user's default
+  // model is shown as "name（默认）"; others show just the name. If no model is
+  // flagged as default, the generic "默认模型" label is used as a placeholder.
+  function modelTriggerLabel(selectedId: string): string {
+    const m = models.find((mo) => mo.id === selectedId);
+    if (!m) return cx.autoDefault;
+    if (m.id === defaultModelId) return `${m.modelName}${defaultSuffix}`;
+    return m.modelName;
+  }
+
+  function ModelSelect({
+    selectedId,
+    onChange,
+  }: {
+    selectedId: string;
+    onChange: (val: string) => void;
+  }) {
+    const value = selectedId || "auto";
+    return (
+      <Select value={value} onValueChange={(v) => { if (v && v !== "auto") onChange(v); }}>
+        <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
+          <SelectValue placeholder={cx.autoDefault}>{modelTriggerLabel(selectedId)}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {defaultModelId && (
+            <SelectItem value="auto">
+              {models.find((m) => m.id === defaultModelId)?.modelName}
+              {defaultSuffix}
+            </SelectItem>
+          )}
+          {models
+            .filter((m) => m.id !== defaultModelId)
+            .map((m) => (
+              <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+    );
+  }
 
   return (
     <div className="mb-5 p-4 bg-card border border-border rounded-2xl shadow-sm">
@@ -107,19 +149,7 @@ export function ConstraintsBar({
             <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
               {t.models.usage.model}
             </label>
-            <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
-              <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                <SelectValue placeholder={autoDefault}>
-                  {selectedModelA && selectedModelA !== "auto"
-                    ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
-                    : autoDefault}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">{autoDefault}</SelectItem>
-                {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <ModelSelect selectedId={selectedModelA} onChange={onModelAChange} />
           </div>
         )}
 
@@ -130,37 +160,13 @@ export function ConstraintsBar({
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 {t.models.usage.model} A
               </label>
-              <Select value={selectedModelA || "auto"} onValueChange={(v) => { if (v) onModelAChange(v); }}>
-                <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                  <SelectValue placeholder={autoDefault}>
-                    {selectedModelA && selectedModelA !== "auto"
-                      ? models.find((m) => m.id === selectedModelA)?.modelName || selectedModelA
-                      : autoDefault}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{autoDefault}</SelectItem>
-                  {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <ModelSelect selectedId={selectedModelA} onChange={onModelAChange} />
             </div>
             <div className="min-w-[150px] flex-1">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 {t.models.usage.model} B
               </label>
-              <Select value={selectedModelB || "auto"} onValueChange={(v) => { if (v) onModelBChange(v); }}>
-                <SelectTrigger className="w-full text-[13px] bg-muted/50 focus:bg-card transition-all">
-                  <SelectValue placeholder={autoDefault}>
-                    {selectedModelB && selectedModelB !== "auto"
-                      ? models.find((m) => m.id === selectedModelB)?.modelName || selectedModelB
-                      : autoDefault}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{autoDefault}</SelectItem>
-                  {models.map(m => <SelectItem key={m.id} value={m.id}>{m.modelName}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <ModelSelect selectedId={selectedModelB} onChange={onModelBChange} />
             </div>
           </>
         )}

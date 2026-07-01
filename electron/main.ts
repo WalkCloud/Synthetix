@@ -15,7 +15,7 @@
  * which take precedence over cwd-relative defaults in the app's path resolution
  * (src/lib/db-path.ts reads DATABASE_URL/DB_PATH; storage routes read DATA_DIR).
  */
-import { app, BrowserWindow, Tray, Menu, dialog } from "electron";
+import { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain } from "electron";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
 import http from "http";
@@ -53,6 +53,22 @@ if (!gotLock) {
   });
   app.whenReady().then(boot).catch((err) => fatalBootError(err));
 }
+
+// ─── title bar overlay color sync ───────────────────────────────────────────
+// The renderer sends the current theme background color (light/dark) so the
+// titleBarOverlay matches the page. Invoked from preload when next-themes
+// resolves/changes. Falls back to no-op if the platform/Window lacks overlay
+// support (setTitleBarOverlay is Windows-only).
+ipcMain.handle("synthetix:set-titlebar-color", (_event, bg: string, symbol: string) => {
+  if (mainWindow && typeof mainWindow.setTitleBarOverlay === "function") {
+    try {
+      mainWindow.setTitleBarOverlay({ color: bg, symbolColor: symbol });
+    } catch {
+      // Older Windows / unsupported — ignore.
+    }
+  }
+  return true;
+});
 
 // ─── port selection ─────────────────────────────────────────────────────────
 /**
@@ -125,6 +141,11 @@ async function boot(): Promise<void> {
   const dataDir = userDataDir();
   const dbUrl = `file:${path.join(dataDir, "dev.db").replace(/\\/g, "/")}`;
 
+  // Remove the default application menu bar (File/Edit/View/Window/Help). Most
+  // modern Electron apps hide it — it looks out of place over a web UI and
+  // steals vertical space. Done once at boot.
+  Menu.setApplicationMenu(null);
+
   // 1) First-run setup: secrets + DB migration. Must precede server start so
   //    startup.ts finds an existing DB and skips its own npx prisma db push
   //    (which would fail in the packaged env — no npx available).
@@ -138,8 +159,12 @@ async function boot(): Promise<void> {
   // 2) Secrets are read from .env and passed explicitly to the next child in
   //    startNextServer (next start doesn't auto-load .env from userData).
 
-  // 3) Pick a free port.
-  const port = await pickFreePort(3000);
+  // 3) Pick a free port. Start above 5000 to avoid Windows' Hyper-V/WSL
+  //    excluded port ranges (which often cover 2955-3354, including 3000).
+  //    Picking 3000 on such a machine makes net.listen() in the probe appear
+  //    to succeed but the real `next start` bind fails with EACCES, and the
+  //    app exits silently.
+  const port = await pickFreePort(8765);
 
   // 4) Spawn the Next.js server. cwd = resources/app/ so path.resolve() in the
   //    server code finds workers/ and .next/. Data paths come via env vars.
@@ -160,14 +185,16 @@ async function boot(): Promise<void> {
 function startNextServer(port: number, dataDir: string): void {
   const cwd = appRoot();
   const nodeExe = app.isPackaged ? bundledNodePath() : process.execPath;
-  const cli = nextCliPath();
+  // standalone server.js — Next.js standalone output produces a self-contained
+  // server.js that replaces `next start`. It reads PORT/HOSTNAME from env.
+  const serverJs = path.join(appRoot(), "server.js");
 
   // CRITICAL: explicitly load the generated secrets from <userData>/.env and
-  // inject them into the child env. `next start` auto-loads .env only from its
-  // CWD (resources/app/), which has no .env — so without this, the middleware
-  // (proxy.ts) throws "FATAL: JWT_SECRET is required" on the first request and
-  // the server exits with code 1. Relying on process.env inheritance through
-  // Electron's main→child boundary is unreliable; pass them explicitly.
+  // inject them into the child env. The standalone server.js does not
+  // auto-load .env, so without this the middleware (proxy.ts) throws
+  // "FATAL: JWT_SECRET is required" on the first request and the server exits
+  // with code 1. Relying on process.env inheritance through Electron's
+  // main→child boundary is unreliable; pass them explicitly.
   const envFile = parseEnvFile(envFilePath());
 
   const env: NodeJS.ProcessEnv = {
@@ -191,7 +218,12 @@ function startNextServer(port: number, dataDir: string): void {
     LOCAL_EMBED_MODEL_PATH: path.join(appRoot(), "models", "gte-multilingual-base"),
   };
 
-  nextServer = spawn(nodeExe, [cli, "start", "-p", String(port), "-H", HOST], {
+  // In dev (electron:dev), server.js doesn't exist yet — fall back to next CLI.
+  const args = fs.existsSync(serverJs)
+    ? [serverJs]
+    : [nextCliPath(), "start", "-p", String(port), "-H", HOST];
+
+  nextServer = spawn(nodeExe, args, {
     cwd,
     env,
     windowsHide: true, // no console window on Windows
@@ -227,7 +259,21 @@ function createWindow(port: number): void {
     minHeight: 700,
     show: false, // show on 'ready-to-show' to avoid white flash
     title: "Synthetix",
-    icon: trayIconPath(),
+    autoHideMenuBar: true, // hide the menu bar (Alt toggles); pairs with setApplicationMenu(null)
+    // Hide the system title bar and draw a Windows overlay instead, so the
+    // title bar background matches the page (light/dark) rather than the OS
+    // default. The min/max/close buttons remain (rendered by Windows). The
+    // overlay color is updated from the renderer via IPC when the theme
+    // changes (see handleThemeColor below); initial value = light bg #F8FAFC.
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#F8FAFC", // matches --background (light) in globals.css
+      symbolColor: "#334155", // slate-700, readable on light bg
+      height: 40,
+    },
+    // Window icon: pass the path only if it exists (empty string would be
+    // ignored by BrowserWindow, but be explicit).
+    ...(trayIconPath() ? { icon: trayIconPath() } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -256,7 +302,7 @@ function createWindow(port: number): void {
 
 // ─── tray ───────────────────────────────────────────────────────────────────
 function createTray(port: number): void {
-  tray = new Tray(trayIconPath());
+  tray = new Tray(trayImage());
   tray.setToolTip("Synthetix");
 
   const menu = Menu.buildFromTemplate([
@@ -296,16 +342,30 @@ function createTray(port: number): void {
 }
 
 function trayIconPath(): string {
-  // Prefer a dedicated tray icon if present.
+  // Resolve a real icon file for the tray/window. In a packaged build the
+  // branded icon ships as a resource (extraResources: build/icon.ico →
+  // resources/icon.ico). In dev it lives at build/icon.ico.
   const candidates = [
-    path.join(__dirname, "..", "build", "tray-icon.png"),
-    path.join(process.resourcesPath || "", "tray-icon.png"),
+    path.join(process.resourcesPath || "", "icon.ico"),
+    path.join(__dirname, "..", "build", "icon.ico"),
+    path.join(appRoot(), "icon.ico"),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  // No icon on disk — return empty string; Electron falls back to a default.
   return "";
+}
+
+/**
+ * Build a Tray image safely. `new Tray("")` throws "Failed to load image from
+ * path" and crashes the app, so when no icon file is found we fall back to an
+ * empty native image (Electron renders a default tray slot) instead of an
+ * empty string.
+ */
+function trayImage() {
+  const p = trayIconPath();
+  if (p) return p;
+  return nativeImage.createEmpty();
 }
 
 // ─── env file loader ────────────────────────────────────────────────────────

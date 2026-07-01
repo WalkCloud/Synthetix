@@ -137,3 +137,19 @@ embeddings.bin
 
 # LiteLLM model reference catalog (large, regenerable)
 litellm-catalog.json
+
+# local database sidecar files
+dev.db-shm
+dev.db-wal
+
+# Playwright local run artifacts
+.playwright-mcp/
+test-results/
+e2e/.auth/
+e2e/.report/
+
+# transient editor/build scratch files
+*.tmp
+
+# local secret/config notes
+模型服务配置信息.txt

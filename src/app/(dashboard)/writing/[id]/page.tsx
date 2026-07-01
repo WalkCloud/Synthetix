@@ -28,7 +28,7 @@ export default function WritingPage({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { draft, activeSectionId, setActiveSectionId, loading, loadDraft } = useDraftData(id);
-  const { models, selectedModelA, selectedModelB, setSelectedModelA, setSelectedModelB } = useModelSelection();
+  const { models, selectedModelA, selectedModelB, defaultModelId, setSelectedModelA, setSelectedModelB } = useModelSelection();
   const genAll = useGenerateAll(id, setActiveSectionId, loadDraft);
   const gen = useGeneration(id, activeSectionId, loadDraft, selectedModelA, selectedModelB);
   const { setReferences } = gen;
@@ -357,6 +357,7 @@ export default function WritingPage({
             models={models}
             selectedModelA={selectedModelA}
             selectedModelB={selectedModelB}
+            defaultModelId={defaultModelId}
             onModelAChange={setSelectedModelA}
             onModelBChange={setSelectedModelB}
             onGenerate={gen.handleGenerate}

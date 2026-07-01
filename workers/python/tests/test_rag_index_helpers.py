@@ -7,7 +7,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rag_index import emit_progress, get_insert_batch_size, indexing_lock, insert_chunks, sort_chunk_files
+from adaptive_limiter import _is_rate_limit_error
+from rag_index import (
+    _call_graph_llm_with_connection_retry,
+    _is_transient_llm_connection_error,
+    emit_progress,
+    get_insert_batch_size,
+    indexing_lock,
+    insert_chunks,
+    should_bulk_insert_graph,
+    sort_chunk_files,
+)
 
 
 class FakeRag:
@@ -39,6 +49,12 @@ class RagIndexHelperTests(unittest.TestCase):
         self.assertEqual(get_insert_batch_size("graph", {}), 5)
         self.assertEqual(get_insert_batch_size("basic", {}), 20)
         self.assertEqual(get_insert_batch_size("graph", {"LIGHTRAG_GRAPH_INSERT_BATCH_SIZE": "8"}), 8)
+
+    def test_graph_bulk_insert_is_opt_in(self):
+        self.assertFalse(should_bulk_insert_graph({}))
+        self.assertFalse(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "false"}))
+        self.assertTrue(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "true"}))
+        self.assertTrue(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "1"}))
 
     def test_sort_chunk_files_uses_numeric_chunk_index(self):
         files = ["chunk_999.md", "chunk_1000.md", "chunk_101.md", "chunk_010.md", "full.md"]
@@ -116,6 +132,51 @@ class RagIndexHelperTests(unittest.TestCase):
             ("a", "doc/chunk_000", "chunk_000.md"),
             ("b", "doc/chunk_001", "chunk_001.md"),
         ])
+
+    def test_connection_errors_are_treated_as_transient_graph_errors(self):
+        errors = [
+            RuntimeError("APIConnectionError: Connection error."),
+            RuntimeError("httpcore.ConnectError: [Errno 11001] getaddrinfo failed"),
+            RuntimeError("Temporary failure in name resolution"),
+        ]
+
+        for error in errors:
+            self.assertTrue(_is_transient_llm_connection_error(error))
+            self.assertTrue(_is_rate_limit_error(error))
+
+    def test_graph_llm_connection_retry_succeeds_after_transient_error(self):
+        calls = []
+        sleeps = []
+
+        async def call():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("APIConnectionError: Connection error.")
+            return "ok"
+
+        async def sleep(seconds):
+            sleeps.append(seconds)
+
+        result = asyncio.run(_call_graph_llm_with_connection_retry(call, sleep_fn=sleep))
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [2.0])
+
+    def test_graph_llm_connection_retry_does_not_retry_permanent_errors(self):
+        calls = []
+
+        async def call():
+            calls.append(1)
+            raise RuntimeError("401 invalid api key")
+
+        async def sleep(seconds):
+            raise AssertionError("sleep should not be called")
+
+        with self.assertRaises(RuntimeError):
+            asyncio.run(_call_graph_llm_with_connection_retry(call, sleep_fn=sleep))
+
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

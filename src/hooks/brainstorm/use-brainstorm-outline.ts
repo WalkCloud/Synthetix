@@ -5,6 +5,7 @@ import type { OutlineSection } from "@/lib/outline-tree";
 import type { BrainstormOutline, BrainstormSession, Phase } from "./types";
 import { useLocale } from "@/lib/i18n";
 import { parseCapabilities } from "@/lib/llm/capabilities";
+import { findDefaultChatModel } from "@/lib/writing/model-default";
 import type { ModelOption } from "@/types/writing";
 
 const POLL_INTERVAL = 1000;
@@ -59,10 +60,10 @@ export function useBrainstormOutline({
       .then((data) => {
         if (cancelled || !data.success) return;
         const models: ModelOption[] = [];
-        for (const p of data.data as Array<{ models?: Array<{ id: string; modelName: string; capabilities: string }> }>) {
+        for (const p of data.data as Array<{ models?: Array<{ id: string; modelName: string; capabilities: string; isDefaultFor?: string | null }> }>) {
           for (const m of p.models ?? []) {
             if (parseCapabilities(m.capabilities).includes("chat")) {
-              models.push({ id: m.id, modelName: m.modelName, capabilities: m.capabilities });
+              models.push({ id: m.id, modelName: m.modelName, capabilities: m.capabilities, isDefaultFor: m.isDefaultFor ?? null });
             }
           }
         }
@@ -356,6 +357,7 @@ export function useBrainstormOutline({
     isGeneratingOutline, confirming, editing, outlineError, editSections, editTitle, setEditTitle,
     sectionNotes,
     chatModels, selectedModelId, setSelectedModelId: handleModelChange,
+    defaultModelId: findDefaultChatModel(chatModels)?.id ?? null,
     generateOutline, clearOutline, regenerateOutline, confirmAndWrite,
     startEditing, cancelEditing, saveEditing,
     updateEditNode, removeEditNode, addEditChild, addEditSection,

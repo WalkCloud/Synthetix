@@ -20,6 +20,7 @@ interface EditorPanelProps {
   models: ModelOption[];
   selectedModelA: string;
   selectedModelB: string;
+  defaultModelId: string | null;
   onModelAChange: (id: string) => void;
   onModelBChange: (id: string) => void;
   onGenerate: (mode: GenerationMode, constraints: { wordLimit: number; additionalRequirements: string; generationMode: GenerationMode }) => Promise<void>;
@@ -48,6 +49,7 @@ export function EditorPanel({
   models,
   selectedModelA,
   selectedModelB,
+  defaultModelId,
   onModelAChange,
   onModelBChange,
   onGenerate,
@@ -256,6 +258,7 @@ export function EditorPanel({
           models={models}
           selectedModelA={selectedModelA}
           selectedModelB={selectedModelB}
+          defaultModelId={defaultModelId}
           onGenerationModeChange={setGenerationMode}
           onWordLimitChange={setWordLimit}
           onAdditionalRequirementsChange={setAdditionalRequirements}

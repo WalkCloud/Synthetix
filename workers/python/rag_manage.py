@@ -99,16 +99,27 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
             from lightrag.base import DocStatus
             all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
         except Exception:
-            all_docs = await rag.doc_status.get_all()
+            # Fallback if the storage backend lacks get_docs_by_statuses.
+            # NOTE: get_all() was removed in lightrag-hku 1.5.4; guard so this
+            # still degrades gracefully on older/newer versions alike.
+            getter = getattr(rag.doc_status, "get_all", None)
+            all_docs = await getter() if getter else {}
 
         for key, value in (all_docs or {}).items():
             if key == doc_id or key.startswith(doc_id + "/"):
                 target_ids.add(key)
                 continue
 
-            metadata = (value or {}).get("metadata", {}) if isinstance(value, dict) else {}
-            original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
-            file_path = (value or {}).get("file_path", "") if isinstance(value, dict) else ""
+            # LightRAG >=1.5.4 returns DocProcessingStatus dataclass objects
+            # (not dicts) from get_docs_by_statuses; support both shapes.
+            if isinstance(value, dict):
+                metadata = (value or {}).get("metadata", {}) or {}
+                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
+                file_path = (value or {}).get("file_path", "")
+            else:
+                metadata = getattr(value, "metadata", None) or {}
+                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
+                file_path = getattr(value, "file_path", "")
             if original_doc_id == doc_id or original_doc_id.startswith(doc_id + "/") or f"{doc_id}" in file_path:
                 target_ids.add(key)
 
@@ -120,8 +131,15 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
                 print(f"Warning deleting LightRAG doc {target_id}: {delete_err}", file=sys.stderr)
         
         # Check if any documents are left. If not, wipe the graph entirely to remove orphaned entities.
-        remaining = await rag.doc_status.get_all()
-        if not remaining:
+        # lightrag-hku 1.5.4 replaced get_all() with is_empty() / get_status_counts();
+        # fall back to get_all() on older versions that still expose it.
+        is_empty_fn = getattr(rag.doc_status, "is_empty", None)
+        if is_empty_fn:
+            remaining_empty = await is_empty_fn()
+        else:
+            getter = getattr(rag.doc_status, "get_all", None)
+            remaining_empty = not bool(await getter() if getter else False)
+        if remaining_empty:
             import shutil
             shutil.rmtree(rag.working_dir, ignore_errors=True)
             os.makedirs(rag.working_dir, exist_ok=True)

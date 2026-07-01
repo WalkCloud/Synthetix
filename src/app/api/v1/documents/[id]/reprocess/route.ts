@@ -5,6 +5,7 @@ import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-hel
 import {
   cancelActiveDocumentConvertTasks,
   cancelActiveRagEmbedIndexTasks,
+  cancelActiveFollowupTasks,
   waitForDocActiveTasksToSettle,
 } from "@/lib/documents/processing-tasks";
 import { getQueue } from "@/lib/queue";
@@ -89,8 +90,13 @@ export async function POST(
   // Mark any older active tasks as cancelled, then BLOCK until their
   // workers actually exit. cancelActive* only flips DB status; without the
   // wait we used to delete chunks while a worker was still updating them.
+  // Follow-up tasks (rag_index, wiki_synthesize) are now enqueued EARLY by
+  // the embed worker (in parallel with the long graph/basic phase), so they
+  // must be cancelled here too — otherwise a lingering graph extraction or
+  // wiki synthesis from the old run would race the fresh convert pipeline.
   await cancelActiveDocumentConvertTasks(user.id, id);
   await cancelActiveRagEmbedIndexTasks(user.id, id);
+  await cancelActiveFollowupTasks(user.id, id);
   await waitForDocActiveTasksToSettle(user.id, id);
 
   await db.document.update({ where: { id }, data: { status: "queued" } });

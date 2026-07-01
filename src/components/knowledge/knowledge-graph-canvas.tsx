@@ -572,8 +572,8 @@ export function KnowledgeGraphCanvas({
               : <><path d="M3 3h18v18H3z" opacity="0" /><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>}
           </svg>
           {showAll
-            ? dens.topEntitiesLabel
-            : `${visibleCount}/${totalCount} ${dens.entitiesLabel}`}
+            ? format.template(dens.allEntitiesLabel, { count: totalCount })
+            : format.template(dens.topEntitiesLabel, { visible: visibleCount, total: totalCount })}
         </button>
       )}
 
