@@ -18,6 +18,7 @@ import { splitByMacroAST, coalesceMacroChunks } from "@/lib/documents/outline/ma
 import { microSplitByLocalSemantic, packChunksBySize } from "@/lib/documents/outline/micro-split";
 import { injectBreadcrumbs } from "@/lib/documents/outline/breadcrumb";
 import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
+import { llmRefineMacroStructure } from "@/lib/documents/outline/llm-refine";
 import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
@@ -228,6 +229,7 @@ export function calculateSplitPlan(
 async function splitViaLocalPipeline(
   markdown: string,
   chunkMaxTokens: number,
+  ctx: ProcessingContext,
 ): Promise<SplitChunk[]> {
   const clean = sanitizeMarkdown(markdown);
   let macros = await splitByMacroAST(clean);
@@ -235,6 +237,10 @@ async function splitViaLocalPipeline(
 
   // Merge small adjacent chunks before micro-splitting
   macros = coalesceMacroChunks(macros, Math.max(400, Math.floor(chunkMaxTokens * 0.4)));
+
+  // LLM-enhanced heading structure refinement (non-blocking enhancement;
+  // falls back to original macros on any failure).
+  macros = await llmRefineMacroStructure(macros, ctx);
 
   const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.55);
   // microSplit fragments list/image-heavy sections into one-item chunks;
@@ -260,7 +266,7 @@ export async function splitAndPersistChunks(
     let chunks: SplitChunk[];
 
     if (splitStrategy === "structure-llm") {
-      chunks = await splitViaLocalPipeline(markdown, chunkMaxTokens);
+      chunks = await splitViaLocalPipeline(markdown, chunkMaxTokens, ctx);
     } else {
       // heading-only fallback
       chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });

@@ -114,6 +114,18 @@ function human(bytes) {
   return `${mb.toFixed(1)} MB`;
 }
 
+/** Find a package's real path in pnpm's .pnpm store. Returns null if not found. */
+function resolvePnpmPkgPath(root, pkgName) {
+  const pnpmKey = pkgName.replace("/", "+");
+  const pnpmDir = path.join(root, "node_modules", ".pnpm");
+  if (!fs.existsSync(pnpmDir)) return null;
+  const entry = fs.readdirSync(pnpmDir, { withFileTypes: true })
+    .find(e => e.isDirectory() && e.name.startsWith(pnpmKey + "@"));
+  if (!entry) return null;
+  const p = path.join(pnpmDir, entry.name, "node_modules", pkgName);
+  return fs.existsSync(path.join(p, "package.json")) ? p : null;
+}
+
 /** Resolve a pnpm symlink to its real target. pnpm uses a virtual store:
  *  node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> is the real location;
  *  top-level node_modules/<pkg> is a symlink to it. readlinkSync gets the
@@ -295,11 +307,62 @@ function main() {
     ["electron", "playwright", "playwright-core"]
   );
 
+  // --- Flatten pnpm .pnpm/ store into top-level node_modules/ ---
+  // standalone tracing + pnpm's symlink layout produces a .pnpm/ virtual store
+  // where packages live at .pnpm/<pkg>@<ver>/node_modules/<pkg>/. Node's
+  // require() resolves modules by walking up the directory tree looking for
+  // node_modules/<name> — it does NOT look inside .pnpm/. So we must copy
+  // every package from .pnpm/<pkg>@<ver>/node_modules/<pkg>/ to the top-level
+  // node_modules/<pkg>/ for require() to find them.
+  //
+  // This is the same flattening that `pnpm install --node-linker=hoisted`
+  // does, but applied to the standalone output (which already traced only
+  // the needed deps — ~38 packages vs ~65000 files in a full install).
+  log("  flattening .pnpm/ store to top-level node_modules/ …");
+  const appPnpmDir = path.join(APP, "node_modules", ".pnpm");
+  if (fs.existsSync(appPnpmDir)) {
+    for (const entry of fs.readdirSync(appPnpmDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "node_modules") continue;
+      // Skip dev-only packages that standalone mistakenly included.
+      if (/^electron@|^playwright/.test(entry.name)) continue;
+      // A .pnpm/<pkg>/ entry may contain multiple packages in its
+      // node_modules/ (e.g. pg-types@2.2.0/node_modules/ has pg-types,
+      // pg-int8, postgres-array, etc. — pnpm hoists peer deps here).
+      // Copy ALL of them, not just the first.
+      const innerNm = path.join(appPnpmDir, entry.name, "node_modules");
+      if (!fs.existsSync(innerNm)) continue;
+      for (const sub of fs.readdirSync(innerNm, { withFileTypes: true })) {
+        if (!sub.isDirectory() && !sub.isSymbolicLink()) continue;
+        const src = path.join(innerNm, sub.name);
+        // For scoped packages (@scope/), sub.name is "@scope" and the real
+        // package is inside it (e.g. @swc/helpers). Merge into top-level
+        // node_modules/@scope/ rather than skipping if @scope already exists.
+        if (sub.name.startsWith("@")) {
+          const scopeDst = path.join(APP, "node_modules", sub.name);
+          fs.mkdirSync(scopeDst, { recursive: true });
+          // Copy each package inside the scope dir
+          for (const scopedPkg of fs.readdirSync(src, { withFileTypes: true })) {
+            const spSrc = path.join(src, scopedPkg.name);
+            const spDst = path.join(scopeDst, scopedPkg.name);
+            if (fs.existsSync(spDst)) continue;
+            copyDir(spSrc, spDst);
+          }
+        } else {
+          const dst = path.join(APP, "node_modules", sub.name);
+          if (fs.existsSync(dst)) continue;
+          copyDir(src, dst);
+        }
+      }
+    }
+  }
+
   // .next/static — standalone does NOT include static assets; copy separately.
   log("  copying .next/static …");
   copyDir(path.join(ROOT, ".next", "static"), path.join(APP, ".next", "static"));
 
   // prisma schema + migrations + workers (python scripts).
+  // NOTE: prisma CLI is NOT included — first-run.ts uses better-sqlite3 to
+  // execute migration.sql files directly, avoiding prisma's heavy dep tree.
   log("  copying prisma/ …");
   copyDir(path.join(ROOT, "prisma"), path.join(APP, "prisma"));
   log("  copying workers/ …");
