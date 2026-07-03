@@ -261,12 +261,16 @@ export async function generateSectionFull(
     modelConfigId = resolved.modelConfigId;
   }
 
-  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
+  // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
+  // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
+  // does not consume enrichment output. Run them concurrently to cut one serial
+  // LLM round-trip off the pre-stream critical path. RAG still runs after Wiki
+  // because its limit depends on the Wiki entry count.
+  const [enrichment, wiki] = await Promise.all([
+    enrichSectionContext(section, draft.title, provider, modelId),
+    fetchWikiContext(draft.title, section, userId, provider, modelId),
+  ]);
 
-  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
-  // has good coverage, halve the raw RAG limit — we already have synthesized
-  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId, provider, modelId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,
@@ -381,12 +385,16 @@ export async function generateSectionStream(
     modelConfigId = resolved.modelConfigId;
   }
 
-  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
+  // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
+  // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
+  // does not consume enrichment output. Run them concurrently to cut one serial
+  // LLM round-trip off the pre-stream critical path. RAG still runs after Wiki
+  // because its limit depends on the Wiki entry count.
+  const [enrichment, wiki] = await Promise.all([
+    enrichSectionContext(section, draft.title, provider, modelId),
+    fetchWikiContext(draft.title, section, userId, provider, modelId),
+  ]);
 
-  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
-  // has good coverage, halve the raw RAG limit — we already have synthesized
-  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId, provider, modelId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,
