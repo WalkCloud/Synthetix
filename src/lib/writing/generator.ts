@@ -190,11 +190,17 @@ async function fetchRagReferences(
 
     return mapped;
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Unknown error";
-    throw new Error(
-      `Failed to retrieve RAG references for section generation: ${message}`
+    // RAG is an enhancement, not a hard dependency. A daemon timeout, a slow
+    // direct-embedding scan, or a transient embedding-model failure used to
+    // abort the whole section (surfacing as status:"failed" in the SSE route).
+    // Degrade to empty — the Wiki flywheel and the LLM's own knowledge still
+    // produce a usable draft. This mirrors the fail-soft contract already used
+    // by fetchWikiContext and enrichSectionContext.
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.warn(
+      `[rag] retrieval failed (non-blocking, degrading to wiki/empty): ${message}`,
     );
+    return [];
   }
 }
 

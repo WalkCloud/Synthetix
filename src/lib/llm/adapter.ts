@@ -16,6 +16,11 @@ import {
 import { computeBackoffMs, delay } from "./retry-after";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
+import {
+  FETCH_TIMEOUT_MS,
+  EMBED_FETCH_TIMEOUT_MS,
+  STREAM_READ_TIMEOUT_MS,
+} from "./env";
 
 interface AdapterConfig {
   baseUrl: string;
@@ -32,12 +37,8 @@ interface AdapterConfig {
 type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
 type EmbedResponseWithRateLimit = EmbedResponse & { rateLimit?: RateLimitInfo };
 
-const FETCH_TIMEOUT_MS = 300_000;
-// Embedding requests are short, bounded calls (no streaming). A 5-min timeout
-// let a single hung embed batch block the whole pipeline for up to 29 min
-// (5min × 3 retries). 90s is ample for a large batch while failing fast
-// enough that the retry loop recovers quickly.
-const EMBED_FETCH_TIMEOUT_MS = 90_000;
+// Timeouts are env-configurable via LLM_FETCH_TIMEOUT_MS / LM_EMBED_TIMEOUT_MS /
+// LLM_STREAM_READ_TIMEOUT_MS (see ./env). Defaults preserve prior behaviour.
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -306,16 +307,25 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     let lastOutputTokens: number | undefined;
     let accumulatedContent = "";
 
-    const STREAM_READ_TIMEOUT_MS = 120_000; // 2 min timeout per read
-
     try {
       while (true) {
-        const { done, value } = await Promise.race([
+        // Race each read against a stall timeout. The timer MUST be cleared on
+        // the success path — otherwise every read leaks a pending setTimeout
+        // handle for the lifetime of the stream (a long generation can emit
+        // hundreds of chunks, so this leak compounds).
+        let stallTimer: ReturnType<typeof setTimeout> | undefined;
+        const readResult = await Promise.race([
           reader.read(),
-          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) =>
-            setTimeout(() => reject(new Error("Stream read timeout — LLM response stalled")), STREAM_READ_TIMEOUT_MS)
-          ),
-        ]);
+          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            stallTimer = setTimeout(
+              () => reject(new Error("Stream read timeout — LLM response stalled")),
+              STREAM_READ_TIMEOUT_MS,
+            );
+          }),
+        ]).finally(() => {
+          if (stallTimer) clearTimeout(stallTimer);
+        });
+        const { done, value } = readResult;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });

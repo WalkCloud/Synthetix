@@ -10,6 +10,7 @@ import type { ChatMessage } from "./types";
 import { computeBackoffMs, delay } from "./retry-after";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
+import { FETCH_TIMEOUT_MS, STREAM_READ_TIMEOUT_MS } from "./env";
 
 interface AdapterConfig {
   baseUrl: string;
@@ -20,8 +21,8 @@ interface AdapterConfig {
 
 type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
 
-const FETCH_TIMEOUT_MS = 300_000;
-const STREAM_READ_TIMEOUT_MS = 120_000; // 2 min timeout per read
+// Timeouts are env-configurable (LLM_FETCH_TIMEOUT_MS / LLM_STREAM_READ_TIMEOUT_MS);
+// see ./env. Defaults preserve prior behaviour.
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MAX_TOKENS = 4096;
 
@@ -287,12 +288,21 @@ export class AnthropicAdapter implements LLMProvider {
 
     try {
       while (true) {
-        const { done, value } = await Promise.race([
+        // Race each read against a stall timeout, clearing the timer on the
+        // success path so a long stream doesn't leak one handle per chunk.
+        let stallTimer: ReturnType<typeof setTimeout> | undefined;
+        const readResult = await Promise.race([
           reader.read(),
-          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) =>
-            setTimeout(() => reject(new Error("Stream read timeout — LLM response stalled")), STREAM_READ_TIMEOUT_MS)
-          ),
-        ]);
+          new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            stallTimer = setTimeout(
+              () => reject(new Error("Stream read timeout — LLM response stalled")),
+              STREAM_READ_TIMEOUT_MS,
+            );
+          }),
+        ]).finally(() => {
+          if (stallTimer) clearTimeout(stallTimer);
+        });
+        const { done, value } = readResult;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
