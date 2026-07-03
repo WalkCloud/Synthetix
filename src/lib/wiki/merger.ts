@@ -10,6 +10,7 @@
  */
 
 import { db } from "@/lib/db";
+import { syncWikiFtsForEntry } from "@/lib/search/wiki-fts";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { LLMProvider } from "@/lib/llm/types";
 import { slugify } from "@/lib/wiki/slug";
@@ -44,8 +45,8 @@ export interface MergeLLMClient {
  * Threshold is WIKI_CONFIG.duplicateTitleThreshold.
  */
 export function titleSimilarity(a: string, b: string): number {
-  const tokensA = tokenize(a);
-  const tokensB = tokenize(b);
+  const tokensA = tokenizeTitle(a);
+  const tokensB = tokenizeTitle(b);
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
   let intersection = 0;
   for (const t of tokensA) if (tokensB.has(t)) intersection++;
@@ -53,8 +54,13 @@ export function titleSimilarity(a: string, b: string): number {
   return intersection / union;
 }
 
-/** Tokenize a title into a comparable set. Splits CJK per-char + latin per-word. */
-function tokenize(s: string): Set<string> {
+/**
+ * Tokenize a title (or any text) into a comparable set. Splits CJK per-char +
+ * latin per-word. Exported so the FTS/trigram fallback in wiki/query.ts can
+ * reuse the same tokenisation that {@link titleSimilarity} uses, keeping
+ * similarity scoring consistent across the wiki layer.
+ */
+export function tokenizeTitle(s: string): Set<string> {
   const lower = s.toLowerCase().trim();
   const tokens = new Set<string>();
   // CJK characters: per-char (each char is a token)
@@ -130,6 +136,9 @@ export async function mergeEntry(
     // Register the new title so subsequent candidates in the same batch see it
     existingTitles.push({ title, slug });
     await appendChangeLog(userId, entry.id, "create", `Created ${type} "${title}"`);
+    // Keep the FTS index in sync. Non-blocking — an index miss just means the
+    // next search falls back to LIKE until the background reindex catches up.
+    void syncWikiFtsForEntry(entry.id).catch(() => {});
     return { entryId: entry.id, action: "create", slug, fused: false };
   }
 
@@ -178,6 +187,7 @@ export async function mergeEntry(
     },
   });
   await appendChangeLog(userId, existing.id, "update", `Updated "${existing.title}" (fused new source)`);
+  void syncWikiFtsForEntry(existing.id).catch(() => {});
   return { entryId: existing.id, action: "update", slug: existing.slug, fused };
 }
 
