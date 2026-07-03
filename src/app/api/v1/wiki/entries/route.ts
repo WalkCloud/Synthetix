@@ -87,7 +87,10 @@ export async function GET(request: Request) {
         } catch { return false; }
       })
       .map((e) => e.id);
-    const prev = where.id?.in;
+    // `where.id` here is either undefined or the `{ in: [...] }` shape set by the
+    // FTS recall above — narrow past the `string` branch of the union so TS sees `.in`.
+    const prevIdFilter = where.id;
+    const prev = typeof prevIdFilter === "object" && prevIdFilter ? prevIdFilter.in : undefined;
     const intersected = prev ? matchedIds.filter((id) => prev.includes(id)) : matchedIds;
     where.id = { in: intersected };
     if (ftsRankedIds) ftsRankedIds = ftsRankedIds.filter((id) => intersected.includes(id));
