@@ -18,7 +18,7 @@ export function UploadZone({ onFiles }: UploadZoneProps) {
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); onFiles(e.dataTransfer.files); }}
     >
-      <input ref={inputRef} type="file" className="hidden" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md" multiple
+      <input ref={inputRef} type="file" className="hidden" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md,.csv" multiple
         onChange={(e) => { if (e.target.files) onFiles(e.target.files); e.target.value = ""; }} />
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <input ref={folderInputRef} type="file" className="hidden" {...({ webkitdirectory: "", directory: "", multiple: true } as any)}

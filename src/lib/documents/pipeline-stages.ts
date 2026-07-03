@@ -244,6 +244,23 @@ export function computeDocumentPipeline({
 
   const branches: PipelineBranchView[] = [];
 
+  // Wiki branch first: it completes faster (1-2 LLM calls) and putting it
+  // before Graph lets users see it finish while the slow Graph extraction
+  // (potentially hours) continues below.
+  if (wikiEnabled) {
+    let wikiStatus: PipelineStageStatus;
+    if (taskFailed(wikiTask)) wikiStatus = "failed";
+    else if (taskDone(wikiTask)) wikiStatus = "done";
+    else if (taskActive(wikiTask)) wikiStatus = indexDone ? "active" : "pending";
+    else wikiStatus = "pending";
+    if (indexFailed) wikiStatus = "pending";
+    branches.push({
+      key: "stageWiki",
+      status: wikiStatus,
+      progress: stageProgress(linearReachedBranches ? wikiStatus : "pending", wikiTask?.progress),
+    });
+  }
+
   if (graphMode) {
     let graphStatus: PipelineStageStatus;
     if (taskFailed(graphTask)) graphStatus = "failed";
@@ -257,20 +274,6 @@ export function computeDocumentPipeline({
       key: "stageGraph",
       status: graphStatus,
       progress: stageProgress(linearReachedBranches ? graphStatus : "pending", graphTask?.progress),
-    });
-  }
-
-  if (wikiEnabled) {
-    let wikiStatus: PipelineStageStatus;
-    if (taskFailed(wikiTask)) wikiStatus = "failed";
-    else if (taskDone(wikiTask)) wikiStatus = "done";
-    else if (taskActive(wikiTask)) wikiStatus = indexDone ? "active" : "pending";
-    else wikiStatus = "pending";
-    if (indexFailed) wikiStatus = "pending";
-    branches.push({
-      key: "stageWiki",
-      status: wikiStatus,
-      progress: stageProgress(linearReachedBranches ? wikiStatus : "pending", wikiTask?.progress),
     });
   }
 

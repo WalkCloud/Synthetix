@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use, Fragment } from "react";
+import { useState, useEffect, use, Fragment, useMemo } from "react";
 import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ChunksPanel } from "@/components/library/chunks-panel";
@@ -436,6 +436,12 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
     return `${s}s`;
   };
 
+  // Live elapsed timer: ticks every second while processing, based on the
+  // server-provided processingStartedAt timestamp. Returns null when not
+  // processing or no start time available.
+  const isProcessing = effectiveStatus !== "ready" && effectiveStatus !== "pending" && effectiveStatus !== "failed" && effectiveStatus !== "enhancing";
+  const liveElapsedMs = useLiveTimer(isProcessing ? doc.processingStartedAt : null);
+
   return (
     <div className="space-y-8">
       {doc.pipeline && <Pipeline pipeline={doc.pipeline} td={td} />}
@@ -480,11 +486,41 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
           {totalTokens > 0 && <DetailField label={`Tokens (${td.chunks.toLowerCase()})`} value={format.number(totalTokens)} />}
           {doc.conversionMethod && <DetailField label={td.conversionMethod} value={doc.conversionMethod} />}
           {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "..."} />}
-          {doc.processingDurationMs != null && effectiveStatus === "ready" ? (
-            <DetailField label={td.processingTime} value={formatDuration(doc.processingDurationMs)} />
-          ) : effectiveStatus !== "ready" && effectiveStatus !== "pending" ? (
-            <DetailField label={td.processingTime} value={td.processingInProgress} tone="warning" />
-          ) : null}
+          {/* Processing Time = "time to usable" (convert → embed).
+              Graph/wiki enhancement time shown separately so users understand
+              the doc is already searchable while enhancement continues. */}
+          {(() : React.ReactNode => {
+            const isReady = effectiveStatus === "ready";
+            const isEnhancing = effectiveStatus === "enhancing";
+            const isProc = !isReady && !isEnhancing && effectiveStatus !== "pending" && effectiveStatus !== "failed";
+
+            if (isReady || isEnhancing) {
+              // Basic processing done — show basicDuration (time to usable).
+              const basicMs = doc.basicDurationMs ?? doc.processingDurationMs;
+              const enhMs = doc.enhancementDurationMs;
+              return (
+                <>
+                  {basicMs != null && (
+                    <DetailField label={td.processingTime} value={formatDuration(basicMs)} />
+                  )}
+                  {isEnhancing && enhMs == null && (
+                    <DetailField label={td.enhancementTime} value={td.processingInProgress} tone="warning" />
+                  )}
+                  {enhMs != null && isReady && (
+                    <DetailField label={td.enhancementTime} value={formatDuration(enhMs)} tone="success" />
+                  )}
+                </>
+              );
+            }
+            if (isProc) {
+              return liveElapsedMs != null ? (
+                <DetailField label={td.processingTime} value={formatDuration(liveElapsedMs)} tone="warning" />
+              ) : (
+                <DetailField label={td.processingTime} value={td.processingInProgress} tone="warning" />
+              );
+            }
+            return null;
+          })()}
 
           {/* Knowledge distillation - integrated as a document property */}
           {doc.status === "ready" && <WikiPrecipField documentId={doc.id} />}
@@ -497,6 +533,34 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
 /* ================================================================
  * Sub-components
  * ================================================================ */
+
+/**
+ * Live elapsed timer: given an ISO start timestamp, returns the elapsed
+ * milliseconds since that timestamp, updating every second. Returns null
+ * when startTs is null (not processing). Uses server time as the anchor
+ * to stay accurate even if the client clock is off.
+ */
+function useLiveTimer(startTs: string | null | undefined): number | null {
+  const [elapsed, setElapsed] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!startTs) {
+      setElapsed(null);
+      return;
+    }
+    const start = new Date(startTs).getTime();
+    if (isNaN(start)) {
+      setElapsed(null);
+      return;
+    }
+    const tick = () => setElapsed(Date.now() - start);
+    tick(); // immediate
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [startTs]);
+
+  return elapsed;
+}
 
 function StatusBadge({ status }: { status: string }) {
   const { t } = useLocale();

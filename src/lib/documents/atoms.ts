@@ -41,7 +41,7 @@ export interface DocumentAtomRecord {
 const PREVIEW_MAX_CHARS = 120;
 
 /** Shape of a Docling structure.json `sections` entry (subset we consume). */
-interface StructureSection {
+export interface StructureSection {
   text?: string;
   level?: number;
   headingPath?: string;

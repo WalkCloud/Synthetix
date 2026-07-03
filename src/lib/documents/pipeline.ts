@@ -14,11 +14,13 @@ import { isDaemonEnabled, pythonDaemon } from "@/lib/python-daemon";
 import type { ProcessingOptions } from "@/lib/queue/types";
 import type { ModelProvider, ModelConfig, Document } from "@/generated/prisma/client";
 import { sanitizeMarkdown } from "@/lib/documents/outline/sanitize";
-import { splitByMacroAST, coalesceMacroChunks } from "@/lib/documents/outline/macro-split";
+import { splitByMacroAST, coalesceMacroChunks, type MacroChunk } from "@/lib/documents/outline/macro-split";
 import { microSplitByLocalSemantic, packChunksBySize } from "@/lib/documents/outline/micro-split";
 import { injectBreadcrumbs } from "@/lib/documents/outline/breadcrumb";
 import { enforceEmbeddingSafeChunks } from "@/lib/documents/outline/guard";
 import { llmRefineMacroStructure } from "@/lib/documents/outline/llm-refine";
+import { splitByStructure, loadStructure } from "@/lib/documents/outline/structure-split";
+import type { StructureJson } from "@/lib/documents/atoms";
 import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
@@ -228,19 +230,33 @@ export function calculateSplitPlan(
 
 async function splitViaLocalPipeline(
   markdown: string,
+  structure: StructureJson | null,
   chunkMaxTokens: number,
   ctx: ProcessingContext,
 ): Promise<SplitChunk[]> {
-  const clean = sanitizeMarkdown(markdown);
-  let macros = await splitByMacroAST(clean);
-  if (macros.length === 0) return [];
+  let macros: MacroChunk[];
 
-  // Merge small adjacent chunks before micro-splitting
-  macros = coalesceMacroChunks(macros, Math.max(400, Math.floor(chunkMaxTokens * 0.4)));
+  // Primary path: structure.json-based chunking (clean headings from Docling).
+  if (structure?.sections?.length && structure.sections.length > 1) {
+    macros = splitByStructure(markdown, structure, chunkMaxTokens);
+    if (macros.length === 0) {
+      // structure.json had sections but none matched markdown — fall through.
+      macros = null as unknown as MacroChunk[];
+    }
+  } else {
+    macros = null as unknown as MacroChunk[];
+  }
 
-  // LLM-enhanced heading structure refinement (non-blocking enhancement;
-  // falls back to original macros on any failure).
-  macros = await llmRefineMacroStructure(macros, ctx);
+  // Fallback: markdown-based chunking (when structure.json is absent or no
+  // sections matched the markdown text).
+  if (!macros) {
+    const clean = sanitizeMarkdown(markdown);
+    macros = await splitByMacroAST(clean);
+    if (macros.length === 0) return [];
+
+    macros = coalesceMacroChunks(macros, Math.max(400, Math.floor(chunkMaxTokens * 0.4)));
+    macros = await llmRefineMacroStructure(macros, ctx);
+  }
 
   const chunks = await microSplitByLocalSemantic(macros, chunkMaxTokens, 0.55);
   // microSplit fragments list/image-heavy sections into one-item chunks;
@@ -266,7 +282,10 @@ export async function splitAndPersistChunks(
     let chunks: SplitChunk[];
 
     if (splitStrategy === "structure-llm") {
-      chunks = await splitViaLocalPipeline(markdown, chunkMaxTokens, ctx);
+      // Load structure.json for structure-based chunking (preferred over
+      // markdown-based heuristic parsing).
+      const structure = await loadStructure(ctx.structurePath);
+      chunks = await splitViaLocalPipeline(markdown, structure, chunkMaxTokens, ctx);
     } else {
       // heading-only fallback
       chunks = splitMarkdown(markdown, { maxTokens: chunkMaxTokens, overlapTokens: 100 });
