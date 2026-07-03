@@ -10,6 +10,8 @@
 
 import { db } from "@/lib/db";
 import { tokenizeChinese } from "@/lib/search/tokenizer";
+import { searchWikiFts, isWikiFtsEnabled, removeWikiFtsForEntries } from "@/lib/search/wiki-fts";
+import { tokenizeTitle } from "@/lib/wiki/merger";
 import type { LLMProvider } from "@/lib/llm/types";
 import type { WikiEntryView, WikiSourceRef } from "@/lib/wiki/types";
 
@@ -120,43 +122,86 @@ export async function queryWikiForSection(
     (t) => t.trim() && !rewrittenLower.has(t.trim().toLowerCase()),
   );
 
-  // All terms (for the SQL OR clause) — deduped, capped.
+  // All terms (for scoring + legacy LIKE) — deduped, capped.
   const allTerms = [...tokenizedTerms, ...uniqueRewritten].slice(0, 30);
   if (allTerms.length === 0) return [];
 
-  // Build OR conditions for each term against title + content.
-  // SQLite LIKE is case-insensitive for ASCII by default; for CJK we rely on
-  // substring match (each multi-char CJK token is its own unit).
-  const titleConditions = allTerms.map((t) => ({ title: { contains: t } }));
-  const contentConditions = allTerms.map((t) => ({ content: { contains: t } }));
+  // ── Recall phase ────────────────────────────────────────────────────────
+  // Two recall strategies, picked by the WIKI_FTS_ENABLED feature flag:
+  //   - FTS path (default): jieba-tokenised FTS5 MATCH + a trigram/Jaccard
+  //     fallback for fuzzy/typo tolerance that LIKE cannot provide. Returns a
+  //     candidate set keyed by entry id with an FTS rank for score tuning.
+  //   - Legacy LIKE path (WIKI_FTS_ENABLED=off): the original Prisma `contains`
+  //     OR clause. Kept as an instant rollback if FTS misbehaves.
+  type Candidate = { entry: Awaited<ReturnType<typeof db.wikiEntry.findMany>>[number]; ftsRank?: number };
+  const candidateById = new Map<string, Candidate>();
 
-  const entries = await db.wikiEntry.findMany({
-    where: {
-      userId,
-      status: "active",
-      OR: [
-        ...titleConditions,
-        ...contentConditions,
-      ],
-    },
-    take: limit * 4, // over-fetch, then re-rank in memory
-    orderBy: { updatedAt: "desc" },
-  });
+  if (isWikiFtsEnabled()) {
+    // 1) FTS5 recall over the jieba-pre-tokenised index.
+    const ftsHits = await searchWikiFts(queryText, userId, limit * 4);
+    if (ftsHits.length > 0) {
+      const ftsIds = ftsHits.map((h) => h.entryId);
+      const ftsEntries = await db.wikiEntry.findMany({ where: { id: { in: ftsIds } } });
+      const byId = new Map(ftsEntries.map((e) => [e.id, e] as const));
+      for (const hit of ftsHits) {
+        const entry = byId.get(hit.entryId);
+        if (entry) candidateById.set(hit.entryId, { entry, ftsRank: hit.rank });
+      }
+    }
 
-  if (entries.length === 0) return [];
+    // 2) Trigram/Jaccard fallback: when FTS recall is thin, scan a cheap
+    //    LIKE-narrowed candidate set and admit entries whose title is
+    //    character-level similar to the query (catches typos, morphological
+    //    variants, and terms FTS's tokenisation split differently). This is
+    //    the "fuzzy" capability LIKE alone never had.
+    if (candidateById.size < limit * 2) {
+      const SIM_THRESHOLD = 0.34; // ~1 shared char in 3; tuned for CJK per-char tokens
+      const queryTitleTokens = tokenizeTitle(queryText);
+      const likeCandidates = await db.wikiEntry.findMany({
+        where: {
+          userId,
+          status: "active",
+          OR: allTerms.map((t) => ({ title: { contains: t } })),
+        },
+        take: limit * 8,
+      });
+      for (const e of likeCandidates) {
+        if (candidateById.has(e.id)) continue;
+        const sim = queryTitleTokens.size > 0
+          ? jaccard(queryTitleTokens, tokenizeTitle(e.title))
+          : 0;
+        if (sim >= SIM_THRESHOLD) candidateById.set(e.id, { entry: e });
+      }
+    }
+  } else {
+    // Legacy LIKE recall (instant-rollback path).
+    const titleConditions = allTerms.map((t) => ({ title: { contains: t } }));
+    const contentConditions = allTerms.map((t) => ({ content: { contains: t } }));
+    const entries = await db.wikiEntry.findMany({
+      where: { userId, status: "active", OR: [...titleConditions, ...contentConditions] },
+      take: limit * 4,
+      orderBy: { updatedAt: "desc" },
+    });
+    for (const e of entries) candidateById.set(e.id, { entry: e });
+  }
 
-  // Score with source-aware weighting:
+  if (candidateById.size === 0) return [];
+  const entries = [...candidateById.values()];
+
+  // ── Score phase (unchanged weights + FTS-rank micro-tune) ───────────────
   //   - title match > content match (3x vs 1x), as before
   //   - LLM-rewritten terms weigh 2x tokenized terms: they are deliberately
   //     chosen to align with wiki vocabulary, so a hit on a rewritten term is
   //     a stronger relevance signal than a generic tokenized word.
   //   - confidence is a multiplier so high-confidence entries surface first.
+  //   - when FTS provided a rank, add a small proximity bonus so FTS-best
+  //     entries win ties against equally-scored LIKE/trigram admits.
   // A minimum raw score (before confidence) of 2 is required — this filters
   // out entries that match only a single tokenized term in content (score 1),
   // which was the main source of irrelevant noise.
   const MIN_RELEVANCE_SCORE = 2;
   const rewrittenSet = new Set(uniqueRewritten.map((t) => t.toLowerCase()));
-  const scored = entries.map((e) => {
+  const scored = entries.map(({ entry: e, ftsRank }) => {
     let rawScore = 0;
     const titleLower = e.title.toLowerCase();
     const contentLower = e.content.toLowerCase();
@@ -166,7 +211,11 @@ export async function queryWikiForSection(
       if (titleLower.includes(tl)) rawScore += 3 * weight;
       if (contentLower.includes(tl)) rawScore += 1 * weight;
     }
-    return { entry: e, rawScore, score: rawScore * (0.5 + e.confidence * 0.5) };
+    // FTS rank is BM25-style (lower = better). Convert to a 0..0.5 bonus.
+    const ftsBonus = typeof ftsRank === "number" && ftsRank < 0
+      ? 0.5 * (1 / (1 + Math.abs(ftsRank)))
+      : 0;
+    return { entry: e, rawScore, score: rawScore * (0.5 + e.confidence * 0.5) + ftsBonus };
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -176,6 +225,15 @@ export async function queryWikiForSection(
     .slice(0, limit)
     .filter((s) => s.score > 0)
     .map((s) => toView(s.entry));
+}
+
+/** Jaccard similarity over two token sets: |A∩B| / |A∪B|. */
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const t of a) if (b.has(t)) intersection++;
+  const union = a.size + b.size - intersection;
+  return intersection / union;
 }
 
 /**
@@ -250,6 +308,7 @@ export async function deleteEntriesForDocument(userId: string, documentId: strin
   // Delete entries whose only source was this document
   if (toDelete.length > 0) {
     await db.wikiEntry.deleteMany({ where: { id: { in: toDelete }, userId } });
+    void removeWikiFtsForEntries(toDelete).catch(() => {});
   }
 
   // Update entries that had other sources (remove just this doc's ref)
