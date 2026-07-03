@@ -318,20 +318,15 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
         // Real H1: reset the entire stack, mark root as H1-set.
         headingStack = [mdHeading.text];
         rootLevel = 1;
+      } else if (level === 2 && rootLevel !== 1) {
+        // No real H1 above — this ## is the top-level section (Docling's
+        // common pattern). Each ## replaces the previous as root.
+        headingStack = [mdHeading.text];
+        rootLevel = 2;
       } else if (level === 2) {
-        // Level 2 headings are the top-level sections in Docling output.
-        // Each ## replaces the previous as root IF there's no genuine H1
-        // (rootLevel !== 1) OR if the current stack[0] looks like CLI noise
-        // that leaked in between markdown headings.
-        const stack0IsNoise = headingStack[0] && !headingStack[0].match(/^[\u4e00-\u9fff\d]/);
-        if (rootLevel !== 1 || stack0IsNoise) {
-          headingStack = [mdHeading.text];
-          rootLevel = 2;
-        } else {
-          // Genuine H1 root exists — this ## is a sub-section.
-          headingStack = headingStack.slice(0, 1);
-          headingStack[1] = mdHeading.text;
-        }
+        // Genuine H1 root exists — this ## is a sub-section.
+        headingStack = headingStack.slice(0, 1);
+        headingStack[1] = mdHeading.text;
       } else {
         // Sub-section within an existing root (either real H1 or promoted H2).
         headingStack = headingStack.slice(0, level - 1);

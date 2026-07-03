@@ -336,6 +336,7 @@ export type TranslationSchema = {
       conversionMethod: string;
       uploadedAgo: string;
       processingTime: string;
+      enhancementTime: string;
       processingInProgress: string;
       overview: string;
       format: string;

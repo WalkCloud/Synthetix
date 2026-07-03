@@ -68,6 +68,13 @@ export default function SearchPage() {
   const [kgProgressView, setKgProgressView] = useState<GraphProgressView | null>(null);
   const [kgElapsed, setKgElapsed] = useState(0);
   const kgStartRef = useRef<number | null>(null);
+  // Smooth progress interpolation: the backend writes progress in coarse
+  // integer steps (one per chunk, each taking 1-3 min of LLM time), so the
+  // raw value jumps in big increments. We store the raw backend value and
+  // use a 1s interval to ease the displayed value toward it, making the bar
+  // move smoothly between polling updates.
+  const kgRawProgressRef = useRef(0);
+  const kgSmoothTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const kgElapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [kgSelectedNodeId, setKgSelectedNodeId] = useState<string | null>(null);
   const [kgEntityDetailLoading, setKgEntityDetailLoading] = useState(false);
@@ -265,13 +272,41 @@ export default function SearchPage() {
         });
 
         setKgIndexingStatus(decision.status);
-        setKgIndexingProgress(task.progress || 0);
+        // Store raw backend progress for smooth interpolation.
+        kgRawProgressRef.current = task.progress || 0;
+        // Only set directly on first load (from 0) — otherwise let the
+        // smooth timer ease toward the new value.
+        if (kgIndexingProgress === 0 || !decision.shouldPollAgain) {
+          setKgIndexingProgress(task.progress || 0);
+        }
         setKgProgressView(getGraphProgressView({ status: task.status, progress: task.progress || 0, result: task.result }));
 
         if (decision.shouldPollAgain) {
+          // Start a smooth interpolation timer that eases the displayed
+          // progress toward the latest raw backend value every second,
+          // so the bar moves continuously instead of jumping in big steps.
+          if (!kgSmoothTimerRef.current) {
+            kgSmoothTimerRef.current = setInterval(() => {
+              setKgIndexingProgress((prev) => {
+                const target = kgRawProgressRef.current;
+                if (prev >= target) return prev;
+                // Ease toward target: move ~10% of the gap per second,
+                // but at least 0.3% so it's always visibly moving.
+                const gap = target - prev;
+                return Math.min(target, prev + Math.max(0.3, gap * 0.1));
+              });
+            }, 1000);
+          }
           timer = setTimeout(tick, 4000);
           return;
         }
+
+        // Stop the smooth timer when polling ends.
+        if (kgSmoothTimerRef.current) {
+          clearInterval(kgSmoothTimerRef.current);
+          kgSmoothTimerRef.current = null;
+        }
+        setKgIndexingProgress(task.progress || 0);
 
         if (decision.shouldRefreshGraph) {
           kgCacheRef.current = null;
@@ -287,6 +322,10 @@ export default function SearchPage() {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      if (kgSmoothTimerRef.current) {
+        clearInterval(kgSmoothTimerRef.current);
+        kgSmoothTimerRef.current = null;
+      }
     };
   }, [activeTab, kgCenter, kgTopology, loadKnowledgeGraph, loadLatestGraphTask]);
 
@@ -437,7 +476,7 @@ export default function SearchPage() {
                       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
                     </span>
                     <p className="text-sm font-semibold flex-1">{t.search.knowledgeGraphBuilding}</p>
-                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary tabular-nums">{kgIndexingProgress}%</span>
+                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary tabular-nums">{Math.round(kgIndexingProgress)}%</span>
                     {kgElapsed > 0 && (
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {t.search.graphElapsed} {Math.floor(kgElapsed / 60)}:{String(kgElapsed % 60).padStart(2, "0")}

@@ -118,7 +118,7 @@ export function ChunksPanel({ chunks, docId, format }: ChunksPanelProps) {
                       {isExpanded && chunk.content && (
                         <div className="px-3 pb-3 pt-0">
                           <div className="border-t border-border pt-3">
-                            <ChunkContent content={chunk.content.slice(0, 4000)} docId={docId} />
+                            <ChunkContent content={chunk.content} docId={docId} />
                           </div>
                         </div>
                       )}

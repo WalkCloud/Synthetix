@@ -45,7 +45,7 @@ export function ChunkContent({ content, docId }: ChunkContentProps) {
   }, [content, docId]);
 
   return (
-    <div className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap font-sans max-h-[500px] overflow-y-auto">
+    <div className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap font-sans max-h-[600px] overflow-y-auto rounded-md">
       {segments.map((seg, i) =>
         seg.type === "image" && seg.src ? (
           <div key={i} className="my-3">
