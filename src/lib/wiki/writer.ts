@@ -18,6 +18,7 @@ import { SECTION_EXTRACTION_PROMPT } from "@/lib/wiki/prompts";
 import { getExistingTitles, mergeEntry } from "@/lib/wiki/merger";
 import { appendChangeLog } from "@/lib/wiki/index-md";
 import { regenerateIndexMd } from "@/lib/wiki/index-md";
+import { syncWikiFtsForEntry } from "@/lib/search/wiki-fts";
 import {
   type SectionKnowledge,
   type WikiSourceRef,
@@ -82,6 +83,8 @@ export async function updateWikiAfterSection(
       data: { content: newContent },
     });
     await appendChangeLog(userId, existing.id, "update", `Appended to "${existing.title}" from section "${section.title}"`);
+    // Content changed → refresh the FTS row. Non-blocking.
+    void syncWikiFtsForEntry(existing.id).catch(() => {});
     updated++;
   }
 
