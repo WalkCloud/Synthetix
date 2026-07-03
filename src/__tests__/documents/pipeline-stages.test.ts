@@ -138,9 +138,10 @@ describe("computeDocumentPipeline", () => {
       graphMode: true,
       wikiEnabled: true,
     });
-    // Linear stages stay 5; graph + wiki are both branches.
+    // Linear stages stay 5; wiki + graph are both branches (wiki first since
+    // it completes faster, then the slow graph extraction).
     expect(p.stages).toHaveLength(5);
-    expect(p.branches.map((b) => b.key)).toEqual(["stageGraph", "stageWiki"]);
+    expect(p.branches.map((b) => b.key)).toEqual(["stageWiki", "stageGraph"]);
     // Both branches can be active simultaneously (parallel), each with its own %.
     const graph = p.branches.find((b) => b.key === "stageGraph")!;
     const wiki = p.branches.find((b) => b.key === "stageWiki")!;

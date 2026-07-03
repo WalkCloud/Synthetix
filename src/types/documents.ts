@@ -1,7 +1,7 @@
 import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
 
 export const SUPPORTED_FORMATS = [
-  "pdf", "docx", "pptx", "xlsx", "html", "txt", "md"
+  "pdf", "docx", "pptx", "xlsx", "html", "epub", "txt", "md", "csv"
 ] as const;
 export type SupportedFormat = typeof SUPPORTED_FORMATS[number];
 
@@ -53,6 +53,24 @@ export interface DocumentMeta {
    * or if no processing tasks exist. Only present on detail responses.
    */
   processingDurationMs?: number | null;
+  /**
+   * ISO timestamp of when the latest processing run started (earliest task
+   * createdAt). Used by the UI to show a live elapsed timer while processing.
+   * null when no processing tasks exist.
+   */
+  processingStartedAt?: string | null;
+  /**
+   * "Time to usable": convert start → embed end (the linear pipeline).
+   * The meaningful metric for users — how long until the document is
+   * searchable. Excludes graph/wiki enhancement time.
+   */
+  basicDurationMs?: number | null;
+  /**
+   * Enhancement duration: graph + wiki background processing time.
+   * Shown separately so users understand the doc is already usable
+   * while enhancement continues.
+   */
+  enhancementDurationMs?: number | null;
   chunks?: ChunkMeta[];
   tags?: TagMeta[];
   /**

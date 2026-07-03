@@ -47,19 +47,61 @@ export async function GET(
   const graphRow = latest("rag_index");
   const wikiRow = latest("wiki_synthesize");
 
-  // Processing duration: measured for the LATEST processing run only (a
-  // reprocess creates a fresh batch of tasks). We take the latest
-  // document_convert task as the batch start, then find all tasks created at
-  // or after it (the same pipeline run) and compute earliest-start →
-  // latest-completed-end. This avoids summing across multiple reprocess runs
-  // (which would show a meaningless multi-hour span). null while still
-  // processing or if no tasks exist.
+  // Processing duration: split into "basic" (convert → embed, the time until
+  // the document is usable for search/retrieval) and "enhancement" (graph +
+  // wiki, which continue in the background). This gives users a meaningful
+  // "time to usable" metric instead of a multi-hour span dominated by graph
+  // generation.
+  //
+  // basicDurationMs: convert start → embed end (the linear pipeline).
+  // enhancementDurationMs: graph/wiki start → latest graph/wiki end.
+  // processingDurationMs: kept for backward compat = basic + enhancement.
   let processingDurationMs: number | null = null;
+  let basicDurationMs: number | null = null;
+  let enhancementDurationMs: number | null = null;
+  let processingStartedAt: string | null = null;
+
   if (convertRow) {
     const batchStart = convertRow.createdAt;
     const batchTasks = tasks.filter((t) => t.createdAt >= batchStart);
     if (batchTasks.length > 0) {
       const earliestStart = batchTasks.reduce((min, t) => (t.createdAt < min ? t.createdAt : min), batchStart);
+      processingStartedAt = earliestStart.toISOString();
+
+      // Basic duration: convert → embed completion (linear pipeline only).
+      const basicTypes = ["document_convert", "rag_embed_index"];
+      const basicFinished = batchTasks.filter(
+        (t) => basicTypes.includes(t.type) && (t.status === "completed" || t.status === "failed"),
+      );
+      if (basicFinished.length > 0) {
+        const basicEnd = basicFinished.reduce(
+          (max, t) => (t.updatedAt > max ? t.updatedAt : max),
+          basicFinished[0].updatedAt,
+        );
+        basicDurationMs = basicEnd.getTime() - earliestStart.getTime();
+        if (basicDurationMs < 0) basicDurationMs = null;
+      }
+
+      // Enhancement duration: graph + wiki (background branches).
+      const enhTypes = ["rag_index", "wiki_synthesize", "document_segment"];
+      const enhTasks = batchTasks.filter((t) => enhTypes.includes(t.type));
+      if (enhTasks.length > 0) {
+        const enhStart = enhTasks.reduce(
+          (min, t) => (t.createdAt < min ? t.createdAt : min),
+          enhTasks[0].createdAt,
+        );
+        const enhFinished = enhTasks.filter((t) => t.status === "completed" || t.status === "failed");
+        if (enhFinished.length > 0) {
+          const enhEnd = enhFinished.reduce(
+            (max, t) => (t.updatedAt > max ? t.updatedAt : max),
+            enhFinished[0].updatedAt,
+          );
+          enhancementDurationMs = enhEnd.getTime() - enhStart.getTime();
+          if (enhancementDurationMs < 0) enhancementDurationMs = null;
+        }
+      }
+
+      // Total (backward compat): latest of all finished tasks.
       const finishedTasks = batchTasks.filter((t) => t.status === "completed" || t.status === "failed");
       if (finishedTasks.length > 0) {
         const latestEnd = finishedTasks.reduce((max, t) => (t.updatedAt > max ? t.updatedAt : max), finishedTasks[0].updatedAt);
@@ -102,5 +144,8 @@ export async function GET(
     pipeline,
     displayStatus: computeDisplayStatus(pipeline, doc.status),
     processingDurationMs,
+    processingStartedAt,
+    basicDurationMs,
+    enhancementDurationMs,
   });
 }
