@@ -10,6 +10,17 @@ const LOCAL_CHUNK_SCRIPT = "workers/python/local_chunk.py";
 const BREADCRUMB_BUFFER = 80;
 const TITLE_SNIPPET_MAX = 60;
 
+/**
+ * Ceiling for one ONNX semantic-chunking call (daemon or spawn). The default
+ * 120s was set when every macro was assumed small, but a large document can
+ * produce hundreds of over-limit macros, each with hundreds of sentences.
+ * Even with batched (32-sentence) encode inside local_chunk.py, the total
+ * ONNX CPU inference for a 300-macro / 1.7MB book can legitimately take
+ * 10-20 minutes. A 2-minute ceiling just guarantees a fallback/spawn/kill
+ * loop that never completes. Override via CHUNK_ONNX_TIMEOUT_MS.
+ */
+const CHUNK_ONNX_TIMEOUT_MS = Number(process.env.CHUNK_ONNX_TIMEOUT_MS || 20 * 60_000);
+
 /** Strip leading markdown heading lines (## ..., ### ...) from content. */
 function stripLeadingHeadings(content: string): string {
   return content.replace(/^#{1,6}\s+[^\n]*\n?/gm, "").trim();
@@ -104,7 +115,7 @@ async function chunkViaSpawn(params: {
     return await spawnPythonJson<{ results: MicroSplitBatchResult[] }>(
       LOCAL_CHUNK_SCRIPT,
       ["--input-file", inputFile],
-      { timeout: 120_000 },
+      { timeout: CHUNK_ONNX_TIMEOUT_MS },
     );
   } finally {
     fs.unlink(inputFile, () => {});
@@ -159,27 +170,50 @@ export async function microSplitByLocalSemantic(
   // Route through the resident daemon when enabled (skips ONNX cold-start);
   // transparently fall back to a one-shot spawn on any daemon failure so a
   // daemon hiccup never breaks document processing.
-  let data: { results: MicroSplitBatchResult[] };
+  let data: { results: MicroSplitBatchResult[] } | null = null;
   if (isDaemonEnabled()) {
     try {
       data = await pythonDaemon.call<{ results: MicroSplitBatchResult[] }>(
         "chunk",
         chunkParams,
-        { timeoutMs: 120_000 },
+        { timeoutMs: CHUNK_ONNX_TIMEOUT_MS },
       );
     } catch (err) {
-      console.warn("[daemon] chunk op failed, falling back to spawn:", err instanceof Error ? err.message : err);
-      data = await chunkViaSpawn(chunkParams);
+      console.warn("[daemon] chunk op failed, trying spawn fallback:", err instanceof Error ? err.message : err);
+      try {
+        data = await chunkViaSpawn(chunkParams);
+      } catch (err2) {
+        // Both daemon AND spawn failed (e.g. ONNX model load error, OOM kill,
+        // daemon crash without clean exit). DON'T propagate — the per-macro
+        // line-split fallback below (tokenCount > safeMaxTokens branch) handles
+        // over-limit macros with zero boundaries, producing correct retrieval-
+        // sized chunks. Semantic boundary detection is an enhancement, not a
+        // requirement; failing here used to abort the whole document_convert
+        // task and mark the document "failed" even though every chunk could
+        // have been produced by deterministic line-splitting.
+        console.warn("[micro-split] ONNX chunking unavailable (daemon + spawn both failed); falling back to line-split for all over-limit macros:", err2 instanceof Error ? err2.message : err2);
+        data = null;
+      }
     }
   } else {
-    data = await chunkViaSpawn(chunkParams);
+    try {
+      data = await chunkViaSpawn(chunkParams);
+    } catch (err) {
+      console.warn("[micro-split] spawn chunking failed; falling back to line-split:", err instanceof Error ? err.message : err);
+      data = null;
+    }
   }
 
-  // Build result map: seg_id → boundaries
+  // Build result map: seg_id → boundaries. When data is null (ONNX totally
+  // unavailable), boundaryMap stays empty and every over-limit macro hits the
+  // line-split fallback in the assembly loop below — correct, just coarser.
   const boundaryMap = new Map<string, number[]>();
-  for (const r of data.results) {
-    boundaryMap.set(r.id, r.boundaries);
+  if (data) {
+    for (const r of data.results) {
+      boundaryMap.set(r.id, r.boundaries);
+    }
   }
+
 
   // Assemble final chunks
   const chunks: SplitChunk[] = [];

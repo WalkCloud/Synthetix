@@ -26,6 +26,7 @@ export interface ChatResponse {
   inputTokens: number;
   outputTokens: number;
   model: string;
+  finishReason?: string;
 }
 
 export interface EmbedResponse {

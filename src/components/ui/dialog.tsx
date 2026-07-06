@@ -122,7 +122,13 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-medium",
+        // text-popover-foreground: the title renders inside DialogContent
+        // (bg-popover), so it must use the popover-foreground token to stay
+        // legible. Without an explicit color, a shadcn/tailwind.css rule on
+        // [data-slot="dialog-title"] resolves the inherited color to
+        // var(--background), which in light mode is near-white (#F8FAFC) —
+        // invisible on the white popover. This affected every dialog.
+        "font-heading text-base leading-none font-medium text-popover-foreground",
         className
       )}
       {...props}

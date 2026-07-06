@@ -13,6 +13,8 @@ export interface ModelOption {
   id: string;
   modelName: string;
   capabilities: string;
+  /** Mirrors ModelConfig.isDefaultFor: "llm"/"default" marks the default chat model. */
+  isDefaultFor?: string | null;
 }
 
 export type VersionSource = "generated_a" | "generated_b" | "edited";

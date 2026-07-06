@@ -37,6 +37,14 @@ const PACKAGING = path.join(ROOT, "packaging");
 const args = new Set(process.argv.slice(2));
 const SKIP_BUILD = args.has("--no-build");
 const SKIP_TRIM = args.has("--no-trim");
+// --assemble-only: stop after assembling dist/app WITHOUT running the legacy
+// iscc step. Used by the Electron installer pipeline (build-electron.mjs path),
+// which assembles dist/app here then wraps it in an Electron shell + its own
+// Inno Setup (Synthetix-Electron.iss) to produce the final installer. If we also
+// ran the legacy iscc here, both .iss files emit the same OutputBaseFilename
+// (Synthetix-Setup-v<ver>.exe), and a leftover/aborted legacy .exe can shadow or
+// collide with the Electron one — see packaging lessons "pitfall #5".
+const ASSEMBLE_ONLY = args.has("--assemble-only");
 
 // ---------- helpers ----------
 function log(...m) {
@@ -86,10 +94,71 @@ function dirSize(dir) {
   return total;
 }
 
+/** Count files in a directory tree (for trimming impact reporting). */
+function countFiles(dir) {
+  if (!fs.existsSync(dir)) return 0;
+  let count = 0;
+  let stack = [dir];
+  while (stack.length) {
+    const cur = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const full = path.join(cur, e.name);
+      if (e.isDirectory()) stack.push(full);
+      else count++;
+    }
+  }
+  return count;
+}
+
 function human(bytes) {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
   return `${mb.toFixed(1)} MB`;
+}
+
+/** Find a package's real path in pnpm's .pnpm store. Returns null if not found. */
+function resolvePnpmPkgPath(root, pkgName) {
+  const pnpmKey = pkgName.replace("/", "+");
+  const pnpmDir = path.join(root, "node_modules", ".pnpm");
+  if (!fs.existsSync(pnpmDir)) return null;
+  const entry = fs.readdirSync(pnpmDir, { withFileTypes: true })
+    .find(e => e.isDirectory() && e.name.startsWith(pnpmKey + "@"));
+  if (!entry) return null;
+  const p = path.join(pnpmDir, entry.name, "node_modules", pkgName);
+  return fs.existsSync(path.join(p, "package.json")) ? p : null;
+}
+
+/** Resolve a pnpm symlink to its real target. pnpm uses a virtual store:
+ *  node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> is the real location;
+ *  top-level node_modules/<pkg> is a symlink to it. readlinkSync gets the
+ *  relative target; if resolution fails (broken links in the standalone
+ *  copy), skip the entry rather than crashing. */
+function resolveSymlink(s) {
+  // Try readlink first (fast, doesn't stat the target).
+  try {
+    const link = fs.readlinkSync(s);
+    const real = path.isAbsolute(link) ? link : path.resolve(path.dirname(s), link);
+    if (fs.existsSync(real)) {
+      const st = fs.statSync(real);
+      return { real, isDir: st.isDirectory() };
+    }
+  } catch { /* not a symlink or readlink failed */ }
+  // Fallback: realpathSync (resolves the full chain, but may EPERM/ENOENT).
+  try {
+    const real = fs.realpathSync(s);
+    const st = fs.statSync(real);
+    return { real, isDir: st.isDirectory() };
+  } catch {
+    // Broken symlink — skip. This happens in standalone output where some
+    // pnpm virtual-store links don't have their targets copied.
+    return null;
+  }
 }
 
 /** Copy a directory tree recursively (excluding nothing). */
@@ -101,9 +170,10 @@ function copyDir(src, dst) {
     if (entry.isDirectory()) copyDir(s, d);
     else if (entry.isSymbolicLink()) {
       // Materialize symlinks (pnpm-style) as real files to survive packaging.
-      const real = fs.realpathSync(s);
-      if (fs.statSync(real).isDirectory()) copyDir(real, d);
-      else fs.copyFileSync(real, d);
+      const resolved = resolveSymlink(s);
+      if (!resolved) continue; // skip broken links
+      if (resolved.isDir) copyDir(resolved.real, d);
+      else fs.copyFileSync(resolved.real, d);
     } else fs.copyFileSync(s, d);
   }
 }
@@ -119,8 +189,8 @@ function copyDirExcluding(src, dst, exclude) {
     const d = path.join(dst, entry.name);
     if (entry.isDirectory()) copyDir(s, d);
     else if (entry.isSymbolicLink()) {
-      const real = fs.realpathSync(s);
-      if (fs.statSync(real).isDirectory()) copyDir(real, d);
+      const { real, isDir } = resolveSymlink(s);
+      if (isDir) copyDir(real, d);
       else fs.copyFileSync(real, d);
     } else fs.copyFileSync(s, d);
   }
@@ -220,31 +290,112 @@ function main() {
     if (!copyFile(path.join(PACKAGING, f), path.join(APP, f)))
       fail(`launcher missing: packaging/${f}`);
   }
-  // .next build output — EXCLUDE dev-only artifacts (turbopack dev cache,
-  // trace dir) that bloat the installer by ~1GB and never run in production.
-  log("  copying .next (production output only) …");
+
+  // --- Next.js standalone output ---
+  // Instead of shipping the full .next + a hoisted node_modules (~65000 files),
+  // we use Next's standalone tracing which produces server.js + a minimal
+  // node_modules containing only the packages the server actually requires
+  // (~1600 files). This cuts the install payload by ~97% in file count, which
+  // is the primary fix for the 60% install stall.
+  const standaloneDir = path.join(ROOT, ".next", "standalone");
+  if (!fs.existsSync(path.join(standaloneDir, "server.js")))
+    fail("standalone output missing — ensure `output: 'standalone'` in next.config.ts");
+  log("  copying standalone server.js + traced node_modules/ …");
+  // server.js — the standalone entry point (replaces `next start`).
+  copyFile(path.join(standaloneDir, "server.js"), path.join(APP, "server.js"));
+  // .next/server — server-side chunks and route handlers (standalone copies
+  // only this subset of .next, not dev/cache/trace).
+  copyDir(path.join(standaloneDir, ".next"), path.join(APP, ".next"));
+  // node_modules — standalone's traced deps. copyDir resolves pnpm symlinks
+  // into real files so they survive packaging and work on the target machine.
+  // Exclude dev-only packages that Next's tracer mistakenly includes.
   copyDirExcluding(
-    path.join(ROOT, ".next"),
-    path.join(APP, ".next"),
-    ["dev", "cache", "trace"]
+    path.join(standaloneDir, "node_modules"),
+    path.join(APP, "node_modules"),
+    ["electron", "playwright", "playwright-core"]
   );
+
+  // --- Flatten pnpm .pnpm/ store into top-level node_modules/ ---
+  // standalone tracing + pnpm's symlink layout produces a .pnpm/ virtual store
+  // where packages live at .pnpm/<pkg>@<ver>/node_modules/<pkg>/. Node's
+  // require() resolves modules by walking up the directory tree looking for
+  // node_modules/<name> — it does NOT look inside .pnpm/. So we must copy
+  // every package from .pnpm/<pkg>@<ver>/node_modules/<pkg>/ to the top-level
+  // node_modules/<pkg>/ for require() to find them.
+  //
+  // This is the same flattening that `pnpm install --node-linker=hoisted`
+  // does, but applied to the standalone output (which already traced only
+  // the needed deps — ~38 packages vs ~65000 files in a full install).
+  log("  flattening .pnpm/ store to top-level node_modules/ …");
+  const appPnpmDir = path.join(APP, "node_modules", ".pnpm");
+  if (fs.existsSync(appPnpmDir)) {
+    for (const entry of fs.readdirSync(appPnpmDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "node_modules") continue;
+      // Skip dev-only packages that standalone mistakenly included.
+      if (/^electron@|^playwright/.test(entry.name)) continue;
+      // A .pnpm/<pkg>/ entry may contain multiple packages in its
+      // node_modules/ (e.g. pg-types@2.2.0/node_modules/ has pg-types,
+      // pg-int8, postgres-array, etc. — pnpm hoists peer deps here).
+      // Copy ALL of them, not just the first.
+      const innerNm = path.join(appPnpmDir, entry.name, "node_modules");
+      if (!fs.existsSync(innerNm)) continue;
+      for (const sub of fs.readdirSync(innerNm, { withFileTypes: true })) {
+        if (!sub.isDirectory() && !sub.isSymbolicLink()) continue;
+        const src = path.join(innerNm, sub.name);
+        // For scoped packages (@scope/), sub.name is "@scope" and the real
+        // package is inside it (e.g. @swc/helpers). Merge into top-level
+        // node_modules/@scope/ rather than skipping if @scope already exists.
+        if (sub.name.startsWith("@")) {
+          const scopeDst = path.join(APP, "node_modules", sub.name);
+          fs.mkdirSync(scopeDst, { recursive: true });
+          // Copy each package inside the scope dir
+          for (const scopedPkg of fs.readdirSync(src, { withFileTypes: true })) {
+            const spSrc = path.join(src, scopedPkg.name);
+            const spDst = path.join(scopeDst, scopedPkg.name);
+            if (fs.existsSync(spDst)) continue;
+            copyDir(spSrc, spDst);
+          }
+        } else {
+          const dst = path.join(APP, "node_modules", sub.name);
+          if (fs.existsSync(dst)) continue;
+          copyDir(src, dst);
+        }
+      }
+    }
+  }
+
+  // Delete the .pnpm virtual store now that flattening has hoisted every
+  // package to the top level. Node's require() resolves node_modules/<name> by
+  // walking up the dir tree — it never looks inside .pnpm/, so the store is
+  // pure dead weight (and it leaks dev-only heavy packages like electron@33
+  // that standalone traced but we don't need: ~269MB / ~2700 files here).
+  // (packaging lessons "future optimization #2".)
+  if (fs.existsSync(appPnpmDir)) {
+    const freed = dirSize(appPnpmDir);
+    const files = countFiles(appPnpmDir);
+    rmrf(appPnpmDir);
+    log(`  removed .pnpm/ store (saved ${human(freed)}, ${files} files) …`);
+  }
+
+  // .next/static — standalone does NOT include static assets; copy separately.
+  log("  copying .next/static …");
+  copyDir(path.join(ROOT, ".next", "static"), path.join(APP, ".next", "static"));
+
   // prisma schema + migrations + workers (python scripts).
+  // NOTE: prisma CLI is NOT included — first-run.ts uses better-sqlite3 to
+  // execute migration.sql files directly, avoiding prisma's heavy dep tree.
   log("  copying prisma/ …");
   copyDir(path.join(ROOT, "prisma"), path.join(APP, "prisma"));
   log("  copying workers/ …");
   copyDir(path.join(ROOT, "workers"), path.join(APP, "workers"));
 
-  // node_modules — install a clean, FLAT (hoisted, no symlinks) production
-  // tree. The source tree is pnpm's symlink layout (.pnpm/ + top-level links);
-  // naively copying it materializes every linked target repeatedly (2-3x
-  // bloat) AND ships symlinks that break on the target machine. Re-installing
-  // with node-linker=hoisted into the bundle gives a real, flat node_modules
-  // with no symlinks, using the pnpm store cache (hardlinks, fast).
-  log("  installing hoisted production node_modules/ …");
-  installNodeModules(APP);
-  // Restore native binaries skipped by --ignore-scripts.
-  log("  restoring prebuilt native binaries …");
-  copyNativeBinaries(path.join(APP, "node_modules"));
+  // public/ — static assets served at the root by Next.js (e.g. the brand logo
+  // referenced via next/image as /logo.png). If absent in the bundle, those
+  // assets 404 at runtime and next/image throws "received null".
+  if (fs.existsSync(path.join(ROOT, "public"))) {
+    log("  copying public/ …");
+    copyDir(path.join(ROOT, "public"), path.join(APP, "public"));
+  }
 
   // runtime: restore the cached node.exe + python install, or fall back to a
   // dist/runtime staging dir the operator may have prepared. We never
@@ -281,6 +432,18 @@ function main() {
   }
 
   // --- Step 4: compile installer with iscc ---
+  // Skipped under --assemble-only: the Electron pipeline (build-electron.mjs)
+  // wraps dist/app into an Electron shell and runs its own Synthetix-Electron.iss
+  // to produce the final installer. Both .iss files share the same
+  // OutputBaseFilename, so running the legacy iscc here risks a stale/colliding
+  // .exe shadowing the Electron one.
+  if (ASSEMBLE_ONLY) {
+    warn("skipping iscc (--assemble-only) — dist/app is ready; run build-electron.mjs to wrap it.");
+    const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+    log(`bundle assembled at ${path.relative(ROOT, APP)} (${human(dirSize(APP))}) in ${secs}s`);
+    log("done.");
+    return;
+  }
   log("Step 4/5: compile installer (iscc)");
   fs.mkdirSync(INSTALLER_DIR, { recursive: true });
   const issPath = prepareIss(VERSION);
@@ -311,8 +474,27 @@ function main() {
 const PYTHON_UNUSED_PACKAGES = [
   // AWS / cloud SDKs — never imported by any worker.
   "aws_cdk", "aws-cdk.assets-handlers", "aws-cdk", "boto3", "botocore", "s3transfer", "jmespath",
-  // torchvision / torchgen / functorch — torch is kept, these are not imported.
-  "torchvision", "torchgen", "functorch", "torch_tensorrt",
+  // torch is KEPT — docling's import chain pulls it in at module load
+  // (models/extraction/transformers_extraction_model.py has a top-level
+  // `import torch`), so removing torch breaks `from docling.document_converter
+  // import DocumentConverter`. The chunking rewrite dropped the *runtime* need
+  // for torch, but docling still requires it at import time. Only these torch
+  // companion packages are unused:
+  "torchvision", "functorch", "torch_tensorrt",
+  // patchright (95MB) — a Playwright anti-detection fork, pure dev/test
+  // tooling. Zero references in any worker.
+  "patchright",
+  // scipy (89MB), sklearn (28MB) — not imported by workers, docling, lightrag,
+  // or torch at module load (verified empirically: torch imports sympy but not
+  // scipy/sklearn). sympy (29MB) is KEPT — torch's codegen imports it at load.
+  "scipy", "sklearn", "scikit_learn",
+  // rapidocr (32MB) — not imported; docling uses its own OCR pipeline.
+  "rapidocr",
+  // onnx (40MB, the format package) — distinct from onnxruntime (33MB, which
+  // IS used). onnxruntime does not require the onnx package (verified).
+  "onnx",
+  // faker (9.8MB) — fake-data generator, dev-only, zero worker references.
+  "faker",
   // opencv — not imported by workers (docling uses it only for some parsers;
   // we drop it and rely on the default pipeline; re-add if conversion fails).
   "cv2", "opencv_python",
@@ -365,6 +547,37 @@ function trimPython(pyRoot) {
         log(`    - site-packages/${m}  (${human(sz)})`);
       }
     }
+  }
+
+  // ---- site-packages deep trim: runtime-irrelevant files inside kept packages ----
+  // torch/include (9412 C++ headers, 63MB) — only needed to compile torch
+  // extensions; docling just does `import torch`, never compiles anything.
+  // torch/lib/*.lib (import libraries, ~45MB) — link-time artifacts; at runtime
+  // only the .dll files are loaded. torch/bin/protoc.exe — build tool.
+  // torchgen (2.4MB) — code generation for torch internals, not needed at runtime.
+  const deepTrim = [
+    [path.join(sp, "torch", "include"), "torch/include (C++ headers)"],
+    [path.join(sp, "torch", "bin"), "torch/bin (build tools)"],
+    [path.join(sp, "torchgen"), "torchgen (code-gen)"],
+  ];
+  for (const [p, label] of deepTrim) {
+    if (fs.existsSync(p)) {
+      const sz = dirSize(p);
+      const cnt = countFiles(p);
+      rmrf(p);
+      log(`    - ${label}  (${human(sz)}, ${cnt} files)`);
+    }
+  }
+  // *.lib files inside torch/lib — import libraries, not needed at runtime.
+  purgeGlob(path.join(sp, "torch", "lib"), "*.lib");
+
+  // Python standard-library test suite (Lib/test, 446 files, 32MB).
+  const libTest = path.join(pyRoot, "Lib", "test");
+  if (fs.existsSync(libTest)) {
+    const sz = dirSize(libTest);
+    const cnt = countFiles(libTest);
+    rmrf(libTest);
+    log(`    - Lib/test  (${human(sz)}, ${cnt} files)`);
   }
 
   // __pycache__ everywhere.

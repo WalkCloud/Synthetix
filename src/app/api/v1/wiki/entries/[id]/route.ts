@@ -1,6 +1,7 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { appendChangeLog } from "@/lib/wiki/index-md";
+import { syncWikiFtsForEntry, removeWikiFtsForEntry } from "@/lib/search/wiki-fts";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 /**
@@ -120,6 +121,9 @@ export async function PATCH(
     "update",
     `User edited "${updated.title}" (${changes.join(", ")})`,
   );
+  // title/content edits affect the FTS index; confidence edits don't, but
+  // syncWikiFtsForEntry is cheap and idempotent, so refresh unconditionally.
+  void syncWikiFtsForEntry(id).catch(() => {});
 
   return successResponse(updated);
 }
@@ -145,6 +149,8 @@ export async function DELETE(
   if (result.count === 0) {
     return errorResponse({ code: "notFound", message: "Wiki entry not found" }, 404);
   }
+  // Drop the entry from the FTS index. Non-blocking.
+  void removeWikiFtsForEntry(id).catch(() => {});
 
   return successResponse({ deleted: result.count });
 }

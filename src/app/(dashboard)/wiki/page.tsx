@@ -40,8 +40,7 @@ interface WikiListResponse {
 
 export default function WikiPage() {
   const router = useRouter();
-  const { t, format, locale } = useLocale();
-  const isZh = locale === "zh-CN";
+  const { t, format } = useLocale();
 
   const [data, setData] = useState<WikiListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,8 +196,8 @@ export default function WikiPage() {
                 <polyline points="14 2 14 8 20 8" />
               </svg>
               {selectedDocIds.length > 0
-                ? `${selectedDocIds.length} ${isZh ? "个文档" : "docs"}`
-                : (isZh ? "全部文档" : "All docs")}
+                ? format.template(t.wiki.list.docsSelected, { count: selectedDocIds.length })
+                : t.wiki.list.allDocs}
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
@@ -210,7 +209,7 @@ export default function WikiPage() {
                 <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-lg shadow-lg max-h-[300px] overflow-y-auto min-w-[260px]">
                   {documents.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-muted-foreground">
-                      {isZh ? "暂无文档" : "No documents"}
+                      {t.wiki.list.noDocuments}
                     </div>
                   ) : (
                     documents.map((doc) => {
@@ -241,7 +240,7 @@ export default function WikiPage() {
                       onClick={() => { setSelectedDocIds([]); setPage(1); }}
                       className="w-full text-left px-3 py-2 border-t border-border text-[13px] text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer"
                     >
-                      {isZh ? "清除筛选" : "Clear filter"}
+                      {t.wiki.list.clearFilter}
                     </button>
                   )}
                 </div>

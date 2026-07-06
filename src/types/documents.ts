@@ -1,7 +1,7 @@
 import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
 
 export const SUPPORTED_FORMATS = [
-  "pdf", "docx", "pptx", "xlsx", "html", "txt", "md"
+  "pdf", "docx", "pptx", "xlsx", "html", "epub", "txt", "md", "csv"
 ] as const;
 export type SupportedFormat = typeof SUPPORTED_FORMATS[number];
 
@@ -47,6 +47,30 @@ export interface DocumentMeta {
   conversionWarning?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Total processing duration in milliseconds, from the earliest processing
+   * task (convert) to the latest completed task. null while still processing
+   * or if no processing tasks exist. Only present on detail responses.
+   */
+  processingDurationMs?: number | null;
+  /**
+   * ISO timestamp of when the latest processing run started (earliest task
+   * createdAt). Used by the UI to show a live elapsed timer while processing.
+   * null when no processing tasks exist.
+   */
+  processingStartedAt?: string | null;
+  /**
+   * "Time to usable": convert start → embed end (the linear pipeline).
+   * The meaningful metric for users — how long until the document is
+   * searchable. Excludes graph/wiki enhancement time.
+   */
+  basicDurationMs?: number | null;
+  /**
+   * Enhancement duration: graph + wiki background processing time.
+   * Shown separately so users understand the doc is already usable
+   * while enhancement continues.
+   */
+  enhancementDurationMs?: number | null;
   chunks?: ChunkMeta[];
   tags?: TagMeta[];
   /**
@@ -56,6 +80,13 @@ export interface DocumentMeta {
    * document-detail API. Optional: only present on detail responses.
    */
   pipeline?: DocumentPipeline;
+  /**
+   * Single consistent display status shared by the library list and the detail
+   * page so the two never disagree (e.g. "enhancing" = basic retrieval ready
+   * but Graph/Wiki still running). Computed server-side via computeDisplayStatus
+   * from the same task-driven pipeline. Optional: legacy docs may omit it.
+   */
+  displayStatus?: "ready" | "enhancing" | "processing" | "failed" | "pending";
   /**
    * Position in the global document-convert queue (1-indexed). Only set when
    * `status === "queued"`. The library API computes this on the fly from

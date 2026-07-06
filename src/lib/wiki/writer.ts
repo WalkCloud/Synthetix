@@ -18,6 +18,7 @@ import { SECTION_EXTRACTION_PROMPT } from "@/lib/wiki/prompts";
 import { getExistingTitles, mergeEntry } from "@/lib/wiki/merger";
 import { appendChangeLog } from "@/lib/wiki/index-md";
 import { regenerateIndexMd } from "@/lib/wiki/index-md";
+import { syncWikiFtsForEntry } from "@/lib/search/wiki-fts";
 import {
   type SectionKnowledge,
   type WikiSourceRef,
@@ -82,6 +83,8 @@ export async function updateWikiAfterSection(
       data: { content: newContent },
     });
     await appendChangeLog(userId, existing.id, "update", `Appended to "${existing.title}" from section "${section.title}"`);
+    // Content changed → refresh the FTS row. Non-blocking.
+    void syncWikiFtsForEntry(existing.id).catch(() => {});
     updated++;
   }
 
@@ -109,14 +112,26 @@ export async function updateWikiAfterSection(
       .catch(() => {});
   }
 
-  // Bump confidence of entries that were cited in this section (validate signal)
+  // Bump confidence of entries that were cited in this section (validate signal).
+  // NOTE: we read-then-write (not Prisma atomic `increment`) because confidence
+  // must be clamped to [0, 1] — the atomic increment had no upper bound, so a
+  // heavily-cited entry accumulated +0.03 per citation past 1.0 (e.g. 112%).
+  // updateMany is skipped here because we need the current value to clamp.
   for (const entryId of usedWikiEntryIds) {
-    await db.wikiEntry
-      .updateMany({
+    try {
+      const entry = await db.wikiEntry.findFirst({
         where: { id: entryId, userId },
-        data: { confidence: { increment: 0.03 }, lastValidatedAt: new Date() },
-      })
-      .catch(() => {});
+        select: { confidence: true },
+      });
+      if (!entry) continue;
+      const bumped = Math.min(1, entry.confidence + 0.03);
+      await db.wikiEntry.update({
+        where: { id: entryId },
+        data: { confidence: bumped, lastValidatedAt: new Date() },
+      });
+    } catch {
+      // Wiki confidence bump is best-effort — never block the writeback flywheel.
+    }
   }
 
   // Refresh index.md so the browse page reflects the new state

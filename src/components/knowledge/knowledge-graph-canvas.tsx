@@ -106,6 +106,9 @@ export function KnowledgeGraphCanvas({
   const neighborsRef = useRef<Map<string, Set<string>>>(new Map());
   const labelThresholdRef = useRef(Infinity);
   const isDarkRef = useRef(false);
+  // Track whether the user has manually interacted (zoom/pan). Once true,
+  // auto-fit-to-view is suppressed so it never overrides the user's zoom level.
+  const userInteractedRef = useRef(false);
 
   const hoverRef = useRef<string | null>(null);
   const dragNodeRef = useRef<GNode | null>(null);
@@ -216,6 +219,7 @@ export function KnowledgeGraphCanvas({
   };
 
   const zoomAt = (cxScreen: number, cyScreen: number, factor: number) => {
+    userInteractedRef.current = true;
     const t = transformRef.current;
     const k = Math.max(0.2, Math.min(4, t.k * factor));
     const sx = (cxScreen - t.x) / t.k;
@@ -254,6 +258,9 @@ export function KnowledgeGraphCanvas({
     const fitOnReady = () => {
       scheduleDrawRef.current();
       if (fitDone) return;
+      // Suppress auto-fit once the user has manually zoomed/panned — their
+      // viewport takes priority over the automatic "fit to view".
+      if (userInteractedRef.current) { fitDone = true; return; }
       // Wait until the ResizeObserver has measured the canvas.
       if (sizeRef.current.w <= 0 || sizeRef.current.h <= 0) return;
       // Let the simulation spread the nodes a few ticks so the bounding box is
@@ -371,17 +378,34 @@ export function KnowledgeGraphCanvas({
         ctx.globalAlpha = 1;
       }
 
-      // Labels — transparent background (text halo only), smaller font,
-      // only for notable / hovered / selected nodes to avoid clutter.
-      ctx.font = `500 ${10 / t.k}px ui-sans-serif, system-ui, sans-serif`;
+      // Labels — transparent background (text halo only), smaller font.
+      // Label visibility is zoom-adaptive: as the user zooms in, more labels
+      // appear (fewer nodes per screen pixel = less overlap); zoomed out,
+      // only high-degree nodes show labels to avoid clutter. This replaces
+      // the old fixed top-28 threshold which hid labels even when zoomed in.
       ctx.textBaseline = "middle";
       ctx.lineJoin = "round";
-      const thr = labelThresholdRef.current;
       const labelText = dark ? "#f4f4f5" : "#27272a";
       const halo = dark ? "rgba(9,9,11,0.85)" : "rgba(255,255,255,0.9)";
+      // zoom level t.k determines how many labels to show:
+      //   k < 0.8  → only top-degree nodes (threshold = top 25)
+      //   k < 1.5  → moderate (threshold = top 80)
+      //   k < 2.5  → most nodes (threshold = top 120)
+      //   k >= 2.5 → all nodes
+      const allDegrees = gNodesRef.current.map((n) => n.degree).sort((a, b) => b - a);
+      let labelCount: number;
+      if (t.k >= 2.5) labelCount = allDegrees.length;
+      else if (t.k >= 1.5) labelCount = Math.min(120, allDegrees.length);
+      else if (t.k >= 0.8) labelCount = Math.min(80, allDegrees.length);
+      else labelCount = Math.min(25, allDegrees.length);
+      const dynThreshold = allDegrees[Math.min(labelCount - 1, allDegrees.length - 1)] ?? Infinity;
+      // Font size shrinks slightly when zoomed out so labels don't dominate.
+      const fontSize = Math.max(8, Math.min(11, 10 / Math.max(0.8, t.k * 0.8)));
+      ctx.font = `500 ${fontSize / t.k}px ui-sans-serif, system-ui, sans-serif`;
       for (const n of gNodesRef.current) {
         if (n.x == null || n.y == null) continue;
-        const show = n.id === sel || n.id === hoverRef.current || n.degree >= thr;
+        // Always show labels for selected, hovered, and high-degree nodes.
+        const show = n.id === sel || n.id === hoverRef.current || n.degree >= dynThreshold;
         if (!show) continue;
         const dimmed = sel && n.id !== sel && !neighbors?.has(n.id);
         ctx.globalAlpha = dimmed ? 0.4 : 1;
@@ -416,17 +440,23 @@ export function KnowledgeGraphCanvas({
     if (!el || !canvas) return;
     const resize = () => {
       const r = el.getBoundingClientRect();
+      // Ignore sub-pixel changes (scrollbar appear/disappear, etc.) that would
+      // reset the canvas bitmap and cause a visible "jump" on every interaction.
+      const prev = sizeRef.current;
+      if (prev.w > 0 && Math.abs(r.width - prev.w) < 2 && Math.abs(r.height - prev.h) < 2) {
+        return;
+      }
       const dpr = window.devicePixelRatio || 1;
       sizeRef.current = { w: r.width, h: r.height, dpr };
       canvas.width = Math.round(r.width * dpr);
       canvas.height = Math.round(r.height * dpr);
       canvas.style.width = `${r.width}px`;
       canvas.style.height = `${r.height}px`;
-      const sim = simRef.current;
-      if (sim) {
-        const center = sim.force("center") as ReturnType<typeof forceCenter> | undefined;
-        center?.x(r.width / 2)?.y(r.height / 2);
-      }
+      // Do NOT update forceCenter on resize — updating it mid-simulation
+      // causes nodes to "jump" toward the new center, which the user sees
+      // as a jarring snap when selecting/deselecting nodes (the detail panel
+      // appearing/disappearing triggers a minor resize via scrollbar changes).
+      // The center force is set once at simulation init and stays fixed.
       scheduleDrawRef.current();
     };
     const obs = new ResizeObserver(resize);
@@ -485,7 +515,10 @@ export function KnowledgeGraphCanvas({
       if (panRef.current.active) {
         const dx = e.clientX - panRef.current.x;
         const dy = e.clientY - panRef.current.y;
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panRef.current.moved = true;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          panRef.current.moved = true;
+          userInteractedRef.current = true;
+        }
         transformRef.current.x += dx;
         transformRef.current.y += dy;
         panRef.current.x = e.clientX;
@@ -572,8 +605,8 @@ export function KnowledgeGraphCanvas({
               : <><path d="M3 3h18v18H3z" opacity="0" /><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>}
           </svg>
           {showAll
-            ? dens.topEntitiesLabel
-            : `${visibleCount}/${totalCount} ${dens.entitiesLabel}`}
+            ? format.template(dens.allEntitiesLabel, { count: totalCount })
+            : format.template(dens.topEntitiesLabel, { visible: visibleCount, total: totalCount })}
         </button>
       )}
 

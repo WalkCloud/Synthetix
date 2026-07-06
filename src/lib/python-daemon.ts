@@ -33,7 +33,12 @@ const DAEMON_SCRIPT = path.resolve("workers/python/daemon.py");
 const DAEMON_ENABLED = (process.env.PYTHON_DAEMON_ENABLED ?? "true").toLowerCase() !== "false";
 const IDLE_TIMEOUT_MS = parsePositiveInt(process.env.PYTHON_DAEMON_IDLE_TIMEOUT_MS, 300_000);
 const MAX_RSS_MB = parsePositiveInt(process.env.PYTHON_DAEMON_MAX_RSS_MB, 1500);
-const STARTUP_TIMEOUT_MS = parsePositiveInt(process.env.PYTHON_DAEMON_STARTUP_TIMEOUT_MS, 60_000);
+// 120s covers interpreter spawn + lighthag/numpy/openai import on slow disks.
+// The previous 60s was too tight on Windows where the 340MB ONNX model load
+// (now backgrounded in daemon.py) plus lightrag import could exceed it,
+// causing Node to SIGKILL the daemon before it ever served a request. Every
+// query then paid a full Python cold start (the 28-68s entity-evidence bug).
+const STARTUP_TIMEOUT_MS = parsePositiveInt(process.env.PYTHON_DAEMON_STARTUP_TIMEOUT_MS, 120_000);
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const n = Number.parseInt(raw || "", 10);
@@ -139,11 +144,44 @@ export class PythonDaemonClient {
 
     // Handshake: confirm the loop is alive before real calls. ping does NOT
     // trigger any heavy import, so this only measures interpreter readiness.
+    // On Windows the first spawn sometimes takes longer than the ping budget
+    // (process creation delay, antivirus scan of the new python.exe). Retry
+    // once before tearing down — a transiently slow first-spawn shouldn't
+    // permanently mark the daemon as failed and force every caller to spawn.
     try {
       await this.dispatch("ping", {}, { timeoutMs: STARTUP_TIMEOUT_MS });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only retry on timeout; real errors (spawn ENOENT, script crash) won't
+      // be fixed by retrying and would just waste another STARTUP_TIMEOUT_MS.
+      const isTimeout = /<timeout after/i.test(msg);
+      if (!isTimeout) {
+        this.killForRestart();
+        throw new Error(`python daemon failed to start: ${msg}`);
+      }
+      // Tear down the timed-out child and respawn once.
       this.killForRestart();
-      throw new Error(`python daemon failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        // Re-spawn inline (don't recurse via ensureReady, which would loop).
+        const env2 = buildPythonSpawnEnv();
+        env2.PYTHONUNBUFFERED = "1";
+        const child2 = spawn(PYTHON_PATH, [DAEMON_SCRIPT], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: env2,
+        });
+        this.child = child2;
+        child2.stdout?.setEncoding("utf-8");
+        child2.stderr?.setEncoding("utf-8");
+        child2.stdout?.on("data", (d: string) => this.onStdoutData(d));
+        child2.stderr?.on("data", (d: string) => this.onStderrData(d));
+        child2.on("exit", (code, sig) => this.onExit(code, sig));
+        child2.on("error", (e) => { this.child = null; this.failInFlight(e); });
+        if (child2.pid) applyChildPriority(child2.pid);
+        await this.dispatch("ping", {}, { timeoutMs: STARTUP_TIMEOUT_MS });
+      } catch (retryErr) {
+        this.killForRestart();
+        throw new Error(`python daemon failed to start (after retry): ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`);
+      }
     }
 
     this.armReaper();

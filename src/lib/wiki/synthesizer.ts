@@ -24,6 +24,7 @@
 import { db } from "@/lib/db";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
+import type { ChatParams, ChatResponse } from "@/lib/llm/types";
 import { resolveLLMClient } from "@/lib/llm/client";
 import fs from "fs";
 import { promises as fsp } from "fs";
@@ -43,6 +44,7 @@ import {
   type ChunkKnowledge,
   type WikiSourceRef,
   WIKI_CONFIG,
+  resolveWikiInputMaxTokens,
 } from "@/lib/wiki/types";
 
 /**
@@ -66,16 +68,29 @@ export interface SynthChunk {
 }
 
 /**
+ * Per-chunk progress callback. Reports how many chunks have been processed
+ * out of the total so the worker can update the task's progress bar —
+ * without this, the bar sits frozen at a fixed percentage for the entire
+ * (potentially long) per-chunk LLM loop.
+ */
+export type SynthProgressPhase = "extract" | "merge" | "summary";
+export type SynthProgressFn = (processed: number, total: number, phase?: SynthProgressPhase) => void;
+
+/**
  * Entry point: synthesize Wiki entries for a document from its chunks.
  *
  * This is the function the wiki-synthesize-worker calls. It loads chunks
  * from the DB (NOT full markdown), runs Phase A + Phase B, and refreshes
  * index.md at the end.
+ *
+ * @param onProgress Optional callback fired after each chunk in Phase A so
+ *                   callers can report fine-grained progress (processed/total).
  */
 export async function synthesizeDocument(
   ctx: ProcessingContext,
   chunks: SynthChunk[],
-): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean }> {
+  onProgress?: SynthProgressFn,
+): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean; chunksFailed?: number; extractionMs?: number; mergeMs?: number; summaryMs?: number; fusionCalls?: number }> {
   if (chunks.length === 0) {
     return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true };
   }
@@ -85,6 +100,12 @@ export async function synthesizeDocument(
     console.warn("[wiki] No writing model configured — skipping synthesis");
     return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: chunks.length, completed: false };
   }
+
+  // Dynamic Phase-A input cap: derived from the writing model's context window
+  // instead of the old fixed 2000. See resolveWikiInputMaxTokens() for the
+  // rationale and env overrides.
+  const inputMaxTokens = resolveWikiInputMaxTokens(ctx.contextWindow);
+  console.log(`[wiki] Phase-A input cap = ${inputMaxTokens} tokens (contextWindow=${ctx.contextWindow})`);
 
   // ---- Resume from checkpoint: skip already-processed chunks ----
   // The progress file lives in the doc's wiki dir. On timeout/re-trigger,
@@ -112,47 +133,92 @@ export async function synthesizeDocument(
   }
 
   // ---- Phase A: per-chunk incremental extraction + merge ----
+  //
+  // Two-stage to safely parallelise the LLM-bound work while keeping the
+  // DB-write stage serial:
+  //
+  //   Stage 1 (CONCURRENT): extractChunkKnowledge — pure LLM call reading a
+  //     SNAPSHOT of existingTitles. No DB writes, no shared-state mutation, so
+  //     N chunks can run in parallel safely. The adaptive limiter (now wired
+  //     into the adapter) paces these against the provider's real capacity.
+  //
+  //   Stage 2 (SERIAL): mergeChunkKnowledge — writes WikiEntry rows + mutates
+  //     the shared existingTitles array (dedup awareness) + ensures unique
+  //     slugs (check-then-create). Concurrent merges would race on all three.
+  //     Running serially preserves the original merge semantics exactly.
+  //
+  // microSummaries + checkpoint advance ONLY in the serial stage, ordered by
+  // chunk.index — so resume-on-timeout stays correct regardless of the order
+  // in which concurrent extractions completed.
   let failedCount = 0;
-  for (const chunk of chunksToProcess) {
-    try {
-      const knowledge = await extractChunkKnowledge(chunk, existingTitles, client);
+  let fusionCalls = 0;
+  const WIKI_EXTRACT_CONCURRENCY = readPositiveIntEnv("WIKI_EXTRACT_CONCURRENCY", WIKI_CONFIG.extractSchedulerConcurrency);
+  const extractionStarted = Date.now();
+  let extractionMs = 0;
+  let mergeMs = 0;
+
+  interface ExtractResult {
+    chunk: SynthChunk;
+    knowledge: ChunkKnowledge | null; // null = extraction failed
+  }
+
+  for (let offset = 0; offset < chunksToProcess.length; offset += WIKI_EXTRACT_CONCURRENCY) {
+    const batch = chunksToProcess.slice(offset, offset + WIKI_EXTRACT_CONCURRENCY);
+    const extractResults = new Array<ExtractResult>(batch.length);
+    const titlesSnapshot = existingTitles.slice();
+
+    let batchExtractDone = 0;
+    await runBounded(batch, WIKI_EXTRACT_CONCURRENCY, async (chunk, i) => {
+      try {
+        const knowledge = await extractChunkKnowledge(chunk, titlesSnapshot, client, inputMaxTokens);
+        extractResults[i] = { chunk, knowledge };
+      } catch (err) {
+        // A single chunk failing must not abort the whole document.
+        console.warn(`[wiki] Chunk ${chunk.index} extraction failed (non-blocking):`, err);
+        extractResults[i] = { chunk, knowledge: null };
+      }
+      batchExtractDone++;
+      onProgress?.(startIndex + offset + batchExtractDone, chunks.length, "extract");
+    });
+    extractionMs = Date.now() - extractionStarted;
+
+    const mergeStarted = Date.now();
+    // Merge this batch immediately, strictly in chunk-index order. This preserves
+    // DB correctness while advancing checkpoints much earlier on large docs.
+    for (const { chunk, knowledge } of extractResults) {
+      if (!knowledge) {
+        failedCount++;
+        microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
+        // Do NOT advance checkpoint past a failed chunk — re-trigger retries it.
+        writeCheckpoint(progressFile, {
+          lastProcessedChunkIndex: chunk.index - 1,
+          microSummaries,
+          totalChunks: chunks.length,
+        });
+        continue;
+      }
+
       microSummaries.push(knowledge.microSummary);
 
-      const before = existingTitles.length;
-      await mergeChunkKnowledge(
+      const stats = await mergeChunkKnowledge(
         ctx.doc.userId,
         { documentId: ctx.docId, chunkId: chunk.id, chunkIndex: chunk.index },
         knowledge,
         existingTitles,
         client, // enables LLM fusion when merging into existing entries
       );
-      // mergeChunkKnowledge pushes new titles into existingTitles in-place
-      const added = existingTitles.length - before;
-      if (added > 0) created += added;
-      else updated += knowledge.topics.length + knowledge.concepts.length + knowledge.claims.length - added;
+      created += stats.created;
+      updated += stats.updated;
+      fusionCalls += stats.fusionCalls;
 
-      // Checkpoint ONLY on success — failed chunks stay at the previous
-      // checkpoint so a re-trigger retries them (network errors, timeouts
-      // are transient and should get another chance).
       writeCheckpoint(progressFile, {
         lastProcessedChunkIndex: chunk.index,
         microSummaries,
         totalChunks: chunks.length,
       });
-    } catch (err) {
-      // A single chunk failing must not abort the whole document.
-      failedCount++;
-      console.warn(`[wiki] Chunk ${chunk.index} extraction failed (non-blocking):`, err);
-      microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
-
-      // Do NOT advance checkpoint on failure — re-trigger will retry this chunk.
-      // But we DO save microSummaries so Phase B has continuity.
-      writeCheckpoint(progressFile, {
-        lastProcessedChunkIndex: chunk.index - 1, // stay before this chunk
-        microSummaries,
-        totalChunks: chunks.length,
-      });
+      onProgress?.(chunk.index + 1, chunks.length, "merge");
     }
+    mergeMs += Date.now() - mergeStarted;
   }
 
   // If ALL chunks failed (e.g. network down, DNS unreachable), don't mark
@@ -166,18 +232,25 @@ export async function synthesizeDocument(
       chunksProcessed: chunks.length - failedCount,
       chunksTotal: chunks.length,
       completed: false,
+      chunksFailed: failedCount,
+      extractionMs,
+      mergeMs,
+      fusionCalls,
     };
   }
 
   // All chunks processed — Phase B can now run
   // ---- Phase B: layered document summary ----
   let docSummaryCreated = false;
+  const summaryStarted = Date.now();
   try {
+    onProgress?.(chunks.length, chunks.length, "summary");
     docSummaryCreated = await generateDocSummary(ctx, microSummaries, client, existingTitles);
     if (docSummaryCreated) created += 1;
   } catch (err) {
     console.warn(`[wiki] Doc summary generation failed (non-blocking):`, err);
   }
+  const summaryMs = Date.now() - summaryStarted;
 
   // Clear checkpoint (all done)
   clearCheckpoint(progressFile);
@@ -192,6 +265,11 @@ export async function synthesizeDocument(
     chunksProcessed: chunks.length,
     chunksTotal: chunks.length,
     completed: true,
+    chunksFailed: failedCount,
+    extractionMs,
+    mergeMs,
+    summaryMs,
+    fusionCalls,
   };
 }
 
@@ -199,18 +277,31 @@ export async function synthesizeDocument(
  * Phase A core: one LLM call reading ONLY a single chunk + titles list.
  * Parses the strict-JSON response into a ChunkKnowledge.
  */
+async function chatWithTokenRetry(
+  client: WikiClient,
+  params: ChatParams,
+  retryMaxTokens: number,
+): Promise<ChatResponse> {
+  const response = await client.provider.chat(params);
+  if (response.finishReason === "length" || response.finishReason === "max_tokens") {
+    return client.provider.chat({ ...params, maxTokens: Math.max(retryMaxTokens, params.maxTokens ?? 0) });
+  }
+  return response;
+}
+
 async function extractChunkKnowledge(
   chunk: SynthChunk,
   existingTitles: { title: string; slug: string }[],
   client: WikiClient,
+  inputMaxTokens: number,
 ): Promise<ChunkKnowledge> {
   const titlesCtx = truncateTitlesList(
     existingTitles.map((t) => t.title),
     WIKI_CONFIG.titlesListMaxTokens,
   );
-  const truncatedChunk = truncateToTokens(chunk.content, WIKI_CONFIG.chunkMaxTokens);
+  const truncatedChunk = truncateToTokens(chunk.content, inputMaxTokens);
 
-  const response = await client.provider.chat({
+  const response = await chatWithTokenRetry(client, {
     model: client.modelId,
     messages: [
       { role: "system", content: CHUNK_EXTRACTION_PROMPT },
@@ -218,7 +309,8 @@ async function extractChunkKnowledge(
     ],
     temperature: 0.3,
     response_format: { type: "json_object" },
-  });
+    maxTokens: WIKI_CONFIG.extractionMaxTokens,
+  }, WIKI_CONFIG.extractionRetryMaxTokens);
 
   await recordTokenUsage({
     userId: client.userId,
@@ -269,6 +361,7 @@ async function generateDocSummary(
     ],
     temperature: 0.3,
     response_format: { type: "json_object" },
+    maxTokens: WIKI_CONFIG.docSummaryMaxTokens,
   });
 
   await recordTokenUsage({
@@ -317,6 +410,7 @@ async function summarizeBatch(summaries: string[], batchNum: number, client: Wik
       { role: "user", content: `Batch ${batchNum}:\n${joined}` },
     ],
     temperature: 0.3,
+    maxTokens: WIKI_CONFIG.batchSummaryMaxTokens,
   });
 
   await recordTokenUsage({
@@ -417,6 +511,7 @@ async function resolveWikiClient(ctx: ProcessingContext): Promise<WikiClient | n
       provider: createLLMProvider({
         apiBaseUrl: ctx.writingModel.provider.apiBaseUrl,
         apiKey: ctx.writingModel.provider.apiKey,
+        providerType: ctx.writingModel.provider.providerType,
       }),
       modelId: ctx.writingModel.modelId,
       modelConfigId: ctx.writingModel.id,
@@ -519,13 +614,13 @@ function safeJsonParse(raw: string): Record<string, unknown> | null {
 function parseChunkKnowledge(raw: string): ChunkKnowledge {
   const parsed = safeJsonParse(raw);
   if (!parsed) {
-    return { microSummary: "", topics: [], concepts: [], claims: [] };
+    throw new Error("Wiki extraction returned invalid JSON");
   }
   return {
     microSummary: typeof parsed.microSummary === "string" ? String(parsed.microSummary).slice(0, 120) : "",
-    topics: parseArray(parsed.topics).map(parseTopic).filter(Boolean) as ChunkKnowledge["topics"],
-    concepts: parseArray(parsed.concepts).map(parseConcept).filter(Boolean) as ChunkKnowledge["concepts"],
-    claims: parseArray(parsed.claims).map(parseClaim).filter(Boolean) as ChunkKnowledge["claims"],
+    topics: (parseArray(parsed.topics).map(parseTopic).filter(Boolean) as ChunkKnowledge["topics"]).slice(0, WIKI_CONFIG.maxTopicsPerChunk),
+    concepts: (parseArray(parsed.concepts).map(parseConcept).filter(Boolean) as ChunkKnowledge["concepts"]).slice(0, WIKI_CONFIG.maxConceptsPerChunk),
+    claims: (parseArray(parsed.claims).map(parseClaim).filter(Boolean) as ChunkKnowledge["claims"]).slice(0, WIKI_CONFIG.maxClaimsPerChunk),
   };
 }
 
@@ -535,16 +630,62 @@ function parseArray(v: unknown): Record<string, unknown>[] {
 
 function parseTopic(o: Record<string, unknown>): ChunkKnowledge["topics"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
-  return { title: o.title, content: o.content };
+  const title = o.title.trim();
+  const content = o.content.trim();
+  // Drop trivial stubs — they add noise without reference value. A real topic
+  // needs a meaningful title and at least minEntryContentChars of substance.
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
+  return { title, content };
 }
 
 function parseConcept(o: Record<string, unknown>): ChunkKnowledge["concepts"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
-  return { title: o.title, content: o.content };
+  const title = o.title.trim();
+  const content = o.content.trim();
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
+  return { title, content };
 }
 
 function parseClaim(o: Record<string, unknown>): ChunkKnowledge["claims"][number] | null {
   if (typeof o.title !== "string" || typeof o.content !== "string") return null;
+  const title = o.title.trim();
+  const content = o.content.trim();
+  if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
   const confidence = typeof o.confidence === "number" ? Math.max(0, Math.min(1, o.confidence)) : 0.7;
-  return { title: o.title, content: o.content, confidence };
+  return { title, content, confidence };
+}
+
+/**
+ * Bounded-concurrency worker pool. Runs `fn` over `items` with at most
+ * `concurrency` in flight, preserving each item's INDEX (fn receives (item, i))
+ * so callers can write results into a pre-sized array in original order
+ * regardless of completion order.
+ *
+ * Mirrors the boundedAll pattern in pipeline.ts but is index-aware and kept
+ * local to avoid a cross-module coupling.
+ */
+async function runBounded<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      if (i >= items.length) break;
+      await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+}
+
+/** Read a positive int from env, falling back to `fallback` when unset/invalid. */
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }

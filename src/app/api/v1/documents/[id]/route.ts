@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { documentLifecycle } from "@/lib/documents/lifecycle";
-import { deleteEntriesForDocument } from "@/lib/wiki/query";
+import { deleteEntriesForDocuments } from "@/lib/wiki/query";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET(
@@ -50,10 +50,12 @@ export async function DELETE(
     return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  // Optionally delete Wiki entries sourced from this document
+  // Default behaviour: deleteWiki is TRUE → wipe Wiki entries sourced from
+  // this doc. Only when the user explicitly opts to KEEP wiki do we leave it
+  // untouched. (See batch route for the full rationale.)
   let wikiResult: { deleted: number; updated: number } | undefined;
   if (deleteWiki) {
-    wikiResult = await deleteEntriesForDocument(user.id, id).catch((err) => {
+    wikiResult = await deleteEntriesForDocuments(user.id, [id]).catch((err) => {
       console.warn("Failed to delete Wiki entries for document:", err);
       return { deleted: 0, updated: 0 };
     });

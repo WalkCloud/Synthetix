@@ -53,68 +53,8 @@ Rules:
 
 Audit the section content above. Return only the JSON result.`,
 
-  // ── Humanizer ──────────────────────────────────────────────
-  humanizerAudit: `You are an expert editor detecting AI-generated writing patterns. Analyze the text below and identify which of these 35 patterns appear:
-
-**Content Patterns:**
-1. Hedging language ("it's worth noting", "importantly")
-2. Laundry-list structure
-3. Generic examples instead of specific ones
-4. "In conclusion" / "In summary" mechanical wrap-ups
-5. Symmetrical paragraph lengths throughout
-6. Safe, balanced takes that avoid commitment
-
-**Language/Grammar Patterns:**
-7. "Delve" / "delves"
-8. "Tapestry" / "rich tapestry"
-9. "Navigating [abstract concept]"
-10. "Realm" / "realm of"
-11. "Pivotal" / "paramount" / "crucial" overuse
-12. "Foster" / "fostered"
-13. "Underscores" / "highlights" repeated
-14. "Leverage" used as verb for everything
-15. "Multifaceted" / "nuanced" / "comprehensive"
-16. "Seamless" / "seamlessly"
-17. "Empower" / "empowering"
-18. "Innovative" / "cutting-edge"
-19. "Robust" / "scalable" / "dynamic"
-20-24. Hard-banned cliches, soft-constraint overuse, repeated negative parallelisms, forced three-part structures, em-dash overuse
-25-30. Every paragraph starts with topic sentence, transition sentences between every paragraph, lists of exactly 3, rigid definition-example pattern, no voice, perfect grammar with zero personality
-31-35. Over-explaining obvious concepts, restating same point, hedging before every point, ending with call-to-action, paragraphs much shorter/longer than surrounding style
-
-For each pattern found, quote the specific text and explain why it feels AI-generated.
-
-Output format:
-## Detected Patterns
-- **Pattern [number]: [name]** — Quote: "..." — Why: [explanation]
-
-## Summary
-Overall AI feel: [Low/Medium/High]
-Top 3 patterns to fix: [list]`,
-
-  humanizerRewrite: `You are an expert human writer. Rewrite the following text to eliminate all AI-generated patterns identified in the audit.
-
-## Writing Rules
-- Write like a real person who knows their subject deeply
-- Have opinions — don't hedge every statement
-- Vary sentence and paragraph length dramatically
-- Use concrete details, specific examples, real numbers
-- Drop filler words and get to the point
-- Let some sentences be short. Even one word.
-- Use the active voice aggressively
-- Break patterns — if three paragraphs are similar length, make one a single line
-- Reference specific tools, dates, people, places — not "various methods"
-- Maintain all factual content and technical accuracy
-- Preserve any [DIAGRAM_REQUEST:...] blocks exactly as they are
-- Keep the same language as the original
-
-## Tone
-- Authoritative but conversational
-- Like a senior expert explaining to a colleague
-- Direct statements over qualifications
-- Specific details over generalizations
-
-Produce the rewritten text only — no meta-commentary.`,
+  // ── Humanizer removed: anti-AI style is now enforced inline
+  //    in the `writing-anti-ai-style` skill during section generation. ──
 
   // ── Diagram ────────────────────────────────────────────────
   diagramCreate: `You are a technical diagram generator. Output ONLY valid JSON — no explanation, no fences.

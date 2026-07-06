@@ -44,9 +44,18 @@ Extract the knowledge contributions of THIS chunk. Write each entry as a COMPLET
 }
 
 Rules:
-- Write SUBSTANTIAL content. A one-line definition is NOT acceptable — aim for reference-quality depth.
-- Include SPECIFICS from the chunk: exact numbers, product names, configuration values, architecture components. These are what make knowledge useful.
-- If a topic/concept already exists in the provided title list, still extract it with all NEW information from this chunk.
+- QUALITY OVER QUANTITY. Extract only SUBSTANTIAL, reusable knowledge. It is
+  far better to return 1-2 strong entries than 5 noisy fragments. If a chunk
+  only contains boilerplate, headings, or low-value filler, return empty arrays.
+- Write SUBSTANTIAL content. A one-line definition is NOT acceptable — aim for
+  reference-quality depth. Do NOT create an entry unless you can write a
+  meaningful, specific article about it.
+- Return at most 3 topics, 4 concepts, and 3 claims. Prefer FEWER, STRONGER
+  entries. Skip anything that would be a trivial stub.
+- Include SPECIFICS from the chunk: exact numbers, product names, configuration
+  values, architecture components. Generic restatements are not useful.
+- If a topic/concept already exists in the provided title list, still extract
+  it with all NEW information from this chunk.
 - Be specific in titles: "Kubernetes ETCD Raft cluster high availability" not just "High availability".
 - Omit empty arrays — if a chunk has no concepts, return [].
 - Confidence: 0.9+ for explicit factual statements, 0.7-0.9 for strong inferences, below 0.7 for speculation.

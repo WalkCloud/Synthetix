@@ -12,6 +12,14 @@ export interface MacroChunk {
 export function coalesceMacroChunks(chunks: MacroChunk[], minTokens: number): MacroChunk[] {
   if (chunks.length <= 1) return chunks;
 
+  // Extract the top-level section (first segment of headingPath) to decide
+  // whether two chunks belong to the same section. Chunks from different
+  // top-level sections should NOT be merged, even if both are small — otherwise
+  // distinct chapters get glued together and the heading context is lost.
+  function topSection(headingPath: string): string {
+    return headingPath.split(" > ")[0] || "";
+  }
+
   const merged: MacroChunk[] = [];
   let current: MacroChunk | null = null;
 
@@ -28,12 +36,20 @@ export function coalesceMacroChunks(chunks: MacroChunk[], minTokens: number): Ma
     }
 
     const combinedTokens = current.tokenCount + chunk.tokenCount;
-    if (combinedTokens <= minTokens) {
+    const sameSection = topSection(current.headingPath) === topSection(chunk.headingPath)
+      && topSection(current.headingPath) !== "";
+
+    // Only merge if: under token limit AND same top-level section (or both
+    // have no section — pre-document preamble). Cross-section merging is
+    // forbidden to preserve chapter boundaries.
+    if (combinedTokens <= minTokens && sameSection) {
       current.content += "\n\n" + chunk.content;
       current.tokenCount = combinedTokens;
-      if (chunk.h2) {
+      // Adopt the latest chunk's heading path (deepest known point in the section).
+      if (chunk.headingPath) {
+        current.headingPath = chunk.headingPath;
+        current.h1 = chunk.h1;
         current.h2 = chunk.h2;
-        current.headingPath = [current.h1, current.h2].filter(Boolean).join(" > ");
       }
     } else {
       merged.push(current);
@@ -59,6 +75,38 @@ function isPlainTextTitle(line: string, prevEmpty: boolean, nextEmpty: boolean):
   if (/\*\*.+?\*\*/.test(trimmed)) return false;
   // Markdown list items ("- item", "* item", "• item") are body content.
   if (/^[-*•]\s/.test(trimmed)) return false;
+  // Numbered list items: "1. xxx", "2. xxx", "3、xxx" — Docling emits these as
+  // standalone lines, but they are list content, not section titles.
+  if (/^\d+[.、)]\s/.test(trimmed)) return false;
+  // YAML / config keys: "kind: Deployment", "namespace: operators", "name: redis-shake"
+  if (/^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:\s/.test(trimmed)) return false;
+  // Shell / CLI commands: "bash setup.sh ...", "docker rm -f ..."
+  if (/^(bash|sh|zsh|docker|kubectl|helm|python|python3|node|git|curl|wget|redis-cli|mysql|psql|npm|yarn|pip)\s/i.test(trimmed)) return false;
+  // Version tags / container image references: "tag: v2.0.1", "image: 192.168..."
+  if (/^(tag|image|version|name|label|env)\s*:\s/i.test(trimmed)) return false;
+  // ASCII art / shell operators: "/  Alibaba Cloud  /  *  \ | |"
+  if (/^[/\\|]|[/\\|]{2,}|\*{2,}|\|\s*$/.test(trimmed)) return false;
+  // IP addresses / host:port: "127.0.0.1:6379", "192.168.191.174:60080"
+  if (/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(trimmed)) return false;
+  // Log output / Redis interactive prompts: "2022/03/23 03:43:02 [WARN] ..."
+  if (/^\d{4}\/\d{2}\/\d{2}\s/.test(trimmed)) return false;
+  if (/^127\.0\.0\.1.*>\s/.test(trimmed)) return false;
+  // Lines with special chars typical of code/config: "&gt;", "&lt;", "&amp;"
+  if (/(&gt;|&lt;|&amp;)/.test(trimmed)) return false;
+  // Lines starting with "+" (concatenated list items / diff output)
+  if (/^\+/.test(trimmed)) return false;
+  // Redis/shell interactive output patterns: "db0:keys=...", "Keyspace",
+  // standalone "kind:", "spec:" etc. These are command output, not titles.
+  // Key signal: a real section title is a noun phrase describing a topic.
+  // Redis keyspace/db output starts with "db" followed by digits.
+  if (/^db\d+[:\s]/i.test(trimmed)) return false;
+  // Single English words without spaces (like "Keyspace", "USER") are almost
+  // never Chinese document section titles — they're CLI output tokens.
+  if (/^[A-Z][a-z]+$/.test(trimmed) && trimmed.length <= 12) return false;
+  // All-caps tokens (config keys, Redis commands): "USER", "ENTRYPOINT"
+  if (/^[A-Z][A-Z_]+$/.test(trimmed) && trimmed.length <= 15) return false;
+  // Lines containing "=" (config assignments): "revisionHistoryLimit: 10"
+  if (trimmed.includes("=") && !trimmed.includes(" = ")) return false;
   // Not ending with Chinese/English sentence punctuation
   if (/[。！？.!?，,；;：:）\)》>、]$/.test(trimmed)) return false;
   // Must be bracketed by empty lines (at least one side)
@@ -126,17 +174,32 @@ function isLikelyRealHeading(text: string): boolean {
   if (/[，。：；！？]/.test(t)) return false; // a full sentence, not a heading
   if (/^-{1,2}[A-Za-z]/.test(t)) return false; // "-e …", "--chown…" code flag
   if (CODE_LINE_RE.test(t)) return false; // "COPY …", "WORKDIR …" (no leading #)
+  // Redis CLI section markers: "# Keyspace", "# Server", "# Clients", "# Memory"
+  // These are INFO command output sections, not document headings.
+  if (/^(Keyspace|Server|Clients|Memory|Persistence|Stats|Replication|CPU|Commandstats|Latencystats|Errorstats|Cluster|Modules)$/i.test(t)) return false;
+  // Redis/shell CLI comments like "检查db情况", "进入redis-shake" that appear
+  // inside command-output regions. These are shell prompt comments, not doc
+  // headings. Heuristic: short (≤15 chars), starts with a common CLI verb.
+  if (/^(检查|进入|查看|执行|运行|启动|停止|创建|删除|修改|配置|安装|部署)/.test(t) && t.length <= 15) return false;
   return true;
 }
 
 export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
   const lines = markdown.split("\n");
   const chunks: MacroChunk[] = [];
-  let currentH1 = "";
-  let currentH2: string | null = null;
+  // Full heading stack: index 0 = H1, index 1 = H2, etc.
+  let headingStack: string[] = [];
+  // Track the markdown level that set stack[0]. If a real H1 (#) set it,
+  // subsequent ## headings are sub-sections. If a ## was promoted to root
+  // (because no H1 exists), each subsequent ## replaces it as the new root.
+  let rootLevel = 0; // 0 = unset, 1 = set by real H1, 2 = set by promoted H2
   let currentLines: string[] = [];
   let i = 0;
   let processedSinceYield = 0;
+
+  function buildHeadingPath(): string {
+    return headingStack.filter(Boolean).join(" > ");
+  }
 
   function flush(): void {
     const content = currentLines.join("\n").trim();
@@ -144,17 +207,25 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
       currentLines = [];
       return;
     }
-    if (!content.includes("\n") && (content === currentH1 || content === currentH2 || isMarkdownHeading(content))) {
-      currentLines = [];
-      return;
+    // Skip a chunk that is ONLY a heading line with no body (avoids empty
+    // sections where the heading is immediately followed by another heading).
+    // BUT: preserve H1/H2 headings even if they're heading-only — a chapter
+    // title like "## 10 容器云平台使用规范" that's immediately followed by
+    // "### 10.1" still needs its own macro so the headingPath is recorded.
+    const hp = buildHeadingPath();
+    if (!content.includes("\n")) {
+      const mdh = isMarkdownHeading(content);
+      if (mdh && mdh.level <= 2) {
+        // Keep important chapter headings even without body text.
+      } else if (headingStack.includes(content) || mdh) {
+        currentLines = [];
+        return;
+      }
     }
-    const headingParts = [currentH1];
-    if (currentH2) headingParts.push(currentH2);
-    const headingPath = headingParts.filter(Boolean).join(" > ") || "";
     chunks.push({
-      headingPath,
-      h1: currentH1,
-      h2: currentH2,
+      headingPath: hp,
+      h1: headingStack[0] || "",
+      h2: headingStack[1] || null,
       content,
       tokenCount: estimateTokens(content),
       isAtomic: false,
@@ -190,9 +261,9 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
       if (i < lines.length) i++;
       const content = fence + "\n" + codeLines.join("\n") + "\n```";
       chunks.push({
-        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "",
-        h1: currentH1,
-        h2: currentH2,
+        headingPath: buildHeadingPath(),
+        h1: headingStack[0] || "",
+        h2: headingStack[1] || null,
         content,
         tokenCount: estimateTokens(content),
         isAtomic: true,
@@ -209,9 +280,9 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
         i++;
       }
       chunks.push({
-        headingPath: [currentH1, currentH2].filter(Boolean).join(" > ") || "",
-        h1: currentH1,
-        h2: currentH2,
+        headingPath: buildHeadingPath(),
+        h1: headingStack[0] || "",
+        h2: headingStack[1] || null,
         content: tableLines.join("\n"),
         tokenCount: estimateTokens(tableLines.join("\n")),
         isAtomic: true,
@@ -219,18 +290,14 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
       continue;
     }
 
-    // Markdown headings (# ##)
+    // Markdown headings (# ## ### etc.) — ALL levels trigger a section break.
+    // Previously only H1/H2 triggered flush; H3+ were swallowed into the parent
+    // section, losing the document's true structure. Now every heading level
+    // starts a new macro chunk with an updated heading stack.
     const mdHeading = isMarkdownHeading(line);
     if (mdHeading) {
-      if (mdHeading.level > 2) {
-        currentLines.push(line);
-        i++;
-        continue;
-      }
       // Docling emits embedded code (shell/Dockerfile) without ``` fences, so a
-      // `# comment` line inside such a block matches the heading regex. Without
-      // this guard, lines like `# 编译安装` hijack currentH1 and mis-group every
-      // following chunk under a bogus code-comment "topic". Treat them as content.
+      // `# comment` line inside such a block matches the heading regex.
       if (isEmbeddedInCode(lines, i)) {
         currentLines.push(line);
         i++;
@@ -245,12 +312,28 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
         continue;
       }
       flush();
-      if (mdHeading.level === 1) {
-        currentH1 = mdHeading.text;
-        currentH2 = null;
+      const level = mdHeading.level; // 1-based
+
+      if (level === 1) {
+        // Real H1: reset the entire stack, mark root as H1-set.
+        headingStack = [mdHeading.text];
+        rootLevel = 1;
+      } else if (level === 2 && rootLevel !== 1) {
+        // No real H1 above — this ## is the top-level section (Docling's
+        // common pattern). Each ## replaces the previous as root.
+        headingStack = [mdHeading.text];
+        rootLevel = 2;
+      } else if (level === 2) {
+        // Genuine H1 root exists — this ## is a sub-section.
+        headingStack = headingStack.slice(0, 1);
+        headingStack[1] = mdHeading.text;
       } else {
-        if (!currentH1) currentH1 = mdHeading.text;
-        currentH2 = mdHeading.text;
+        // Sub-section within an existing root (either real H1 or promoted H2).
+        headingStack = headingStack.slice(0, level - 1);
+        headingStack[level - 1] = mdHeading.text;
+        for (let g = 0; g < level - 1; g++) {
+          if (!headingStack[g]) headingStack[g] = "";
+        }
       }
       currentLines.push(line);
       i++;
@@ -277,10 +360,13 @@ export async function splitByMacroAST(markdown: string): Promise<MacroChunk[]> {
       }
       if (hasContentAhead) {
         flush();
-        if (!currentH1) {
-          currentH1 = trimmed;
+        // Plain-text titles are treated as H2 (sub-section) level.
+        if (headingStack.length === 0) {
+          headingStack = [trimmed];
+          rootLevel = 0; // heuristic, not real markdown
         } else {
-          currentH2 = trimmed;
+          headingStack = headingStack.slice(0, 1);
+          headingStack[1] = trimmed;
         }
         currentLines.push(line);
         i++;

@@ -10,6 +10,8 @@
  */
 
 import { db } from "@/lib/db";
+import { syncWikiFtsForEntry } from "@/lib/search/wiki-fts";
+import { recordTokenUsage } from "@/lib/llm/usage";
 import type { LLMProvider } from "@/lib/llm/types";
 import { slugify } from "@/lib/wiki/slug";
 import { appendChangeLog } from "@/lib/wiki/index-md";
@@ -31,6 +33,8 @@ import {
 export interface MergeLLMClient {
   provider: LLMProvider;
   modelId: string;
+  modelConfigId?: string;
+  userId?: string;
 }
 
 /**
@@ -41,8 +45,8 @@ export interface MergeLLMClient {
  * Threshold is WIKI_CONFIG.duplicateTitleThreshold.
  */
 export function titleSimilarity(a: string, b: string): number {
-  const tokensA = tokenize(a);
-  const tokensB = tokenize(b);
+  const tokensA = tokenizeTitle(a);
+  const tokensB = tokenizeTitle(b);
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
   let intersection = 0;
   for (const t of tokensA) if (tokensB.has(t)) intersection++;
@@ -50,8 +54,13 @@ export function titleSimilarity(a: string, b: string): number {
   return intersection / union;
 }
 
-/** Tokenize a title into a comparable set. Splits CJK per-char + latin per-word. */
-function tokenize(s: string): Set<string> {
+/**
+ * Tokenize a title (or any text) into a comparable set. Splits CJK per-char +
+ * latin per-word. Exported so the FTS/trigram fallback in wiki/query.ts can
+ * reuse the same tokenisation that {@link titleSimilarity} uses, keeping
+ * similarity scoring consistent across the wiki layer.
+ */
+export function tokenizeTitle(s: string): Set<string> {
   const lower = s.toLowerCase().trim();
   const tokens = new Set<string>();
   // CJK characters: per-char (each char is a token)
@@ -106,7 +115,7 @@ export async function mergeEntry(
   confidence: number,
   existingTitles: { title: string; slug: string }[],
   llmClient?: MergeLLMClient,
-): Promise<{ entryId: string; action: "create" | "update" | "skip"; slug: string }> {
+): Promise<{ entryId: string; action: "create" | "update" | "skip"; slug: string; fused?: boolean }> {
   const decision = decideMerge(title, existingTitles);
   const boundedContent = content.slice(0, WIKI_CONFIG.entryContentCharLimit);
 
@@ -127,7 +136,10 @@ export async function mergeEntry(
     // Register the new title so subsequent candidates in the same batch see it
     existingTitles.push({ title, slug });
     await appendChangeLog(userId, entry.id, "create", `Created ${type} "${title}"`);
-    return { entryId: entry.id, action: "create", slug };
+    // Keep the FTS index in sync. Non-blocking — an index miss just means the
+    // next search falls back to LIKE until the background reindex catches up.
+    void syncWikiFtsForEntry(entry.id).catch(() => {});
+    return { entryId: entry.id, action: "create", slug, fused: false };
   }
 
   // update: FUSE old + new via LLM into one coherent article (not append).
@@ -143,9 +155,11 @@ export async function mergeEntry(
 
   // Fuse: LLM rewrites old+new into one comprehensive article
   let fusedContent: string;
+  let fused = false;
   if (llmClient) {
     try {
       fusedContent = await fuseContent(existing.content, boundedContent, title, llmClient);
+      fused = true;
     } catch (err) {
       console.warn(`[wiki] Fuse failed for "${title}", falling back to append:`, err);
       const dateTag = new Date().toISOString().slice(0, 10);
@@ -173,7 +187,8 @@ export async function mergeEntry(
     },
   });
   await appendChangeLog(userId, existing.id, "update", `Updated "${existing.title}" (fused new source)`);
-  return { entryId: existing.id, action: "update", slug: existing.slug };
+  void syncWikiFtsForEntry(existing.id).catch(() => {});
+  return { entryId: existing.id, action: "update", slug: existing.slug, fused };
 }
 
 /**
@@ -197,33 +212,60 @@ async function fuseContent(
       },
     ] as { role: "system" | "user"; content: string }[],
     temperature: 0.3,
+    maxTokens: WIKI_CONFIG.fusionMaxTokens,
   });
+
+  if (client.userId) {
+    await recordTokenUsage({
+      userId: client.userId,
+      modelConfigId: client.modelConfigId,
+      module: "wiki",
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+    }).catch(() => {});
+  }
+
   return response.content.trim();
 }
 
 /** Merge a batch of extracted topics (Phase A) for one chunk. */
+export interface MergeChunkStats {
+  created: number;
+  updated: number;
+  skipped: number;
+  fusionCalls: number;
+}
+
 export async function mergeChunkKnowledge(
   userId: string,
   chunk: { documentId: string; chunkId: string; chunkIndex: number },
   knowledge: { topics: ExtractedTopic[]; concepts: ExtractedConcept[]; claims: ExtractedClaim[] },
   existingTitles: { title: string; slug: string }[],
   llmClient?: MergeLLMClient,
-): Promise<void> {
+): Promise<MergeChunkStats> {
   const sourceRef: WikiSourceRef = {
     documentId: chunk.documentId,
     chunkId: chunk.chunkId,
     chunkIndex: chunk.chunkIndex,
   };
+  const stats: MergeChunkStats = { created: 0, updated: 0, skipped: 0, fusionCalls: 0 };
+  const record = (result: { action: "create" | "update" | "skip"; fused?: boolean }) => {
+    if (result.action === "create") stats.created++;
+    else if (result.action === "update") stats.updated++;
+    else stats.skipped++;
+    if (result.fused) stats.fusionCalls++;
+  };
 
   for (const topic of knowledge.topics) {
-    await mergeEntry(userId, "topic", topic.title, topic.content, sourceRef, 0.8, existingTitles, llmClient);
+    record(await mergeEntry(userId, "topic", topic.title, topic.content, sourceRef, 0.8, existingTitles, llmClient));
   }
   for (const concept of knowledge.concepts) {
-    await mergeEntry(userId, "concept", concept.title, concept.content, sourceRef, 0.8, existingTitles, llmClient);
+    record(await mergeEntry(userId, "concept", concept.title, concept.content, sourceRef, 0.8, existingTitles, llmClient));
   }
   for (const claim of knowledge.claims) {
-    await mergeEntry(userId, "claim", claim.title, claim.content, sourceRef, claim.confidence, existingTitles, llmClient);
+    record(await mergeEntry(userId, "claim", claim.title, claim.content, sourceRef, claim.confidence, existingTitles, llmClient));
   }
+  return stats;
 }
 
 function parseSourceRefs(raw: string): WikiSourceRef[] {

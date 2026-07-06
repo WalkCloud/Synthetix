@@ -75,24 +75,30 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async deleteDocument(docId: string, userId: string): Promise<void> {
     const dir = this.getDocumentDir(docId, userId);
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    // fsp.rm never blocks the event loop — fs.rmSync held Node's single thread
+    // for the whole recursive removal, freezing SSE/requests during bulk deletes.
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 
   async deleteUserRagData(userId: string): Promise<void> {
     const dir = path.join(process.env.RAG_ROOT || "./data/rag", userId);
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-    fs.mkdirSync(dir, { recursive: true });
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    await fsp.mkdir(dir, { recursive: true });
   }
 
   async deleteDocumentData(docId: string, userId: string): Promise<void> {
     const dir = this.getDocumentDir(docId, userId);
-    if (!fs.existsSync(dir)) return;
-    const entries = fs.readdirSync(dir);
-    for (const entry of entries) {
-      if (entry.startsWith("original.")) continue;
-      const full = path.join(dir, entry);
-      fs.rmSync(full, { recursive: true, force: true });
+    let entries: string[];
+    try {
+      entries = await fsp.readdir(dir);
+    } catch {
+      return; // dir doesn't exist — nothing to do
     }
+    await Promise.all(
+      entries
+        .filter((entry) => !entry.startsWith("original."))
+        .map((entry) => fsp.rm(path.join(dir, entry), { recursive: true, force: true }).catch(() => undefined)),
+    );
   }
 
   getImagesDir(docId: string, userId: string): string {

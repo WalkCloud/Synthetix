@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocale } from "@/lib/i18n";
@@ -20,65 +21,149 @@ export function modelLabel(models: ModelOption[], id: string): string {
 
 export type { ModelOption };
 
+/**
+ * The single user-facing "how deeply should we analyze this document?" choice.
+ * Replaces the old Split Strategy / Index Target / Index Mode / Auto-split
+ * quartet, which leaked internal pipeline details and forced users to
+ * understand chunking, LightRAG, and embedding dimensions.
+ *
+ * Each value maps 1:1 to backend ProcessingOptions (indexMode + wikiEnabled)
+ * with NO backend change — splitStrategy/indexTarget/autoSplit are locked to
+ * their best defaults internally.
+ *
+ *   standard → basic + wiki off   (fastest, minimal tokens)
+ *   graph    → graph + wiki off   (retrieval + entity/relation graph)
+ *   wiki     → basic + wiki on    (retrieval + synthesized knowledge)
+ *   full     → graph + wiki on    (everything — recommended)
+ */
+export type KnowledgeMode = "standard" | "graph" | "wiki" | "full";
+
+/**
+ * Map a user-facing KnowledgeMode to the backend ProcessingOptions fields it
+ * controls. splitStrategy / indexTarget / autoSplit are locked to their best
+ * defaults here so the rest of the pipeline never sees user-tunable internals.
+ *
+ * Model-agnostic: this is pure option mapping — the backend decides whether
+ * graph extraction is actually possible (embedding dim, LLM availability) and
+ * gracefully downgrades if not.
+ */
+export function knowledgeModeToOptions(mode: KnowledgeMode): {
+  indexMode: "basic" | "graph";
+  wikiEnabled: boolean;
+  splitStrategy: "structure-llm";
+  indexTarget: "full";
+  autoSplit: boolean;
+} {
+  switch (mode) {
+    case "graph":
+      return { indexMode: "graph", wikiEnabled: false, splitStrategy: "structure-llm", indexTarget: "full", autoSplit: true };
+    case "wiki":
+      return { indexMode: "basic", wikiEnabled: true, splitStrategy: "structure-llm", indexTarget: "full", autoSplit: true };
+    case "full":
+      return { indexMode: "graph", wikiEnabled: true, splitStrategy: "structure-llm", indexTarget: "full", autoSplit: true };
+    case "standard":
+    default:
+      return { indexMode: "basic", wikiEnabled: false, splitStrategy: "structure-llm", indexTarget: "full", autoSplit: true };
+  }
+}
+
 interface ProcessingSettingsProps {
   llmModels: ModelOption[];
   embedModels: ModelOption[];
   llmModel: string;
   embedModel: string;
   modelsLoaded: boolean;
-  splitStrategy: string;
-  indexTarget: string;
-  indexMode: "basic" | "graph";
-  autoSplit: boolean;
+  knowledgeMode: KnowledgeMode;
   onLlmModelChange: (v: string) => void;
   onEmbedModelChange: (v: string) => void;
-  onSplitStrategyChange: (v: string) => void;
-  onIndexTargetChange: (v: string) => void;
-  onIndexModeChange: (v: "basic" | "graph") => void;
-  onAutoSplitChange: (v: boolean) => void;
-}
-
-function formatTokens(n: number): string {
-  return n.toLocaleString();
+  onKnowledgeModeChange: (v: KnowledgeMode) => void;
 }
 
 export function ProcessingSettings({
   llmModels, embedModels, llmModel, embedModel, modelsLoaded,
-  splitStrategy, indexTarget, indexMode, autoSplit,
-  onLlmModelChange, onEmbedModelChange,
-  onSplitStrategyChange, onIndexTargetChange, onIndexModeChange, onAutoSplitChange,
+  knowledgeMode,
+  onLlmModelChange, onEmbedModelChange, onKnowledgeModeChange,
 }: ProcessingSettingsProps) {
   const { t } = useLocale();
 
-  // Compute auto chunk size — based on embedding model's max input tokens
-  const DEFAULT_LLM_CONTEXT = 200000;
-  const DEFAULT_EMBED_MAX_TOKENS = 8192;
+  // The selected embedding model drives the graph-capability gate below.
   const selectedEmbed = embedModels.find((m) => m.id === embedModel);
-  const embedMaxTokens = (selectedEmbed?.contextWindow ?? 0) > 0
-    ? selectedEmbed!.contextWindow!
-    : DEFAULT_EMBED_MAX_TOKENS;
-  const isUsingDefaultEmbed = !selectedEmbed || (selectedEmbed.contextWindow ?? 0) === 0;
-  const chunkMaxTokens = Math.floor(embedMaxTokens * 0.9);
 
   const hasNoModels = llmModels.length === 0 && embedModels.length === 0;
   const hasNoEmbed = embedModels.length === 0;
   const hasNoLlm = llmModels.length === 0;
 
-  const splitLabels: Record<string, string> = {
-    "structure-llm": t.documents.processing.splitOptions.structureLlm,
-    "heading-only": t.documents.processing.splitOptions.headingOnly,
-  };
+  // Graph-capability gate: a graph/full Knowledge Mode needs an embedding
+  // model whose dimension is >= 1536 (LightRAG requirement). We DISABLE those
+  // two cards (not hide them) when no embedding is selected or the dim is too
+  // small / unknown, and surface a single explanatory note — instead of the old
+  // scattered basic/graph dropdown + multiple amber warnings.
+  const embedDim = selectedEmbed?.embeddingDim ?? 0;
+  const embedSelected = !!selectedEmbed && !!embedModel;
+  const graphCapable = embedSelected && embedDim >= 1536;
+  const graphBlockedReason = !embedSelected
+    ? t.documents.processing.kmGraphNeedsEmbed
+    : embedDim === 0
+      ? t.documents.processing.kmGraphDimUnknown
+      : !graphCapable
+        ? t.documents.processing.kmGraphDimTooSmall.replace("{dim}", String(embedDim))
+        : null;
 
-  const indexLabels: Record<string, string> = {
-    full: t.documents.processing.indexOptions.full,
-    original: t.documents.processing.indexOptions.original,
-    chunks: t.documents.processing.indexOptions.chunks,
-  };
+  // Knowledge Mode cards stay lean (title + one-line gist). The full
+  // explanation — a single flowing sentence covering what you get and when to
+  // pick it — appears in a panel below ONLY after the user clicks a card, so
+  // the default view is uncluttered and the tip feels like a helpful response
+  // to their selection.
+  const modes: {
+    key: KnowledgeMode;
+    label: string;
+    desc: string;
+    detail: string;
+    recommended?: boolean;
+    disabled?: boolean;
+  }[] = [
+    {
+      key: "standard",
+      label: t.documents.processing.kmStandard,
+      desc: t.documents.processing.kmStandardDesc,
+      detail: t.documents.processing.kmStandardDetail,
+    },
+    {
+      key: "graph",
+      label: t.documents.processing.kmGraph,
+      desc: t.documents.processing.kmGraphDesc,
+      detail: t.documents.processing.kmGraphDetail,
+      disabled: !graphCapable,
+    },
+    {
+      key: "wiki",
+      label: t.documents.processing.kmWiki,
+      desc: t.documents.processing.kmWikiDesc,
+      detail: t.documents.processing.kmWikiDetail,
+    },
+    {
+      key: "full",
+      label: t.documents.processing.kmFull,
+      desc: t.documents.processing.kmFullDesc,
+      detail: t.documents.processing.kmFullDetail,
+      recommended: true,
+      disabled: !graphCapable,
+    },
+  ];
 
-  const graphLabels: Record<string, string> = {
-    basic: t.documents.processing.graphOptions.basic,
-    graph: t.documents.processing.graphOptions.graph,
-  };
+  // If the currently-selected mode got disabled (e.g. user switched to a
+  // low-dim embedding model), gracefully fall back to a still-valid mode so
+  // the UI never shows a selected-but-disabled card.
+  const effectiveMode = modes.find((m) => m.key === knowledgeMode && !m.disabled)
+    ? knowledgeMode
+    : (knowledgeMode === "graph" || knowledgeMode === "full" ? "wiki" : knowledgeMode);
+  // The full data for the selected mode — drives the detail panel.
+  const selectedModeData = modes.find((m) => m.key === effectiveMode) ?? null;
+  // The detail panel is visible by default so the pre-selected mode (Full
+  // analysis) shows its explanation on first load — matching the expectation
+  // that a selected card has an active tip. Clicking any (other) card keeps it
+  // visible and updates the tip to that card.
+  const [detailVisible, setDetailVisible] = useState(true);
 
   return (
     <div className="bg-card border border-border rounded-[16px] shadow-sm mb-6 animate-fade-in-up">
@@ -146,119 +231,66 @@ export function ProcessingSettings({
             </Select>
           </div>
 
-          {/* Auto chunk size display (replaces slider) */}
+          {/* Knowledge Mode — the single user-facing "how deep?" choice.
+              Replaces Split Strategy + Index Target + Index Mode + Auto-split.
+              Cards stay lean (title + one-line gist); selecting one reveals a
+              contextual detail panel below with "what you get / best for",
+              matching the app's select-then-show-detail pattern. */}
           <div className="col-span-2">
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.autoChunkSize}</label>
-            {!isUsingDefaultEmbed ? (
-              <div className="px-3.5 py-2.5 bg-muted/50 rounded-lg border border-border">
-                <span className="text-[14px] font-semibold text-primary">{formatTokens(chunkMaxTokens)}</span>
-                <span className="text-[12px] text-muted-foreground ml-1">tokens</span>
-                <p className="text-[12px] text-muted-foreground mt-1">
-                  {t.documents.processing.autoChunkSizeDesc
-                    .replace("{tokens}", formatTokens(chunkMaxTokens))
-                    .replace("{context}", formatTokens(embedMaxTokens))
-                    .replace("{model}", selectedEmbed?.modelName || "")}
-                </p>
-              </div>
-            ) : (
-              <div className="px-3.5 py-2.5 bg-muted/50 rounded-lg border border-border">
-                <span className="text-[14px] font-semibold text-primary">{formatTokens(chunkMaxTokens)}</span>
-                <span className="text-[12px] text-muted-foreground ml-1">tokens</span>
-                <p className="text-[12px] text-muted-foreground mt-1">
-                  {t.documents.processing.defaultChunkSize
-                    .replace("{tokens}", formatTokens(chunkMaxTokens))
-                    .replace("{context}", formatTokens(DEFAULT_EMBED_MAX_TOKENS))}
-                </p>
+            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">
+              {t.documents.processing.knowledgeMode}
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {modes.map((m) => {
+                const selected = effectiveMode === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    disabled={m.disabled}
+                    onClick={() => {
+                      if (m.disabled) return;
+                      onKnowledgeModeChange(m.key);
+                      setDetailVisible(true);
+                    }}
+                    className={`text-left px-3.5 py-2.5 rounded-xl border transition-all relative ${
+                      selected
+                        ? "border-primary bg-primary/8 ring-1 ring-primary/30"
+                        : "border-border bg-card hover:border-primary/40 hover:bg-primary/4"
+                    } ${m.disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    {m.recommended && (
+                      <span className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
+                        {t.documents.processing.kmRecommended}
+                      </span>
+                    )}
+                    <div className={`text-[13px] font-semibold ${selected ? "text-primary" : "text-foreground"}`}>
+                      {m.label}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{m.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Detail tip for the SELECTED mode — appears ONLY after the user
+                clicks a card, as a single flowing sentence. Feels like a helpful
+                response to the selection rather than static clutter. */}
+            {detailVisible && selectedModeData && (
+              <div className="mt-3 px-4 py-3 bg-muted/50 rounded-xl border border-border animate-fade-in-up flex gap-2.5">
+                <svg className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+                <p className="text-[12px] text-foreground/80 leading-relaxed">{selectedModeData.detail}</p>
               </div>
             )}
-          </div>
 
-          <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.splitStrategy}</label>
-            <Select value={splitStrategy} onValueChange={(v) => onSplitStrategyChange(v!)}>
-              <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{splitLabels[splitStrategy] ?? splitStrategy}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="structure-llm">{splitLabels["structure-llm"]}</SelectItem>
-                <SelectItem value="heading-only">{splitLabels["heading-only"]}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.splitStrategyDesc}</p>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexTarget}</label>
-            <Select value={indexTarget} onValueChange={(v) => onIndexTargetChange(v!)}>
-              <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                <SelectValue>{indexLabels[indexTarget] ?? indexTarget}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">{indexLabels.full}</SelectItem>
-                <SelectItem value="original">{indexLabels.original}</SelectItem>
-                <SelectItem value="chunks">{indexLabels.chunks}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.indexTargetDesc}</p>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.documents.processing.indexMode}</label>
-            {(() => {
-              const dim = selectedEmbed?.embeddingDim ?? 0;
-              const probed = dim > 0;
-              const lightragCompatible = dim >= 1536;
-                if (!selectedEmbed || !embedModel) {
-                return (
-                  <>
-                    <Select value="basic" onValueChange={() => {}}>
-                      <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm opacity-60">
-                        <SelectValue>{graphLabels.basic}</SelectValue>
-                      </SelectTrigger>
-                    </Select>
-                    <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.graphNoEmbedding}</p>
-                  </>
-                );
-              }
-              return (
-                <>
-                  <Select value={indexMode} onValueChange={(v) => onIndexModeChange(v as "basic" | "graph")}>
-                    <SelectTrigger className="w-full h-auto px-3.5 py-2.5 text-sm">
-                      <SelectValue>{graphLabels[indexMode]}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="graph" disabled={!probed || !lightragCompatible}>
-                        {graphLabels.graph}
-                      </SelectItem>
-                      <SelectItem value="basic">{graphLabels.basic}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {!probed && (
-                    <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      {t.documents.processing.graphDimUnknown}
-                    </p>
-                  )}
-                  {probed && !lightragCompatible && (
-                    <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
-                      {t.documents.processing.graphDimTooSmall.replace("{dim}", String(dim))}
-                    </p>
-                  )}
-                  {probed && lightragCompatible && (
-                    <p className="text-[12px] text-muted-foreground mt-2">{t.documents.processing.graphDesc}</p>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-          <div className="col-span-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-[13px] font-medium text-foreground mb-0.5">{t.documents.processing.autoSplit}</label>
-                <p className="text-[12px] text-muted-foreground">{t.documents.processing.autoSplitDesc}</p>
-              </div>
-              <label className="relative w-11 h-6 cursor-pointer">
-                <input type="checkbox" checked={autoSplit} onChange={(e) => onAutoSplitChange(e.target.checked)} className="sr-only peer"/>
-                <span className="absolute inset-0 bg-muted rounded-full transition-all duration-200 peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-[18px] after:h-[18px] after:bg-card after:rounded-full after:transition-transform after:duration-200 peer-checked:after:translate-x-5"/>
-              </label>
-            </div>
+            {graphBlockedReason && (
+              <p className="text-[12px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 mt-2">
+                {graphBlockedReason}
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -69,13 +69,17 @@ describe("splitByMacroAST", () => {
     expect(architecture?.content).toContain("The system uses a microservice architecture.");
   });
 
-  it("does not promote H3 headings into H2 boundaries", async () => {
+  it("creates separate chunks for H3 subsections with full heading paths", async () => {
     const chunks = await splitByMacroAST(`# Guide\n\n## Setup\n\nIntro.\n\n### Details\n\nMore detail.`);
 
     const nonAtomic = chunks.filter((c) => !c.isAtomic);
-    expect(nonAtomic).toHaveLength(1);
-    expect(nonAtomic[0].h2).toBe("Setup");
-    expect(nonAtomic[0].content).toContain("### Details");
+    // H3 now triggers its own chunk so the structure is preserved.
+    expect(nonAtomic.length).toBeGreaterThanOrEqual(2);
+    const details = nonAtomic.find((c) => c.headingPath.includes("Details"));
+    expect(details).toBeDefined();
+    // With # Guide as H1, ## Setup is a sub-section, ### Details is deeper.
+    expect(details?.headingPath).toContain("Setup");
+    expect(details?.headingPath).toContain("Details");
   });
 
   it("marks tables as atomic", async () => {
@@ -125,6 +129,31 @@ describe("splitByMacroAST", () => {
     const background = chunks.find((c) => c.h2 === "项目建设背景");
     expect(background?.content).toContain("项目建设背景");
     expect(background?.content).toContain("备注：根据具体项目情况，补充完整。");
+  });
+
+  it("does not promote shell commands to titles", async () => {
+    const md = `# 部署步骤\n\n执行以下命令安装：\n\nbash setup.sh --ip-family ipv6\n\n完成后继续下一步。`;
+    const chunks = await splitByMacroAST(md);
+
+    // "bash setup.sh --ip-family ipv6" must NOT become an H2
+    const titles = chunks.map((c) => c.h2).filter(Boolean);
+    expect(titles).not.toContain("bash setup.sh --ip-family ipv6");
+  });
+
+  it("does not promote version tags to titles", async () => {
+    const md = `# 镜像配置\n\n使用以下镜像：\n\ntag: v2.0.1\n\n推送镜像到仓库。`;
+    const chunks = await splitByMacroAST(md);
+
+    const titles = chunks.map((c) => c.h2).filter(Boolean);
+    expect(titles).not.toContain("tag: v2.0.1");
+  });
+
+  it("does not promote IP addresses to titles", async () => {
+    const md = `# Redis配置\n\n连接Redis实例：\n\n127.0.0.1:6379\n\n验证连接状态。`;
+    const chunks = await splitByMacroAST(md);
+
+    const titles = chunks.map((c) => c.h2).filter(Boolean);
+    expect(titles).not.toContain("127.0.0.1:6379");
   });
 });
 

@@ -108,7 +108,7 @@ export default function DashboardPage() {
     <div>
       <Header title={t.dashboard.title} />
 
-      <div className="p-8 max-w-7xl mx-auto space-y-8">
+      <div className="p-8 space-y-8">
         {/* Welcome Hero */}
         <div className="bg-mesh border border-border rounded-2xl p-8 relative overflow-hidden shadow-soft flex items-center justify-between animate-fade-in-up">
           {/* Decorative glow */}
