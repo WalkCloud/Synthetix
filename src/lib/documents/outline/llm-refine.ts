@@ -27,6 +27,19 @@ import type { MacroChunk } from "@/lib/documents/outline/macro-split";
 const PREVIEW_MAX = 80;
 const MAX_TOKENS_OUTPUT = 8192;
 
+/**
+ * Hard ceiling on the structure-refine LLM call. This is the LAST-LINE guard
+ * against a hung LLM request permanently wedging a document_convert task and
+ * (because convert holds a queue slot) starving every other document. The
+ * adapter layer already has FETCH_TIMEOUT_MS, but in practice a half-open TCP
+ * connection or a proxy that accepts the request then never responds can slip
+ * past fetch's abort — observed in production as a convert task stuck in
+ * `running` for 10+ hours, deadlocking the whole queue. On timeout we fall
+ * back to the unrefined macros (non-blocking enhancement), which is the same
+ * behaviour as any other LLM failure here.
+ */
+const REFINE_LLM_TIMEOUT_MS = Number(process.env.LLM_REFINE_TIMEOUT_MS || 120_000);
+
 const REFINE_PROMPT = `You are a document structure analyst. Given a list of macro-chunks extracted from a document, identify which "headings" are real section titles and which are body text misidentified as titles.
 
 Common false positives to reject:
@@ -293,7 +306,19 @@ export async function llmRefineMacroStructure(
 
   let response;
   try {
-    response = await llm.provider.chat(params);
+    // Race the LLM call against a hard timeout. The adapter's own fetch timeout
+    // is the first line of defense, but a hung connection that never trips the
+    // abort would otherwise hold this worker forever — and with it a queue slot
+    // that blocks every other document. See REFINE_LLM_TIMEOUT_MS rationale.
+    response = await Promise.race([
+      llm.provider.chat(params),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(
+          () => reject(new Error(`llm-refine timed out after ${REFINE_LLM_TIMEOUT_MS}ms`)),
+          REFINE_LLM_TIMEOUT_MS,
+        );
+      }),
+    ]);
   } catch (err) {
     console.warn(
       `[llm-refine] LLM call failed for doc ${ctx.docId}, using original macros:`,

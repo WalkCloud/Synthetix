@@ -71,10 +71,13 @@ function main() {
   log("✓ .next is built");
 
   // 2) Assert dist/app/ exists with the expected runtime pieces.
+  // NOTE: the entry point is standalone server.js (not the `next` CLI — that's
+  // only a dev fallback in main.ts when server.js is absent). Standalone tracing
+  // does not ship node_modules/next/dist/bin/next, so don't assert it.
   const checks = [
     APP_BUNDLE,
     path.join(APP_BUNDLE, ".next"),
-    path.join(APP_BUNDLE, "node_modules", "next", "dist", "bin", "next"),
+    path.join(APP_BUNDLE, "server.js"),
     path.join(APP_BUNDLE, "runtime", "python", "python.exe"),
     path.join(APP_BUNDLE, "workers", "python", "daemon.py"),
     path.join(APP_BUNDLE, "prisma", "migrations"),

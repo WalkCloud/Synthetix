@@ -26,13 +26,11 @@ interface EditorPanelProps {
   onGenerate: (mode: GenerationMode, constraints: { wordLimit: number; additionalRequirements: string; generationMode: GenerationMode }) => Promise<void>;
   onSelectModel: (source: "a" | "b") => Promise<void>;
   onConfirm: () => void;
-  onHumanize: () => void;
   onUnlock: (status?: "reviewing" | "pending" | "revising") => Promise<void>;
   onSaveEdit: (content: string) => void;
   onSaveEstimatedWords?: (words: number) => void;
   isGenerating: boolean;
   isThinking: boolean;
-  isHumanizing: boolean;
   isConfirming: boolean;
   streamingContent?: string;
   streamContentA?: string;
@@ -55,13 +53,11 @@ export function EditorPanel({
   onGenerate,
   onSelectModel,
   onConfirm,
-  onHumanize,
   onUnlock,
   onSaveEdit,
   onSaveEstimatedWords,
   isGenerating,
   isThinking,
-  isHumanizing,
   isConfirming,
   streamingContent = "",
   streamContentA = "",
@@ -397,22 +393,6 @@ export function EditorPanel({
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
             {t.writing.sections.regenerate}
-          </button>
-          <button
-            onClick={onHumanize}
-            disabled={isHumanizing || isConfirming}
-            className="flex items-center gap-1.5 px-4 py-2.5 border border-primary-200 text-primary-600 rounded-xl text-sm font-medium hover:bg-primary-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isHumanizing ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 animate-spin">
-                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-              </svg>
-            )}
-            {isHumanizing ? ex.humanizing : t.writing.humanize.title}
           </button>
           <button
             onClick={onConfirm}

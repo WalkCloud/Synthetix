@@ -100,6 +100,59 @@ function findChapterForOffset(
 }
 
 /**
+ * Hard-split an over-large text block into line-bounded macros, each under
+ * `chunkMaxTokens`. Used as a SAFETY NET before the block reaches the ONNX
+ * semantic chunker (`microSplitByLocalSemantic`), which computes sentence
+ * embeddings for every sentence in a macro and can exhaust memory / time on
+ * dense inputs above ~10K tokens (observed: a 29K-token book chapter with no
+ * usable sub-headings crashed `local_chunk.py` with SIGKILL/OOM).
+ *
+ * All output macros inherit the same headingPath/h1 so downstream pack/breadcrumb
+ * still group them under the original section.
+ */
+function splitByLines(
+  content: string,
+  headingPath: string,
+  h1: string,
+  chunkMaxTokens: number,
+): MacroChunk[] {
+  const lines = content.split("\n");
+  const macros: MacroChunk[] = [];
+  let currentLines: string[] = [];
+  let currentTokens = 0;
+  for (const line of lines) {
+    const lineTokens = estimateTokens(line);
+    if (currentTokens + lineTokens > chunkMaxTokens && currentLines.length > 0) {
+      const blockContent = currentLines.join("\n");
+      macros.push({
+        headingPath,
+        h1,
+        h2: null,
+        content: blockContent,
+        tokenCount: currentTokens,
+        isAtomic: false,
+      });
+      currentLines = [];
+      currentTokens = 0;
+    }
+    currentLines.push(line);
+    currentTokens += lineTokens;
+  }
+  if (currentLines.length > 0) {
+    const blockContent = currentLines.join("\n");
+    macros.push({
+      headingPath,
+      h1,
+      h2: null,
+      content: blockContent,
+      tokenCount: currentTokens,
+      isAtomic: false,
+    });
+  }
+  return macros;
+}
+
+/**
  * Split a markdown document into MacroChunks using Docling's structure.json
  * sections list as the authoritative heading source.
  *
@@ -209,38 +262,7 @@ export function splitByStructure(
       // by lines to avoid overwhelming the downstream ONNX semantic chunker
       // (which can timeout/crash on inputs >~10K tokens of dense text).
       if (chapterTokens > chunkMaxTokens * 1.5) {
-        const lines = chapterContent.split("\n");
-        let currentLines: string[] = [];
-        let currentTokens = 0;
-        for (const line of lines) {
-          const lineTokens = estimateTokens(line);
-          if (currentTokens + lineTokens > chunkMaxTokens && currentLines.length > 0) {
-            const content = currentLines.join("\n");
-            macros.push({
-              headingPath: chapterTitle,
-              h1: chapterTitle,
-              h2: null,
-              content,
-              tokenCount: currentTokens,
-              isAtomic: false,
-            });
-            currentLines = [];
-            currentTokens = 0;
-          }
-          currentLines.push(line);
-          currentTokens += lineTokens;
-        }
-        if (currentLines.length > 0) {
-          const content = currentLines.join("\n");
-          macros.push({
-            headingPath: chapterTitle,
-            h1: chapterTitle,
-            h2: null,
-            content,
-            tokenCount: currentTokens,
-            isAtomic: false,
-          });
-        }
+        macros.push(...splitByLines(chapterContent, chapterTitle, chapterTitle, chunkMaxTokens));
       } else {
         macros.push({
           headingPath: chapterTitle,
@@ -290,14 +312,32 @@ export function splitByStructure(
         }
       }
 
-      macros.push({
-        headingPath,
-        h1: chapterTitle,
-        h2: subStart.level > 2 ? subStart.title : null,
-        content: subContent,
-        tokenCount: subTokens,
-        isAtomic: false,
-      });
+      // SAFETY NET: a subsection segment can still be far over the chunk limit
+      // when the chapter has sparse sub-headings (e.g. a 29K-token book chapter
+      // with a single short sub-heading at the very end — the chapter intro
+      // segment carries ~28K tokens). Feeding that to the ONNX semantic chunker
+      // (which embeds every sentence at once) exhausts memory and crashes
+      // `local_chunk.py`. When the segment exceeds 1.5× the limit, hard-split
+      // it by lines first; the semantic chunker then only refines reasonably-
+      // sized blocks. Segments under the limit are emitted unchanged.
+      if (subTokens > chunkMaxTokens * 1.5) {
+        const split = splitByLines(subContent, headingPath, chapterTitle, chunkMaxTokens);
+        // Preserve the subsection title as h2 on each line-split macro so the
+        // breadcrumb path stays accurate (splitByLines sets h2=null).
+        if (subStart.level > 2) {
+          for (const m of split) m.h2 = subStart.title;
+        }
+        macros.push(...split);
+      } else {
+        macros.push({
+          headingPath,
+          h1: chapterTitle,
+          h2: subStart.level > 2 ? subStart.title : null,
+          content: subContent,
+          tokenCount: subTokens,
+          isAtomic: false,
+        });
+      }
     }
 
     // Handle case where no subsection produced output (shouldn't happen, but

@@ -17,6 +17,62 @@ export const E2E_TAG = "e2e";
 /** VM 共享目录中的真实业务文档。 */
 const VM_TEST_DIR = "Z:\\VM ShareFolder\\test";
 
+/**
+ * 用户实际测试文档目录（E:\test doc）。三份覆盖 epub/docx/pdf 三种格式，
+ * 用于跨格式的全流程压力测试。Graph 模式会对每份文档抽取实体，因此
+ * 这些文档的图构建耗时就是本次优化的直接测量对象。
+ *
+ * 注意：使用正斜杠避免反斜杠转义问题（\t 会被解析为 TAB 字符）。
+ * Node 的 path.join 和 fs 在 Windows 上对正斜杠完全兼容。
+ */
+const USER_TEST_DIR = "E:/test doc";
+
+/**
+ * Resolve the actual files in USER_TEST_DIR at runtime rather than hardcoding
+ * filenames. Some files on disk contain NBSP (U+00A0) instead of regular
+ * spaces in their names — hardcoding those names with regular spaces causes
+ * fs.access to fail. Reading the directory sidesteps the issue entirely and
+ * keeps the test resilient to filename whitespace variants.
+ */
+function resolveUserTestDocs(): { path: string; tier: "light" | "medium"; format: string; sizeBytes: number }[] {
+  // Hardcoded fallback (used when the directory isn't accessible, e.g. CI)
+  const fallback = [
+    { tier: "light" as const, format: "epub", ext: ".epub" },
+    { tier: "medium" as const, format: "docx", ext: ".docx" },
+    { tier: "light" as const, format: "pdf", ext: ".pdf" },
+  ];
+  let files: string[];
+  try {
+    // Use sync require to avoid top-level await issues in the e2e helpers
+    const fs = require("fs");
+    files = fs.readdirSync(USER_TEST_DIR);
+  } catch {
+    files = [];
+  }
+  const result = [];
+  for (const { tier, format, ext } of fallback) {
+    const match = files.find((f) => f.toLowerCase().endsWith(ext));
+    if (match) {
+      const fullPath = path.join(USER_TEST_DIR, match);
+      let sizeBytes = 0;
+      try {
+        sizeBytes = require("fs").statSync(fullPath).size;
+      } catch {
+        /* best-effort */
+      }
+      result.push({ path: fullPath, tier, format, sizeBytes });
+    } else {
+      // Fallback to a name with regular spaces (may fail at access time,
+      // but at least the test structure stays intact)
+      result.push({ path: path.join(USER_TEST_DIR, `test-doc.${ext}`), tier, format, sizeBytes: 0 });
+    }
+  }
+  return result;
+}
+
+/** 用户测试文档集（三种格式）— 生命周期压力测试使用。 */
+export const USER_TEST_DOCS = resolveUserTestDocs();
+
 /** 大文档（仅用于 full 模式）：[REDACTED-CLIENT-A]容器平台投标技术方案。 */
 export const BIG_DOC = {
   path: path.join(VM_TEST_DIR, "[REDACTED-CLIENT-A]容器平台投标技术方案_260427.docx"),

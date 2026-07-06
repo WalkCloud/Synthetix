@@ -363,13 +363,11 @@ export default function WritingPage({
             onGenerate={gen.handleGenerate}
             onSelectModel={actions.handleSelectModel}
             onConfirm={handleConfirm}
-            onHumanize={gen.handleHumanize}
             onUnlock={gen.handleUnlock}
             onSaveEdit={actions.handleSaveEdit}
             onSaveEstimatedWords={actions.handleSaveEstimatedWords}
             isGenerating={gen.isGenerating && gen.generatingSectionId === activeSectionId}
             isThinking={gen.isThinking && gen.generatingSectionId === activeSectionId}
-            isHumanizing={gen.isHumanizing}
             isConfirming={gen.isConfirming}
             streamingContent={gen.generatingSectionId === activeSectionId ? gen.streamingContent : ""}
             streamContentA={gen.generatingSectionId === activeSectionId ? gen.streamContentA : ""}
