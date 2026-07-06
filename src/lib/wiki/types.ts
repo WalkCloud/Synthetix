@@ -94,10 +94,39 @@ export type MergeDecision =
   | { action: "create" }
   | { action: "update"; existingSlug: string };
 
+/**
+ * Compute the Wiki Phase-A input cap (max tokens of a single input unit fed to
+ * the LLM) from the writing model's context window.
+ *
+ * Replaces the old fixed `chunkMaxTokens = 2000`, which under-used modern LLM
+ * contexts and forced every chunk through a 2K-token window — wasting context
+ * and hurting Wiki quality. The cap is now dynamic:
+ *
+ *   wikiInputMaxTokens = clamp(floor(contextWindow * 0.08), 4000, WIKI_INPUT_MAX_TOKENS)
+ *
+ * Conservative 8% ratio: Wiki extraction emits structured JSON, and large
+ * inputs raise the JSON-invalid rate + latency. Start small, raise the cap
+ * based on observed metrics (jsonRepairFailures, latency). Env overrides
+ * (WIKI_INPUT_TOKEN_RATIO, WIKI_INPUT_MAX_TOKENS) let operators tune without
+ * a redeploy.
+ */
+export function resolveWikiInputMaxTokens(contextWindow: number): number {
+  const ratio = Number(process.env.WIKI_INPUT_TOKEN_RATIO) || 0.08;
+  const lo = 4000;
+  const hi = Number(process.env.WIKI_INPUT_MAX_TOKENS) || 16000;
+  const cw = contextWindow > 0 ? contextWindow : 200000;
+  return Math.max(lo, Math.min(hi, Math.floor(cw * ratio)));
+}
+
 /** Thresholds + tunables for the synthesis pipeline. */
 export const WIKI_CONFIG = {
-  /** Max tokens of a single chunk fed to the LLM in Phase A. */
-  chunkMaxTokens: 2000,
+  /**
+   * Default Wiki Phase-A input cap. Used only as a fallback when no
+   * writing-model context window is resolvable at runtime; otherwise
+   * resolveWikiInputMaxTokens() computes a dynamic value from the model's
+   * contextWindow. Raised from the old fixed 2000 to a sane 4000 floor.
+   */
+  chunkMaxTokens: 4000,
   /** Max tokens of existing Wiki titles list included in the Phase A prompt. */
   titlesListMaxTokens: 400,
   /** Char limit for a single entry's content (allows substantial reference-quality articles). */
@@ -106,4 +135,22 @@ export const WIKI_CONFIG = {
   duplicateTitleThreshold: 0.45,
   /** How many chunks' micro-summaries can be combined before Phase B batches them. */
   docSummaryBatchChars: 6000,
+  /** Local scheduler ceiling; provider-side AdaptiveLimiter still decides real concurrency. */
+  extractSchedulerConcurrency: 16,
+  /** Max high-value items accepted from one chunk/segment; avoids noisy LLM
+   *  over-extraction that produces many tiny low-value fragments. Tightened
+   *  (was 5/8/8) to favor fewer, stronger, reference-quality entries. */
+  maxTopicsPerChunk: 3,
+  maxConceptsPerChunk: 4,
+  maxClaimsPerChunk: 3,
+  /** Minimum content length for a Wiki entry to be kept. Entries shorter than
+   *  this after merge are dropped (or merged into the closest existing entry) —
+   *  they add noise without reference value. Tuned to exclude one-line stubs. */
+  minEntryContentChars: 80,
+  /** Wide output budgets; truncated responses are retried with a larger budget. */
+  extractionMaxTokens: 4096,
+  extractionRetryMaxTokens: 8192,
+  docSummaryMaxTokens: 2048,
+  batchSummaryMaxTokens: 1024,
+  fusionMaxTokens: 4096,
 } as const;

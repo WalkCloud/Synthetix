@@ -2,7 +2,7 @@ import { getLLMClient } from "@/lib/llm/client";
 import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { semanticSearch } from "@/lib/search/semantic";
-import { queryWikiForSection } from "@/lib/wiki/query";
+import { queryWikiForSection, rewriteWikiQuery } from "@/lib/wiki/query";
 import {
   assembleContext,
   type ContextInput,
@@ -99,14 +99,29 @@ async function fetchWikiContext(
   draftTitle: string,
   section: ContextInput["section"] & { constraints?: string | null },
   userId: string,
+  provider: ReturnType<typeof createLLMProvider>,
+  modelId: string,
 ): Promise<{ entries: NonNullable<ContextInput["wikiEntries"]>; usedEntryIds: string[] }> {
   try {
     const hidden = parseSectionConstraints(section.constraints);
+    // MemoRAG-style memory-guided retrieval: rewrite the section brief into
+    // Wiki-title-aligned search terms so semantically-related entries that
+    // don't keyword-match the raw query can be recalled. Non-blocking: an
+    // empty array on failure falls back to tokenized-only matching.
+    const rewrittenTerms = await rewriteWikiQuery(
+      section,
+      draftTitle,
+      provider,
+      modelId,
+      hidden.retrievalQuery,
+    );
     const entries = await queryWikiForSection(
       section,
       draftTitle,
       userId,
       hidden.retrievalQuery,
+      undefined,
+      rewrittenTerms,
     );
     return {
       entries: entries.map((e) => ({
@@ -175,11 +190,17 @@ async function fetchRagReferences(
 
     return mapped;
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Unknown error";
-    throw new Error(
-      `Failed to retrieve RAG references for section generation: ${message}`
+    // RAG is an enhancement, not a hard dependency. A daemon timeout, a slow
+    // direct-embedding scan, or a transient embedding-model failure used to
+    // abort the whole section (surfacing as status:"failed" in the SSE route).
+    // Degrade to empty — the Wiki flywheel and the LLM's own knowledge still
+    // produce a usable draft. This mirrors the fail-soft contract already used
+    // by fetchWikiContext and enrichSectionContext.
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.warn(
+      `[rag] retrieval failed (non-blocking, degrading to wiki/empty): ${message}`,
     );
+    return [];
   }
 }
 
@@ -229,6 +250,7 @@ export async function generateSectionFull(
     provider = createLLMProvider({
       apiBaseUrl: modelConfig.provider.apiBaseUrl,
       apiKey: modelConfig.provider.apiKey,
+      providerType: modelConfig.provider.providerType,
     });
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;
@@ -239,12 +261,16 @@ export async function generateSectionFull(
     modelConfigId = resolved.modelConfigId;
   }
 
-  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
+  // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
+  // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
+  // does not consume enrichment output. Run them concurrently to cut one serial
+  // LLM round-trip off the pre-stream critical path. RAG still runs after Wiki
+  // because its limit depends on the Wiki entry count.
+  const [enrichment, wiki] = await Promise.all([
+    enrichSectionContext(section, draft.title, provider, modelId),
+    fetchWikiContext(draft.title, section, userId, provider, modelId),
+  ]);
 
-  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
-  // has good coverage, halve the raw RAG limit — we already have synthesized
-  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,
@@ -348,6 +374,7 @@ export async function generateSectionStream(
     provider = createLLMProvider({
       apiBaseUrl: modelConfig.provider.apiBaseUrl,
       apiKey: modelConfig.provider.apiKey,
+      providerType: modelConfig.provider.providerType,
     });
     modelId = modelConfig.modelId;
     modelConfigId = modelConfig.id;
@@ -358,12 +385,16 @@ export async function generateSectionStream(
     modelConfigId = resolved.modelConfigId;
   }
 
-  const enrichment = await enrichSectionContext(section, draft.title, provider, modelId);
+  // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
+  // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
+  // does not consume enrichment output. Run them concurrently to cut one serial
+  // LLM round-trip off the pre-stream critical path. RAG still runs after Wiki
+  // because its limit depends on the Wiki entry count.
+  const [enrichment, wiki] = await Promise.all([
+    enrichSectionContext(section, draft.title, provider, modelId),
+    fetchWikiContext(draft.title, section, userId, provider, modelId),
+  ]);
 
-  // Wiki flywheel: query synthesized knowledge FIRST (cheap SQL). When Wiki
-  // has good coverage, halve the raw RAG limit — we already have synthesized
-  // knowledge, so fewer raw chunks are needed (saves tokens + improves focus).
-  const wiki = await fetchWikiContext(draft.title, section, userId);
   const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
     documentName: "Knowledge Base",
     title: e.title,

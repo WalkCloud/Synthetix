@@ -1,0 +1,129 @@
+# Synthetix electron-builder config.
+#
+# Build:  node scripts/build-electron.mjs
+#
+# Key design:
+#  - The Next.js app bundle (dist/app: node.exe + CPython + .next + node_modules
+#    + workers + prisma) is shipped verbatim via extraResources → resources/app.
+#    The Electron main process spawns `next start` against it. This reuses the
+#    existing, already-validated Windows bundle with zero migration.
+#  - `files` ships ONLY the compiled Electron main/preload JS, not the app
+#    bundle (that would double-ship 1.4GB and break the resources/app layout).
+#  - perMachine: false → per-user install, no UAC (matches the prior Inno Setup
+#    policy). oneClick: false → user picks install path, like a normal app.
+#  - No code signing for this test build (friends click "Run anyway" past
+#    SmartScreen). Add a certificate block before public release.
+
+appId: com.walkcloud.synthetix
+productName: Synthetix
+copyright: Copyright © 2026 Synthetix
+
+# Entry point is read from package.json "main" field — do NOT set it here
+# (electron-builder rejects an unknown "main" property in this config).
+
+directories:
+  output: dist/electron
+  buildResources: build
+
+# Ship ONLY the compiled electron main process JS + preload. The Next app bundle
+# travels via extraResources (below) so it lands at resources/app, exactly where
+# electron/paths.ts appRoot() expects it. The electron main has NO runtime deps
+# beyond Electron itself (bundled); the app's real node_modules live in
+# resources/app/node_modules (via extraResources).
+#
+# Strategy: start from NOTHING and add only what's needed. This keeps app.asar
+# tiny (~30KB main.js) instead of packing ~500MB of project deps. Using an
+# explicit allowlist is safer than trying to exclude everything.
+files:
+  # The allowlist — only these ship in app.asar:
+  - dist/electron-main/**
+  - package.json
+  # Explicitly exclude the heavy project trees that electron-builder's defaults
+  # would otherwise pull in (it auto-includes node_modules based on package.json).
+  - "!**/node_modules"
+  - "!**/node_modules/**"
+  - "!**/.next"
+  - "!**/.next/**"
+  - "!**/src"
+  - "!**/src/**"
+  - "!**/workers"
+  - "!**/workers/**"
+  - "!**/prisma"
+  - "!**/prisma/**"
+  - "!**/public"
+  - "!**/public/**"
+  - "!**/docs"
+  - "!**/docs/**"
+  - "!**/e2e"
+  - "!**/e2e/**"
+  - "!**/prototype"
+  - "!**/prototype/**"
+  - "!**/build"
+  - "!**/build/**"
+  - "!**/electron"
+  - "!**/electron/**"
+  - "!**/scripts"
+  - "!**/scripts/**"
+  - "!**/packaging"
+  - "!**/packaging/**"
+  - "!**/*.{iml,hprof,orig,csproj,sln,xs}"
+  - "!**/.*"
+
+# The full Next.js app bundle (node runtime + CPython + .next + deps + workers +
+# prisma) goes into resources/app/. Exclude the legacy .bat launchers and the
+# standalone node.exe is NOT needed from extraResources (Electron brings node),
+# but we keep it since next start may resolve it; harmless.
+extraResources:
+  - from: dist/app
+    to: app
+    filter:
+      - "**/*"
+      - "!start.bat"
+      - "!stop.bat"
+  # The local embedding model (GTE-multilingual-base, int8 ONNX, ~340MB) used by
+  # the chunking pipeline. data/ is otherwise runtime-only (excluded from the
+  # app bundle above), so ship the model as a dedicated resource under app/models
+  # and point LOCAL_EMBED_MODEL_PATH at it from electron/main.ts.
+  - from: data/models/gte-multilingual-base
+    to: app/models/gte-multilingual-base
+    filter:
+      - "**/*"
+  # Branded icon → resources/icon.ico. electron/main.ts trayIconPath() looks for
+  # it at process.resourcesPath/icon.ico (the first candidate). Without this,
+  # the tray/window falls back to an empty image and the taskbar icon is blank.
+  - from: build/icon.ico
+    to: icon.ico
+    filter:
+      - "**/*"
+
+# Windows target: NSIS installer, per-user, user picks install dir.
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  # No signing config for the test build.
+  signtoolOptions: null
+
+nsis:
+  oneClick: false            # show a normal install wizard with path selection
+  perMachine: false          # per-user install (no admin/UAC), like the prior Inno Setup build
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Synthetix
+  uninstallDisplayName: Synthetix
+
+# Compression: normal (not maximum). Maximum compresses slightly smaller but
+# significantly slows install extraction for large payloads. Normal is the
+# recommended default — install speed matters more than a few MB of size.
+compression: normal
+
+# Do NOT rebuild native modules for Electron's ABI. The bundled Next.js app
+# runs as a standalone node process (spawned by the main process), not inside
+# Electron's node — so it needs the standard-Node-ABI prebuilt binaries that
+# dist/app/ already ships. Rebuilding here would (a) target the wrong ABI and
+# (b) fail when a dev server holds better_sqlite3.node open (EPERM unlink).
+npmRebuild: false
+nodeGypRebuild: false

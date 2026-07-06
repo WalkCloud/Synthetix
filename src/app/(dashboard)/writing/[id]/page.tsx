@@ -28,7 +28,7 @@ export default function WritingPage({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { draft, activeSectionId, setActiveSectionId, loading, loadDraft } = useDraftData(id);
-  const { models, selectedModelA, selectedModelB, setSelectedModelA, setSelectedModelB } = useModelSelection();
+  const { models, selectedModelA, selectedModelB, defaultModelId, setSelectedModelA, setSelectedModelB } = useModelSelection();
   const genAll = useGenerateAll(id, setActiveSectionId, loadDraft);
   const gen = useGeneration(id, activeSectionId, loadDraft, selectedModelA, selectedModelB);
   const { setReferences } = gen;
@@ -357,18 +357,17 @@ export default function WritingPage({
             models={models}
             selectedModelA={selectedModelA}
             selectedModelB={selectedModelB}
+            defaultModelId={defaultModelId}
             onModelAChange={setSelectedModelA}
             onModelBChange={setSelectedModelB}
             onGenerate={gen.handleGenerate}
             onSelectModel={actions.handleSelectModel}
             onConfirm={handleConfirm}
-            onHumanize={gen.handleHumanize}
             onUnlock={gen.handleUnlock}
             onSaveEdit={actions.handleSaveEdit}
             onSaveEstimatedWords={actions.handleSaveEstimatedWords}
             isGenerating={gen.isGenerating && gen.generatingSectionId === activeSectionId}
             isThinking={gen.isThinking && gen.generatingSectionId === activeSectionId}
-            isHumanizing={gen.isHumanizing}
             isConfirming={gen.isConfirming}
             streamingContent={gen.generatingSectionId === activeSectionId ? gen.streamingContent : ""}
             streamContentA={gen.generatingSectionId === activeSectionId ? gen.streamContentA : ""}

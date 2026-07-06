@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { entryToOkfMarkdown } from "@/lib/wiki/index-md";
-import { WIKI_CONFIG } from "@/lib/wiki/types";
+import { WIKI_CONFIG, resolveWikiInputMaxTokens } from "@/lib/wiki/types";
 
 describe("entryToOkfMarkdown (OKF export format)", () => {
   it("produces minimal YAML frontmatter with type + body", () => {
@@ -63,5 +63,28 @@ describe("WIKI_CONFIG tunables", () => {
   it("caps entry content to keep Wiki modular (OKF principle: small files)", () => {
     expect(WIKI_CONFIG.entryContentCharLimit).toBeGreaterThan(100);
     expect(WIKI_CONFIG.entryContentCharLimit).toBeLessThanOrEqual(5000);
+  });
+});
+
+describe("resolveWikiInputMaxTokens (dynamic Phase-A input cap)", () => {
+  it("scales with the writing model's context window (no longer fixed at 2000)", () => {
+    // A modern 200K-window model should get a far larger cap than the old fixed 2000.
+    const cap = resolveWikiInputMaxTokens(200000);
+    expect(cap).toBeGreaterThan(2000);
+    expect(cap).toBe(Math.floor(200000 * 0.08)); // 16000
+  });
+
+  it("respects the configured ceiling (WIKI_INPUT_MAX_TOKENS)", () => {
+    // Huge context window must not exceed the 16K ceiling.
+    expect(resolveWikiInputMaxTokens(1_000_000)).toBe(16000);
+  });
+
+  it("respects the 4000 floor for small-context models", () => {
+    // A tiny 4K-context model still gets the floor, never below.
+    expect(resolveWikiInputMaxTokens(4096)).toBe(4000);
+  });
+
+  it("falls back to 200K default when contextWindow is 0/unset", () => {
+    expect(resolveWikiInputMaxTokens(0)).toBe(16000);
   });
 });

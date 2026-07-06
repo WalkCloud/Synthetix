@@ -65,10 +65,10 @@ function SectionNode({
         onClick={() => onSelectSection(section.id)}
         className={`flex items-start gap-2 px-2.5 py-2 rounded-lg text-[13px] cursor-pointer transition-colors ${
           isActive
-            ? "bg-primary-50 text-primary-700 font-semibold"
+            ? "bg-primary-50 text-primary-700 dark:bg-primary/15 dark:text-primary-300 font-semibold"
             : status === "done"
-              ? "text-emerald-600"
-              : "text-muted-foreground hover:bg-secondary/70"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-muted-foreground hover:bg-secondary/70 dark:hover:bg-secondary/40"
         }`}
         style={{ paddingLeft: `${10 + depth * 14}px` }}
       >

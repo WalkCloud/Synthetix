@@ -24,6 +24,31 @@ import asyncio
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
 
 
+def _get_llm_max_async() -> int:
+    """LightRAG's internal LLM concurrency for entity/relation rebuild during
+    delete-by-doc. AUTO-ALIGNED to the adaptive limiter's hard cap
+    (LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) so soft-delete rebuilds run at
+    the same throughput as the original indexing AND the limiter stays the
+    binding bottleneck. MAX_ASYNC_LLM is a deprecated escape hatch — see
+    rag_index._get_llm_max_async for the full rationale.
+    """
+    try:
+        cap = int(os.environ.get("LLM_LIMITER_MAX_REQUESTS_GRAPH", "8"))
+        if cap <= 0:
+            cap = 8
+    except (TypeError, ValueError):
+        cap = 8
+    legacy = os.environ.get("MAX_ASYNC_LLM")
+    if legacy:
+        try:
+            legacy_val = int(legacy)
+            if legacy_val > 0:
+                return legacy_val
+        except (TypeError, ValueError):
+            pass
+    return cap
+
+
 async def action_list_entities(rag, keyword: str = "", limit: int = 50) -> dict:
     from lightrag import QueryParam
     if keyword:
@@ -99,37 +124,312 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
             from lightrag.base import DocStatus
             all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
         except Exception:
-            all_docs = await rag.doc_status.get_all()
+            # Fallback if the storage backend lacks get_docs_by_statuses.
+            # NOTE: get_all() was removed in lightrag-hku 1.5.4; guard so this
+            # still degrades gracefully on older/newer versions alike.
+            getter = getattr(rag.doc_status, "get_all", None)
+            all_docs = await getter() if getter else {}
 
         for key, value in (all_docs or {}).items():
             if key == doc_id or key.startswith(doc_id + "/"):
                 target_ids.add(key)
                 continue
 
-            metadata = (value or {}).get("metadata", {}) if isinstance(value, dict) else {}
-            original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
-            file_path = (value or {}).get("file_path", "") if isinstance(value, dict) else ""
+            # LightRAG >=1.5.4 returns DocProcessingStatus dataclass objects
+            # (not dicts) from get_docs_by_statuses; support both shapes.
+            if isinstance(value, dict):
+                metadata = (value or {}).get("metadata", {}) or {}
+                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
+                file_path = (value or {}).get("file_path", "")
+            else:
+                metadata = getattr(value, "metadata", None) or {}
+                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
+                file_path = getattr(value, "file_path", "")
             if original_doc_id == doc_id or original_doc_id.startswith(doc_id + "/") or f"{doc_id}" in file_path:
                 target_ids.add(key)
 
+        soft_delete_failed = False
         for target_id in sorted(target_ids):
             try:
                 await rag.adelete_by_doc_id(target_id)
                 deleted_ids.append(target_id)
             except Exception as delete_err:
+                # adelete_by_doc_id triggers per-chunk LLM entity rebuilds, which
+                # are unstable on large graphs (3000+ nodes): a single rebuild
+                # failure aborts the whole call and leaves the graph half-deleted.
+                # Record the failure; we'll fall through to the hard-delete path
+                # below rather than returning a half-finished result that leaves
+                # orphan chunks/entities in the knowledge graph.
+                soft_delete_failed = True
                 print(f"Warning deleting LightRAG doc {target_id}: {delete_err}", file=sys.stderr)
-        
+
         # Check if any documents are left. If not, wipe the graph entirely to remove orphaned entities.
-        remaining = await rag.doc_status.get_all()
-        if not remaining:
+        # lightrag-hku 1.5.4 replaced get_all() with is_empty() / get_status_counts();
+        # fall back to get_all() on older versions that still expose it.
+        is_empty_fn = getattr(rag.doc_status, "is_empty", None)
+        if is_empty_fn:
+            remaining_empty = await is_empty_fn()
+        else:
+            getter = getattr(rag.doc_status, "get_all", None)
+            remaining_empty = not bool(await getter() if getter else False)
+        if remaining_empty:
             import shutil
             shutil.rmtree(rag.working_dir, ignore_errors=True)
             os.makedirs(rag.working_dir, exist_ok=True)
             return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids, "wiped_all": True}
-             
+
+        # HARD DELETE FALLBACK: when LightRAG's soft delete (adelete_by_doc_id,
+        # which rebuilds entities via LLM) failed mid-way on a large graph, the
+        # doc's chunks/entities/relations remain as orphans. Rather than leaving
+        # stale data in the knowledge graph (user sees deleted-doc entities in
+        # the graph view), directly purge every trace of doc_id from the JSON
+        # KV stores + vector DBs. This bypasses LightRAG's rebuild entirely —
+        # entities/relations owned SOLELY by this doc are removed; shared ones
+        # keep their other sources. No LLM calls, no rebuild, fully deterministic.
+        if soft_delete_failed:
+            hard_result = _hard_delete_doc_from_storage(rag.working_dir, doc_id)
+            return {
+                "status": "deleted",
+                "doc_id": doc_id,
+                "deleted_ids": deleted_ids,
+                "hard_delete_used": True,
+                "hard_deleted_chunks": hard_result["chunks_removed"],
+                "hard_deleted_entities": hard_result["entities_removed"],
+                "hard_deleted_relations": hard_result["relations_removed"],
+            }
+
         return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids}
     except Exception as e:
         return {"error": str(e), "doc_id": doc_id}
+
+
+def _hard_delete_doc_from_storage(working_dir: str, doc_id: str) -> dict:
+    """Purge every trace of doc_id from LightRAG's file-based KV stores + vector DBs.
+
+    Operates directly on the JSON files in working_dir, bypassing LightRAG's
+    in-memory state (which may be inconsistent after a failed soft delete). Safe
+    because the process is exiting right after — the next process re-reads these
+    files fresh.
+
+    Removes:
+    - doc_status / full_docs / text_chunks entries keyed "{doc_id}/chunk_*"
+    - entities whose chunk_ids ALL reference this doc (orphan entity)
+    - relations whose chunk_ids ALL reference this doc (orphan relation)
+    - corresponding rows from vdb_*.json (nano-vectordb files keyed by the same
+      id, with a parallel __vector_store__ array)
+    """
+    import json
+
+    prefix = doc_id + "/"
+
+    def load(name):
+        p = os.path.join(working_dir, name)
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def save(name, data):
+        p = os.path.join(working_dir, name)
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning writing {name}: {e}", file=sys.stderr)
+
+    chunks_removed = 0
+    entities_removed = 0
+    relations_removed = 0
+
+    # 1. Purge chunk-level stores: doc_status, full_docs, text_chunks
+    for store_name in ["kv_store_doc_status.json", "kv_store_full_docs.json", "kv_store_text_chunks.json"]:
+        store = load(store_name)
+        if not isinstance(store, dict):
+            continue
+        before = len(store)
+        for key in list(store.keys()):
+            if key == doc_id or key.startswith(prefix):
+                del store[key]
+                chunks_removed = max(chunks_removed, before - len(store))
+        save(store_name, store)
+
+    # 2. Purge entities owned solely by this doc.
+    #    entity_chunks[entity] = { "chunk_ids": ["{docId}/chunk_NNN-chunk-XXX", ...], ... }
+    #    An entity is an orphan (safe to delete) iff every chunk_id references
+    #    doc_id. Entities also sourced from OTHER docs are left intact.
+    ec = load("kv_store_entity_chunks.json")
+    if isinstance(ec, dict):
+        orphan_entities = []
+        for entity, meta in list(ec.items()):
+            chunk_ids = meta.get("chunk_ids", []) if isinstance(meta, dict) else []
+            if not chunk_ids:
+                continue
+            if all(cid.startswith(prefix) or cid == doc_id for cid in chunk_ids):
+                orphan_entities.append(entity)
+        for entity in orphan_entities:
+            del ec[entity]
+            entities_removed += 1
+        save("kv_store_entity_chunks.json", ec)
+
+        # Also remove from full_entities + vdb_entities
+        fe = load("kv_store_full_entities.json")
+        if isinstance(fe, dict):
+            for entity in orphan_entities:
+                fe.pop(entity, None)
+            save("kv_store_full_entities.json", fe)
+
+        _purge_vdb(working_dir, "vdb_entities.json", orphan_entities)
+
+    # 3. Purge relations owned solely by this doc (same logic as entities).
+    rc = load("kv_store_relation_chunks.json")
+    if isinstance(rc, dict):
+        orphan_rels = []
+        for rel, meta in list(rc.items()):
+            chunk_ids = meta.get("chunk_ids", []) if isinstance(meta, dict) else []
+            if not chunk_ids:
+                continue
+            if all(cid.startswith(prefix) or cid == doc_id for cid in chunk_ids):
+                orphan_rels.append(rel)
+        for rel in orphan_rels:
+            del rc[rel]
+            relations_removed += 1
+        save("kv_store_relation_chunks.json", rc)
+
+        fr = load("kv_store_full_relations.json")
+        if isinstance(fr, dict):
+            for rel in orphan_rels:
+                fr.pop(rel, None)
+            save("kv_store_full_relations.json", fr)
+
+        _purge_vdb(working_dir, "vdb_relationships.json", orphan_rels)
+
+    # 4. Purge chunk-level vector DB (vdb_chunks.json) entries for this doc.
+    _purge_vdb_prefix(working_dir, "vdb_chunks.json", prefix)
+
+    # 5. Purge LLM response cache entries that reference this doc's chunks.
+    lc = load("kv_store_llm_response_cache.json")
+    if isinstance(lc, dict):
+        for key in list(lc.keys()):
+            if doc_id in key:
+                del lc[key]
+        save("kv_store_llm_response_cache.json", lc)
+
+    # 6. Purge orphan nodes + edges from the NetworkX GraphML file.
+    #    Without this, the next LightRAG process reloads the stale graph from
+    #    GraphML and re-populates the KV stores with the deleted doc's entities.
+    #    Node/edge "source_id" attribute holds a comma-separated list of chunk
+    #    ids ("{docId}/chunk_NNN-chunk-XXX"); if EVERY id references doc_id,
+    #    the node/edge is an orphan and is removed. Multi-source nodes (shared
+    #    with other docs) are preserved.
+    try:
+        import networkx as nx
+        graphml_path = os.path.join(working_dir, "graph_chunk_entity_relation.graphml")
+        if os.path.exists(graphml_path):
+            G = nx.read_graphml(graphml_path)
+
+            def all_sources_orphan(source_id_str: str) -> bool:
+                """True iff every source chunk id in the GRAPHML source_id field
+                belongs to the deleted doc."""
+                if not source_id_str:
+                    return False
+                # GraphML stores long strings with truncation markers (e.g.
+                # "<SEP>...<SENTENCE_LENGTH>..."). Split on common delimiters
+                # and check if any token is a non-orphan chunk id.
+                import re
+                tokens = re.split(r"[<SEP>,\s]+", str(source_id_str))
+                # If NONE of the tokens look like a chunk id from another doc,
+                # treat as orphan. A token "belongs" to doc_id if it starts
+                # with the doc_id prefix.
+                has_other_doc_source = False
+                for tok in tokens:
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    if tok.startswith(prefix) or tok == doc_id:
+                        continue  # this source is the deleted doc
+                    # Looks like a chunk id from a different doc (UUID prefix)
+                    if "/" in tok and len(tok.split("/")[0]) >= 32:
+                        has_other_doc_source = True
+                        break
+                return not has_other_doc_source
+
+            nodes_before = G.number_of_nodes()
+            edges_before = G.number_of_edges()
+            orphan_nodes = [
+                n for n, data in G.nodes(data=True)
+                if all_sources_orphan(data.get("source_id", ""))
+            ]
+            G.remove_nodes_from(orphan_nodes)
+            orphan_edges = [
+                (u, v) for u, v, data in G.edges(data=True)
+                if all_sources_orphan(data.get("source_id", ""))
+            ]
+            G.remove_edges_from(orphan_edges)
+            nx.write_graphml(G, graphml_path)
+            print(
+                f"[hard-delete] GraphML: removed {len(orphan_nodes)} orphan nodes "
+                f"({nodes_before}->{G.number_of_nodes()}), "
+                f"{len(orphan_edges)} orphan edges ({edges_before}->{G.number_of_edges()})",
+                file=sys.stderr,
+            )
+    except Exception as e:
+        print(f"[hard-delete] GraphML cleanup skipped: {e}", file=sys.stderr)
+
+    return {
+        "chunks_removed": chunks_removed,
+        "entities_removed": entities_removed,
+        "relations_removed": relations_removed,
+    }
+
+
+def _purge_vdb(working_dir: str, vdb_name: str, ids_to_remove: list) -> None:
+    """Remove entries by exact id from a nano-vectordb JSON file.
+
+    nano-vectordb stores data as:
+      { "__data__": [ {"__id__": "...", ...}, ... ], "__metadata__": {...} }
+    or a flat dict of {id: {__vector__: [...]}} depending on version. Handle both.
+    """
+    import json
+    p = os.path.join(working_dir, vdb_name)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            vdb = json.load(f)
+    except Exception:
+        return
+    if isinstance(vdb, dict) and "__data__" in vdb and isinstance(vdb["__data__"], list):
+        remove_set = set(ids_to_remove)
+        vdb["__data__"] = [row for row in vdb["__data__"] if row.get("__id__") not in remove_set]
+    elif isinstance(vdb, dict):
+        for rid in ids_to_remove:
+            vdb.pop(rid, None)
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(vdb, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning writing {vdb_name}: {e}", file=sys.stderr)
+
+
+def _purge_vdb_prefix(working_dir: str, vdb_name: str, prefix: str) -> None:
+    """Remove entries whose id starts with prefix from a nano-vectordb JSON file."""
+    import json
+    p = os.path.join(working_dir, vdb_name)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            vdb = json.load(f)
+    except Exception:
+        return
+    if isinstance(vdb, dict) and "__data__" in vdb and isinstance(vdb["__data__"], list):
+        vdb["__data__"] = [row for row in vdb["__data__"] if not str(row.get("__id__", "")).startswith(prefix)]
+    elif isinstance(vdb, dict):
+        for key in list(vdb.keys()):
+            if key.startswith(prefix):
+                del vdb[key]
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(vdb, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning writing {vdb_name}: {e}", file=sys.stderr)
 
 
 
@@ -404,6 +704,7 @@ async def main_async(args) -> None:
                         "Strategy", "Mechanism", "Pipeline", "Workflow",
                     ],
                 },
+                llm_model_max_async=_get_llm_max_async(),
                 **storage_kwargs,
             )
             break

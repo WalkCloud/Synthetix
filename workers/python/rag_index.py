@@ -28,6 +28,7 @@ from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+from adaptive_limiter import wrap_llm_func
 
 
 def emit_progress(stage: str, progress: int, message: str, **extra) -> None:
@@ -87,6 +88,120 @@ def get_insert_batch_size(index_mode: str, env: dict | None = None) -> int:
     return int(source.get("LIGHTRAG_INSERT_BATCH_SIZE", "20"))
 
 
+def should_bulk_insert_graph(env: dict | None = None) -> bool:
+    """Whether graph mode submits chunks to LightRAG in batches (parallel entity
+    extraction across chunks) or one at a time (serial).
+
+    DEFAULT IS NOW TRUE. The serial path was a conservative default left over
+    from early LightRAG versions where bulk ainsert would skip entity/relation
+    extraction. On lightrag-hku>=1.5.4 (our pinned version, requirements.txt),
+    `rag.ainsert(list_of_strings, ids=list, file_paths=list)` extracts entities
+    for ALL chunks in the batch and runs them through the entity/relation merge
+    phase together — and LightRAG's internal llm_model_max_async (auto-aligned
+    to LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) parallelizes the per-chunk
+    extraction LLM calls within the batch.
+
+    The serial default under-used the provider: with MAX_ASYNC_LLM=8 and an
+    adaptive limiter that allows 8-way concurrency, the serial ainsert loop
+    still only fed chunks to LightRAG one at a time, so the chunk-to-chunk
+    critical path was fully sequential even though the LLM provider had
+    headroom for 8 concurrent extractions. Bulk mode lets LightRAG schedule
+    extractions across the whole batch in parallel.
+
+    Set LIGHTRAG_GRAPH_BULK_INSERT=false to opt back out if a LightRAG upgrade
+    regresses bulk-extraction quality.
+    """
+    source = env if env is not None else os.environ
+    return str(source.get("LIGHTRAG_GRAPH_BULK_INSERT", "true")).lower() in {"1", "true", "yes", "on"}
+
+
+def _read_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_llm_max_async() -> int:
+    """LightRAG's internal LLM concurrency for entity/relation extraction.
+
+    AUTO-ALIGNED to the adaptive limiter's hard cap
+    (LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) so the limiter is always the
+    binding bottleneck: LightRAG opens `cap` internal slots, the limiter then
+    dynamically admits 1..cap based on the AIMD-learned budget. This eliminates
+    the two-layer mismatch where LightRAG's static value could be tighter (and
+    starve the limiter) or looser (and pile up coroutines waiting in acquire).
+
+    MAX_ASYNC_LLM is kept as a deprecated escape hatch for backward compat — if
+    set, it still wins, but prefer setting LLM_LIMITER_MAX_REQUESTS_GRAPH so
+    both layers stay aligned. LightRAG's upstream default of 4 made graph builds
+    2× slower than necessary and is never used here.
+    """
+    cap = _read_positive_int("LLM_LIMITER_MAX_REQUESTS_GRAPH", 8)
+    legacy = os.environ.get("MAX_ASYNC_LLM")
+    if legacy:
+        try:
+            legacy_val = int(legacy)
+            if legacy_val > 0:
+                return legacy_val
+        except (TypeError, ValueError):
+            pass
+    return cap
+
+
+def _llm_error_message(error: Exception) -> str:
+    return f"{type(error).__name__}: {error}".lower()
+
+
+def _is_transient_llm_connection_error(error: Exception) -> bool:
+    msg = _llm_error_message(error)
+    markers = (
+        "apiconnectionerror",
+        "connection error",
+        "connecterror",
+        "connect error",
+        "getaddrinfo failed",
+        "name resolution",
+        "temporary failure in name resolution",
+        "timeout",
+        "timed out",
+        "etimedout",
+        "econnreset",
+        "connection reset",
+        "connection refused",
+        "remote protocol error",
+    )
+    return any(marker in msg for marker in markers)
+
+
+def _graph_llm_retry_delay_ms(base_ms: int, attempt: int) -> int:
+    factors = (1, 2.5, 5)
+    if attempt <= len(factors):
+        return int(base_ms * factors[attempt - 1])
+    return int(base_ms * factors[-1] * (2 ** (attempt - len(factors))))
+
+
+async def _call_graph_llm_with_connection_retry(call, sleep_fn=asyncio.sleep) -> str:
+    retries = _read_positive_int("GRAPH_LLM_CONNECTION_RETRIES", 3)
+    base_ms = _read_positive_int("GRAPH_LLM_CONNECTION_BACKOFF_MS", 2000)
+    for attempt in range(retries + 1):
+        try:
+            return await call()
+        except Exception as error:
+            if attempt >= retries or not _is_transient_llm_connection_error(error):
+                raise
+            delay_ms = _graph_llm_retry_delay_ms(base_ms, attempt + 1)
+            print(
+                f"WARNING: Graph LLM connection error, retrying in {delay_ms / 1000:.1f}s "
+                f"(attempt {attempt + 1}/{retries}): {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            await sleep_fn(delay_ms / 1000)
+    raise RuntimeError("Graph LLM connection retry exhausted")
+
+
 def sort_chunk_files(files: list[str]) -> list[str]:
     def chunk_index(name: str) -> int:
         stem = os.path.splitext(name)[0]
@@ -115,8 +230,12 @@ def indexing_lock(working_dir: str, doc_id: str):
 async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False, on_progress=None) -> int:
     """Insert chunks with bounded bulk calls, falling back only for unsupported APIs.
 
-    When force_serial is True (graph mode), always use serial inserts so
-    LightRAG's entity/relation extraction processes each chunk individually.
+    When force_serial is True, inserts one chunk at a time. Otherwise (the
+    default for BOTH basic AND graph modes now), submits chunks in batches of
+    `batch_size` to `rag.ainsert(contents_list, ids=list, file_paths=list)`,
+    letting LightRAG parallelize entity/relation extraction across the batch.
+    On TypeError (older LightRAG without list-ainsert support) the batch is
+    re-tried serially so the insert still completes.
     """
     if force_serial:
         indexed = 0
@@ -139,6 +258,8 @@ async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, fo
             if on_progress:
                 on_progress(indexed, len(chunk_records))
         except TypeError:
+            # Older LightRAG versions don't accept a list of strings as the
+            # first arg — fall back to serial within this batch.
             for item in batch:
                 await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
                 indexed += 1
@@ -260,56 +381,60 @@ async def index_document(
     graph_token_tracker = StdoutTokenTracker(module="graph")
 
     if index_mode == "graph" and llm_api_base and llm_model:
-        import asyncio
-        llm_sem = asyncio.Semaphore(2)
-        async def llm_func(
+        # The raw LLM call (no concurrency control here — that's delegated to
+        # the adaptive limiter via wrap_llm_func below). Concurrency is now
+        # self-tuning: the limiter slow-starts to probe the provider's true
+        # capacity and paces every extraction round-trip against it, replacing
+        # the old hardcoded Semaphore(2). See adaptive_limiter.py + the design
+        # doc docs/llm-concurrency-adaptive-limiter-2026-06-26.md.
+        async def raw_llm_func(
             prompt: str,
             system_prompt: str | None = None,
             history_messages: list | None = None,
             **kwargs,
         ) -> str:
-            async with llm_sem:
-                if history_messages is None:
-                    history_messages = []
-                # Output language is now controlled via addon_params["language"]
-                # (set above to follow the source text), so we do NOT re-inject a
-                # competing language instruction here — that would duplicate and
-                # potentially contradict the prompt template's own {language} slot.
-                # We keep only the description-quality constraint, which the prompt
-                # template does not cover.
-                quality_instruction = "\n\nIMPORTANT: Entity and relationship descriptions MUST be concise summaries (1-2 sentences). DO NOT output step-by-step processes, raw chunk text, or 'phase1 phase2' style content."
-                if system_prompt:
-                    system_prompt += quality_instruction
-                else:
-                    prompt += quality_instruction
-                clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
-                try:
-                    return await openai_complete_if_cache(
-                        model=llm_model,
-                        prompt=prompt,
-                        system_prompt=system_prompt,
-                        history_messages=history_messages,
-                        base_url=llm_api_base,
-                        api_key=llm_api_key,
-                        token_tracker=graph_token_tracker,
-                        **clean_kwargs,
-                    )
-                except Exception as e:
-                    err_msg = str(e).lower()
-                    if "response_format" in err_msg or "invalid_request" in err_msg:
-                        for bad_key in ("response_format", "keyword_extraction"):
-                            clean_kwargs.pop(bad_key, None)
-                        return await openai_complete_if_cache(
-                            model=llm_model,
-                            prompt=prompt,
-                            system_prompt=system_prompt,
-                            history_messages=history_messages,
-                            base_url=llm_api_base,
-                            api_key=llm_api_key,
-                            token_tracker=graph_token_tracker,
-                            **clean_kwargs,
-                        )
-                    raise
+            if history_messages is None:
+                history_messages = []
+            # Output language is now controlled via addon_params["language"]
+            # (set above to follow the source text), so we do NOT re-inject a
+            # competing language instruction here — that would duplicate and
+            # potentially contradict the prompt template's own {language} slot.
+            # We keep only the description-quality constraint, which the prompt
+            # template does not cover.
+            quality_instruction = "\n\nIMPORTANT: Entity and relationship descriptions MUST be concise summaries (1-2 sentences). DO NOT output step-by-step processes, raw chunk text, or 'phase1 phase2' style content."
+            if system_prompt:
+                system_prompt += quality_instruction
+            else:
+                prompt += quality_instruction
+            clean_kwargs = {k: v for k, v in kwargs.items() if k not in _ignored_llm_kwargs}
+
+            async def call_openai():
+                return await openai_complete_if_cache(
+                    model=llm_model,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages,
+                    base_url=llm_api_base,
+                    api_key=llm_api_key,
+                    token_tracker=graph_token_tracker,
+                    **clean_kwargs,
+                )
+
+            try:
+                return await _call_graph_llm_with_connection_retry(call_openai)
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "response_format" in err_msg or "invalid_request" in err_msg:
+                    for bad_key in ("response_format", "keyword_extraction"):
+                        clean_kwargs.pop(bad_key, None)
+                    return await _call_graph_llm_with_connection_retry(call_openai)
+                raise
+
+        # Per-provider limiter key. Prefixed "graph:" so graph-extraction
+        # capacity is tracked separately from the Node-side wiki/embed limiter
+        # (different call patterns), while still persisted to the shared file.
+        provider_key = f"graph:{llm_api_base.rstrip('/')}"
+        llm_func = wrap_llm_func(raw_llm_func, provider_key)
     else:
         async def llm_func(*args, **kwargs) -> str:
             return ""
@@ -385,6 +510,17 @@ async def index_document(
                         # original form per the prompt's own rule.
                         "language": "the same language as the input text",
                     },
+                    # LightRAG defaults llm_model_max_async to 4, which caps the
+                    # chunk-level entity-extraction concurrency AND the entity/
+                    # relation merge phase (which uses 2× this value). We feed
+                    # LLM_LIMITER_MAX_REQUESTS_GRAPH (default 8) so the adaptive
+                    # limiter is always the binding bottleneck — LightRAG opens
+                    # `cap` internal slots and the limiter dynamically admits
+                    # 1..cap based on the AIMD-learned provider budget. This
+                    # replaces the old two-layer mismatch (static LightRAG value
+                    # vs dynamic limiter value). See _get_llm_max_async + the
+                    # design doc docs/llm-concurrency-adaptive-limiter-2026-06-26.md.
+                    llm_model_max_async=_get_llm_max_async(),
                     **storage_kwargs,
                     **rerank_kwargs,
                 )
@@ -462,7 +598,8 @@ async def index_document(
             progress = 40 + int((done / max(total, 1)) * 50)
             emit_progress("indexing", progress, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=done, total=total)
 
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=(index_mode == "graph"), on_progress=_report_index_progress)
+        force_serial = index_mode == "graph" and not should_bulk_insert_graph()
+        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
         emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
 
     if index_mode == "graph" and llm_api_base and llm_model:

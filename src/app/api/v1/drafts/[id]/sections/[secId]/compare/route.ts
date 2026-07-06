@@ -68,10 +68,12 @@ export async function POST(
   const modelAProvider = createLLMProvider({
     apiBaseUrl: modelARecord.provider.apiBaseUrl,
     apiKey: modelARecord.provider.apiKey,
+    providerType: modelARecord.provider.providerType,
   });
   const modelBProvider = createLLMProvider({
     apiBaseUrl: modelBRecord.provider.apiBaseUrl,
     apiKey: modelBRecord.provider.apiKey,
+    providerType: modelBRecord.provider.providerType,
   });
 
   const constraints = body.constraints

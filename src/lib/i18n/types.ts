@@ -37,6 +37,7 @@ export type TranslationSchema = {
       completed: string;
       cancelled: string;
       indexingGraph: string;
+      enhancing: string;
       comingSoon: string;
       none: string;
       all: string;
@@ -198,9 +199,6 @@ export type TranslationSchema = {
       llmModel: string;
       embeddingModel: string;
       selectModel: string;
-      autoChunkSize: string;
-      autoChunkSizeDesc: string;
-      defaultChunkSize: string;
       noModelsWarning: string;
       noEmbeddingWarning: string;
       noLlmWarning: string;
@@ -227,6 +225,23 @@ export type TranslationSchema = {
       graphDimUnknown: string;
       graphDimTooSmall: string;
       graphDesc: string;
+      knowledgeMode: string;
+      kmRecommended: string;
+      kmStandard: string;
+      kmStandardDesc: string;
+      kmStandardDetail: string;
+      kmGraph: string;
+      kmGraphDesc: string;
+      kmGraphDetail: string;
+      kmWiki: string;
+      kmWikiDesc: string;
+      kmWikiDetail: string;
+      kmFull: string;
+      kmFullDesc: string;
+      kmFullDetail: string;
+      kmGraphNeedsEmbed: string;
+      kmGraphDimUnknown: string;
+      kmGraphDimTooSmall: string;
     };
     uploadQueue: {
       uploading: string;
@@ -243,6 +258,7 @@ export type TranslationSchema = {
       slowTitle: string;
       heavyTitle: string;
       body: string;
+      queuedBody: string;
       graphBodySuffix: string;
       seconds: string;
       minutes: string;
@@ -290,6 +306,11 @@ export type TranslationSchema = {
     };
     deleteConfirm: string;
     batchDeleteConfirm: string;
+    deleteWikiPrompt: string;
+    batchDeleteWikiPrompt: string;
+    keepWiki: string;
+    deleteAll: string;
+    deleting: string;
     reindex: string;
     viewDocument: string;
     detail: {
@@ -300,15 +321,23 @@ export type TranslationSchema = {
       stageEmbed: string;
       stageIndex: string;
       stageGraph: string;
+      stageWiki: string;
       stageAnalyze: string;
       stageClassify: string;
       stagePersist: string;
+      pipelineStagesDone: string;
+      pipelineReadySummary: string;
+      pipelineFailedSummary: string;
+      pipelineBasicReadyHint: string;
       words: string;
       tokens: string;
       chunks: string;
       documentDetails: string;
       conversionMethod: string;
       uploadedAgo: string;
+      processingTime: string;
+      enhancementTime: string;
+      processingInProgress: string;
       overview: string;
       format: string;
       size: string;
@@ -423,10 +452,6 @@ export type TranslationSchema = {
       accept: string;
       reject: string;
     };
-    humanize: {
-      title: string;
-      generate: string;
-    };
     export: {
       title: string;
       markdown: string;
@@ -459,7 +484,6 @@ export type TranslationSchema = {
       generating: string;
       sectionProcessing: string;
       saveEdit: string;
-      humanizing: string;
       confirming: string;
       selectModelFirst: string;
       confirmSection: string;
@@ -696,7 +720,7 @@ export type TranslationSchema = {
       showTopTitle: string;
       showAllTitle: string;
       topEntitiesLabel: string;
-      entitiesLabel: string;
+      allEntitiesLabel: string;
     };
   };
   wiki: {
@@ -715,6 +739,10 @@ export type TranslationSchema = {
       sortConfidence: string;
       sortSources: string;
       deleteSelected: string;
+      docsSelected: string;
+      allDocs: string;
+      noDocuments: string;
+      clearFilter: string;
       emptyTitle: string;
       emptyDesc: string;
       colEntry: string;

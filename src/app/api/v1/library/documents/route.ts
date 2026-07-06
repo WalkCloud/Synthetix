@@ -70,8 +70,17 @@ export async function GET(request: Request) {
       ? [tag.toLowerCase()]
       : undefined;
 
+  // A document is "pending" between upload and Start-Processing: the file is
+  // persisted and ready to process, but the user hasn't actually kicked off the
+  // pipeline yet. Surfacing those in the library is confusing — it looks like
+  // processing is stuck. So we hide pending from the default list and only
+  // return them when the user explicitly filters by status=pending.
   const where: Record<string, unknown> = { userId: user.id };
-  if (status) where.status = status;
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = { not: "pending" };
+  }
   if (format) where.originalFormat = format;
   if (tagNames && tagNames.length === 1) {
     where.tags = { some: { tag: { name: tagNames[0] } } };
@@ -97,13 +106,75 @@ export async function GET(request: Request) {
   const queuedIds = documents.filter((d) => d.status === "queued").map((d) => d.id);
   const queuePositions = await resolveQueuePositions(user.id, queuedIds);
 
+  // Compute a consistent display status for each doc so the list badge matches
+  // the detail-page pipeline badge. We need each doc's latest convert/embed/
+  // graph/wiki task to know whether enhancement branches are still running.
+  const docIds = documents.map((d) => d.id);
+  const branchTasks = docIds.length
+    ? await db.asyncTask.findMany({
+        where: {
+          userId: user.id,
+          inputData: { contains: `"docId":"` },
+          type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { type: true, status: true, progress: true, inputData: true },
+      })
+    : [];
+  // Index tasks by docId for quick lookup (latest of each type per doc).
+  // We keep the convert task's inputData so we can read the user's Knowledge
+  // Mode (graphMode/wikiEnabled) from the stored options — matching the detail
+  // page exactly, even before enhancement tasks start.
+  const tasksByDoc = new Map<string, { convertInputData?: string; tasks: Record<string, { status: string; progress: number }> }>();
+  for (const t of branchTasks) {
+    try {
+      const parsed = JSON.parse(t.inputData ?? "{}") as { docId?: string };
+      const did = parsed.docId;
+      if (!did || !docIds.includes(did)) continue;
+      const entry = tasksByDoc.get(did) ?? { tasks: {} };
+      if (t.type === "document_convert" && !entry.convertInputData) {
+        entry.convertInputData = t.inputData ?? undefined;
+      }
+      if (!entry.tasks[t.type]) entry.tasks[t.type] = { status: t.status, progress: t.progress };
+      tasksByDoc.set(did, entry);
+    } catch {
+      /* malformed input — skip */
+    }
+  }
+
+  const { computeDocumentPipeline, computeDisplayStatus } = await import("@/lib/documents/pipeline-stages");
+  const { derivePipelineModes } = await import("@/lib/queue/workers/index-mode-flags");
+
   return NextResponse.json({
     success: true,
-    data: documents.map((d) => ({
-      ...d,
-      tags: d.tags.map((dt) => dt.tag),
-      ...(queuePositions.has(d.id) ? { queuePosition: queuePositions.get(d.id) } : {}),
-    })),
+    data: documents.map((d) => {
+      const entry = tasksByDoc.get(d.id);
+      const bucket = entry?.tasks ?? {};
+      const convertRow = bucket["document_convert"];
+      const embedRow = bucket["rag_embed_index"];
+      const graphRow = bucket["rag_index"];
+      const wikiRow = bucket["wiki_synthesize"];
+      // graphMode / wikiEnabled: derived the SAME way as the detail page — from
+      // the convert task's stored options (the user's Knowledge Mode), with task
+      // presence as a truthful backstop. This keeps the list's pipeline/branch
+      // rendering identical to the detail page's.
+      const { graphMode, wikiEnabled } = derivePipelineModes(entry?.convertInputData, !!graphRow, !!wikiRow);
+      const pipeline = computeDocumentPipeline({
+        doc: { status: d.status, originalPath: d.originalPath, conversionMethod: d.conversionMethod },
+        convertTask: convertRow ?? null,
+        embedTask: embedRow ?? null,
+        graphTask: graphRow ?? null,
+        wikiTask: wikiRow ?? null,
+        graphMode,
+        wikiEnabled,
+      });
+      return {
+        ...d,
+        tags: d.tags.map((dt) => dt.tag),
+        displayStatus: computeDisplayStatus(pipeline, d.status),
+        ...(queuePositions.has(d.id) ? { queuePosition: queuePositions.get(d.id) } : {}),
+      };
+    }),
     total,
     page,
     limit,

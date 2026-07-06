@@ -78,7 +78,7 @@ Docker deployment, cloud deployment, team collaboration modes, and plugin-style 
 ### Prerequisites
 
 - Node.js 20+
-- Python 3.10+
+- Python 3.13+ (3.14 recommended — latest stable, used by the RAG/Docling workers)
 - pnpm
 - An LLM provider, such as Ollama, OpenAI, DeepSeek, or another OpenAI-compatible service
 
@@ -114,7 +114,7 @@ Create a local `.env` file from `.env.example` before starting the app.
 | --- | --- |
 | `JWT_ACCESS_EXPIRES` | Access token lifetime. |
 | `JWT_REFRESH_EXPIRES` | Refresh token lifetime. |
-| `PYTHON_PATH` | Python interpreter path. Defaults to `python3`. |
+| `PYTHON_PATH` | Python interpreter path. Defaults to `python` on Windows / `python3` elsewhere. Set to `python3.14` to pin the latest stable Python. |
 | `NEXT_PUBLIC_APP_NAME` | Public application name shown in the UI. |
 | `NEXT_PUBLIC_APP_URL` | Public application URL, such as `http://localhost:3000`. |
 

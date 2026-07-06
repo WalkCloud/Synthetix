@@ -4,6 +4,7 @@ import { cleanupDeletedDocument } from "./workers/document-cleanup-worker";
 import { processDocumentGraph } from "./workers/document-graph-worker";
 import { processDocumentConvert } from "./workers/document-convert-worker";
 import { processWikiSynthesize } from "./workers/wiki-synthesize-worker";
+import { processDocumentSegment } from "./workers/document-segment-worker";
 import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import { db } from "@/lib/db";
@@ -14,8 +15,9 @@ let queue: TaskQueue | null = null;
 const LONG_DRAFT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const OUTLINE_GENERATE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — 4-level recursive expansion (parts→chapters→sections→subsections) fans out to many LLM calls
 const GRAPH_INDEX_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
-const DOCUMENT_CONVERT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const DOCUMENT_CONVERT_TIMEOUT_MS = readPositiveInt("DOCUMENT_CONVERT_TIMEOUT_MS", 60 * 60 * 1000); // 60 minutes
 const WIKI_SYNTHESIZE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — per-chunk LLM calls (fast each, but large docs have 80+ chunks)
+const DOCUMENT_SEGMENT_TIMEOUT_MS = readPositiveInt("DOCUMENT_SEGMENT_TIMEOUT_MS", 30 * 60 * 1000); // 30 min — 1 planning call + few refinement calls, but large docs have many windows
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -25,18 +27,38 @@ function readPositiveInt(name: string, fallback: number): number {
   return n;
 }
 
-// Default 2: document processing stages (convert / embed / index) are capped
-// at per-type concurrency 1 (see QUEUE_*_CONCURRENCY below) so they still
-// serialize one document at a time. The SECOND global slot guarantees
-// interactive tasks (outline_generate, draft_generate_all, wiki_synthesize)
-// can run even while a long document_convert occupies the first slot — so a
-// big upload never blocks brainstorming or writing. Override via
-// QUEUE_TOTAL_CONCURRENCY env var.
-const QUEUE_TOTAL_CONCURRENCY = readPositiveInt("QUEUE_TOTAL_CONCURRENCY", 2);
-const QUEUE_RAG_EMBED_CONCURRENCY = readPositiveInt("QUEUE_RAG_EMBED_CONCURRENCY", 1);
+// Document-level pipeline concurrency.
+//
+// Design goal: when a user uploads up to 8 documents, document A's MAIN LINE
+// (convert → embed → index) should finish before document B's main line starts,
+// but once A moves into ENRICHMENT (wiki / segment / graph extraction), B's
+// main line should begin immediately rather than starving behind A's long
+// graph extraction. In other words: the main-line stages pipeline across docs,
+// while heavy LLM-based enrichment stages are isolated so they never monopolize
+// the slots a new document needs.
+//
+//   - Global concurrency 4: enough headroom for 2 main lines (convert+embed)
+//     plus 1-2 enrichment tasks in flight. Each is CPU/IO/LLM-bounded, and the
+//     adaptive LLM limiter gate-keeps the actual provider load regardless.
+//   - document_convert cap 2: lets doc B start converting while doc A is still
+//     embedding/indexing, so back-to-back uploads don't serialize at the front.
+//   - rag_embed_index cap 2: embeddings are cheap+parallel-friendly (batched
+//     HTTP, no LLM); two docs embedding concurrently is fine.
+//   - rag_index / wiki_synthesize / document_segment cap 1 each: these are
+//     LLM-heavy (graph entity extraction, wiki distillation, structural
+//     segmentation). Running them serially per-type prevents provider
+//     throttling while still letting them share the global pool with main-line
+//     tasks of OTHER documents.
+//
+// Net effect for an 8-doc upload: docs flow through convert+embed 2 at a time,
+// and each doc's enrichment runs in its own slot without blocking the next
+// doc's main line. No document starves another beyond the 2-doc main-line gate.
+const QUEUE_TOTAL_CONCURRENCY = readPositiveInt("QUEUE_TOTAL_CONCURRENCY", 4);
+const QUEUE_RAG_EMBED_CONCURRENCY = readPositiveInt("QUEUE_RAG_EMBED_CONCURRENCY", 2);
 const QUEUE_RAG_INDEX_CONCURRENCY = readPositiveInt("QUEUE_RAG_INDEX_CONCURRENCY", 1);
-const QUEUE_DOCUMENT_CONVERT_CONCURRENCY = readPositiveInt("QUEUE_DOCUMENT_CONVERT_CONCURRENCY", 1);
+const QUEUE_DOCUMENT_CONVERT_CONCURRENCY = readPositiveInt("QUEUE_DOCUMENT_CONVERT_CONCURRENCY", 2);
 const QUEUE_WIKI_SYNTHESIZE_CONCURRENCY = readPositiveInt("QUEUE_WIKI_SYNTHESIZE_CONCURRENCY", 1);
+const QUEUE_DOCUMENT_SEGMENT_CONCURRENCY = readPositiveInt("QUEUE_DOCUMENT_SEGMENT_CONCURRENCY", 1);
 
 let draining = false;
 
@@ -145,12 +167,14 @@ export function getQueue(): TaskQueue {
         rag_index: GRAPH_INDEX_TIMEOUT_MS,
         document_convert: DOCUMENT_CONVERT_TIMEOUT_MS,
         wiki_synthesize: WIKI_SYNTHESIZE_TIMEOUT_MS,
+        document_segment: DOCUMENT_SEGMENT_TIMEOUT_MS,
       },
       taskConcurrency: {
         rag_embed_index: QUEUE_RAG_EMBED_CONCURRENCY,
         rag_index: QUEUE_RAG_INDEX_CONCURRENCY,
         document_convert: QUEUE_DOCUMENT_CONVERT_CONCURRENCY,
         wiki_synthesize: QUEUE_WIKI_SYNTHESIZE_CONCURRENCY,
+        document_segment: QUEUE_DOCUMENT_SEGMENT_CONCURRENCY,
       },
     });
 
@@ -193,6 +217,14 @@ export function getQueue(): TaskQueue {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
       return processWikiSynthesize(taskId);
+    });
+
+    queue.registerWorker("document_segment", async (
+      payload: TaskPayload,
+    ): Promise<TaskResult> => {
+      const taskId = payload.taskId as string;
+      if (!taskId) throw new Error("Missing taskId in payload");
+      return processDocumentSegment(taskId);
     });
 
     queue.registerWorker("draft_generate_all", async (

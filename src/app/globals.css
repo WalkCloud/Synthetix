@@ -308,3 +308,19 @@
   animation: pipeline-flow 1.4s linear infinite;
 }
 
+/* A small pill that a bright nub sweeps across forever — used under an active
+   pipeline stage label as a perpetually-moving "alive" indicator (chosen over
+   a percentage, which reads as frozen when the underlying LLM calls stall). */
+@keyframes segment-shimmer {
+  0% { transform: translateX(-12px); }
+  100% { transform: translateX(28px); }
+}
+.animate-segment-shimmer { animation: segment-shimmer 1.2s ease-in-out infinite; }
+
+/* ── Electron title bar drag region ──────────────────────────────────────────
+   With titleBarStyle: "hidden" + titleBarOverlay, the top ~40px of the window
+   must be marked draggable so the user can move the window by dragging the
+   header area. Interactive elements inside it opt back out with no-drag. */
+.app-drag { -webkit-app-region: drag; }
+.app-no-drag { -webkit-app-region: no-drag; }
+

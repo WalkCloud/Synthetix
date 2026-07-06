@@ -3,17 +3,21 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import { spawnPythonJson } from "@/lib/python";
 
+type ConvertProgressFn = (event: Record<string, unknown>) => void;
+
 const PYTHON_SCRIPT = path.resolve("workers/python/convert.py");
 
 // Match the queue-layer document_convert timeout (DOCUMENT_CONVERT_TIMEOUT_MS).
 // Large DOCX files (70MB+) can take 8-10 minutes to convert in Docling; the old
 // 10-minute ceiling was too close to that floor and caused spurious timeouts.
-const CONVERT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const CONVERT_TIMEOUT_MS = Number(process.env.CONVERTER_TIMEOUT_MS || 60 * 60 * 1000); // 60 minutes
 
 // Bump when Docling behavior changes (e.g. code-fence export enabled) so every
 // cached conversion is invalidated at once. Stored in the sidecar and compared
 // on read; a mismatch forces a fresh conversion.
-const CONVERSION_CACHE_VERSION = 1;
+// v2: Docling upgraded to 2.107.0 — heading-level inference, ODF/EPUB backends,
+// richer table/picture metadata invalidate prior conversions.
+const CONVERSION_CACHE_VERSION = 2;
 const CACHE_FILENAME = ".convert-cache.json";
 
 export interface ConversionResult {
@@ -137,6 +141,7 @@ export async function convertDocumentFile(
   inputPath: string,
   outputDir: string,
   cacheKey?: ConversionCacheKey,
+  onProgressEvent?: ConvertProgressFn,
 ): Promise<ConversionResult> {
   if (!fs.existsSync(inputPath)) {
     throw new Error(`Input file does not exist: ${inputPath}`);
@@ -149,6 +154,7 @@ export async function convertDocumentFile(
 
   const result = await spawnPythonJson<ConversionResult>(PYTHON_SCRIPT, [inputPath, outputDir], {
     timeout: CONVERT_TIMEOUT_MS,
+    onProgressEvent,
   });
 
   if (cacheKey) {

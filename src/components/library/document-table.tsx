@@ -260,7 +260,15 @@ export function DocumentTable({
               <tbody>
                 {documents.map((doc) => {
                   const fmt = doc.originalFormat;
-                  const ready = doc.status === "ready";
+                  // displayStatus is the single source of truth — computed from
+                  // the SAME task-driven pipeline as the detail page, so the list
+                  // badge and the detail badge can never disagree. Falls back to
+                  // a coarse mapping only for legacy docs without tasks.
+                  const ds: string = doc.displayStatus ?? (doc.status === "ready" ? "ready" : doc.status === "failed" ? "failed" : doc.status === "pending" || doc.status === "uploading" ? "pending" : "processing");
+                  const ready = ds === "ready";
+                  const enhancing = ds === "enhancing";
+                  const failed = ds === "failed";
+                  const pending = ds === "pending";
                   const chunkCount = doc.chunks?.length || 0;
                   const chunkPct = Math.min(100, Math.round((chunkCount / maxChunks) * 100));
                   const isSelected = selectedIds.has(doc.id);
@@ -332,7 +340,18 @@ export function DocumentTable({
                               </span>
                             )}
                           </div>
-                        ) : doc.status === "pending" ? (
+                        ) : enhancing ? (
+                          // Basic retrieval is usable while Graph/Wiki branches
+                          // still run — distinct sky badge, NOT generic "ready",
+                          // so it matches the detail page's "enhancing" badge.
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-950/35 dark:text-sky-300 whitespace-nowrap">
+                            <span className="inline-block animate-spin">⟳</span> {t.common.states.enhancing}
+                          </span>
+                        ) : failed ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 dark:bg-red-950/35 dark:text-red-300 whitespace-nowrap">
+                            {t.common.states.failed}
+                          </span>
+                        ) : pending ? (
                           // "Pending" = uploaded but "Start Processing" not
                           // clicked yet. Neutral slate, NO spinner — distinct
                           // from the amber spinner shown while actively
@@ -356,7 +375,7 @@ export function DocumentTable({
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300 whitespace-nowrap">
-                            <span className="inline-block animate-spin">⟳</span> {statusLabels[doc.status] ?? doc.status}
+                            <span className="inline-block animate-spin">⟳</span> {statusLabels[doc.status] ?? t.common.states.processing}
                           </span>
                         )}
                       </td>
