@@ -88,6 +88,13 @@ extraResources:
     to: app/models/gte-multilingual-base
     filter:
       - "**/*"
+  # Branded icon → resources/icon.ico. electron/main.ts trayIconPath() looks for
+  # it at process.resourcesPath/icon.ico (the first candidate). Without this,
+  # the tray/window falls back to an empty image and the taskbar icon is blank.
+  - from: build/icon.ico
+    to: icon.ico
+    filter:
+      - "**/*"
 
 # Windows target: NSIS installer, per-user, user picks install dir.
 win:

@@ -457,10 +457,6 @@ const zhCN = {
       accept: "接受",
       reject: "拒绝",
     },
-    humanize: {
-      title: "润色",
-      generate: "润色",
-    },
     export: {
       title: "导出",
       markdown: "Markdown",
@@ -493,7 +489,6 @@ const zhCN = {
       generating: "正在生成...",
       sectionProcessing: "该章节正在处理中。",
       saveEdit: "保存编辑",
-      humanizing: "润色中...",
       confirming: "确认中...",
       selectModelFirst: "请先选择模型内容",
       confirmSection: "确认章节",

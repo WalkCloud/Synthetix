@@ -63,21 +63,39 @@ class OnnxEmbedder:
         self._dim = self.session.get_outputs()[0].shape[-1]
 
     def encode(self, sentences: list[str], normalize_embeddings: bool = True) -> np.ndarray:
-        enc = self.tokenizer(
-            sentences,
-            padding=True,
-            truncation=True,
-            max_length=MAX_SEQ_LENGTH,
-            return_tensors="np",
+        # ONNX InferenceSession.run materialises the full attention matrix for
+        # the entire batch at once: memory ≈ batch × max_len × hidden × layers.
+        # A macro chunk with hundreds of short sentences (common in CJK prose
+        # after splitSentences) would request a tensor of GB-scale and crash
+        # with ONNXRuntime "bad allocation" (observed on a 2159-token book
+        # chapter whose ~400 sentences exceeded the allocator's ceiling). Feed
+        # the model in bounded sub-batches and concatenate — the embeddings are
+        # independent per-sentence, so batching only affects throughput, not
+        # the result.
+        ENCODE_BATCH = 32
+        all_embeddings: list[np.ndarray] = []
+        for start in range(0, len(sentences), ENCODE_BATCH):
+            batch = sentences[start : start + ENCODE_BATCH]
+            enc = self.tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=MAX_SEQ_LENGTH,
+                return_tensors="np",
+            )
+            outputs = self.session.run(
+                ["sentence_embedding"],
+                {
+                    "input_ids": enc["input_ids"].astype("int64"),
+                    "attention_mask": enc["attention_mask"].astype("int64"),
+                },
+            )
+            all_embeddings.append(outputs[0])
+        embeddings = (
+            all_embeddings[0]
+            if len(all_embeddings) == 1
+            else np.concatenate(all_embeddings, axis=0)
         )
-        outputs = self.session.run(
-            ["sentence_embedding"],
-            {
-                "input_ids": enc["input_ids"].astype("int64"),
-                "attention_mask": enc["attention_mask"].astype("int64"),
-            },
-        )
-        embeddings = outputs[0]
         if normalize_embeddings:
             # L2-normalize so dot product == cosine similarity.
             norms = np.linalg.norm(embeddings, axis=1, keepdims=True)

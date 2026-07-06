@@ -50,9 +50,11 @@ class RagIndexHelperTests(unittest.TestCase):
         self.assertEqual(get_insert_batch_size("basic", {}), 20)
         self.assertEqual(get_insert_batch_size("graph", {"LIGHTRAG_GRAPH_INSERT_BATCH_SIZE": "8"}), 8)
 
-    def test_graph_bulk_insert_is_opt_in(self):
-        self.assertFalse(should_bulk_insert_graph({}))
+    def test_graph_bulk_insert_is_default_on_with_opt_out(self):
+        # Default is now ON (parallel bulk extraction). Opt out with =false.
+        self.assertTrue(should_bulk_insert_graph({}))
         self.assertFalse(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "false"}))
+        self.assertFalse(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "0"}))
         self.assertTrue(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "true"}))
         self.assertTrue(should_bulk_insert_graph({"LIGHTRAG_GRAPH_BULK_INSERT": "1"}))
 

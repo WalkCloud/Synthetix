@@ -20,7 +20,6 @@ export function useGeneration(
   const [streamContentB, setStreamContentB] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
   const [isThinking, setIsThinking] = useState(false);
-  const [isHumanizing, setIsHumanizing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [references, setReferences] = useState<RagReferenceView[]>([]);
 
@@ -168,25 +167,6 @@ export function useGeneration(
     }
   }, [activeSectionId, id, loadDraft]);
 
-  const handleHumanize = useCallback(async () => {
-    if (!activeSectionId) return;
-    setIsHumanizing(true);
-    try {
-      const res = await fetch(
-        `/api/v1/drafts/${id}/sections/${activeSectionId}/humanize`,
-        { method: "POST" },
-      );
-      const data = await res.json();
-      if (!data.success) toast.error(getLocalizedError(data));
-      await loadDraft();
-    } catch (err) {
-      console.error("Humanize failed:", err);
-      toast.error(getLocalizedError({ error: err instanceof Error ? err.message : "Humanize failed" }));
-    } finally {
-      setIsHumanizing(false);
-    }
-  }, [activeSectionId, id, loadDraft]);
-
   const handleUnlock = useCallback(async (targetStatus?: "reviewing" | "pending" | "revising") => {
     if (!activeSectionId) return;
     try {
@@ -217,13 +197,11 @@ export function useGeneration(
     streamContentB,
     generationMode,
     isThinking,
-    isHumanizing,
     isConfirming,
     references,
     setReferences,
     handleGenerate,
     handleConfirm,
-    handleHumanize,
     handleUnlock,
   };
 }

@@ -37,6 +37,14 @@ const PACKAGING = path.join(ROOT, "packaging");
 const args = new Set(process.argv.slice(2));
 const SKIP_BUILD = args.has("--no-build");
 const SKIP_TRIM = args.has("--no-trim");
+// --assemble-only: stop after assembling dist/app WITHOUT running the legacy
+// iscc step. Used by the Electron installer pipeline (build-electron.mjs path),
+// which assembles dist/app here then wraps it in an Electron shell + its own
+// Inno Setup (Synthetix-Electron.iss) to produce the final installer. If we also
+// ran the legacy iscc here, both .iss files emit the same OutputBaseFilename
+// (Synthetix-Setup-v<ver>.exe), and a leftover/aborted legacy .exe can shadow or
+// collide with the Electron one — see packaging lessons "pitfall #5".
+const ASSEMBLE_ONLY = args.has("--assemble-only");
 
 // ---------- helpers ----------
 function log(...m) {
@@ -356,6 +364,19 @@ function main() {
     }
   }
 
+  // Delete the .pnpm virtual store now that flattening has hoisted every
+  // package to the top level. Node's require() resolves node_modules/<name> by
+  // walking up the dir tree — it never looks inside .pnpm/, so the store is
+  // pure dead weight (and it leaks dev-only heavy packages like electron@33
+  // that standalone traced but we don't need: ~269MB / ~2700 files here).
+  // (packaging lessons "future optimization #2".)
+  if (fs.existsSync(appPnpmDir)) {
+    const freed = dirSize(appPnpmDir);
+    const files = countFiles(appPnpmDir);
+    rmrf(appPnpmDir);
+    log(`  removed .pnpm/ store (saved ${human(freed)}, ${files} files) …`);
+  }
+
   // .next/static — standalone does NOT include static assets; copy separately.
   log("  copying .next/static …");
   copyDir(path.join(ROOT, ".next", "static"), path.join(APP, ".next", "static"));
@@ -411,6 +432,18 @@ function main() {
   }
 
   // --- Step 4: compile installer with iscc ---
+  // Skipped under --assemble-only: the Electron pipeline (build-electron.mjs)
+  // wraps dist/app into an Electron shell and runs its own Synthetix-Electron.iss
+  // to produce the final installer. Both .iss files share the same
+  // OutputBaseFilename, so running the legacy iscc here risks a stale/colliding
+  // .exe shadowing the Electron one.
+  if (ASSEMBLE_ONLY) {
+    warn("skipping iscc (--assemble-only) — dist/app is ready; run build-electron.mjs to wrap it.");
+    const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+    log(`bundle assembled at ${path.relative(ROOT, APP)} (${human(dirSize(APP))}) in ${secs}s`);
+    log("done.");
+    return;
+  }
   log("Step 4/5: compile installer (iscc)");
   fs.mkdirSync(INSTALLER_DIR, { recursive: true });
   const issPath = prepareIss(VERSION);

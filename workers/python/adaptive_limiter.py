@@ -34,6 +34,13 @@ FLOOR_TOKENS = int(os.environ.get("LLM_LIMITER_FLOOR_TOKENS", "4000"))
 SLOW_START_SUCCESSES = int(os.environ.get("LLM_LIMITER_SLOW_START_K", "8"))
 AI_SUCCESSES = int(os.environ.get("LLM_LIMITER_AI_K", "20"))
 MD_FACTOR = float(os.environ.get("LLM_LIMITER_MD_FACTOR", "0.75"))
+# Latency-gradient signal (mirrors src/lib/llm/adaptive-limiter.ts:68,70).
+# Soft, lossless early-warning: when P95 latency climbs above the EWMA
+# baseline × threshold, gently shrink the budget (× latency_factor) BEFORE a
+# 429 actually happens. Cheaper than the 429 signal (which wastes quota and
+# risks provider bans), so it's sampled on every release.
+LATENCY_FACTOR = float(os.environ.get("LLM_LIMITER_LATENCY_FACTOR", "0.9"))
+LATENCY_THRESHOLD = float(os.environ.get("LLM_LIMITER_LATENCY_THRESHOLD", "1.5"))
 HEADROOM = float(os.environ.get("LLM_LIMITER_HEADROOM", "0.8"))
 AI_STEP_TOKENS = int(os.environ.get("LLM_LIMITER_AI_STEP_TOKENS", "4000"))
 CEILING_CAP_TOKENS = int(os.environ.get("LLM_LIMITER_CEILING_CAP_TOKENS", "500000"))
@@ -78,6 +85,19 @@ def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 1.5) + 1)
 
 
+def _percentile(samples: list[float], p: float) -> float:
+    """Nearest-rank percentile (mirrors TS percentile, non-interpolated).
+
+    Used by the latency-gradient signal to compute P95. Sorts a copy so the
+    caller's insertion order is preserved (matches the TS implementation).
+    """
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    idx = min(len(ordered) - 1, int(len(ordered) * p))
+    return ordered[idx]
+
+
 class AdaptiveLimiter:
     """Async weighted-concurrency limiter, AIMD-controlled.
 
@@ -103,6 +123,11 @@ class AdaptiveLimiter:
         self._phase = "additive" if initial_budget > FLOOR_TOKENS else "slow-start"
         self._cooldown_until = 0.0
         self._last_persist_at = 0.0
+        # Latency-gradient signal (mirrors Node sampleLatency). Soft, lossless
+        # early-warning before a 429. Not persisted — relearned per process, so
+        # a restart needs ≥8 samples before the signal engages again.
+        self._latency_ewma = 0.0
+        self._latency_samples: list[float] = []
         # Hard CAP on in-flight request COUNT — the load-bearing safety rail.
         # The token-budget path can be bypassed for large single requests, so
         # without a request cap N callers with large requests all sail through
@@ -181,14 +206,27 @@ class AdaptiveLimiter:
         estimated: int,
         status: int = 200,
         actual_tokens: Optional[int] = None,
+        latency_ms: Optional[float] = None,
     ) -> None:
-        """Free the reservation and feed the outcome to the AIMD loop."""
+        """Free the reservation and feed the outcome to the AIMD loop.
+
+        Order mirrors Node learn() (src/lib/llm/adaptive-limiter.ts:274-295):
+        latency gradient is sampled FIRST (it's the cheapest signal and applies
+        to both success and rate-limited outcomes), THEN the outcome-based AIMD
+        (429/503 → MD + cooldown, 2xx → recordSuccess) runs. latency_ms is the
+        wall-clock duration of the LLM round-trip measured by the caller.
+        """
         actual = actual_tokens if actual_tokens is not None else estimated
         async with self._cond:
             self._inflight = max(0, self._inflight - estimated)
             self._inflight_requests = max(0, self._inflight_requests - 1)
             self._cond.notify_all()
 
+        # 1. Latency gradient (lossless early signal) — sample BEFORE AIMD.
+        if latency_ms is not None:
+            self._sample_latency(latency_ms)
+
+        # 2. Outcome-based AIMD.
         if status == 429 or status == 503:
             await self._on_rate_limited()
         elif 200 <= status < 300:
@@ -201,6 +239,40 @@ class AdaptiveLimiter:
         await self._on_rate_limited()
 
     # ── AIMD internals ──────────────────────────────────────────────────────
+
+    def _sample_latency(self, latency_ms: float) -> None:
+        """P95 latency climbing above baseline × threshold → gentle MD.
+
+        Mirrors Node sampleLatency (src/lib/llm/adaptive-limiter.ts:322-340):
+        EWMA with α=0.2 (smooths jitter, tracks drift over ~10 samples), a
+        sliding window of 20 samples, a minimum of 8 samples before engaging,
+        and nearest-rank P95. Soft signal — does NOT reset the ceiling, does
+        NOT enter the single-flight cooldown, and is gated out of the cooldown
+        phase entirely (a 429 already shrank the budget; latency would pile on
+        uselessly). The budget drop is gentle (×0.9) because we haven't seen
+        a real 429 yet — just a queuing symptom.
+        """
+        # EWMA with α=0.2 — smooths jitter, tracks drift over ~10 samples.
+        self._latency_ewma = (
+            latency_ms
+            if self._latency_ewma == 0
+            else self._latency_ewma * 0.8 + latency_ms * 0.2
+        )
+        self._latency_samples.append(latency_ms)
+        if len(self._latency_samples) > 20:
+            self._latency_samples.pop(0)
+
+        if len(self._latency_samples) < 8:  # not enough data yet
+            return
+        baseline = self._latency_ewma
+        if baseline <= 0:
+            return
+        p95 = _percentile(self._latency_samples, 0.95)
+        if p95 > baseline * LATENCY_THRESHOLD and self._phase != "cooldown":
+            # Provider is queuing — back off gently BEFORE a 429.
+            self._budget = max(FLOOR_TOKENS, round(self._budget * LATENCY_FACTOR))
+            self._phase = "additive"  # re-probe additively, not slow-start
+            # Don't reset ceiling here — latency is a soft signal.
 
     def _record_success(self, actual_tokens: int) -> None:
         self._consecutive_successes += 1
@@ -353,19 +425,35 @@ def wrap_llm_func(llm_func: Any, provider_key: str) -> Any:
     async def wrapped(prompt: str, system_prompt: Any = None, history_messages: Any = None, **kwargs: Any) -> str:
         est = _estimate_tokens(prompt) + int(kwargs.get("max_tokens", 1024) or 1024)
         charge = await limiter.acquire(est)
+        # Measure the round-trip wall-clock for the latency-gradient signal.
+        # Captured AFTER acquire (so queueing inside the limiter doesn't inflate
+        # it) and BEFORE the call — mirrors Node adapter.ts:99. Includes any
+        # connection retries inside raw_llm_func, which is the right granularity:
+        # the limiter cares about total provider time, not per-attempt latency.
+        started_ms = time.monotonic() * 1000.0
         try:
             result = await llm_func(prompt=prompt, system_prompt=system_prompt, history_messages=history_messages, **kwargs)
-            await limiter.release(charge, status=200, actual_tokens=_estimate_tokens(result))
+            await limiter.release(
+                charge,
+                status=200,
+                actual_tokens=_estimate_tokens(result),
+                latency_ms=time.monotonic() * 1000.0 - started_ms,
+            )
             return result
         except Exception as error:
+            elapsed_ms = time.monotonic() * 1000.0 - started_ms
             # Only capacity/congestion failures should shrink the learned window.
             # Auth/model/schema errors are real failures, but treating them as
             # 429s would incorrectly slow down every later graph extraction.
             if _is_rate_limit_error(error):
+                # notify_rate_limited() fires the single-flight cooldown
+                # immediately (anti-thundering-herd); release() then records
+                # the 429 outcome + latency. The latency is still sampled so
+                # the EWMA baseline reflects the slow round-trip.
                 await limiter.notify_rate_limited()
-                await limiter.release(charge, status=429)
+                await limiter.release(charge, status=429, latency_ms=elapsed_ms)
             else:
-                await limiter.release(charge, status=500)
+                await limiter.release(charge, status=500, latency_ms=elapsed_ms)
             raise
 
     return wrapped

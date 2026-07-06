@@ -459,10 +459,6 @@ const en = {
       accept: "Accept",
       reject: "Reject",
     },
-    humanize: {
-      title: "Humanize",
-      generate: "Polish",
-    },
     export: {
       title: "Export",
       markdown: "Markdown",
@@ -495,7 +491,6 @@ const en = {
       generating: "Generation in progress...",
       sectionProcessing: "This section is being processed.",
       saveEdit: "Save Edit",
-      humanizing: "Humanizing...",
       confirming: "Confirming...",
       selectModelFirst: "Select a model first",
       confirmSection: "Confirm Section",

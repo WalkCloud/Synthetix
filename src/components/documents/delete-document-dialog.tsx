@@ -61,7 +61,12 @@ export function DeleteDocumentDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => !deleting && onOpenChange(v)}>
       <DialogContent className="sm:max-w-[420px]" showCloseButton={!deleting}>
-        <DialogHeader>
+        {/* min-w-0: DialogContent is a CSS grid, and grid items default to
+            min-width:auto, which sizes them to their content's max-content.
+            A long CJK title or unbroken filename string would then expand the
+            header beyond the 420px popup, overflowing the card. min-w-0 lets
+            the grid track shrink so inner truncate/break-all can take effect. */}
+        <DialogHeader className="min-w-0">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
               <svg
@@ -79,9 +84,15 @@ export function DeleteDocumentDialog({
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <DialogTitle className="text-base">{title}</DialogTitle>
+              {/* break-words: CJK titles have no spaces, so nowrap+truncate
+                  alone can still expand the grid track. break-words lets the
+                  title wrap at CJK characters and stay within the popup. */}
+              <DialogTitle className="text-base break-words leading-snug">{title}</DialogTitle>
               {documentName && (
-                <DialogDescription className="mt-1 truncate text-xs" title={documentName}>
+                <DialogDescription
+                  className="mt-1 truncate text-xs break-all"
+                  title={documentName}
+                >
                   {documentName}
                 </DialogDescription>
               )}

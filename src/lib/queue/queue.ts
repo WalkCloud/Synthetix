@@ -273,16 +273,22 @@ export class TaskQueue {
       const resultPromise = workerFn(payload, onProgress);
       const timeoutMs = this.getTimeoutMs(taskType);
 
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const result = timeoutMs === null
         ? await resultPromise
         : await Promise.race([
             resultPromise,
             new Promise<never>((_resolve, reject) => {
-              setTimeout(() => {
+              timeoutId = setTimeout(() => {
                 reject(new Error(`Task timed out after ${timeoutMs}ms`));
               }, timeoutMs);
             }),
           ]);
+      // Clear the timeout timer once the worker wins the race. Without this,
+      // the timeout's rejection callback keeps a reference to the resolver
+      // scope alive long after success, and on a long-running worker the
+      // pending timer can still fire and raise an unhandled rejection.
+      if (timeoutId) clearTimeout(timeoutId);
 
       // Check cancellation after completion
       const finalTask = await db.asyncTask.findUnique({
