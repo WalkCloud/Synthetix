@@ -1,6 +1,6 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { documentLifecycle } from "@/lib/documents/lifecycle";
-import { deleteEntriesForDocument } from "@/lib/wiki/query";
+import { deleteEntriesForDocuments } from "@/lib/wiki/query";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function DELETE(request: Request) {
@@ -14,14 +14,27 @@ export async function DELETE(request: Request) {
 
   const result = await documentLifecycle.deleteDocuments(user.id, ids);
 
-  // Optionally delete Wiki entries sourced from these documents
+  // Default behaviour: deleteWiki is TRUE → wipe Wiki entries sourced from
+  // these docs (full strip for sole-sourced entries, ref removal for fused).
+  // Only when the user explicitly opts to KEEP wiki (deleteWiki=false) do we
+  // leave wiki untouched — including source refs. This is the user's "I want
+  // to keep my distilled knowledge" escape hatch.
+  //
+  // One single full-table scan handles all docIds at once (vs the previous
+  // per-doc loop), and runs here in the route so the cleanup worker no longer
+  // touches wiki (it used to strip refs unconditionally, ignoring deleteWiki).
   let wikiDeleted = 0;
+  let wikiOrphansPurged = 0;
   if (deleteWiki) {
-    for (const docId of ids) {
-      const r = await deleteEntriesForDocument(user.id, docId).catch(() => ({ deleted: 0, updated: 0 }));
-      wikiDeleted += r.deleted;
-    }
+    const r = await deleteEntriesForDocuments(user.id, ids).catch(() => ({ deleted: 0, updated: 0, orphansPurged: 0 }));
+    wikiDeleted = r.deleted;
+    wikiOrphansPurged = r.orphansPurged;
   }
 
-  return successResponse({ deleted: result.deleted.length, results: result.results, wikiDeleted });
+  return successResponse({
+    deleted: result.deleted.length,
+    results: result.results,
+    wikiDeleted,
+    wikiOrphansPurged,
+  });
 }

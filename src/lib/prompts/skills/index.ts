@@ -233,7 +233,9 @@ Match the target section title, scope, key points, estimated word count, user re
 - Avoid unnecessary three-item lists when a paragraph reads better.
 - Do not over-explain obvious concepts.
 - Do not end with a generic inspirational summary or call to action.
-- Avoid AI-like filler: additionally, tapestry, landscape, pivotal, empower, comprehensive, one-stop, end-to-end, seamless, unless made concrete with evidence.`,
+- Write like a senior expert explaining to a colleague: take a clear stance and do not hedge every statement ("it's worth noting", "importantly"). Prefer direct assertions over round qualifications.
+- Break structural patterns: avoid forced three-part parallelism, em-dash overuse, and every paragraph opening with a topic sentence in the same rhythm. If several paragraphs are similar in length, deliberately make one of them a single short line.
+- Avoid AI-like filler: additionally, tapestry, landscape, pivotal, empower, comprehensive, one-stop, end-to-end, seamless, delve, realm, leverage, multifaceted, nuanced, robust, scalable, dynamic, innovative, cutting-edge, foster, underscores — unless made concrete with evidence.`,
     "zh-CN": `质量与风格：
 - 直接进入实质内容，避免"本节将介绍……"等元描述。
 - 避免"随着……的发展"、"在当今时代"等空泛开头。
@@ -242,7 +244,9 @@ Match the target section title, scope, key points, estimated word count, user re
 - 能用段落自然表达时，不要强行三点列表。
 - 不要过度解释显而易见的概念。
 - 不要以泛泛的激励性总结或号召行动结尾。
-- 避免 AI 腔填充词，如"值得一提的是"、"赋能"、"全方位"、"一站式"、"端到端"、"无缝"，除非有具体证据支撑。`,
+- 像资深专家对同事讲解那样写作：明确表态，不要每句话都打圆场（"值得注意的是"、"重要的是"）。优先直接下结论，而非处处留余地。
+- 打破结构模式：避免强制三段式排比、破折号滥用、每段都以主题句开头形成同一节奏。如果几段长度相近，刻意让其中一段变成单独一行。
+- 避免 AI 腔填充词，如"值得一提的是"、"赋能"、"全方位"、"一站式"、"端到端"、"无缝"、"深入探讨"、"画卷"、"在……领域中"、"举足轻重"、"助力"、"多层次"、"前沿"、"突破性"、"凸显"——除非有具体证据支撑。`,
   },
   "writing-output-format": {
     en: `Output rules:

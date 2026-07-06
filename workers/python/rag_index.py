@@ -89,8 +89,30 @@ def get_insert_batch_size(index_mode: str, env: dict | None = None) -> int:
 
 
 def should_bulk_insert_graph(env: dict | None = None) -> bool:
+    """Whether graph mode submits chunks to LightRAG in batches (parallel entity
+    extraction across chunks) or one at a time (serial).
+
+    DEFAULT IS NOW TRUE. The serial path was a conservative default left over
+    from early LightRAG versions where bulk ainsert would skip entity/relation
+    extraction. On lightrag-hku>=1.5.4 (our pinned version, requirements.txt),
+    `rag.ainsert(list_of_strings, ids=list, file_paths=list)` extracts entities
+    for ALL chunks in the batch and runs them through the entity/relation merge
+    phase together — and LightRAG's internal llm_model_max_async (auto-aligned
+    to LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) parallelizes the per-chunk
+    extraction LLM calls within the batch.
+
+    The serial default under-used the provider: with MAX_ASYNC_LLM=8 and an
+    adaptive limiter that allows 8-way concurrency, the serial ainsert loop
+    still only fed chunks to LightRAG one at a time, so the chunk-to-chunk
+    critical path was fully sequential even though the LLM provider had
+    headroom for 8 concurrent extractions. Bulk mode lets LightRAG schedule
+    extractions across the whole batch in parallel.
+
+    Set LIGHTRAG_GRAPH_BULK_INSERT=false to opt back out if a LightRAG upgrade
+    regresses bulk-extraction quality.
+    """
     source = env if env is not None else os.environ
-    return str(source.get("LIGHTRAG_GRAPH_BULK_INSERT", "false")).lower() in {"1", "true", "yes", "on"}
+    return str(source.get("LIGHTRAG_GRAPH_BULK_INSERT", "true")).lower() in {"1", "true", "yes", "on"}
 
 
 def _read_positive_int(name: str, default: int) -> int:
@@ -99,6 +121,33 @@ def _read_positive_int(name: str, default: int) -> int:
         return value if value > 0 else default
     except (TypeError, ValueError):
         return default
+
+
+def _get_llm_max_async() -> int:
+    """LightRAG's internal LLM concurrency for entity/relation extraction.
+
+    AUTO-ALIGNED to the adaptive limiter's hard cap
+    (LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) so the limiter is always the
+    binding bottleneck: LightRAG opens `cap` internal slots, the limiter then
+    dynamically admits 1..cap based on the AIMD-learned budget. This eliminates
+    the two-layer mismatch where LightRAG's static value could be tighter (and
+    starve the limiter) or looser (and pile up coroutines waiting in acquire).
+
+    MAX_ASYNC_LLM is kept as a deprecated escape hatch for backward compat — if
+    set, it still wins, but prefer setting LLM_LIMITER_MAX_REQUESTS_GRAPH so
+    both layers stay aligned. LightRAG's upstream default of 4 made graph builds
+    2× slower than necessary and is never used here.
+    """
+    cap = _read_positive_int("LLM_LIMITER_MAX_REQUESTS_GRAPH", 8)
+    legacy = os.environ.get("MAX_ASYNC_LLM")
+    if legacy:
+        try:
+            legacy_val = int(legacy)
+            if legacy_val > 0:
+                return legacy_val
+        except (TypeError, ValueError):
+            pass
+    return cap
 
 
 def _llm_error_message(error: Exception) -> str:
@@ -181,8 +230,12 @@ def indexing_lock(working_dir: str, doc_id: str):
 async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False, on_progress=None) -> int:
     """Insert chunks with bounded bulk calls, falling back only for unsupported APIs.
 
-    When force_serial is True (graph mode), always use serial inserts so
-    LightRAG's entity/relation extraction processes each chunk individually.
+    When force_serial is True, inserts one chunk at a time. Otherwise (the
+    default for BOTH basic AND graph modes now), submits chunks in batches of
+    `batch_size` to `rag.ainsert(contents_list, ids=list, file_paths=list)`,
+    letting LightRAG parallelize entity/relation extraction across the batch.
+    On TypeError (older LightRAG without list-ainsert support) the batch is
+    re-tried serially so the insert still completes.
     """
     if force_serial:
         indexed = 0
@@ -205,6 +258,8 @@ async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, fo
             if on_progress:
                 on_progress(indexed, len(chunk_records))
         except TypeError:
+            # Older LightRAG versions don't accept a list of strings as the
+            # first arg — fall back to serial within this batch.
             for item in batch:
                 await rag.ainsert(item["content"], ids=item["id"], file_paths=item["path"])
                 indexed += 1
@@ -455,6 +510,17 @@ async def index_document(
                         # original form per the prompt's own rule.
                         "language": "the same language as the input text",
                     },
+                    # LightRAG defaults llm_model_max_async to 4, which caps the
+                    # chunk-level entity-extraction concurrency AND the entity/
+                    # relation merge phase (which uses 2× this value). We feed
+                    # LLM_LIMITER_MAX_REQUESTS_GRAPH (default 8) so the adaptive
+                    # limiter is always the binding bottleneck — LightRAG opens
+                    # `cap` internal slots and the limiter dynamically admits
+                    # 1..cap based on the AIMD-learned provider budget. This
+                    # replaces the old two-layer mismatch (static LightRAG value
+                    # vs dynamic limiter value). See _get_llm_max_async + the
+                    # design doc docs/llm-concurrency-adaptive-limiter-2026-06-26.md.
+                    llm_model_max_async=_get_llm_max_async(),
                     **storage_kwargs,
                     **rerank_kwargs,
                 )

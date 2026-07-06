@@ -5,7 +5,6 @@ import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
 import { waitForDocActiveTasksToSettle } from "@/lib/documents/processing-tasks";
-import { deleteEntriesForDocument } from "@/lib/wiki/query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
 // chunk triggers an LLM call. We must let the in-flight Python subprocess exit
@@ -29,14 +28,17 @@ export type DocumentDeleteResult =
 
 export interface DocumentLifecycleDeps {
   findDocument(userId: string, docId: string): Promise<{ id: string; userId: string } | null>;
+  findDocuments(userId: string, docIds: string[]): Promise<{ id: string; userId: string }[]>;
   countDocuments(userId: string): Promise<number>;
   cancelDocumentTasks(userId: string, docId: string): Promise<void>;
+  cancelDocumentTasksBatch(userId: string, docIds: string[]): Promise<void>;
   enqueueDocumentCleanup(userId: string, docId: string): Promise<string | null>;
   deleteRagDocument(userId: string, docId: string): Promise<void>;
   resetUserRag(userId: string): Promise<void>;
   cleanupRagOrphans(userId: string, activeDocIds: string[]): Promise<void>;
   deleteDocumentFiles(userId: string, docId: string): Promise<void>;
   deleteDocumentRows(userId: string, docId: string): Promise<void>;
+  deleteDocumentRowsBatch(userId: string, docIds: string[]): Promise<{ deleted: string[]; notFound: string[] }>;
   verifyDocumentDeleted(userId: string, docId: string): Promise<{ ok: boolean; issues: string[] }>;
 }
 
@@ -91,17 +93,14 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
 
     await deps.deleteDocumentFiles(userId, docId);
 
-    // Wiki orphan cleanup (always runs): even when the DELETE request did NOT
-    // pass deleteWiki=true (e.g. user dismissed the confirm prompt), a deleted
-    // document leaves dangling Wiki entries whose source_refs point at a doc
-    // that no longer exists. This removes those references (and deletes any
-    // entry whose only source was this doc), keeping the Wiki consistent with
-    // the document set. Mirrors the RAG orphan cleanup below.
-    try {
-      await deleteEntriesForDocument(userId, docId);
-    } catch (error) {
-      issues.push("Wiki orphan cleanup skipped: " + (error instanceof Error ? error.message : String(error)));
-    }
+    // NOTE: Wiki cleanup is intentionally NOT done here. It is handled in the
+    // DELETE route handler, gated on the user's deleteWiki choice:
+    //   - deleteWiki=true  → route calls deleteEntriesForDocuments (full strip)
+    //   - deleteWiki=false → route leaves Wiki untouched (user wants to keep it)
+    // Previously this worker unconditionally stripped Wiki refs, which silently
+    // overrode the user's "keep Wiki" choice. The RAG orphan sweep below still
+    // runs because graph/vector data has no "keep" semantics — it must stay
+    // consistent with the live document set.
 
     const remaining = await deps.countDocuments(userId);
     if (remaining === 0) {
@@ -132,15 +131,58 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     };
   }
 
+  /**
+   * Bulk-delete documents in a single DB pass per table instead of looping
+   * deleteDocument() per doc. The schema's ON DELETE CASCADE already removes
+   * chunks/atoms/segments/tags/images when the parent document row goes, so
+   * we only need:
+   *   1. cancel processing tasks for all docIds (one updateMany)
+   *   2. delete the document rows (one deleteMany — cascade handles children)
+   *   3. enqueue one document_cleanup task per surviving docId (RAG + files)
+   *
+   * Wiki cleanup is intentionally NOT done here — the route handler decides
+   * based on the user's deleteWiki flag (see deleteDocuments route).
+   */
   async function deleteDocuments(userId: string, docIds: string[]) {
-    const results = [] as DocumentDeleteResult[];
-    for (const docId of docIds) {
-      results.push(await deleteDocument(userId, docId));
+    if (docIds.length === 0) return { deleted: [] as string[], results: [] as DocumentDeleteResult[] };
+
+    const { deleted, notFound } = await deps.deleteDocumentRowsBatch(userId, docIds);
+
+    // Cancel in-flight processing tasks for the docs we actually removed.
+    if (deleted.length > 0) {
+      await deps.cancelDocumentTasksBatch(userId, deleted).catch(() => undefined);
     }
-    return {
-      deleted: results.flatMap((result) => result.deleted ? [result.deleted] : []),
-      results,
-    };
+
+    // Enqueue one cleanup task per deleted doc — the cleanup worker handles
+    // RAG deletion (vector store + graph) and on-disk file removal. We do not
+    // await these; they run in the background queue.
+    const results: DocumentDeleteResult[] = [];
+    for (const docId of deleted) {
+      const issues: string[] = [];
+      let cleanupTaskId: string | null = null;
+      try {
+        cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
+      } catch (error) {
+        issues.push("Cleanup queue failed: " + (error instanceof Error ? error.message : String(error)));
+      }
+      results.push({
+        deleted: docId,
+        cleanup: {
+          database: "deleted",
+          files: "queued",
+          rag: "queued",
+          verification: "deferred",
+        },
+        issues,
+        cleanupTaskId: cleanupTaskId || undefined,
+      });
+    }
+    for (const docId of notFound) {
+      results.push({ deleted: null, notFound: true } as DocumentDeleteResult);
+      void docId;
+    }
+
+    return { deleted, results };
   }
 
   return { deleteDocument, cleanupDeletedDocument, deleteDocuments };
@@ -155,12 +197,34 @@ export const documentLifecycle = createDocumentLifecycleService({
   countDocuments(userId) {
     return db.document.count({ where: { userId } });
   },
+  findDocuments(userId, docIds) {
+    return db.document.findMany({
+      where: { id: { in: docIds }, userId },
+      select: { id: true, userId: true },
+    });
+  },
   async cancelDocumentTasks(userId, docId) {
     await db.asyncTask.updateMany({
       where: {
         userId,
         status: { in: ["pending", "running"] },
         inputData: { contains: docId },
+      },
+      data: { status: "cancelled", errorMessage: "Document deleted" },
+    }).catch(() => undefined);
+  },
+  async cancelDocumentTasksBatch(userId, docIds) {
+    if (docIds.length === 0) return;
+    // One statement cancels all in-flight tasks whose payload mentions any of
+    // the deleted docs. `contains` is OR-implicit across docIds only via a
+    // loop here — SQLite Prisma's `contains` doesn't accept an array. We keep
+    // it simple: cancel any running/pending task whose inputData contains any
+    // of the docIds. This matches the single-doc behaviour.
+    await db.asyncTask.updateMany({
+      where: {
+        userId,
+        status: { in: ["pending", "running"] },
+        OR: docIds.map((docId) => ({ inputData: { contains: docId } })),
       },
       data: { status: "cancelled", errorMessage: "Document deleted" },
     }).catch(() => undefined);
@@ -191,7 +255,10 @@ export const documentLifecycle = createDocumentLifecycleService({
     const health = await scanKnowledgeHealth({ userId, activeDocumentIds: activeDocIds });
     if (health.status === "healthy") return;
 
-    // If there are stale doc_status entries for docs that don't exist in DB, clean them
+    // If there are stale doc_status entries for docs that don't exist in DB, clean them.
+    // delete-by-doc now includes a storage-level hard-delete fallback (see
+    // rag_manage.py _hard_delete_doc_from_storage), so the vast majority of
+    // orphans are removed here even when LightRAG's soft delete fails.
     if (health.staleRagDocIds.length > 0) {
       for (const staleId of health.staleRagDocIds) {
         const docId = staleId.split("/")[0];
@@ -206,8 +273,23 @@ export const documentLifecycle = createDocumentLifecycleService({
             embedDim: ctx.embedDim,
             docId,
           });
-        } catch {
-          // If individual RAG cleanup fails, try workspace reset
+        } catch (error) {
+          // Reaching this catch means BOTH the LightRAG soft delete AND the
+          // storage-level hard delete failed (e.g. working dir locked by a
+          // running rag_index, disk error). We intentionally do NOT reset the
+          // whole RAG workspace here — doing so would destroy the knowledge
+          // graphs of ALL other documents (which can take hours each to
+          // rebuild). Instead we log + leave the orphan for the next cleanup
+          // cycle: every subsequent document_cleanup task re-runs this orphan
+          // sweep via scanKnowledgeHealth, so the orphan gets retried
+          // automatically. The worst case for the user is a few stale entities
+          // visible in the graph until the next successful cleanup pass — far
+          // better than wiping everyone's graph.
+          console.warn(
+            `[cleanupRagOrphans] delete-by-doc (soft+hard) failed for orphan ${docId}; ` +
+              `will retry on next cleanup cycle. NOT resetting workspace to preserve other documents' graphs:`,
+            error instanceof Error ? error.message : error,
+          );
         }
       }
     }
@@ -221,10 +303,64 @@ export const documentLifecycle = createDocumentLifecycleService({
     await storage.deleteDocument(docId, userId);
   },
   async deleteDocumentRows(userId, docId) {
-    await db.documentChunk.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
-    await db.documentTag.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
-    await db.documentImage.deleteMany({ where: { documentId: docId } }).catch(() => undefined);
-    await db.document.delete({ where: { id: docId, userId } }).catch(() => undefined);
+    // Schema defines ON DELETE CASCADE on Document → chunks/atoms/segments/
+    // tags/images, so deleting the parent row is sufficient. We previously
+    // issued explicit deleteMany on children first — redundant extra round
+    // trips. Keep a narrow fallback only if the parent delete finds nothing
+    // (already gone) — in which case there's nothing more to do.
+    await db.document.deleteMany({ where: { id: docId, userId } }).catch(() => undefined);
+  },
+  async deleteDocumentRowsBatch(userId, docIds) {
+    if (docIds.length === 0) return { deleted: [] as string[], notFound: [] as string[] };
+
+    // Snapshot which docs exist + belong to this user BEFORE deleting, so we
+    // can report per-doc outcomes (deleted vs notFound) to the caller.
+    const existing = await db.document.findMany({
+      where: { id: { in: docIds }, userId },
+      select: { id: true },
+    });
+    const existingIds = existing.map((d) => d.id);
+    const existingSet = new Set(existingIds);
+    const notFound = docIds.filter((id) => !existingSet.has(id));
+
+    if (existingIds.length === 0) return { deleted: [], notFound };
+
+    // Capture chunk rowids BEFORE cascade deletes them, so we can purge the
+    // runtime-created document_fts virtual table (cascade does NOT reach FTS5
+    // tables created outside Prisma's schema). Batched in chunks of 500 to
+    // stay well under SQLite's 999 host-parameter limit.
+    const chunkRowIds = await db.$queryRawUnsafe<{ rowid: number }[]>(
+      `SELECT rowid FROM document_chunks WHERE document_id IN (${existingIds.map(() => "?").join(",")})`,
+      ...existingIds,
+    ).catch(() => [] as { rowid: number }[]);
+
+    // ONE deleteMany cascades to chunks/atoms/segments/tags/images per schema.
+    await db.document.deleteMany({ where: { id: { in: existingIds }, userId } });
+
+    // Purge orphaned FTS rows now that the chunks are gone. Failures here are
+    // non-fatal — stale FTS rows are filtered out at query time by the JOIN
+    // to document_chunks, so a leftover row is a storage leak, not a bug.
+    if (chunkRowIds.length > 0) {
+      const FTS_BATCH = 500;
+      for (let i = 0; i < chunkRowIds.length; i += FTS_BATCH) {
+        const batch = chunkRowIds.slice(i, i + FTS_BATCH);
+        const placeholders = batch.map(() => "?").join(",");
+        await db.$executeRawUnsafe(
+          `DELETE FROM document_fts WHERE rowid IN (${placeholders})`,
+          ...batch.map((r) => r.rowid),
+        ).catch(() => undefined);
+      }
+    }
+
+    // DEFENSIVE ORPHAN SWEEP: also drop any document_fts rows whose rowid no
+    // longer joins to a real chunk. This cleans up leftovers from PRIOR deletes
+    // that failed to purge FTS (the old code path had no FTS cleanup at all),
+    // not just the ones we deleted in this call. Cheap: one anti-join DELETE.
+    await db.$executeRawUnsafe(
+      `DELETE FROM document_fts WHERE rowid NOT IN (SELECT rowid FROM document_chunks)`,
+    ).catch(() => undefined);
+
+    return { deleted: existingIds, notFound };
   },
   async verifyDocumentDeleted() {
     return { ok: true, issues: [] };

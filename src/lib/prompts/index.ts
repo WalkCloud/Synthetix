@@ -33,7 +33,6 @@ export function getPrompt<TKey extends PromptKey>(
  */
 export { buildWritingContext } from "./builders/writing-context";
 export { buildAuditPrompts } from "./builders/audit";
-export { buildHumanizerPrompts } from "./builders/humanizer";
 export { buildDiagramPrompts } from "./builders/diagram";
 export { buildFacilitatorPrompt } from "./builders/facilitator";
 export { buildOutlinePrompt } from "./builders/outline";

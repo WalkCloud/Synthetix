@@ -271,21 +271,64 @@ export async function getEntriesForDocument(userId: string, documentId: string):
 }
 
 /**
- * Delete all Wiki entries sourced from a specific document.
- * Called when the user deletes a document and chooses to also delete its
+ * Delete all Wiki entries sourced from any of the given documents.
+ * Called when the user deletes documents and chooses to also delete their
  * distilled knowledge. Entries with MULTIPLE source documents (fused entries)
- * have only the matching ref removed, not the whole entry.
+ * have only the matching refs removed, not the whole entry; entries whose
+ * ONLY source was one of the deleted docs are removed entirely.
  *
- * Returns { deleted: number, updated: number }.
+ * Additionally performs a DEFENSIVE ORPHAN SWEEP: any active entry whose
+ * sourceRefs point at a document that no longer exists in the documents
+ * table (a leftover from past deletes that failed to clean wiki — the old
+ * lifecycle worker bug) is cleaned up the same way. This guarantees wiki
+ * never retains references to deleted documents, regardless of when or how
+ * they were deleted. The sweep runs only when there's at least one real
+ * delete in progress, so it adds no overhead to the steady-state.
+ *
+ * Single full-table scan regardless of docIds.length (sourceRefs is JSON, so
+ * SQLite can't query inside it — we fetch active entries once and filter in
+ * memory). Use this batch form in preference to {@link deleteEntriesForDocument}
+ * whenever more than one document is being deleted, to avoid re-scanning per doc.
+ *
+ * Returns { deleted: number, updated: number, orphansPurged: number }.
  */
-export async function deleteEntriesForDocument(userId: string, documentId: string): Promise<{ deleted: number; updated: number }> {
+export async function deleteEntriesForDocuments(
+  userId: string,
+  documentIds: string[],
+): Promise<{ deleted: number; updated: number; orphansPurged: number }> {
+  if (documentIds.length === 0) return { deleted: 0, updated: 0, orphansPurged: 0 };
+
+  const targetSet = new Set(documentIds);
   const entries = await db.wikiEntry.findMany({
     where: { userId, status: "active" },
     select: { id: true, sourceRefs: true },
   });
 
+  // Collect every documentId referenced by any active wiki entry, then look up
+  // which of them still exist. Entries referencing only non-existent docs are
+  // orphans (from past deletes that didn't clean wiki) and get swept here too.
+  const referencedDocIds = new Set<string>();
+  for (const entry of entries) {
+    try {
+      const parsed = JSON.parse(entry.sourceRefs);
+      if (Array.isArray(parsed)) {
+        for (const r of parsed) {
+          if (r.documentId) referencedDocIds.add(r.documentId);
+        }
+      }
+    } catch { /* malformed — handled per-entry below */ }
+  }
+  const existing = referencedDocIds.size > 0
+    ? await db.document.findMany({
+        where: { id: { in: [...referencedDocIds] } },
+        select: { id: true },
+      })
+    : [];
+  const existingDocSet = new Set(existing.map((d) => d.id));
+
   const toDelete: string[] = [];
   const toUpdate: { id: string; sourceRefs: string }[] = [];
+  let orphansPurged = 0;
 
   for (const entry of entries) {
     let refs: WikiSourceRef[] = [];
@@ -294,29 +337,57 @@ export async function deleteEntriesForDocument(userId: string, documentId: strin
       if (Array.isArray(parsed)) refs = parsed;
     } catch { continue; }
 
-    const filtered = refs.filter((r) => r.documentId !== documentId);
+    // A ref is "gone" if it points at one of the docs being deleted right now,
+    // OR at a doc that doesn't exist in the DB at all (orphan from a prior
+    // delete that left wiki dirty). Both cases are treated identically.
+    const filtered = refs.filter((r) => {
+      const docId = r.documentId ?? "";
+      if (targetSet.has(docId)) return false;          // explicitly deleted now
+      if (docId && !existingDocSet.has(docId)) return false; // orphan ref
+      return true;
+    });
 
     if (filtered.length === 0 && refs.length > 0) {
-      // All refs pointed to this doc — delete the entry
+      // All refs are gone (deleted now or orphan) — delete the entry entirely
       toDelete.push(entry.id);
+      // Track whether this entry was solely an orphan (not in this delete batch)
+      const onlyOrphans = refs.every((r) => !targetSet.has(r.documentId ?? ""));
+      if (onlyOrphans) orphansPurged += 1;
     } else if (filtered.length < refs.length) {
-      // Entry had other sources too — keep it, just remove this doc's ref
+      // Entry still has surviving sources — keep it, strip the dead refs
       toUpdate.push({ id: entry.id, sourceRefs: JSON.stringify(filtered) });
     }
   }
 
-  // Delete entries whose only source was this document
+  // Bulk delete entries whose sources are all gone
   if (toDelete.length > 0) {
     await db.wikiEntry.deleteMany({ where: { id: { in: toDelete }, userId } });
     void removeWikiFtsForEntries(toDelete).catch(() => {});
   }
 
-  // Update entries that had other sources (remove just this doc's ref)
+  // Batch-update fused entries (one statement per entry; SQLite has no UPDATE
+  // ... FROM json_each, so per-row is unavoidable here, but each is a single
+  // indexed PK update — fast even for thousands of rows)
   for (const upd of toUpdate) {
-    await db.wikiEntry.update({ where: { id: upd.id }, data: { sourceRefs: upd.sourceRefs } }).catch(() => {});
+    await db.wikiEntry.update({
+      where: { id: upd.id },
+      data: { sourceRefs: upd.sourceRefs },
+    }).catch(() => {});
   }
 
-  return { deleted: toDelete.length, updated: toUpdate.length };
+  return { deleted: toDelete.length - orphansPurged, updated: toUpdate.length, orphansPurged };
+}
+
+/**
+ * Delete all Wiki entries sourced from a specific document.
+ * Convenience wrapper around {@link deleteEntriesForDocuments} for the
+ * single-document case. Kept for call-site compatibility.
+ */
+export function deleteEntriesForDocument(
+  userId: string,
+  documentId: string,
+): Promise<{ deleted: number; updated: number }> {
+  return deleteEntriesForDocuments(userId, [documentId]);
 }
 
 /** Aggregate counts for the Wiki browse page stats ribbon. */

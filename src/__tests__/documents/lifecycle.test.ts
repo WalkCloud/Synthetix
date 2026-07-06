@@ -6,14 +6,22 @@ function createDeps(options?: { remainingDocuments?: number }) {
   const document = { id: "doc-1", userId: "user-1" };
   const deps = {
     findDocument: vi.fn(async () => document),
+    findDocuments: vi.fn(async (userId: string, docIds: string[]) =>
+      docIds.map((id) => ({ id, userId })),
+    ),
     countDocuments: vi.fn(async () => options?.remainingDocuments ?? 0),
     cancelDocumentTasks: vi.fn(async () => { events.push("cancel-tasks"); }),
+    cancelDocumentTasksBatch: vi.fn(async () => { events.push("cancel-tasks-batch"); }),
     enqueueDocumentCleanup: vi.fn(async () => { events.push("enqueue-cleanup"); return "cleanup-task-1"; }),
     deleteRagDocument: vi.fn(async () => { events.push("delete-rag-doc"); }),
     resetUserRag: vi.fn(async () => { events.push("reset-rag"); }),
     cleanupRagOrphans: vi.fn(async () => { events.push("cleanup-orphans"); }),
     deleteDocumentFiles: vi.fn(async () => { events.push("delete-files"); }),
     deleteDocumentRows: vi.fn(async () => { events.push("delete-db"); }),
+    deleteDocumentRowsBatch: vi.fn(async (_userId: string, docIds: string[]) => {
+      events.push("delete-db-batch");
+      return { deleted: docIds, notFound: [] as string[] };
+    }),
     verifyDocumentDeleted: vi.fn(async () => { events.push("verify"); return { ok: true, issues: [] }; }),
   };
   return { deps, events };
@@ -114,14 +122,27 @@ describe("DocumentLifecycleService", () => {
     expect(deps.enqueueDocumentCleanup).not.toHaveBeenCalled();
   });
 
-  it("deletes multiple documents through the single-document lifecycle", async () => {
-    const { deps } = createDeps({ remainingDocuments: 0 });
+  it("deletes multiple documents in a single bulk DB operation", async () => {
+    const { deps, events } = createDeps({ remainingDocuments: 0 });
     const service = createDocumentLifecycleService(deps);
 
     const result = await service.deleteDocuments("user-1", ["doc-1", "doc-2"]);
 
     expect(result.deleted).toEqual(["doc-1", "doc-2"]);
-    expect(deps.findDocument).toHaveBeenCalledTimes(2);
-    expect(deps.deleteDocumentRows).toHaveBeenCalledTimes(2);
+    // Bulk path: ONE deleteDocumentRowsBatch call (not per-doc findDocument +
+    // deleteDocumentRows loops). Cleanup tasks still enqueue per-doc for the
+    // background RAG/file cleanup worker.
+    expect(deps.deleteDocumentRowsBatch).toHaveBeenCalledTimes(1);
+    expect(deps.deleteDocumentRowsBatch).toHaveBeenCalledWith("user-1", ["doc-1", "doc-2"]);
+    expect(deps.cancelDocumentTasksBatch).toHaveBeenCalledTimes(1);
+    expect(deps.findDocument).not.toHaveBeenCalled();
+    expect(deps.deleteDocumentRows).not.toHaveBeenCalled();
+    expect(deps.enqueueDocumentCleanup).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([
+      "delete-db-batch",
+      "cancel-tasks-batch",
+      "enqueue-cleanup",
+      "enqueue-cleanup",
+    ]);
   });
 });

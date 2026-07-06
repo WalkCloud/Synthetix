@@ -452,10 +452,6 @@ export type TranslationSchema = {
       accept: string;
       reject: string;
     };
-    humanize: {
-      title: string;
-      generate: string;
-    };
     export: {
       title: string;
       markdown: string;
@@ -488,7 +484,6 @@ export type TranslationSchema = {
       generating: string;
       sectionProcessing: string;
       saveEdit: string;
-      humanizing: string;
       confirming: string;
       selectModelFirst: string;
       confirmSection: string;
