@@ -12,7 +12,7 @@
 ;        (normally invoked by scripts/build-electron.mjs)
 
 #define MyAppName "Synthetix"
-#define MyAppVersion "0.10.9"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "Synthetix"
 
 [Setup]
@@ -31,7 +31,7 @@ Compression=lzma2/normal
 LZMAUseSeparateProcess=yes
 WizardStyle=modern
 OutputDir=..\dist\installer
-OutputBaseFilename=Synthetix-Setup-v0.10.9
+OutputBaseFilename=Synthetix-Setup-v1.0.0
 UninstallDisplayIcon={app}\Synthetix.exe
 UninstallDisplayName=Synthetix
 
