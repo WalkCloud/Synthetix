@@ -311,9 +311,23 @@ class GetLimiterBootstrapTests(unittest.TestCase):
     def tearDown(self):
         _cleanup_store(self)
 
-    def test_fresh_provider_starts_at_floor(self):
+    def test_fresh_provider_starts_at_optimistic_initial_budget(self):
+        # A fresh provider (no persisted record) now starts at the OPTIMISTIC
+        # initial budget (default 32000 ≈ dynamic_max 8) instead of FLOOR_TOKENS,
+        # so switching providers doesn't pay a 4-16 min slow-start tax. AIMD MD
+        # will rein it in if a real 429 happens.
+        from adaptive_limiter import INITIAL_BUDGET_TOKENS
         lim = get_limiter("test:bootstrap-fresh")
-        self.assertEqual(lim._budget, FLOOR_TOKENS)
+        self.assertEqual(lim._budget, INITIAL_BUDGET_TOKENS)
+        self.assertGreater(lim._budget, FLOOR_TOKENS)
+        # Phase should be additive (skip slow-start) since initial > floor.
+        self.assertEqual(lim._phase, "additive")
+
+    def test_fresh_provider_dynamic_max_at_least_8(self):
+        # With the optimistic initial budget (32000), a fresh provider should
+        # immediately get dynamic_max ≥ 8 (full concurrency), not crawl up.
+        lim = get_limiter("test:bootstrap-dmax")
+        self.assertGreaterEqual(lim._dynamic_max_requests, 8)
 
     def test_known_ceiling_starts_at_headroom(self):
         # Seed the store with a discovered ceiling.
@@ -326,6 +340,193 @@ class GetLimiterBootstrapTests(unittest.TestCase):
         lim = get_limiter("test:bootstrap-known")
         self.assertEqual(lim._budget, round(40000 * HEADROOM))
         self.assertGreater(lim._budget, FLOOR_TOKENS)
+
+
+class ErrorClassificationTests(unittest.TestCase):
+    """_is_capacity_error vs _is_network_error — the core fix.
+
+    The historical bug lumped network instability in with rate-limiting, so a
+    single timeout collapsed the AIMD budget (×0.75) and stranded graph
+    extraction at concurrency=1 because AIMD recovers very slowly.
+    """
+
+    def setUp(self):
+        _isolate_store(self)
+
+    def tearDown(self):
+        _cleanup_store(self)
+
+    def test_capacity_markers_match(self):
+        from adaptive_limiter import _is_capacity_error
+        for msg in [
+            "429 Too Many Requests",
+            "rate limit exceeded",
+            "Rate_Limit: user is throttled",
+            "too many requests",
+            "quota exceeded",
+            "503 Service Unavailable",
+            "overloaded",
+        ]:
+            self.assertTrue(_is_capacity_error(Exception(msg)), f"should be capacity: {msg}")
+
+    def test_network_markers_not_treated_as_capacity(self):
+        from adaptive_limiter import _is_capacity_error
+        for msg in [
+            "ETIMEDOUT",
+            "read timed out",
+            "ECONNRESET",
+            "connection reset by peer",
+            "connection refused",
+            "getaddrinfo failed",
+            "ApiConnectionError: connection error",
+            "socket hang up",
+            "fetch failed: ECONNRESET",
+        ]:
+            self.assertFalse(_is_capacity_error(Exception(msg)), f"must NOT be capacity: {msg}")
+
+    def test_network_markers_match_network_classifier(self):
+        from adaptive_limiter import _is_network_error
+        for msg in [
+            "ETIMEDOUT",
+            "read timed out",
+            "ECONNRESET",
+            "connection reset by peer",
+            "connection refused",
+            "getaddrinfo failed",
+            "ApiConnectionError",
+            "socket hang up",
+            "fetch failed",
+        ]:
+            self.assertTrue(_is_network_error(Exception(msg)), f"should be network: {msg}")
+
+    def test_schema_error_is_neither(self):
+        from adaptive_limiter import _is_capacity_error, _is_network_error
+        e = Exception("invalid_request: bad response_format")
+        self.assertFalse(_is_capacity_error(e))
+        self.assertFalse(_is_network_error(e))
+
+
+class NotifyNetworkBlipTests(unittest.TestCase):
+    """notify_network_blip must NOT shrink budget or enter cooldown."""
+
+    def setUp(self):
+        _isolate_store(self)
+
+    def tearDown(self):
+        _cleanup_store(self)
+
+    def test_does_not_shrink_budget(self):
+        lim = AdaptiveLimiter("test:blip-budget", initial_budget=FLOOR_TOKENS * 8)
+        before = lim._budget
+        asyncio.run(lim.notify_network_blip())
+        self.assertEqual(lim._budget, before, "network blip must not shrink budget")
+
+    def test_does_not_enter_cooldown(self):
+        lim = AdaptiveLimiter("test:blip-cooldown", initial_budget=FLOOR_TOKENS * 8)
+        asyncio.run(lim.notify_network_blip())
+        self.assertNotEqual(lim._phase, "cooldown", "network blip must not enter cooldown")
+        # And acquire must not block (cooldown_until unchanged).
+        self.assertEqual(lim._cooldown_until, 0.0)
+
+    def test_resets_consecutive_successes(self):
+        lim = AdaptiveLimiter("test:blip-successes", initial_budget=FLOOR_TOKENS * 8)
+        asyncio.run(_succeed_n(lim, 5))  # accumulate some successes
+        self.assertGreater(lim._consecutive_successes, 0)
+        asyncio.run(lim.notify_network_blip())
+        self.assertEqual(lim._consecutive_successes, 0)
+
+    def test_increments_blip_counter(self):
+        lim = AdaptiveLimiter("test:blip-counter", initial_budget=FLOOR_TOKENS * 8)
+        self.assertEqual(lim._network_blips, 0)
+        asyncio.run(lim.notify_network_blip())
+        asyncio.run(lim.notify_network_blip())
+        self.assertEqual(lim._network_blips, 2)
+
+
+class MinConcurrencyTests(unittest.TestCase):
+    """_dynamic_max_requests must floor at LLM_LIMITER_GRAPH_MIN_CONCURRENCY."""
+
+    def setUp(self):
+        _isolate_store(self)
+
+    def tearDown(self):
+        _cleanup_store(self)
+
+    def test_floor_at_min_concurrency_when_budget_collapses(self):
+        # Budget at the absolute floor (worst case) — without the floor guard
+        # derived concurrency would be 1 (4000 // 4000). The min guard must
+        # raise it to the configured floor (default 2).
+        lim = AdaptiveLimiter("test:min-floor", initial_budget=FLOOR_TOKENS)
+        self.assertGreaterEqual(lim._dynamic_max_requests, 2)
+
+    def test_respects_env_override(self):
+        os.environ["LLM_LIMITER_GRAPH_MIN_CONCURRENCY"] = "4"
+        try:
+            lim = AdaptiveLimiter("test:min-env", initial_budget=FLOOR_TOKENS)
+            self.assertGreaterEqual(lim._dynamic_max_requests, 4)
+        finally:
+            del os.environ["LLM_LIMITER_GRAPH_MIN_CONCURRENCY"]
+
+    def test_cap_still_applies_above_floor(self):
+        # When budget is large, the cap (default 8) still binds — floor only
+        # matters when budget is small.
+        lim = AdaptiveLimiter("test:min-cap", initial_budget=FLOOR_TOKENS * 100)
+        self.assertLessEqual(lim._dynamic_max_requests, lim._max_requests_cap)
+
+
+class WrapLlmFuncNetworkBlipTests(unittest.TestCase):
+    """wrap_llm_func must route network errors through notify_network_blip,
+    NOT notify_rate_limited — verifying the end-to-end fix."""
+
+    def setUp(self):
+        _isolate_store(self)
+
+    def tearDown(self):
+        _cleanup_store(self)
+
+    def test_network_error_does_not_shrink_budget(self):
+        class TimeoutError(Exception):
+            pass
+
+        async def fake_llm(prompt, system_prompt=None, history_messages=None, **kwargs):
+            raise TimeoutError("ETIMEDOUT: read timed out")
+
+        lim = get_limiter("test:wrap-net")
+        # Grow the budget first so a shrink would be observable.
+        asyncio.run(_succeed_n(lim, SLOW_START_SUCCESSES))
+        budget_before = lim._budget
+
+        wrapped = wrap_llm_func(fake_llm, "test:wrap-net")
+        with self.assertRaises(TimeoutError):
+            asyncio.run(wrapped(prompt="hello"))
+
+        self.assertEqual(lim._budget, budget_before, "network error must not shrink budget")
+        self.assertNotEqual(lim._phase, "cooldown", "network error must not enter cooldown")
+        self.assertEqual(lim._network_blips, 1)
+
+    def test_network_error_releases_as_200_not_429(self):
+        class ConnReset(Exception):
+            pass
+
+        async def fake_llm(prompt, system_prompt=None, history_messages=None, **kwargs):
+            raise ConnReset("ECONNRESET: connection reset")
+
+        captured = {}
+        lim = get_limiter("test:wrap-net-status")
+        original_release = lim.release
+
+        async def spy_release(estimated, status=200, actual_tokens=None, latency_ms=None):
+            captured["status"] = status
+            return await original_release(estimated, status=status, actual_tokens=actual_tokens, latency_ms=latency_ms)
+
+        lim.release = spy_release
+
+        wrapped = wrap_llm_func(fake_llm, "test:wrap-net-status")
+        with self.assertRaises(ConnReset):
+            asyncio.run(wrapped(prompt="hello"))
+
+        # Released as 200 (benign) — NOT 429 — so AIMD neither punishes nor rewards.
+        self.assertEqual(captured["status"], 200)
 
 
 if __name__ == "__main__":

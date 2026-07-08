@@ -1,6 +1,6 @@
 {
   "name": "synthetix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Self-hostable AI writing workbench for traceable long-form documents.",
   "license": "Apache-2.0",
   "author": "Synthetix",

@@ -2,6 +2,11 @@
 
 import { useRef } from "react";
 import { useLocale } from "@/lib/i18n";
+import { SUPPORTED_FORMATS } from "@/types/documents";
+
+// Derive the <input accept> string from the single source of truth so the
+// file picker and server-side validation never drift apart.
+const ACCEPT_ATTR = SUPPORTED_FORMATS.map((f) => `.${f}`).join(",");
 
 interface UploadZoneProps {
   onFiles: (files: FileList | File[]) => void;
@@ -18,7 +23,7 @@ export function UploadZone({ onFiles }: UploadZoneProps) {
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); onFiles(e.dataTransfer.files); }}
     >
-      <input ref={inputRef} type="file" className="hidden" accept=".pdf,.docx,.pptx,.xlsx,.html,.epub,.txt,.md,.csv" multiple
+      <input ref={inputRef} type="file" className="hidden" accept={ACCEPT_ATTR} multiple
         onChange={(e) => { if (e.target.files) onFiles(e.target.files); e.target.value = ""; }} />
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <input ref={folderInputRef} type="file" className="hidden" {...({ webkitdirectory: "", directory: "", multiple: true } as any)}

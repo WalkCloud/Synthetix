@@ -40,6 +40,7 @@ import {
 import { mergeChunkKnowledge, getExistingTitles } from "@/lib/wiki/merger";
 import { mergeEntry } from "@/lib/wiki/merger";
 import { regenerateIndexMd } from "@/lib/wiki/index-md";
+import { mapBounded } from "@/lib/concurrency/bounded";
 import {
   type ChunkKnowledge,
   type WikiSourceRef,
@@ -168,7 +169,7 @@ export async function synthesizeDocument(
     const titlesSnapshot = existingTitles.slice();
 
     let batchExtractDone = 0;
-    await runBounded(batch, WIKI_EXTRACT_CONCURRENCY, async (chunk, i) => {
+    await mapBounded(batch, WIKI_EXTRACT_CONCURRENCY, async (chunk, i) => {
       try {
         const knowledge = await extractChunkKnowledge(chunk, titlesSnapshot, client, inputMaxTokens);
         extractResults[i] = { chunk, knowledge };
@@ -653,33 +654,6 @@ function parseClaim(o: Record<string, unknown>): ChunkKnowledge["claims"][number
   if (title.length < 2 || content.length < WIKI_CONFIG.minEntryContentChars) return null;
   const confidence = typeof o.confidence === "number" ? Math.max(0, Math.min(1, o.confidence)) : 0.7;
   return { title, content, confidence };
-}
-
-/**
- * Bounded-concurrency worker pool. Runs `fn` over `items` with at most
- * `concurrency` in flight, preserving each item's INDEX (fn receives (item, i))
- * so callers can write results into a pre-sized array in original order
- * regardless of completion order.
- *
- * Mirrors the boundedAll pattern in pipeline.ts but is index-aware and kept
- * local to avoid a cross-module coupling.
- */
-async function runBounded<T>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<void>,
-): Promise<void> {
-  if (items.length === 0) return;
-  const limit = Math.max(1, Math.min(concurrency, items.length));
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      if (i >= items.length) break;
-      await fn(items[i], i);
-    }
-  };
-  await Promise.all(Array.from({ length: limit }, () => worker()));
 }
 
 /** Read a positive int from env, falling back to `fallback` when unset/invalid. */

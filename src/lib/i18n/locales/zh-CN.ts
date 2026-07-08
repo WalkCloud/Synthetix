@@ -181,7 +181,7 @@ const zhCN = {
       or: "或",
       uploadFiles: "上传文件",
       uploadFolder: "上传文件夹",
-      supportedFormats: "支持 PDF、DOCX、PPTX、XLSX、HTML、EPUB、TXT、Markdown、CSV 格式",
+      supportedFormats: "支持 PDF、DOCX、PPTX、HTML、EPUB、TXT、Markdown 格式",
       maxSize: "单个文件最大 50MB",
       queuing: "正在加入处理队列...",
       queued: "个文件已加入处理队列",
@@ -611,9 +611,9 @@ const zhCN = {
     uploadPrompt: "请基于已上传的文档，帮我给出一份大纲建议。",
     uploadFailed: "上传失败，请重试。",
     upload: {
-      title: "上传需求/背景文档（支持 PDF、DOCX、PPTX、XLSX、HTML、TXT、MD，最大 10MB）",
+      title: "上传需求/背景文档（支持 PDF、DOCX、PPTX、HTML、EPUB、TXT、MD，最大 10MB）",
       fileTooLarge: "文件过大，最大支持 10MB。",
-      unsupportedFormat: "不支持的格式，支持：PDF、DOCX、PPTX、XLSX、HTML、TXT、MD。",
+      unsupportedFormat: "不支持的格式，支持：PDF、DOCX、PPTX、HTML、EPUB、TXT、MD。",
     },
     networkError: "网络错误，请重试。",
     unknownError: "未知错误",
@@ -672,6 +672,7 @@ const zhCN = {
     emptySteps: ["完成文档大纲", "生成或编辑章节内容", "建立参考资料引用"],
     noDraftsSteps: ["创建文档草稿", "生成章节内容", "查看引用拓扑"],
     goWriting: "前往文档撰写",
+    dragToRotate: "拖拽可旋转",
     switchDraftHint: "也可以通过上方选择器切换到其他草稿查看拓扑。",
     createDraftHint: "创建草稿后，文档拓扑会在这里展示章节、引用和资料之间的关系。",
     nodeTypes: {

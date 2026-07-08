@@ -7,10 +7,11 @@ import type {
   ModelInfo,
 } from "./types";
 import type { ChatMessage } from "./types";
-import { computeBackoffMs, delay } from "./retry-after";
+import { computeBackoffMs, delay, isBalanceExhausted } from "./retry-after";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 import { FETCH_TIMEOUT_MS, STREAM_READ_TIMEOUT_MS } from "./env";
+import { fetchWithTimeout as fetchWithTimeoutRaw, estimateTokens } from "./http";
 
 interface AdapterConfig {
   baseUrl: string;
@@ -26,14 +27,9 @@ type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MAX_TOKENS = 4096;
 
+/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS. */
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-}
-
-function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 1.5));
+  return fetchWithTimeoutRaw(url, init, timeoutMs);
 }
 
 function estimateMessagesTokens(messages: { content: string }[]): number {
@@ -179,8 +175,14 @@ export class AnthropicAdapter implements LLMProvider {
       if (response.status === 429 || response.status === 503) {
         this.notifyLimiterRateLimited(response.headers);
       }
+      // Balance exhausted is not retryable — fail fast (see OpenAI adapter chat()).
+      if (isBalanceExhausted(response.status, errorText)) {
+        throw new Error(
+          `Chat request failed: account balance/quota exhausted (${response.status}). ${errorText || "Please top up and retry."}`,
+        );
+      }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
@@ -260,19 +262,25 @@ export class AnthropicAdapter implements LLMProvider {
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
       const retryable = response.status === 429 || response.status >= 500;
       if (response.status === 429 || response.status === 503) {
         this.notifyLimiterRateLimited(response.headers);
       }
+      // Balance exhausted is not retryable — fail fast (see OpenAI adapter chat()).
+      if (isBalanceExhausted(response.status, errorText)) {
+        throw new Error(
+          `Chat stream request failed: account balance/quota exhausted (${response.status}). ${errorText || "Please top up and retry."}`,
+        );
+      }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;
         }
         return;
       }
-      const errorText = await response.text().catch(() => "");
       throw new Error(`Chat stream request failed (${response.status}): ${errorText || response.statusText}`);
     }
 

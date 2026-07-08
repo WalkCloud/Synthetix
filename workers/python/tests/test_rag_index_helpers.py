@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from adaptive_limiter import _is_rate_limit_error
 from rag_index import (
     _call_graph_llm_with_connection_retry,
+    _heartbeat_loop,
     _is_transient_llm_connection_error,
     emit_progress,
     get_insert_batch_size,
@@ -179,6 +180,87 @@ class RagIndexHelperTests(unittest.TestCase):
             asyncio.run(_call_graph_llm_with_connection_retry(call, sleep_fn=sleep))
 
         self.assertEqual(len(calls), 1)
+
+
+class HeartbeatLoopTests(unittest.TestCase):
+    """The time-driven heartbeat emits progress every N seconds during indexing,
+    so a single slow LLM call can't freeze lastHeartbeatAt past the Node-side
+    stall threshold (queue.ts, 5 min)."""
+
+    def test_emits_at_interval_with_latest_progress_state(self):
+        # Use a fake sleep that yields once (so the event loop can run the
+        # cancellation timer) and advances the shared state to simulate batches.
+        emits = []
+        state = {"done": 0, "total": 10}
+
+        async def fake_sleep(seconds):
+            # Advance the shared state on each "tick" to simulate batches completing.
+            state["done"] = min(state["total"], state["done"] + 3)
+            # Yield once so the outer cancellation timer can fire. Without this
+            # the loop would busy-spin and OOM.
+            await asyncio.sleep(0)
+
+        def fake_emit(stage, progress, message, **extra):
+            emits.append({"stage": stage, "progress": progress, "message": message, **extra})
+
+        async def run():
+            task = asyncio.create_task(_heartbeat_loop(state, 0.01, "Extracting", emit=fake_emit, sleep=fake_sleep))
+            # Let it tick a few times, then cancel. Cap iterations via a timer.
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run())
+        # At least one heartbeat emitted (likely several with the fast fake sleep).
+        self.assertGreaterEqual(len(emits), 1)
+        # Every emit carries the indexing stage and current done/total.
+        for e in emits:
+            self.assertEqual(e["stage"], "indexing")
+            self.assertEqual(e["message"], "Extracting")
+            self.assertEqual(e["total"], 10)
+            self.assertGreaterEqual(e["progress"], 40)
+            self.assertLessEqual(e["progress"], 90)
+
+    def test_progress_reflects_latest_state_not_initial(self):
+        emits = []
+        state = {"done": 0, "total": 4}
+        tick = {"n": 0}
+
+        async def fake_sleep(seconds):
+            tick["n"] += 1
+            state["done"] = min(state["total"], tick["n"])
+            await asyncio.sleep(0)  # yield so cancellation timer can fire
+
+        def fake_emit(stage, progress, message, **extra):
+            emits.append(extra.get("processed", 0))
+
+        async def run():
+            task = asyncio.create_task(_heartbeat_loop(state, 0.01, "idx", emit=fake_emit, sleep=fake_sleep))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run())
+        self.assertEqual(emits, sorted(emits))
+        self.assertGreater(max(emits), 0)
+
+    def test_cancellation_is_clean(self):
+        state = {"done": 0, "total": 10}
+
+        async def run():
+            task = asyncio.create_task(_heartbeat_loop(state, 100.0, "idx"))
+            await asyncio.sleep(0.01)  # let it start
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(run())
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 import type { DocumentPipeline } from "@/lib/documents/pipeline-stages";
 
+// Text/document formats only. Spreadsheet formats (xlsx/csv) are dropped
+// because they hold tabular data with little value for prose writing.
 export const SUPPORTED_FORMATS = [
-  "pdf", "docx", "pptx", "xlsx", "html", "epub", "txt", "md", "csv"
+  "pdf", "docx", "pptx", "html", "epub", "txt", "md"
 ] as const;
 export type SupportedFormat = typeof SUPPORTED_FORMATS[number];
 
@@ -87,6 +89,19 @@ export interface DocumentMeta {
    * from the same task-driven pipeline. Optional: legacy docs may omit it.
    */
   displayStatus?: "ready" | "enhancing" | "processing" | "failed" | "pending";
+  /**
+   * Cross-stage aggregate progress (0-100) while the document is processing —
+   * covers convert → embed → index → graph → wiki, NOT just one stage. Null
+   * when the doc isn't processing so the UI shows a static badge instead of a
+   * stale number. Matches the detail page's pipeline percent exactly.
+   */
+  overallPercent?: number | null;
+  /** i18n key of the currently-active stage (e.g. "stageConvert"), for the
+   *  progress-bar label. Null when not processing. */
+  activeStageKey?: string | null;
+  /** The rag_index task id when graph extraction is running/pending, so the
+   *  library list can show a Cancel button. Undefined otherwise. */
+  graphTaskId?: string;
   /**
    * Position in the global document-convert queue (1-indexed). Only set when
    * `status === "queued"`. The library API computes this on the fly from

@@ -145,51 +145,81 @@ def _apply_docx_performance_patches():
         print(f"[convert] WARNING: failed to apply docx performance patches: {e}", flush=True)
 
 
-def _pdf_has_text_layer(path: str, sample_pages: int = 5) -> bool:
-    """Detect whether a PDF has a real text layer (digital PDF) vs scanned.
+def _pdf_text_layer_ratio(path: str, sample_threshold: int = 200) -> tuple[int, int, float]:
+    """Measure the PDF's text-layer coverage across ALL pages.
 
-    Scanned PDFs are image-only and REQUIRE OCR. Digital PDFs already have
-    selectable text, so OCR is pure waste. We sample the first few pages and
-    treat meaningful text (>50 chars) as proof of a text layer.
+    Replaces the old `_pdf_has_text_layer` which only sampled the first 5
+    pages — inaccurate for documents whose early pages are cover/TOC images
+    (e.g. the 277-page book that has 92% text overall but 0% on its first 2
+    pages). Full coverage also drives the bypass decision (≥80 pages & ≥50%
+    text → pypdfium2 fast path), so a precise ratio matters.
 
-    Returns True if a text layer is detected (skip OCR), False otherwise (OCR).
+    For very long PDFs (>sample_threshold pages) we sample evenly across the
+    document to bound cost — a 1000-page full scan pays ~4s; sampling 200
+    keeps it under 1s while still representative.
+
+    Returns (page_count, text_pages, ratio). On any failure, ratio=1.0 so the
+    caller defaults to the docling-without-OCR fast path (the common case).
     """
     try:
         import pypdfium2  # type: ignore
         pdf = pypdfium2.PdfDocument(path)
-        pages_to_check = min(sample_pages, len(pdf))
-        for i in range(pages_to_check):
-            try:
-                text = pdf[i].get_textpage().get_text_range()
-                if len(text.strip()) > 50:
-                    return True
-            except Exception:
-                continue
-        return False
+        try:
+            total = len(pdf)
+            if total == 0:
+                return 0, 0, 1.0
+
+            # Decide which pages to probe: all of them, or an even sample.
+            if total <= sample_threshold:
+                indices = range(total)
+                denom = total
+            else:
+                step = total / sample_threshold
+                indices = (int(i * step) for i in range(sample_threshold))
+                denom = sample_threshold
+
+            text_pages = 0
+            for i in indices:
+                try:
+                    text = pdf[i].get_textpage().get_text_range()
+                    if len(text.strip()) > 50:
+                        text_pages += 1
+                except Exception:
+                    continue
+            ratio = text_pages / denom if denom else 1.0
+            return total, text_pages, ratio
+        finally:
+            pdf.close()
     except Exception:
         # If detection fails, assume text layer exists (the common case) so we
-        # default to the FAST path. Force-OCR env flag is the safety override.
-        return True
+        # default to the docling-without-OCR fast path. Force-OCR env flag is
+        # the safety override.
+        return 0, 0, 1.0
 
 
-def _build_converter(input_file: str, ext: str) -> DocumentConverter:
+def _build_converter(input_file: str, ext: str, needs_ocr: bool | None = None) -> DocumentConverter:
     """Build a DocumentConverter with format-specific performance tuning.
 
     - docx/pptx: monkeypatched backends that skip slow style queries + image
       extraction (the dominant cost). Verified ~34x speedup on 88MB docx.
-    - pdf: detect text layer → disable OCR for digital PDFs (huge speedup),
-      keep OCR for scanned PDFs (still required).
+    - pdf: needs_ocr controls OCR (caller computes it from text-layer ratio).
+      When needs_ocr is None, it falls back to the CONVERT_FORCE_OCR env flag
+      only (treating absence as "no OCR"), keeping backwards behavior for
+      callers that haven't pre-computed the ratio.
     - other formats: default options (already lightweight).
     """
-    force_ocr = os.environ.get("CONVERT_FORCE_OCR", "false").lower() == "true"
-
     if ext in (".docx", ".pptx"):
         # Patches modify the backend class in place; applied once per process.
         _apply_docx_performance_patches()
         return DocumentConverter()
 
     if ext == ".pdf":
-        needs_ocr = force_ocr or not _pdf_has_text_layer(input_file)
+        force_ocr = os.environ.get("CONVERT_FORCE_OCR", "false").lower() == "true"
+        if needs_ocr is None:
+            # Caller didn't pre-compute; assume digital (no OCR) unless forced.
+            needs_ocr = force_ocr
+        else:
+            needs_ocr = force_ocr or needs_ocr
         pipeline_opts = PdfPipelineOptions(
             do_ocr=needs_ocr,
             generate_picture_images=False,
@@ -204,6 +234,198 @@ def _build_converter(input_file: str, ext: str) -> DocumentConverter:
 
     # html / txt / md / xlsx / csv / epub — already lightweight, use defaults.
     return DocumentConverter()
+
+
+# ── pypdfium2 fast-path bypass ────────────────────────────────────────────
+#
+# docling-parse's C++ backend has a known memory-accumulation bug
+# (std::bad_alloc on every page after ~page 6-30) on large PDFs in the
+# docling-parse 7.x line on Windows. Upgrading to 7.5.0 (which contains
+# the cache-cap fix PR #287) does NOT resolve it — verified on a 277-page
+# digital PDF where 259/277 pages still fail.
+#
+# For large digital PDFs (≥80 pages, ≥50% text layer) we bypass docling
+# entirely and extract text with pypdfium2 (Chrome's PDFium, via a C
+# binding). It is dramatically cheaper: 277 pages → 7MB peak / ~1s, vs
+# docling crashing at 2GB+. The trade-off is no table recognition and a
+# heuristic-only structure.json — both acceptable for RAG, and the
+# downstream pipeline already has graceful-degradation paths for missing
+# structure (markdown-AST chunking + LLM refinement; atom pages stay null).
+#
+# See project docs / GH issues docling-parse #286, #227, docling #3671.
+
+# Pages at/above this count AND with sufficient text-layer coverage bypass
+# docling for the pypdfium2 fast path. 80 is well above the 45-page PDF
+# that converted cleanly and well below the 277-page PDF that crashed —
+# leaving ample safety margin on both sides.
+BYPASS_MIN_PAGES = 80
+BYPASS_MIN_TEXT_RATIO = 0.5
+
+# Minimum text length on a single page for it to count as "has text layer".
+TEXT_LAYER_MIN_CHARS = 50
+
+
+def _is_heading_like(line: str) -> bool:
+    """Heuristic: does this line look like a section heading?
+
+    Used to synthesize a structure.json from raw pypdfium2 text, since
+    pypdfium2 gives us no document structure — just per-page text. The
+    downstream `splitByStructure` consumer only needs section text + a
+    level; absolute precision isn't required (mismatches fall through to
+    the markdown-AST splitter).
+    """
+    s = line.strip()
+    if not s or len(s) > 60:
+        return False
+    # "第X章/节/部分", "Chapter N", "前言/序言/目录/附录/结语"
+    if s.startswith(("第", "Chapter ", "前言", "序言", "目录", "附录", "结语", "后记", "引言")):
+        return True
+    # Numbered headings: "1 标题", "2.1 标题", "1.1.1 标题" (but not "2024年" or "1.5倍")
+    import re
+    if re.match(r"^\d+(\.\d+){0,3}\s+\S", s) and not s.endswith(("年", "倍", "%", "。")):
+        return True
+    return False
+
+
+def _heading_level(text: str) -> int:
+    """Infer a heading level (2=chapter, 3=section, 4=subsection) for
+    synthesis purposes. Mirrors `inferLevelFromText` in structure-split.ts."""
+    s = text.strip()
+    if s.startswith("第") and ("章" in s[:8] or "部分" in s[:10]):
+        return 2
+    if s.startswith(("前言", "序言", "目录", "附录", "结语", "后记", "引言")):
+        return 2
+    import re
+    m = re.match(r"^(\d+(?:\.\d+)*)\s", s)
+    if m:
+        return min(len(m.group(1).split(".")) + 1, 6)
+    return 3
+
+
+def _convert_via_pypdfium(path: str, output_dir: str, on_progress: "ConvertProgressFn | None" = None) -> dict:
+    """Extract text via pypdfium2 and synthesize markdown + structure.json.
+
+    This is the bypass path for large digital PDFs where docling's C++
+    backend crashes (std::bad_alloc). Output dict matches the docling path's
+    shape so callers (convertDocumentFile) are agnostic to which path ran.
+    """
+    import pypdfium2  # type: ignore
+
+    emit_progress("bypass_initializing", 12, "Preparing pypdfium2 fast-path extractor")
+    pdf = pypdfium2.PdfDocument(path)
+    try:
+        total_pages = len(pdf)
+
+        md_parts: list[str] = []
+        sections: list[dict] = []
+        text_entries: list[dict] = []
+        tables: list[dict] = []
+        pictures: list[dict] = []
+
+        for i in range(total_pages):
+            try:
+                raw_text = pdf[i].get_textpage().get_text_range()
+            except Exception:
+                raw_text = ""
+            page_no = i + 1
+            text = raw_text.strip()
+
+            if not text:
+                # Keep empty-page markers so page numbers stay aligned (some
+                # consumers correlate page numbers with the source PDF).
+                md_parts.append(f"<!-- page {page_no} empty -->\n")
+                continue
+
+            # Split into lines; mark heading-like lines as ## / ### headings so the
+            # downstream markdown-AST splitter and atom builder pick them up even
+            # if structure.json's sections don't cover them.
+            lines = text.splitlines()
+            rendered_lines: list[str] = []
+            for line in lines:
+                s = line.strip()
+                if s and _is_heading_like(s):
+                    level = _heading_level(s)
+                    prefix = "#" * min(level, 6)
+                    rendered_lines.append(f"{prefix} {s}")
+                    sections.append({
+                        "label": "section_header",
+                        "level": level,
+                        "text": s,
+                        "headingPath": "",
+                        "page": page_no,
+                    })
+                else:
+                    rendered_lines.append(s)
+            page_md = "\n".join(rendered_lines).strip()
+            md_parts.append(f"<!-- page {page_no} -->\n{page_md}\n")
+            text_entries.append({"text": text[:5000], "page": page_no})
+
+            if (i + 1) % 25 == 0 or i == total_pages - 1:
+                emit_progress(
+                    "bypass_extracting", 15, "Extracting text via pypdfium2",
+                    processed=page_no, total=total_pages,
+                )
+    finally:
+        pdf.close()
+
+    markdown = "\n\n".join(md_parts)
+    md_path = os.path.join(output_dir, "full.md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(markdown)
+
+    structure = {
+        "schema": "pypdfium2_heuristic_v1",
+        "sections": sections,
+        "texts": text_entries,
+        "tables": tables,
+        "pictures": pictures,
+    }
+    structure_path = os.path.join(output_dir, "structure.json")
+    with open(structure_path, "w", encoding="utf-8") as f:
+        json.dump(structure, f, ensure_ascii=False, indent=2)
+
+    emit_progress("bypass_finalizing", 90, "pypdfium2 extraction complete")
+
+    return {
+        "markdown": md_path,
+        "structure": structure_path,
+        "imageManifest": None,
+        "imageCount": 0,
+        "format": os.path.splitext(path)[1].lower(),
+        "conversionMethod": "pypdfium2",
+        "metadata": {
+            "pageCount": total_pages,
+            "hasTables": False,
+            "hasFigures": False,
+            "hasStructure": len(sections) > 0,
+        },
+    }
+
+
+def _quick_pdf_char_count(path: str, max_pages: int = 30) -> int:
+    """Fast total-character probe for the docling-failure fallback decision.
+
+    Samples up to `max_pages` pages (front-loaded: early pages are cheapest
+    to load and usually representative) and returns the total non-whitespace
+    char count. Used to decide whether docling's near-empty output means it
+    silently failed (bad_alloc swallowed) and we should retry via pypdfium2.
+    """
+    try:
+        import pypdfium2  # type: ignore
+        pdf = pypdfium2.PdfDocument(path)
+        try:
+            total = 0
+            for i in range(min(max_pages, len(pdf))):
+                try:
+                    text = pdf[i].get_textpage().get_text_range()
+                    total += len(text.strip())
+                except Exception:
+                    continue
+            return total
+        finally:
+            pdf.close()
+    except Exception:
+        return 0
 
 
 def _build_image_manifest(doc, output_dir: str) -> tuple[list[dict], int]:
@@ -355,10 +577,27 @@ def convert(input_file: str, output_dir: str) -> dict:
 
     ext = os.path.splitext(input_file)[1].lower()
 
-    # Format-tuned converter: docx/pptx skip vector-graphic rendering, PDF
-    # disables OCR when a text layer exists. See _build_converter for rationale.
-    emit_progress("initializing", 10, "Preparing Docling converter")
-    converter = _build_converter(input_file, ext)
+    # ── PDF bypass decision ───────────────────────────────────────────────
+    # Large digital PDFs (≥80 pages, ≥50% text layer) bypass docling entirely
+    # — docling-parse's C++ backend has a memory-accumulation bug that crashes
+    # on these. See the BYPASS constants above for thresholds & rationale.
+    if ext == ".pdf":
+        total_pages, text_pages, text_ratio = _pdf_text_layer_ratio(input_file)
+        if total_pages >= BYPASS_MIN_PAGES and text_ratio >= BYPASS_MIN_TEXT_RATIO:
+            emit_progress(
+                "bypass", 10,
+                f"Using pypdfium2 fast path ({total_pages} pages, "
+                f"{text_ratio:.0%} text layer) — bypassing docling to avoid "
+                f"known C++ memory bug on large PDFs",
+            )
+            return _convert_via_pypdfium(input_file, output_dir)
+        needs_ocr = text_ratio < BYPASS_MIN_TEXT_RATIO
+        emit_progress("initializing", 10, "Preparing Docling converter")
+        converter = _build_converter(input_file, ext, needs_ocr=needs_ocr)
+    else:
+        emit_progress("initializing", 10, "Preparing Docling converter")
+        converter = _build_converter(input_file, ext)
+
     with ProgressHeartbeat("docling_convert", 15, 55, "Converting document with Docling"):
         result = converter.convert(input_file)
     emit_progress("docling_convert", 60, "Docling conversion completed")
@@ -366,6 +605,21 @@ def convert(input_file: str, output_dir: str) -> dict:
 
     emit_progress("export_markdown", 65, "Exporting markdown")
     markdown = doc.export_to_markdown()
+
+    # ── PDF failure fallback ──────────────────────────────────────────────
+    # docling sometimes "succeeds" (no exception) but emits near-empty output
+    # because every page hit std::bad_alloc and the error was swallowed by
+    # the pipeline. Detect this: if the PDF actually has text (per a fast
+    # pypdfium2 probe) but docling returned almost nothing, retry via bypass.
+    if ext == ".pdf" and len(markdown.strip()) < 100:
+        quick_chars = _quick_pdf_char_count(input_file)
+        if quick_chars > 200 and len(markdown.strip()) < quick_chars * 0.5:
+            print(
+                f"[convert] docling returned {len(markdown)} chars but PDF has "
+                f"~{quick_chars} chars in first 30 pages — falling back to pypdfium2",
+                file=sys.stderr, flush=True,
+            )
+            return _convert_via_pypdfium(input_file, output_dir)
 
     md_path = os.path.join(output_dir, "full.md")
     with open(md_path, "w", encoding="utf-8") as f:

@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { getAuthUser } from "@/lib/auth/session";
 import { recordTokenUsageSafely } from "@/lib/llm/usage";
 import { generateSectionStream } from "@/lib/writing/generator";
 import { auditSection } from "@/lib/writing/auditor";
@@ -10,14 +9,20 @@ import { buildEffectiveConstraints, mergeSectionConstraints, parseSectionConstra
 import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
 import { createOnceRecorder } from "@/lib/writing/once-recorder";
 import { updateWikiAfterSection } from "@/lib/wiki/writer";
-import { authErrorResponse, errorResponse } from "@/lib/api-helpers";
+import {
+  errorResponse,
+  requireAuthUser,
+  loadOwnedDraft,
+  loadSectionInDraft,
+} from "@/lib/api-helpers";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; secId: string }> }
 ): Promise<Response> {
-  const user = await getAuthUser();
-  if (!user) return authErrorResponse();
+  const auth = await requireAuthUser();
+  if (auth instanceof Response) return auth;
+  const { user } = auth;
 
   const { id: draftId, secId: sectionId } = await params;
 
@@ -28,11 +33,11 @@ export async function POST(
     body = {};
   }
 
-  const draft = await db.draft.findFirst({ where: { id: draftId, userId: user.id } });
-  if (!draft) return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
+  const draft = await loadOwnedDraft(draftId, user.id);
+  if (draft instanceof Response) return draft;
 
-  const section = await db.section.findFirst({ where: { id: sectionId, draftId } });
-  if (!section) return errorResponse({ code: "sectionNotFound", message: "Section not found" }, 404);
+  const section = await loadSectionInDraft(sectionId, draftId);
+  if (section instanceof Response) return section;
 
   const constraints = body.constraints
     ? { wordLimit: body.constraints.wordLimit, additionalRequirements: body.constraints.additionalRequirements }

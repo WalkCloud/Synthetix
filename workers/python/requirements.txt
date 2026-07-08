@@ -4,3 +4,4 @@ markdown>=3.7
 Pillow>=10.0.0
 onnxruntime>=1.20.0
 transformers>=4.44.0
+pypdfium2>=4.30.0

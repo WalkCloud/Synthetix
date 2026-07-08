@@ -22,7 +22,8 @@ import os
 import struct
 import argparse
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+from typing import Optional
 
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -79,6 +80,32 @@ class StdoutTokenTracker:
         except (TypeError, ValueError):
             return
         emit_usage(self._module, prompt, completion)
+
+
+async def _heartbeat_loop(
+    progress_state: dict,
+    interval_s: float,
+    message: str,
+    emit=emit_progress,
+    sleep=None,
+) -> None:
+    """Emit a progress event every `interval_s` seconds, reading the latest
+    done/total from `progress_state` (a shared dict). Guarantees lastHeartbeatAt
+    stays fresh during slow LLM extraction — a single hung provider call would
+    otherwise freeze progress for 15+ min, tripping the Node-side heartbeat-stall
+    detector (queue.ts, 5 min threshold).
+
+    Designed to run as an asyncio.Task alongside insert_chunks; the caller
+    cancels it when insertion completes. `emit` and `sleep` are injectable for
+    testing (sleep defaults to asyncio.sleep).
+    """
+    _sleep = sleep if sleep is not None else asyncio.sleep
+    while True:
+        await _sleep(interval_s)
+        done = progress_state.get("done", 0)
+        total = progress_state.get("total", 0)
+        progress = 40 + int((done / max(total, 1)) * 50)
+        emit("indexing", progress, message, processed=done, total=total)
 
 
 def get_insert_batch_size(index_mode: str, env: dict | None = None) -> int:
@@ -593,13 +620,43 @@ async def index_document(
             })
 
         batch_size = get_insert_batch_size(index_mode)
-        emit_progress("indexing", 40, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=0, total=len(chunk_records))
-        def _report_index_progress(done, total):
-            progress = 40 + int((done / max(total, 1)) * 50)
-            emit_progress("indexing", progress, "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks", processed=done, total=total)
+        indexing_message = "Extracting entities and relationships" if index_mode == "graph" else "Indexing chunks"
+        emit_progress("indexing", 40, indexing_message, processed=0, total=len(chunk_records))
 
-        force_serial = index_mode == "graph" and not should_bulk_insert_graph()
-        indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
+        # Shared progress state read by BOTH the batch-completion callback and
+        # the time-driven heartbeat task below. The batch callback updates it
+        # when a batch finishes; the heartbeat reads it to emit a fresh
+        # lastHeartbeatAt even while a single slow LLM call is in flight (which
+        # otherwise freezes progress for minutes → triggers the Node-side
+        # heartbeat-stall detector in queue.ts).
+        progress_state = {"done": 0, "total": len(chunk_records)}
+
+        def _report_index_progress(done, total):
+            progress_state["done"] = done
+            progress_state["total"] = total
+            progress = 40 + int((done / max(total, 1)) * 50)
+            emit_progress("indexing", progress, indexing_message, processed=done, total=total)
+
+        # Time-driven heartbeat: emit a progress event every N seconds even if
+        # no batch has completed. This guarantees lastHeartbeatAt stays fresh
+        # during slow LLM extraction (a single hung provider call used to freeze
+        # the heartbeat for 15+ min, well past the 5-min stall threshold). The
+        # task self-cancels when insert_chunks returns.
+        heartbeat_interval_s = _read_positive_int("GRAPH_HEARTBEAT_INTERVAL_S", 15)
+        heartbeat_task: Optional[asyncio.Task] = None
+        if heartbeat_interval_s > 0:
+            heartbeat_task = asyncio.create_task(
+                _heartbeat_loop(progress_state, heartbeat_interval_s, indexing_message)
+            )
+
+        try:
+            force_serial = index_mode == "graph" and not should_bulk_insert_graph()
+            indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
+        finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await heartbeat_task
         emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
 
     if index_mode == "graph" and llm_api_base and llm_model:

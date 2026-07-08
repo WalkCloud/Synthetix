@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BrainstormSession, BrainstormMessage, BrainstormOutline, Phase } from "./types";
+import { inferSessionPhase, type OutlineTaskLike } from "@/lib/brainstorm/session-phase";
 import { useLocale } from "@/lib/i18n";
 
 export function useBrainstormSessions() {
@@ -32,18 +33,30 @@ export function useBrainstormSessions() {
       if (parsedOutline) {
         setPhase("ready");
       } else {
-        setPhase("gathering");
-        const taskRes = await fetch(`/api/v1/tasks?type=outline_generate&status=pending,running`).catch(() => null);
+        // No outline yet. Phase is not persisted server-side, so re-derive it
+        // from the session's outline_generate tasks. We fetch pending/running
+        // AND failed in one go: an active task means "polling" (ready), while a
+        // failed task (with no active one) means "generation failed, show the
+        // retry panel" — also ready, which renders page.tsx's failed/retry UI.
+        // Without the failed branch, a session whose outline task timed out
+        // would be stuck at "gathering" with no way to regenerate.
+        const taskRes = await fetch(`/api/v1/tasks?type=outline_generate&status=pending,running,failed`).catch(() => null);
+        let sessionTasks: OutlineTaskLike[] = [];
         if (taskRes) {
           const taskData = await taskRes.json().catch(() => null);
-          if (taskData?.success && taskData.data?.length > 0) {
-            const activeTask = taskData.data.find((t: { sessionId: string | null }) => t.sessionId === id);
-            if (activeTask) {
-              setOutlineTaskId(activeTask.id);
-              setPhase("ready");
-            }
+          if (taskData?.success && Array.isArray(taskData.data)) {
+            sessionTasks = taskData.data.filter((t: OutlineTaskLike) => t.sessionId === id);
           }
         }
+        const activeTask = sessionTasks.find(
+          (t) => t.status === "pending" || t.status === "running",
+        );
+        if (activeTask?.id) {
+          // Only resume polling for tasks that can still progress; a failed
+          // task has nothing to poll.
+          setOutlineTaskId(activeTask.id);
+        }
+        setPhase(inferSessionPhase(false, sessionTasks, id));
       }
     }
     setLoading(false);

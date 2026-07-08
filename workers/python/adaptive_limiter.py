@@ -44,6 +44,16 @@ LATENCY_THRESHOLD = float(os.environ.get("LLM_LIMITER_LATENCY_THRESHOLD", "1.5")
 HEADROOM = float(os.environ.get("LLM_LIMITER_HEADROOM", "0.8"))
 AI_STEP_TOKENS = int(os.environ.get("LLM_LIMITER_AI_STEP_TOKENS", "4000"))
 CEILING_CAP_TOKENS = int(os.environ.get("LLM_LIMITER_CEILING_CAP_TOKENS", "500000"))
+# Optimistic starting budget for a provider with NO persisted capacity record.
+# Previously this was FLOOR_TOKENS (4000), forcing every new provider through a
+# 4-16 min slow-start climb (24 consecutive successes) before reaching full
+# concurrency — so switching from Volcengine to DeepSeek/Qwen/Claude/ChatGPT
+# always paid a multi-minute "cold start tax". Most mainstream providers
+# tolerate ≥8 concurrent extraction calls, so we start optimistic (32000 ≈
+# dynamic_max 8) and let AIMD multiplicative-decrease rein it in IF a real 429
+# happens. This is provider-agnostic: no per-vendor config, just "trust first,
+# converge on evidence".
+INITIAL_BUDGET_TOKENS = int(os.environ.get("LLM_LIMITER_INITIAL_BUDGET_TOKENS", "32000"))
 ACQUIRE_TIMEOUT_S = 300  # fail-open after 5 min rather than deadlock
 PERSIST_INTERVAL_S = 30
 
@@ -138,10 +148,21 @@ class AdaptiveLimiter:
         # the AIMD-adaptive token budget (see _dynamic_max_requests), so it
         # scales with the provider's real capacity. This env var is only a hard
         # upper bound (ceiling) on that derivation — it prevents runaway
-        # concurrency even if the budget grows very large. Default 8: generous
-        # enough that the budget-derived value is the real limiter, while still
-        # capping total parallelism against provider RPM limits.
-        self._max_requests_cap = int(os.environ.get("LLM_LIMITER_MAX_REQUESTS_GRAPH", "8"))
+        # concurrency even if the budget grows very large. Default 16: mainstream
+        # providers (DeepSeek, OpenAI, Anthropic, Qwen) tolerate ≥8-16 concurrent
+        # graph-extraction calls; raising from 8 lets high-capacity providers
+        # achieve higher throughput while AIMD still bounds the actual value.
+        self._max_requests_cap = int(os.environ.get("LLM_LIMITER_MAX_REQUESTS_GRAPH", "16"))
+        # Floor on derived concurrency: even if the AIMD budget collapses (e.g.
+        # a provider's true capacity is genuinely low, or a bug under-counts
+        # tokens), we never let graph extraction degrade to fully serial (1
+        # in-flight). Network instability must not stall the whole pipeline by
+        # pinning concurrency to 1 — the per-request retry layer in rag_index.py
+        # handles transient blips. Default 2: keeps progress without overwhelming.
+        self._min_requests = int(os.environ.get("LLM_LIMITER_GRAPH_MIN_CONCURRENCY", "2"))
+        # Transient network-blip counter (observability only — does NOT shrink
+        # budget or enter cooldown). Incremented by notify_network_blip().
+        self._network_blips = 0
         # Token-budget condition: notified when inflight drops so waiters wake.
         self._cond = asyncio.Condition()
 
@@ -237,6 +258,24 @@ class AdaptiveLimiter:
         """Report a 429 the instant it's seen (anti-thundering-herd). Idempotent
         within a cooldown window — no double multiplicative-decrease."""
         await self._on_rate_limited()
+
+    async def notify_network_blip(self) -> None:
+        """Report a transient network error (timeout / econnreset / dns) that is
+        NOT a capacity/rate-limit signal.
+
+        Crucially this does NOT shrink the budget and does NOT enter the
+        single-flight cooldown. Many model providers have flaky connectivity
+        that is unrelated to load — treating those as 429s collapsed the AIMD
+        budget (×0.75 per blip) and, because AIMD recovers slowly (additive
+        +4000 per 20 successes), stranded graph extraction at concurrency=1
+        for the rest of the run. The per-request retry layer in rag_index.py
+        (_call_graph_llm_with_connection_retry, 3 attempts) already absorbs
+        transient blips; the limiter's job here is only to pause budget GROWTH
+        briefly (reset consecutive_successes) so we don't aggressively probe
+        upward through a noisy period.
+        """
+        self._network_blips += 1
+        self._consecutive_successes = 0
 
     # ── AIMD internals ──────────────────────────────────────────────────────
 
@@ -345,25 +384,39 @@ class AdaptiveLimiter:
         This is the key change: instead of a fixed _max_requests=1 that
         throttles even when the budget is large, the concurrency scales with
         the provider's discovered capacity:
-          - budget 4000 (floor)   → 1 concurrent request
+          - budget 4000 (floor)   → 1 concurrent request (raised to _min_requests)
           - budget 16000          → 4 concurrent requests
           - budget 32000+         → 8 (capped by _max_requests_cap)
 
-        When 429s shrink the budget, concurrency drops automatically — no
-        separate MD logic needed, the AIMD budget already encodes it.
+        When 429s shrink the budget, concurrency drops automatically — but it
+        is floored at _min_requests (default 2) so the pipeline never degrades
+        to fully serial just because AIMD is being conservative. Network blips
+        are handled separately (notify_network_blip) and do NOT shrink the
+        budget, so they cannot collapse concurrency either.
         """
         derived = max(1, self._budget // self._TOKENS_PER_GRAPH_REQUEST)
-        return min(derived, self._max_requests_cap)
+        return max(self._min_requests, min(derived, self._max_requests_cap))
 
 
 def get_limiter(provider_key: str) -> "AdaptiveLimiter":
     """Get or create the shared limiter for a provider, bootstrapped from the
-    persisted record (paid-once tuition)."""
+    persisted record (paid-once tuition).
+
+    Bootstrap budget (highest priority first):
+      1. Persisted discoveredCeiling × HEADROOM — we've probed this provider
+         before, start near the known ceiling (skip slow-start).
+      2. INITIAL_BUDGET_TOKENS (default 32000) — a fresh provider with no
+         history. Start OPTIMISTIC (≈ dynamic_max 8) instead of crawling up from
+         FLOOR_TOKENS over 4-16 min. AIMD multiplicative-decrease will rein it
+         in if a real 429 happens. This makes cold start provider-agnostic: no
+         per-vendor config, switching DeepSeek/Qwen/Claude/ChatGPT never pays a
+         multi-minute slow-start tax.
+    """
     if provider_key in AdaptiveLimiter._registry:
         return AdaptiveLimiter._registry[provider_key]
 
-    initial_budget = FLOOR_TOKENS
-    initial_ceiling = FLOOR_TOKENS
+    initial_budget = INITIAL_BUDGET_TOKENS
+    initial_ceiling = INITIAL_BUDGET_TOKENS
     rec = _read_store().get(provider_key)
     if rec:
         ceiling = int(rec.get("discoveredCeiling", 0) or 0)
@@ -385,14 +438,39 @@ def reset_registry_for_tests() -> None:
     AdaptiveLimiter._registry.clear()
 
 
-def _is_rate_limit_error(error: Exception) -> bool:
+def _is_capacity_error(error: Exception) -> bool:
+    """True ONLY for real rate-limit / capacity signals from the provider.
+
+    This is the set of failures that genuinely mean "you are sending too much"
+    and therefore justify shrinking the AIMD budget (multiplicative decrease)
+    and entering the single-flight cooldown. Treating anything broader (e.g.
+    network timeouts) as capacity errors is what historically collapsed the
+    budget and stranded graph extraction at concurrency=1.
+    """
     msg = f"{type(error).__name__}: {error}".lower()
     markers = (
         "429",
         "rate limit",
+        "rate_limit",
         "too many requests",
+        "quota",
         "503",
         "overload",
+        "service unavailable",
+    )
+    return any(marker in msg for marker in markers)
+
+
+def _is_network_error(error: Exception) -> bool:
+    """True for transient connectivity / network-instability signals.
+
+    These are NOT capacity signals — they're caused by flaky provider
+    connectivity, DNS hiccups, TCP resets, or the provider silently dropping a
+    long-running connection. They are handled by rag_index.py's per-request
+    retry layer (3 attempts with backoff) and must NOT shrink the AIMD budget.
+    """
+    msg = f"{type(error).__name__}: {error}".lower()
+    markers = (
         "timeout",
         "timed out",
         "etimedout",
@@ -406,9 +484,25 @@ def _is_rate_limit_error(error: Exception) -> bool:
         "econnreset",
         "connection reset",
         "connection refused",
+        "connection aborted",
+        "connection broken",
         "remote protocol error",
+        "socket hang up",
+        "socket closed",
+        "fetch failed",
+        "network",
     )
     return any(marker in msg for marker in markers)
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    """Back-compat shim: capacity OR network error.
+
+    Deprecated — new callers should use _is_capacity_error / _is_network_error
+    to route failures correctly (capacity → MD+cooldown; network → blip).
+    Kept so any external caller still works. Equivalent to the pre-fix union.
+    """
+    return _is_capacity_error(error) or _is_network_error(error)
 
 
 def wrap_llm_func(llm_func: Any, provider_key: str) -> Any:
@@ -442,17 +536,30 @@ def wrap_llm_func(llm_func: Any, provider_key: str) -> Any:
             return result
         except Exception as error:
             elapsed_ms = time.monotonic() * 1000.0 - started_ms
-            # Only capacity/congestion failures should shrink the learned window.
-            # Auth/model/schema errors are real failures, but treating them as
-            # 429s would incorrectly slow down every later graph extraction.
-            if _is_rate_limit_error(error):
-                # notify_rate_limited() fires the single-flight cooldown
-                # immediately (anti-thundering-herd); release() then records
-                # the 429 outcome + latency. The latency is still sampled so
-                # the EWMA baseline reflects the slow round-trip.
+            # Classify the failure so network instability is NOT mistaken for
+            # capacity pressure (the historical bug that collapsed the budget).
+            if _is_capacity_error(error):
+                # Real rate-limit / overload → shrink budget + single-flight
+                # cooldown (anti-thundering-herd). release() records the 429
+                # outcome; latency is still sampled so the EWMA baseline
+                # reflects the slow round-trip.
                 await limiter.notify_rate_limited()
                 await limiter.release(charge, status=429, latency_ms=elapsed_ms)
+            elif _is_network_error(error):
+                # Transient connectivity blip (timeout / reset / dns). The
+                # per-request retry layer in rag_index.py handles these; the
+                # limiter must NOT shrink the budget or enter cooldown, or a
+                # flaky provider would collapse concurrency to 1 for the rest
+                # of the run. We only pause budget growth (reset successes).
+                await limiter.notify_network_blip()
+                # Release as a benign 200 so AIMD neither rewards nor punishes:
+                # recordSuccess needs ≥K successes to grow, and we just reset
+                # the counter, so this won't inflate the budget either.
+                await limiter.release(charge, status=200, latency_ms=elapsed_ms)
             else:
+                # Auth/model/schema errors are real failures, but not capacity
+                # signals — release without AIMD learning (status 500 keeps the
+                # learned window from shrinking on real-but-non-capacity fails).
                 await limiter.release(charge, status=500, latency_ms=elapsed_ms)
             raise
 

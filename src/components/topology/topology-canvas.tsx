@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState, useEffect, useMemo } from "react";
+import { useTheme } from "next-themes";
 import type { TopologyNode, TopologyEdge } from "@/types/topology";
+import { useLocale } from "@/lib/i18n";
 import { TopologyDetailPanel } from "./topology-detail-panel";
 
 interface TopologyCanvasProps {
@@ -77,6 +79,11 @@ export function TopologyCanvas({
   }, [edges]);
   const isKnowledge = graphMode === "knowledge";
   const rotMul = isKnowledge ? 0.5 : 1;
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const { t } = useLocale();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -215,20 +222,45 @@ export function TopologyCanvas({
     willChange: "transform",
   };
 
+  // Theme-aware palette
+  const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(148, 163, 184, 0.30)";
+  const cardBg = isDark ? "rgba(17, 24, 39, 0.72)" : "rgba(255, 255, 255, 0.72)";
+  const draftIconBg = isDark ? "rgba(139, 92, 246, 0.18)" : "rgba(124, 58, 237, 0.10)";
+  const draftIconFg = isDark ? "#C4B5FD" : "#7C3AED";
+  const draftTitleColor = isDark ? "#F8FAFC" : "#0F172A";
+  const draftSubColor = isDark ? "rgba(248, 250, 252, 0.55)" : "rgba(15, 23, 42, 0.55)";
+  const draftSel = !!draftNode && draftNode.id === selectedNodeId;
+
   return (
     <div
       ref={containerRef}
       className="relative bg-background border border-border rounded-2xl overflow-hidden select-none"
       style={{ minHeight: 560, cursor: dragCardId.current ? "default" : rotating.current ? "grabbing" : "grab" }}
     >
-      <div className="absolute inset-0 opacity-30" style={{
-        backgroundImage: "radial-gradient(circle, #D4D0C8 1px, transparent 1px)",
+      {/* Theme-aware dot grid + faint violet/orange mesh glow for depth */}
+      <div className="absolute inset-0" style={{
+        backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
         backgroundSize: "24px 24px",
+      }} />
+      <div className="absolute inset-0 pointer-events-none" style={{
+        backgroundImage: isDark
+          ? "radial-gradient(at 22% 24%, rgba(139, 92, 246, 0.10) 0px, transparent 48%), radial-gradient(at 78% 80%, rgba(251, 146, 60, 0.06) 0px, transparent 48%)"
+          : "radial-gradient(at 22% 24%, rgba(124, 58, 237, 0.05) 0px, transparent 48%), radial-gradient(at 78% 80%, rgba(249, 115, 22, 0.03) 0px, transparent 48%)",
       }} />
 
       <div ref={wrapperRef} style={wrapperStyle}>
         <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          {items.map((it) => {
+          <defs>
+            {items.map((it, i) => (
+              // id must be ASCII-safe: node ids can contain Chinese chars or
+              // dots (e.g. ".docx") which break url(#…) CSS selector parsing.
+              <linearGradient key={`g-${i}`} id={`g-${i}`} x1={cx} y1={cy} x2={it.x} y2={it.y} gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor={isDark ? "#8B5CF6" : "#7C3AED"} />
+                <stop offset="100%" stopColor={it.color} />
+              </linearGradient>
+            ))}
+          </defs>
+          {items.map((it, i) => {
             const sel = it.id === selectedNodeId;
             if (isKnowledge) {
               const connectedEdges = edgesByTarget.get(it.id) ?? [];
@@ -241,9 +273,25 @@ export function TopologyCanvas({
                 );
               });
             }
+            // Curved bezier edge (center → reference): offset the midpoint along
+            // the perpendicular so parallel links fan out instead of overlapping.
+            const dx = it.x - cx;
+            const dy = it.y - cy;
+            const len = Math.hypot(dx, dy) || 1;
+            const curve = Math.min(40, len * 0.12);
+            const ox = (-dy / len) * curve;
+            const oy = (dx / len) * curve;
+            const mx = (cx + it.x) / 2 + ox;
+            const my = (cy + it.y) / 2 + oy;
             return (
-              <line key={it.id} x1={cx} y1={cy} x2={it.x} y2={it.y}
-                stroke={it.color} strokeWidth={sel ? 2.5 : 1.5} opacity={sel ? 0.7 : 0.35} />
+              <path key={it.id}
+                d={`M ${cx} ${cy} Q ${mx} ${my} ${it.x} ${it.y}`}
+                fill="none"
+                stroke={`url(#g-${i})`}
+                strokeWidth={sel ? 2.5 : 1.5}
+                strokeLinecap="round"
+                opacity={sel ? 0.9 : 0.55}
+              />
             );
           })}
         </svg>
@@ -255,22 +303,27 @@ export function TopologyCanvas({
             <div key={it.id}
               data-card-id={it.id}
               title={it.label}
-              className="absolute bg-card rounded-xl flex items-center gap-2 px-2.5 overflow-hidden"
+              className="absolute rounded-xl flex items-center gap-2 px-2.5 overflow-hidden"
               style={{
                 left: it.x - 75, top: it.y - 26, width: 150, height: 52,
                 borderWidth: 1.5, borderStyle: "solid",
                 borderColor: sel ? it.color : "var(--border)",
-                backgroundColor: sel ? it.bg : undefined,
-                boxShadow: sel ? `0 4px 16px ${it.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
+                backgroundColor: sel ? it.bg : cardBg,
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
+                boxShadow: sel
+                  ? `0 6px 24px -4px ${it.color}40, 0 0 0 1px ${it.color}20, 0 1px 0 ${isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.5)"} inset`
+                  : `0 2px 8px -2px rgba(0,0,0,${isDark ? 0.4 : 0.06}), 0 1px 0 ${isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.5)"} inset`,
                 zIndex: isDragging ? 30 : sel ? 25 : 15,
                 cursor: isDragging ? "grabbing" : "grab",
-                transition: isDragging ? "none" : "box-shadow 0.15s, border-color 0.15s",
-                transform: "rotate(calc(-1 * var(--rotation-deg, 0deg)))",
+                transition: isDragging ? "none" : "box-shadow 0.2s, border-color 0.2s, transform 0.2s",
+                transform: sel ? "rotate(calc(-1 * var(--rotation-deg, 0deg))) translateY(-2px)" : "rotate(calc(-1 * var(--rotation-deg, 0deg)))",
               }}
               onClick={() => { if (!dragHasMoved.current) onNodeClick(it.id); }}
               onDoubleClick={() => { if (!dragHasMoved.current && onNodeDblClick) onNodeDblClick(it.id); }}
             >
-              <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: it.bg }}>
+              <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                style={{ backgroundColor: sel ? it.bg : `${it.color}1A`, boxShadow: `0 0 8px ${it.color}30` }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={it.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
@@ -289,25 +342,35 @@ export function TopologyCanvas({
 
       {draftNode && (
         <div
-          className="absolute flex flex-col items-center justify-center text-white text-center rounded-2xl cursor-pointer"
+          className="absolute flex flex-col items-center justify-center text-center rounded-2xl cursor-pointer"
           style={{
             left: cx - 90, top: cy - 55, width: 180, height: 110,
-            background: "linear-gradient(135deg, #7C3AED, #5B21B6)",
-            boxShadow: "0 8px 40px rgba(124, 58, 237, 0.3)",
+            backgroundColor: cardBg,
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderWidth: 1.5,
+            borderStyle: "solid",
+            borderColor: draftSel ? (isDark ? "#8B5CF6" : "#7C3AED") : "var(--border)",
+            // Soft violet glow ring replaces the old solid purple gradient.
+            boxShadow: draftSel
+              ? `0 0 0 1px ${isDark ? "rgba(139,92,246,0.5)" : "rgba(124,58,237,0.4)"}, 0 8px 32px -6px ${isDark ? "rgba(139,92,246,0.45)" : "rgba(124,58,237,0.30)"}, 0 0 28px ${isDark ? "rgba(139,92,246,0.18)" : "rgba(124,58,237,0.12)"}, 0 1px 0 ${isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.6)"} inset`
+              : `0 8px 32px -6px ${isDark ? "rgba(139,92,246,0.28)" : "rgba(124,58,237,0.18)"}, 0 0 22px ${isDark ? "rgba(139,92,246,0.10)" : "rgba(124,58,237,0.06)"}, 0 1px 0 ${isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.6)"} inset`,
             zIndex: 20,
+            transition: "box-shadow 0.25s, border-color 0.25s",
           }}
           onClick={() => onNodeClick(draftNode.id)}
         >
-          <div className="w-10 h-10 rounded-xl bg-foreground/10 flex items-center justify-center mb-1.5">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-1.5"
+            style={{ backgroundColor: draftIconBg }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={draftIconFg} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <polyline points="14 2 14 8 20 8" />
               <line x1="16" y1="13" x2="8" y2="13" />
               <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
           </div>
-          <span className="text-[13px] font-bold leading-tight line-clamp-2 px-4">{draftNode.label}</span>
-          <span className="text-[10px] text-white/60 mt-0.5">
+          <span className="text-[13px] font-bold font-display leading-tight line-clamp-2 px-4" style={{ color: draftTitleColor }}>{draftNode.label}</span>
+          <span className="text-[10px] mt-0.5" style={{ color: draftSubColor }}>
             {draftNode.totalReferences ?? refNodes.length} refs
             {draftNode.sectionsWithReferences !== undefined && draftNode.totalSections !== undefined
               ? ` · ${draftNode.sectionsWithReferences}/${draftNode.totalSections} sections`
@@ -317,7 +380,7 @@ export function TopologyCanvas({
       )}
 
       <div className="absolute bottom-3 left-4 text-[10px] text-muted-foreground select-none pointer-events-none">
-        Drag to rotate
+        {t.topology.dragToRotate}
       </div>
 
       {selectedNode && (

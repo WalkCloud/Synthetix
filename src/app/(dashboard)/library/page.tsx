@@ -40,7 +40,7 @@ export default function LibraryPage() {
     if (sortBy === "Name A-Z") { params.set("sort", "originalName"); params.set("order", "asc"); }
     else if (sortBy === "Size") { params.set("sort", "originalSize"); params.set("order", "desc"); }
     else { params.set("sort", "createdAt"); params.set("order", "desc"); }
-    if (filterFormat !== "All") params.set("format", filterFormat.toLowerCase());
+    if (filterFormat !== "All") params.set("format", filterFormat);
     if (filterStatus !== "all") params.set("status", filterStatus);
     try {
       const res = await fetch(`/api/v1/library/documents?${params}`);
@@ -59,11 +59,24 @@ export default function LibraryPage() {
   useEffect(() => {
     const hasProcessing = documents.some((d) =>
       ["uploading", "queued", "converting", "splitting", "embedding", "indexing"].includes(d.status)
+      || d.displayStatus === "enhancing"
     );
     if (!hasProcessing) return;
+    // The list API already returns overallPercent + activeStageKey + graphTaskId
+    // per doc, so re-fetching documents refreshes every row's progress bar in
+    // one call — no separate tasks polling needed.
     const interval = setInterval(() => fetchDocs(page), 5000);
     return () => clearInterval(interval);
   }, [documents, page, fetchDocs]);
+
+  async function handleCancelGraph(taskId: string) {
+    try {
+      await fetch(`/api/v1/tasks/${taskId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
+      fetchDocs(page);
+    } catch (e) {
+      console.error("Cancel failed:", e);
+    }
+  }
 
   // 打开单文档删除确认对话框（实际删除在 handleConfirmDelete 里执行）
   function handleDelete(docId: string) {
@@ -120,8 +133,6 @@ export default function LibraryPage() {
 
   const statDocs = total || documents.length;
   const statChunks = useMemo(() => documents.reduce((sum, d) => sum + (d.chunks?.length || 0), 0), [documents]);
-  const statReady = useMemo(() => documents.filter((d) => d.status === "ready").length, [documents]);
-  const statIndexed = documents.length > 0 ? Math.round((statReady / documents.length) * 100) : 0;
   const statSize = useMemo(() => documents.reduce((sum, d) => sum + d.originalSize, 0), [documents]);
   const maxChunks = useMemo(() => Math.max(1, ...documents.map((d) => d.chunks?.length || 0)), [documents]);
 
@@ -136,7 +147,6 @@ export default function LibraryPage() {
         <StatsRibbon
           docCount={statDocs}
           chunkCount={statChunks}
-          indexedPct={statIndexed}
           totalSizeMb={(statSize / 1048576).toFixed(1)}
         />
         <DocumentTable
@@ -156,6 +166,7 @@ export default function LibraryPage() {
           filterStatus={filterStatus}
           setFilterStatus={(s) => { setFilterStatus(s); setPage(1); }}
           totalCount={total}
+          onCancelGraph={handleCancelGraph}
         />
         {total > limit && (
           <div className="flex items-center justify-center gap-1 mt-6">

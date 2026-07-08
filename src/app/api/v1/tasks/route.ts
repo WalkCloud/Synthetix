@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import { parseTaskInput, parseTaskResult } from "@/lib/queue/task-json";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
@@ -39,16 +40,10 @@ export async function GET(request: Request) {
 
   return successResponse(
     tasks.map((t) => {
-      let input: Record<string, unknown> | null = null;
-      let result: unknown = null;
-      try {
-        input = t.inputData ? JSON.parse(t.inputData) as Record<string, unknown> : null;
-      } catch {}
-      if (includeResultData) {
-        try {
-          result = t.resultData ? JSON.parse(t.resultData) : null;
-        } catch {}
-      }
+      const input = parseTaskInput<Record<string, unknown> | null>(t.inputData, null);
+      const result = includeResultData
+        ? parseTaskResult<unknown>(t.resultData, null)
+        : null;
 
       return {
         id: t.id,
