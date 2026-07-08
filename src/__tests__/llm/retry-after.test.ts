@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseRetryAfterMs, computeBackoffMs } from "@/lib/llm/retry-after";
+import { parseRetryAfterMs, computeBackoffMs, isBalanceExhausted } from "@/lib/llm/retry-after";
 
 describe("parseRetryAfterMs", () => {
   it("parses delta-seconds form", () => {
@@ -93,5 +93,79 @@ describe("computeBackoffMs", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     expect(computeBackoffMs("0", 3)).toBe(0);
     expect(computeBackoffMs(null, 3)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("computeBackoffMs / parseRetryAfterMs — capacityMode", () => {
+  beforeEach(() => {
+    // Deterministic jitter (Math.random() → 0.5 → no offset).
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("capacityMode honours a long Retry-After instead of clamping to 5min", () => {
+    // "18000" seconds = 5h. Without capacityMode this clamps to 5min.
+    // With capacityMode it should honour the full 5h (18_000_000 ms).
+    expect(parseRetryAfterMs("18000", { capacityMode: true })).toBe(18_000_000);
+    expect(computeBackoffMs("18000", 3, Date.now(), { capacityMode: true })).toBe(18_000_000);
+  });
+
+  it("capacityMode honours a 1-hour Retry-After", () => {
+    // 3600s = 1h = 3_600_000 ms. Default mode clamps to 5min (300_000).
+    expect(parseRetryAfterMs("3600")).toBe(300_000); // default clamps
+    expect(parseRetryAfterMs("3600", { capacityMode: true })).toBe(3_600_000);
+  });
+
+  it("capacityMode still clamps at the 6h ceiling", () => {
+    // 100000s ≈ 27.7h — even capacityMode shouldn't wait forever.
+    const result = parseRetryAfterMs("100000", { capacityMode: true });
+    expect(result).toBe(6 * 60 * 60 * 1000); // 6h cap
+  });
+
+  it("default mode unchanged for small values", () => {
+    // capacityMode must not change behaviour for sub-ceiling values.
+    expect(parseRetryAfterMs("120")).toBe(120_000);
+    expect(parseRetryAfterMs("120", { capacityMode: true })).toBe(120_000);
+  });
+});
+
+describe("isBalanceExhausted", () => {
+  it("detects OpenAI insufficient_quota on 429", () => {
+    expect(isBalanceExhausted(429, '{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}')).toBe(true);
+  });
+
+  it("detects HTTP 402 Payment Required", () => {
+    expect(isBalanceExhausted(402, "payment required")).toBe(true);
+    expect(isBalanceExhausted(402, '{"error":"billing: payment_required"}')).toBe(true);
+  });
+
+  it("detects Chinese providers' 余额不足 / 充值 markers", () => {
+    expect(isBalanceExhausted(429, '{"error":{"message":"余额不足，请充值"}}')).toBe(true);
+    expect(isBalanceExhausted(429, "account balance is zero, please top up")).toBe(true);
+  });
+
+  it("detects credit / billing markers", () => {
+    expect(isBalanceExhausted(429, "no enough balance")).toBe(true);
+    expect(isBalanceExhausted(403, '{"error":"credit exhausted"}')).toBe(true);
+  });
+
+  it("does NOT match ordinary rate-limit 429s (no billing markers)", () => {
+    // A plain rate-limit must still retry — only billing failures short-circuit.
+    expect(isBalanceExhausted(429, '{"error":{"code":"rate_limit_exceeded"}}')).toBe(false);
+    expect(isBalanceExhausted(429, "Too Many Requests")).toBe(false);
+    expect(isBalanceExhausted(429, "server overloaded")).toBe(false);
+    expect(isBalanceExhausted(503, "service unavailable")).toBe(false);
+  });
+
+  it("does NOT match non-billing statuses", () => {
+    expect(isBalanceExhausted(400, "insufficient_quota")).toBe(false);
+    expect(isBalanceExhausted(500, "billing error")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isBalanceExhausted(429, "INSUFFICIENT_QUOTA")).toBe(true);
+    expect(isBalanceExhausted(429, "Balance Is Zero")).toBe(true);
   });
 });

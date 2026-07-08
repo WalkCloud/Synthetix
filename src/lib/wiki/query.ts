@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { tokenizeChinese } from "@/lib/search/tokenizer";
 import { searchWikiFts, isWikiFtsEnabled, removeWikiFtsForEntries } from "@/lib/search/wiki-fts";
 import { tokenizeTitle } from "@/lib/wiki/merger";
+import { parseWikiSourceRefs } from "@/lib/wiki/source-refs";
 import type { LLMProvider } from "@/lib/llm/types";
 import type { WikiEntryView, WikiSourceRef } from "@/lib/wiki/types";
 
@@ -260,12 +261,8 @@ export async function getEntriesForDocument(userId: string, documentId: string):
   });
   return entries
     .filter((e) => {
-      try {
-        const refs = JSON.parse(e.sourceRefs) as Array<{ documentId?: string }>;
-        return Array.isArray(refs) && refs.some((r) => r.documentId === documentId);
-      } catch {
-        return false;
-      }
+      const refs = parseWikiSourceRefs(e.sourceRefs);
+      return refs.some((r) => r.documentId === documentId);
     })
     .map(toView);
 }

@@ -27,6 +27,8 @@ interface DocumentTableProps {
   filterStatus: string;
   setFilterStatus: (v: string) => void;
   totalCount: number;
+  /** Cancel an in-flight graph task by its id (shows the Cancel button). */
+  onCancelGraph?: (taskId: string) => void;
 }
 
 export function DocumentTable({
@@ -46,6 +48,7 @@ export function DocumentTable({
   filterStatus,
   setFilterStatus,
   totalCount,
+  onCancelGraph,
 }: DocumentTableProps) {
   const { t, format } = useLocale();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -78,8 +81,24 @@ export function DocumentTable({
     setSelectedIds(new Set());
   };
 
+  // Filter chips: friendly display label + real format value sent to the API.
+  // The format values must match `originalFormat` (the stored extension), so
+  // the Markdown chip filters on "md" — the previous "Markdown".toLowerCase()
+  // produced "markdown", which matched nothing.
+  const FORMAT_FILTERS = [
+    { label: "PDF", format: "pdf" },
+    { label: "DOCX", format: "docx" },
+    { label: "PPTX", format: "pptx" },
+    { label: "HTML", format: "html" },
+    { label: "EPUB", format: "epub" },
+    { label: "TXT", format: "txt" },
+    { label: "Markdown", format: "md" },
+  ] as const;
+
   const activeFilters = [
-    filterFormat !== "All" ? filterFormat : null,
+    filterFormat !== "All"
+      ? FORMAT_FILTERS.find((f) => f.format === filterFormat)?.label ?? filterFormat
+      : null,
     filterStatus !== "all" ? filterStatus : null,
   ].filter(Boolean);
   const statusLabels: Record<string, string> = {
@@ -104,13 +123,13 @@ export function DocumentTable({
   return (
     <div className="animate-fade-in-up space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
-        {["All", "PDF", "DOCX", "PPTX", "Markdown"].map((f) => (
+        {[{ label: "All", format: "All" }, ...FORMAT_FILTERS].map((f) => (
           <button
-            key={f}
-            onClick={() => setFilterFormat(f)}
-            className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f ? "border-primary text-primary bg-primary-100" : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}
+            key={f.format}
+            onClick={() => setFilterFormat(f.format)}
+            className={`px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all ${filterFormat === f.format ? "border-primary text-primary bg-primary-100" : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary-50"}`}
           >
-            {f === "All" ? t.common.states.all : f}
+            {f.format === "All" ? t.common.states.all : f.label}
           </button>
         ))}
       </div>
@@ -340,10 +359,24 @@ export function DocumentTable({
                               </span>
                             )}
                           </div>
+                        ) : (ds === "processing" && typeof doc.overallPercent === "number" && doc.overallPercent < 100) ? (
+                          // Processing (convert/embed/index still running — basic
+                          // retrieval NOT yet usable): show the active stage name
+                          // with a spinner, NO percentage. The stage label
+                          // (转换/嵌入) tells the user WHAT is happening without a
+                          // number that lingers. Once basic retrieval is ready the
+                          // status flips to "enhancing" (see next branch).
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-950/35 dark:text-sky-300 whitespace-nowrap">
+                            <span className="inline-block animate-spin">⟳</span>
+                            {doc.activeStageKey ? (t.library.detail[doc.activeStageKey as keyof typeof t.library.detail] as string | undefined) ?? t.common.states.processing : t.common.states.processing}
+                          </span>
                         ) : enhancing ? (
-                          // Basic retrieval is usable while Graph/Wiki branches
-                          // still run — distinct sky badge, NOT generic "ready",
-                          // so it matches the detail page's "enhancing" badge.
+                          // Enhancing: basic retrieval is READY and usable while
+                          // Graph/Wiki branches continue in the background. This is
+                          // the key UX signal — the user doesn't have to wait for
+                          // the (slow) graph extraction to finish before they can
+                          // search/use the document. Distinct sky badge, NOT generic
+                          // "ready", so it matches the detail page's badge.
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-950/35 dark:text-sky-300 whitespace-nowrap">
                             <span className="inline-block animate-spin">⟳</span> {t.common.states.enhancing}
                           </span>
@@ -404,6 +437,17 @@ export function DocumentTable({
                               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                             </svg>
                           </button>
+                          {doc.graphTaskId && onCancelGraph && (
+                            <button
+                              onClick={() => onCancelGraph(doc.graphTaskId!)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-amber-100 dark:hover:bg-amber-950/40 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                              title={t.common.actions.cancel}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                                <rect x="6" y="6" width="12" height="12" rx="2" />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             onClick={() => onDelete(doc.id)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-red-100 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition-colors"

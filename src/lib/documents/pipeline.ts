@@ -25,20 +25,7 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
 
-async function boundedAll<T>(items: T[], fn: (item: T) => Promise<unknown>, concurrency: number): Promise<void> {
-  let idx = 0;
-  const workers: Promise<void>[] = [];
-  for (let w = 0; w < Math.min(concurrency, items.length); w++) {
-    workers.push((async () => {
-      while (idx < items.length) {
-        const i = idx++;
-        if (i >= items.length) break;
-        await fn(items[i]);
-      }
-    })());
-  }
-  await Promise.all(workers);
-}
+import { mapBounded } from "@/lib/concurrency/bounded";
 
 type ModelWithProvider = ModelConfig & { provider: ModelProvider };
 
@@ -306,10 +293,10 @@ export async function splitAndPersistChunks(
       })),
     });
 
-    await boundedAll(
+    await mapBounded(
       chunks,
-      (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
       4,
+      (chunk) => storage.saveChunk(docId, chunk.index, chunk.content, ctx.doc.userId),
     );
   } else {
     await db.documentChunk.deleteMany({ where: { documentId: docId } });

@@ -226,18 +226,30 @@ function parseRagConfig(section: { ragMode?: string; ragDocumentIds?: string | n
   return { mode, documentIds };
 }
 
-export async function generateSectionFull(
-  draft: ContextInput["draft"],
-  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
-  completedSections: ContextInput["completedSections"],
-  userId: string,
-  constraints?: ContextInput["constraints"],
-  customModelConfigId?: string,
-): Promise<FullGenerationResult> {
-  let provider: ReturnType<typeof createLLMProvider>;
-  let modelId: string;
-  let modelConfigId: string;
+// ─── Internal deep module: shared generation context preparation ────────────
+// Extracted from generateSectionFull/generateSectionStream to eliminate 80%
+// duplicate code (design §4.3). Both functions now delegate to this helper,
+// ensuring enrichment, wiki retrieval, RAG, and context assembly stay in sync.
 
+interface PreparedGenerationContext {
+  provider: ReturnType<typeof createLLMProvider>;
+  modelId: string;
+  modelConfigId: string;
+  messages: ReturnType<typeof assembleContext>;
+  ragReferences: ContextInput["ragReferences"];
+  wikiEntries: NonNullable<ContextInput["wikiEntries"]>;
+  wikiEntryIds: string[];
+}
+
+/** Resolve the LLM provider/model, preferring an explicit custom config. */
+async function resolveGenerationProvider(
+  userId: string,
+  customModelConfigId?: string,
+): Promise<{
+  provider: ReturnType<typeof createLLMProvider>;
+  modelId: string;
+  modelConfigId: string;
+}> {
   if (customModelConfigId) {
     const { db } = await import("@/lib/db");
     const modelConfig = await db.modelConfig.findUnique({
@@ -247,19 +259,40 @@ export async function generateSectionFull(
     if (!modelConfig?.provider) {
       throw new Error(`Model config ${customModelConfigId} not found`);
     }
-    provider = createLLMProvider({
-      apiBaseUrl: modelConfig.provider.apiBaseUrl,
-      apiKey: modelConfig.provider.apiKey,
-      providerType: modelConfig.provider.providerType,
-    });
-    modelId = modelConfig.modelId;
-    modelConfigId = modelConfig.id;
-  } else {
-    const resolved = await getLLMClient("writing", userId);
-    provider = resolved.provider;
-    modelId = resolved.modelId;
-    modelConfigId = resolved.modelConfigId;
+    return {
+      provider: createLLMProvider({
+        apiBaseUrl: modelConfig.provider.apiBaseUrl,
+        apiKey: modelConfig.provider.apiKey,
+        providerType: modelConfig.provider.providerType,
+      }),
+      modelId: modelConfig.modelId,
+      modelConfigId: modelConfig.id,
+    };
   }
+  const resolved = await getLLMClient("writing", userId);
+  return {
+    provider: resolved.provider,
+    modelId: resolved.modelId,
+    modelConfigId: resolved.modelConfigId,
+  };
+}
+
+/**
+ * Prepare the full generation context: resolve provider → concurrently
+ * enrich + fetch wiki → fetch RAG → build constraints → assemble messages.
+ *
+ * Shared by generateSectionFull and generateSectionStream so enrichment,
+ * wiki, RAG, and context assembly can never drift out of sync.
+ */
+async function prepareGenerationContext(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string,
+): Promise<PreparedGenerationContext> {
+  const { provider, modelId, modelConfigId } = await resolveGenerationProvider(userId, customModelConfigId);
 
   // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
   // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
@@ -314,10 +347,33 @@ export async function generateSectionFull(
     constraints: effectiveConstraints,
   }, detectDocLocale(draft.title));
 
+  return {
+    provider,
+    modelId,
+    modelConfigId,
+    messages,
+    ragReferences: allReferences,
+    wikiEntries: wiki.entries,
+    wikiEntryIds: wiki.usedEntryIds,
+  };
+}
+
+export async function generateSectionFull(
+  draft: ContextInput["draft"],
+  section: ContextInput["section"] & { constraints?: string | null; ragMode?: string; ragDocumentIds?: string | null },
+  completedSections: ContextInput["completedSections"],
+  userId: string,
+  constraints?: ContextInput["constraints"],
+  customModelConfigId?: string,
+): Promise<FullGenerationResult> {
+  const ctx = await prepareGenerationContext(
+    draft, section, completedSections, userId, constraints, customModelConfigId,
+  );
+
   try {
-    const response = await provider.chat({
-      model: modelId,
-      messages,
+    const response = await ctx.provider.chat({
+      model: ctx.modelId,
+      messages: ctx.messages,
       temperature: GENERATION_TEMPERATURE,
     });
 
@@ -329,7 +385,7 @@ export async function generateSectionFull(
 
     await recordTokenUsageSafely({
       userId,
-      modelConfigId,
+      modelConfigId: ctx.modelConfigId,
       module: "writing",
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
@@ -339,9 +395,9 @@ export async function generateSectionFull(
       content: response.content,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
-      modelConfigId,
-      ragReferences: allReferences,
-      wikiEntries: wiki.entries,
+      modelConfigId: ctx.modelConfigId,
+      ragReferences: ctx.ragReferences,
+      wikiEntries: ctx.wikiEntries,
     };
   } catch (error: unknown) {
     const message =
@@ -358,93 +414,18 @@ export async function generateSectionStream(
   constraints?: ContextInput["constraints"],
   customModelConfigId?: string
 ) {
-  let provider: ReturnType<typeof createLLMProvider>;
-  let modelId: string;
-  let modelConfigId: string;
-
-  if (customModelConfigId) {
-    const { db } = await import("@/lib/db");
-    const modelConfig = await db.modelConfig.findUnique({
-      where: { id: customModelConfigId },
-      include: { provider: true },
-    });
-    if (!modelConfig?.provider) {
-      throw new Error(`Model config ${customModelConfigId} not found`);
-    }
-    provider = createLLMProvider({
-      apiBaseUrl: modelConfig.provider.apiBaseUrl,
-      apiKey: modelConfig.provider.apiKey,
-      providerType: modelConfig.provider.providerType,
-    });
-    modelId = modelConfig.modelId;
-    modelConfigId = modelConfig.id;
-  } else {
-    const resolved = await getLLMClient("writing", userId);
-    provider = resolved.provider;
-    modelId = resolved.modelId;
-    modelConfigId = resolved.modelConfigId;
-  }
-
-  // Enrichment and Wiki retrieval are independent: enrichment tunes the LLM
-  // prompt (effectiveConstraints) while Wiki is a pure SQL+rewrite recall that
-  // does not consume enrichment output. Run them concurrently to cut one serial
-  // LLM round-trip off the pre-stream critical path. RAG still runs after Wiki
-  // because its limit depends on the Wiki entry count.
-  const [enrichment, wiki] = await Promise.all([
-    enrichSectionContext(section, draft.title, provider, modelId),
-    fetchWikiContext(draft.title, section, userId, provider, modelId),
-  ]);
-
-  const wikiRefs: ContextInput["ragReferences"] = wiki.entries.map((e) => ({
-    documentName: "Knowledge Base",
-    title: e.title,
-    content: e.content,
-    score: e.confidence,
-    sourceType: "wiki" as const,
-  }));
-
-  const ragReferences = await fetchRagReferences(
-    draft.title,
-    section,
-    userId,
-    parseRagConfig(section),
-    wiki.entries.length >= 3 ? Math.ceil(RAG_REFERENCE_LIMIT / 2) : RAG_REFERENCE_LIMIT,
+  const ctx = await prepareGenerationContext(
+    draft, section, completedSections, userId, constraints, customModelConfigId,
   );
 
-  const allReferences = [...wikiRefs, ...ragReferences];
-
-  const baseConstraints = buildEffectiveConstraints(
-    section.constraints,
-    constraints,
-  );
-
-  const effectiveConstraints = baseConstraints || enrichment.retrievalQuery || enrichment.writingRequirements
-    ? {
-        ...baseConstraints,
-        retrievalQuery: baseConstraints?.retrievalQuery || enrichment.retrievalQuery,
-        referenceHints: baseConstraints?.referenceHints || enrichment.referenceHints,
-        writingRequirements: baseConstraints?.writingRequirements || enrichment.writingRequirements,
-        additionalRequirements: baseConstraints?.additionalRequirements,
-      }
-    : undefined;
-
-  const messages = assembleContext({
-    draft,
-    section,
-    completedSections,
-    ragReferences: allReferences,
-    wikiEntries: wiki.entries,
-    constraints: effectiveConstraints,
-  }, detectDocLocale(draft.title));
-
-  const stream = provider.chatStream({
-    model: modelId,
-    messages,
+  const stream = ctx.provider.chatStream({
+    model: ctx.modelId,
+    messages: ctx.messages,
     temperature: GENERATION_TEMPERATURE,
     stream: true,
   });
 
-  return { stream, modelConfigId, ragReferences: allReferences, wikiEntries: wiki.entries, wikiEntryIds: wiki.usedEntryIds };
+  return { stream, modelConfigId: ctx.modelConfigId, ragReferences: ctx.ragReferences, wikiEntries: ctx.wikiEntries, wikiEntryIds: ctx.wikiEntryIds };
 }
 
 export interface CompareStreamCallbacks {

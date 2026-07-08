@@ -33,6 +33,12 @@ export async function buildTopology(draftId: string) {
   const groupMap = new Map<string, ReferenceGroup>();
   for (const section of sections) {
     for (const ref of section.references) {
+      // Only real uploaded-document chunks belong in the topology.
+      // Exclude synthetic retrieval sources: "wiki" (LLM-distilled entries,
+      // documentName hardcoded to "Knowledge Base") and "rag_graph" (entity
+      // names from the knowledge graph). They are not files the user uploaded
+      // and only confuse the "which documents did I reference?" mental model.
+      if (ref.sourceType !== "rag_chunk") continue;
       const groupKey = ref.documentName || `id:${ref.documentId || "unknown"}`;
       const existing = groupMap.get(groupKey);
       if (existing) {

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { buildSpecFromRawPrompt } from "@/lib/writing/diagram-spec";
 import { renderDiagramSvg } from "@/lib/writing/diagram-renderer";
 import { generateImageAsset } from "@/lib/writing/image-generator";
+import { mergeAssetMetadata } from "@/lib/writing/asset-metadata";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
 
@@ -60,8 +61,7 @@ export async function generateDiagramAsset(assetId: string, userId?: string): Pr
         path: relativePath,
         mimeType: "image/svg+xml",
         status: "ready",
-        metadata: JSON.stringify({
-          ...(asset.metadata ? JSON.parse(asset.metadata) : {}),
+        metadata: mergeAssetMetadata(asset.metadata, {
           spec,
           generatedAt: new Date().toISOString(),
         }),
@@ -75,8 +75,7 @@ export async function generateDiagramAsset(assetId: string, userId?: string): Pr
       where: { id: assetId },
       data: {
         status: "failed",
-        metadata: JSON.stringify({
-          ...(asset.metadata ? JSON.parse(asset.metadata) : {}),
+        metadata: mergeAssetMetadata(asset.metadata, {
           error: message,
           failedAt: new Date().toISOString(),
         }),
