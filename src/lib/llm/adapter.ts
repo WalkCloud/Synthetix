@@ -13,7 +13,7 @@ import {
   buildModelsUrl,
   buildProviderHeaders,
 } from "./provider-endpoints";
-import { computeBackoffMs, delay } from "./retry-after";
+import { computeBackoffMs, delay, isBalanceExhausted } from "./retry-after";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 import {
@@ -21,6 +21,7 @@ import {
   EMBED_FETCH_TIMEOUT_MS,
   STREAM_READ_TIMEOUT_MS,
 } from "./env";
+import { fetchWithTimeout as fetchWithTimeoutRaw, estimateTokens } from "./http";
 
 interface AdapterConfig {
   baseUrl: string;
@@ -40,14 +41,9 @@ type EmbedResponseWithRateLimit = EmbedResponse & { rateLimit?: RateLimitInfo };
 // Timeouts are env-configurable via LLM_FETCH_TIMEOUT_MS / LM_EMBED_TIMEOUT_MS /
 // LLM_STREAM_READ_TIMEOUT_MS (see ./env). Defaults preserve prior behaviour.
 
+/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS. */
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-}
-
-function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / 1.5));
+  return fetchWithTimeoutRaw(url, init, timeoutMs);
 }
 
 function estimateMessagesTokens(messages: ChatParams["messages"]): number {
@@ -179,11 +175,22 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         // including the final failed attempt when no retry remains.
         this.notifyLimiterRateLimited(response.headers);
       }
+      // Balance exhausted (insufficient_quota / billing / 余额不足) is NOT
+      // retryable — no amount of waiting helps until the user tops up. Fail
+      // fast with a clear message instead of capacityMode backoff (which would
+      // stall the pipeline for up to 6h on a dead account).
+      if (isBalanceExhausted(response.status, errorText)) {
+        throw new Error(
+          `Chat request failed: account balance/quota exhausted (${response.status}). ${errorText || "Please top up and retry."}`,
+        );
+      }
       if (retryable && remaining > 0) {
         // Honour the server's Retry-After if given — strict providers (Volcengine,
         // some OpenAI proxies) ban clients that ignore it and retry on their own
         // clock. Falls back to jittered exponential when no hint is present.
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
+        // capacityMode: a 429/5xx here is a genuine capacity signal, so honour
+        // a long Retry-After (up to 6h) instead of clamping to 5 min.
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
@@ -286,8 +293,14 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       if (response.status === 429 || response.status === 503) {
         this.notifyLimiterRateLimited(response.headers);
       }
+      // Balance exhausted is not retryable — fail fast (see chat() for rationale).
+      if (isBalanceExhausted(response.status, errorText)) {
+        throw new Error(
+          `Chat stream request failed: account balance/quota exhausted (${response.status}). ${errorText || "Please top up and retry."}`,
+        );
+      }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;
@@ -449,15 +462,21 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     }
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
       const retryable = response.status === 429 || response.status >= 500;
       if (response.status === 429 || response.status === 503) {
         this.notifyLimiterRateLimited(response.headers);
       }
+      // Balance exhausted is not retryable — fail fast (see chat() for rationale).
+      if (isBalanceExhausted(response.status, errorText)) {
+        throw new Error(
+          `Embed request failed: account balance/quota exhausted (${response.status}). ${errorText || "Please top up and retry."}`,
+        );
+      }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining));
+        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
         return this.embedWithRetry(texts, model, dimensions, remaining - 1);
       }
-      const errorText = await response.text().catch(() => "");
       throw new Error(`Embed request failed (${response.status}): ${errorText || response.statusText}`);
     }
 

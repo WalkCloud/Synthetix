@@ -13,7 +13,6 @@ import { TopologyControls } from "@/components/topology/topology-controls";
 import { EntityEvidencePanel } from "@/components/topology/entity-evidence-panel";
 import { useLocale } from "@/lib/i18n";
 import { getVisibleSearchState, type SearchMode } from "@/lib/search/display-state";
-import { getGraphProgressView, type GraphProgressView } from "@/lib/knowledge/graph-progress-view";
 import { getGraphTaskDecision, type GraphTaskStatus } from "@/lib/knowledge/graph-task-status";
 import { getKGLoadingProgress } from "@/lib/knowledge/graph-loading-stages";
 
@@ -65,7 +64,6 @@ export default function SearchPage() {
   const [kgGraphNotice, setKgGraphNotice] = useState("");
   const [kgIndexingStatus, setKgIndexingStatus] = useState<GraphTaskStatus>("idle");
   const [kgIndexingProgress, setKgIndexingProgress] = useState(0);
-  const [kgProgressView, setKgProgressView] = useState<GraphProgressView | null>(null);
   const [kgElapsed, setKgElapsed] = useState(0);
   const kgStartRef = useRef<number | null>(null);
   // Smooth progress interpolation: the backend writes progress in coarse
@@ -262,7 +260,6 @@ export default function SearchPage() {
         if (!task) {
           setKgIndexingStatus("idle");
           setKgIndexingProgress(0);
-          setKgProgressView(null);
           return;
         }
 
@@ -279,7 +276,6 @@ export default function SearchPage() {
         if (kgIndexingProgress === 0 || !decision.shouldPollAgain) {
           setKgIndexingProgress(task.progress || 0);
         }
-        setKgProgressView(getGraphProgressView({ status: task.status, progress: task.progress || 0, result: task.result }));
 
         if (decision.shouldPollAgain) {
           // Start a smooth interpolation timer that eases the displayed
@@ -465,52 +461,6 @@ export default function SearchPage() {
             {kgGraphNotice && (
               <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300">
                 {kgGraphNotice}
-              </div>
-            )}
-            {(kgIndexingStatus === "pending" || kgIndexingStatus === "running") && (
-              <div className="mb-4 overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.04] text-foreground">
-                <div className="p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-                    </span>
-                    <p className="text-sm font-semibold flex-1">{t.search.knowledgeGraphBuilding}</p>
-                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary tabular-nums">{Math.round(kgIndexingProgress)}%</span>
-                    {kgElapsed > 0 && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {t.search.graphElapsed} {Math.floor(kgElapsed / 60)}:{String(kgElapsed % 60).padStart(2, "0")}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="relative h-2 overflow-hidden rounded-full bg-primary/15">
-                    <div
-                      className="h-full rounded-full bg-primary/80 transition-all duration-700 ease-out"
-                      style={{ width: `${Math.max(8, kgIndexingProgress)}%` }}
-                    />
-                    <div
-                      className="absolute inset-y-0 w-1/3 animate-[shimmer-slide_2s_ease-in-out_infinite] rounded-full"
-                      style={{
-                        background: "linear-gradient(90deg, transparent, rgba(124,58,237,0.3), transparent)",
-                        left: `${Math.max(4, kgIndexingProgress - 15)}%`,
-                      }}
-                    />
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                      {t.search.graphActive}
-                    </span>
-                    <span>{t.search.graphStageLabel}: {kgProgressView?.stage || "indexing"}</span>
-                    {kgProgressView?.chunkLabel && <span>{kgProgressView.chunkLabel}</span>}
-                    {kgProgressView?.heartbeatLabel && <span>{kgProgressView.heartbeatLabel}</span>}
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground/80">
-                    {kgProgressView?.isSlow ? t.search.knowledgeGraphSlowHint : t.search.knowledgeGraphRunningHint}
-                  </p>
-                </div>
               </div>
             )}
             {kgLoading && !kgTopology ? (

@@ -14,8 +14,8 @@ vi.mock("@/lib/llm/retry-after", () => ({
   parseRetryAfterMs: vi.fn(() => null),
 }));
 
-import { AdaptiveLimiter, _resetLimiterRegistryForTests } from "@/lib/llm/adaptive-limiter";
-import { _resetCapacityCacheForTests } from "@/lib/llm/provider-capacity-store";
+import { AdaptiveLimiter, getLimiter, _resetLimiterRegistryForTests } from "@/lib/llm/adaptive-limiter";
+import { _resetCapacityCacheForTests, updateCapacity } from "@/lib/llm/provider-capacity-store";
 
 // Isolate capacity persistence to a fresh temp dir per test so the suite never
 // touches the real ~/.synthetix-data/provider-capacity/.
@@ -267,5 +267,149 @@ describe("AdaptiveLimiter — notifyRateLimited (single-flight + idempotency)", 
     const r = await p;
     expect(resolved).toBe(true);
     await r({ status: 200, actualTokens: 100 });
+  });
+});
+
+describe("AdaptiveLimiter — notifyNetworkBlip (network instability ≠ rate-limit)", () => {
+  it("does NOT shrink the budget on a network blip", async () => {
+    const lim = new AdaptiveLimiter("test:net-blip-budget", { initialBudget: 80_000 });
+    const before = lim.currentBudget;
+    await lim.notifyNetworkBlip();
+    expect(lim.currentBudget).toBe(before);
+  });
+
+  it("does NOT enter cooldown on a network blip", async () => {
+    const lim = new AdaptiveLimiter("test:net-blip-cooldown", { initialBudget: 80_000 });
+    await lim.notifyNetworkBlip();
+    expect(lim.cooldownRemainingMs).toBe(0);
+    expect(lim.currentPhase).not.toBe("cooldown");
+  });
+
+  it("resets consecutive successes (pauses budget growth, doesn't punish)", async () => {
+    const lim = new AdaptiveLimiter("test:net-blip-grow", { initialBudget: 80_000 });
+    await succeedTimes(lim, 5);
+    // After 5 successes the success counter advanced; a blip resets it so we
+    // don't aggressively probe upward through a noisy period.
+    await lim.notifyNetworkBlip();
+    // Budget unchanged (no growth, no shrink) — blip only paused growth.
+    expect(lim.currentBudget).toBe(80_000);
+  });
+
+  it("increments the blip counter (observability)", async () => {
+    const lim = new AdaptiveLimiter("test:net-blip-count", { initialBudget: 80_000 });
+    expect(lim.networkBlipCount).toBe(0);
+    await lim.notifyNetworkBlip();
+    await lim.notifyNetworkBlip();
+    expect(lim.networkBlipCount).toBe(2);
+  });
+});
+
+describe("AdaptiveLimiter — MIN_REQUEST_CONCURRENCY floor", () => {
+  it(" Semaphore permit count respects the floor when cap is low", () => {
+    // Constructing with a cap of 1 should still yield a semaphore with at
+    // least MIN_REQUEST_CONCURRENCY permits (default 1) — and crucially,
+    // when the env floor is raised, the floor binds over a low cap.
+    const lim = new AdaptiveLimiter("test:min-floor", {
+      initialBudget: 4_000,
+      maxRequestConcurrency: 1,
+    });
+    // Default floor is 1, so cap=1 stays at 1 — verify it doesn't go below.
+    // Two concurrent acquires should both be able to proceed (sequential
+    // acquire-release proves the semaphore has ≥1 permit).
+    return (async () => {
+      const r1 = await lim.acquire({ estimatedTokens: 100 });
+      await r1({ status: 200, actualTokens: 100 });
+      const r2 = await lim.acquire({ estimatedTokens: 100 });
+      await r2({ status: 200, actualTokens: 100 });
+    })();
+  });
+});
+
+describe("AdaptiveLimiter — remaining-token jump-up (provider reports headroom)", () => {
+  // Bug: applyRateLimitHeaders only used remaining-* to SHRINK budget, never to
+  // grow it. Providers like DeepSeek/OpenAI return x-ratelimit-remaining-* but
+  // NOT x-ratelimit-limit-*, so after a 429 cooldown or cold start the budget
+  // could only climb back via slow AIMD — wasting throughput for minutes even
+  // when the provider explicitly reported plenty of remaining capacity.
+  it("jumps budget UP when remaining > budget and remaining < ceiling", async () => {
+    // Start with a budget that's been shrunk (e.g. after a 429 cooldown).
+    const lim = new AdaptiveLimiter("test:remaining-jump", {
+      initialBudget: 8_000,
+      initialCeiling: 100_000,
+    });
+    expect(lim.currentBudget).toBe(8_000);
+
+    // Provider reports 50_000 remaining tokens — well above our shrunk budget,
+    // below the ceiling. We should jump up to use that headroom.
+    const release = await lim.acquire({ estimatedTokens: 100 });
+    await release({
+      status: 200,
+      actualTokens: 100,
+      latencyMs: 50,
+      rateLimit: { remainingTokens: 50_000 },
+    });
+
+    expect(lim.currentBudget).toBe(50_000);
+    expect(lim.currentPhase).toBe("additive");
+  });
+
+  it("does NOT jump past the probed ceiling", async () => {
+    const lim = new AdaptiveLimiter("test:remaining-ceiling", {
+      initialBudget: 8_000,
+      initialCeiling: 40_000,
+    });
+    const release = await lim.acquire({ estimatedTokens: 100 });
+    // remaining (60k) > ceiling (40k) → must NOT jump past ceiling.
+    await release({
+      status: 200,
+      actualTokens: 100,
+      latencyMs: 50,
+      rateLimit: { remainingTokens: 60_000 },
+    });
+    expect(lim.currentBudget).toBe(8_000); // unchanged — remaining exceeds ceiling
+  });
+
+  it("still shrinks when remaining < budget (existing behaviour preserved)", async () => {
+    const lim = new AdaptiveLimiter("test:remaining-shrink", {
+      initialBudget: 50_000,
+      initialCeiling: 100_000,
+    });
+    const release = await lim.acquire({ estimatedTokens: 100 });
+    await release({
+      status: 200,
+      actualTokens: 100,
+      latencyMs: 50,
+      rateLimit: { remainingTokens: 5_000 },
+    });
+    expect(lim.currentBudget).toBe(5_000);
+  });
+});
+
+describe("AdaptiveLimiter — getLimiter optimistic cold start", () => {
+  it("a fresh provider bootstraps at the optimistic initial budget, not floor", async () => {
+    // No persisted record for this provider key → should start at
+    // INITIAL_BUDGET_TOKENS (32000), not FLOOR_TOKENS (4000), so the first
+    // graph extraction doesn't pay a 4-16 min slow-start tax.
+    const lim = await getLimiter("test:cold-start-fresh");
+    expect(lim).not.toBeNull();
+    expect(lim!.currentBudget).toBe(32_000);
+    expect(lim!.currentBudget).toBeGreaterThan(4_000); // not stuck at floor
+  });
+
+  it("a known provider bootstraps at ceiling × headroom (skip slow-start)", async () => {
+    // Seed a discovered ceiling, then getLimiter should use ceiling × HEADROOM.
+    await updateCapacity("test:cold-start-known", {
+      budgetTokens: 40_000,
+      discoveredCeiling: 50_000,
+      discoveredFloor: 4_000,
+      emitsRateLimitHeaders: false,
+      last429At: null,
+      lastUpdated: Date.now(),
+    });
+    _resetLimiterRegistryForTests();
+    const lim = await getLimiter("test:cold-start-known");
+    expect(lim).not.toBeNull();
+    // ceiling 50000 × headroom 0.8 = 40000
+    expect(lim!.currentBudget).toBe(40_000);
   });
 });

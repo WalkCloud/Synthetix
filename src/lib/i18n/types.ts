@@ -667,6 +667,7 @@ export type TranslationSchema = {
     emptySteps: string[];
     noDraftsSteps: string[];
     goWriting: string;
+    dragToRotate: string;
     switchDraftHint: string;
     createDraftHint: string;
     nodeTypes: {

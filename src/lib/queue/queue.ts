@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/db";
 import { Semaphore } from "@/lib/concurrency/limiter";
+import { parseTaskResult, parseTaskInput } from "@/lib/queue/task-json";
 import type {
   TaskType,
   TaskPayload,
@@ -11,12 +12,26 @@ import type {
 
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+/** Scan for heartbeat-stalled tasks every 2 minutes by default. */
+const DEFAULT_HEARTBEAT_SCAN_INTERVAL_MS = 2 * 60 * 1000;
+/** A running task with no heartbeat for 5 minutes is considered stalled.
+ *  Mirrors the LLM fetch timeout (5 min) — if a worker hasn't written any
+ *  progress in one full fetch-timeout window, the underlying LLM call is
+ *  almost certainly hung (e.g. provider holding the connection open). */
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface QueueOptions {
   concurrency?: number;
   timeoutMs?: number | null;
   taskTimeoutMs?: Partial<Record<TaskType, number | null>>;
   taskConcurrency?: Partial<Record<TaskType, number>>;
+  /** How often (ms) to scan for heartbeat-stalled running tasks. */
+  heartbeatScanIntervalMs?: number;
+  /** A running task whose lastHeartbeatAt is older than this (ms) is marked
+   *  failed. Defends against zombie workers (e.g. LLM provider holds a
+   *  connection open forever) — without it, a stuck task blocks its type's
+   *  concurrency slot until the 4h hard timeout. */
+  heartbeatTimeoutMs?: number;
 }
 
 export class TaskQueue {
@@ -33,12 +48,21 @@ export class TaskQueue {
   // executeTask itself runs OUTSIDE this lock, so global concurrency
   // is preserved.
   private readonly schedulerLock = new Semaphore(1);
+  // Heartbeat-stall scanner: periodically marks running tasks with no recent
+  // lastHeartbeatAt as failed, so a zombie worker (e.g. an LLM provider that
+  // holds a connection open without replying) can't pin a concurrency slot
+  // until the 4h hard timeout. Null until startHeartbeatScan() is called.
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly heartbeatScanIntervalMs: number;
+  private readonly heartbeatTimeoutMs: number;
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.taskTimeoutMs = options.taskTimeoutMs ?? {};
     this.taskConcurrency = options.taskConcurrency ?? {};
+    this.heartbeatScanIntervalMs = options.heartbeatScanIntervalMs ?? DEFAULT_HEARTBEAT_SCAN_INTERVAL_MS;
+    this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   }
 
   registerWorker(type: TaskType, workerFn: WorkerFn): void {
@@ -106,7 +130,7 @@ export class TaskQueue {
     };
 
     if (task.resultData) {
-      info.result = JSON.parse(task.resultData) as TaskResult;
+      info.result = parseTaskResult<TaskResult>(task.resultData, null as unknown as TaskResult);
     }
 
     if (task.errorMessage) {
@@ -137,6 +161,88 @@ export class TaskQueue {
     }
 
     return false;
+  }
+
+  /**
+   * Start a periodic scan that fails running tasks whose lastHeartbeatAt (in
+   * resultData JSON) is older than heartbeatTimeoutMs. This catches zombie
+   * workers — e.g. an LLM provider that holds a TCP connection open without
+   * ever replying — which would otherwise pin a concurrency slot until the 4h
+   * hard timeout. Idempotent: calling twice is a no-op.
+   *
+   * lastHeartbeatAt is a JSON field inside resultData (not a DB column), so we
+   * can't filter via updateMany — we fetch running rows, parse JSON in JS, and
+   * mark matched ids failed. Tasks without a lastHeartbeatAt (e.g. a task that
+   * just started and hasn't emitted progress yet) are judged by updatedAt
+   * instead, so a freshly-claimed task isn't falsely failed.
+   */
+  startHeartbeatScan(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => {
+      void this.scanHeartbeats().catch((err) => {
+        // Best-effort — a scan failure must never crash the queue loop.
+        console.warn("[queue] heartbeat scan failed:", err);
+      });
+    }, this.heartbeatScanIntervalMs);
+    // Don't keep the process alive just for the scanner (Next.js dev/server
+    // manages its own lifecycle). unref is safe in Node; in edge runtimes the
+    // timer simply isn't unref'd.
+    if (typeof this.heartbeatTimer.unref === "function") {
+      this.heartbeatTimer.unref();
+    }
+  }
+
+  stopHeartbeatScan(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private async scanHeartbeats(): Promise<void> {
+    const cutoff = Date.now() - this.heartbeatTimeoutMs;
+    const cutoffDate = new Date(cutoff);
+    // Fetch running tasks. We can't filter on the JSON lastHeartbeatAt in SQL,
+    // so we fetch and parse in JS. Limit to a sane batch to bound work.
+    const running = await db.asyncTask.findMany({
+      where: { status: "running" },
+      select: { id: true, type: true, resultData: true, updatedAt: true },
+      take: 200,
+    });
+    const stalled: string[] = [];
+    for (const t of running) {
+      // Prefer lastHeartbeatAt from resultData; fall back to updatedAt (so a
+      // task that hasn't emitted its first progress event yet is judged by its
+      // claim time, not falsely considered stalled).
+      let lastBeat = t.updatedAt;
+      if (t.resultData) {
+        const parsed = parseTaskResult<{ lastHeartbeatAt?: string } | null>(t.resultData, null);
+        if (parsed?.lastHeartbeatAt) {
+          const parsedDate = new Date(parsed.lastHeartbeatAt);
+          if (Number.isFinite(parsedDate.getTime())) lastBeat = parsedDate;
+        }
+      }
+      if (lastBeat.getTime() < cutoff) {
+        stalled.push(t.id);
+      }
+    }
+    if (stalled.length === 0) return;
+    const elapsed = Math.round(this.heartbeatTimeoutMs / 1000);
+    await db.asyncTask.updateMany({
+      where: { id: { in: stalled } },
+      data: {
+        status: "failed",
+        errorMessage: `Task heartbeat timeout — no activity for ${elapsed}s`,
+        updatedAt: new Date(),
+      },
+    });
+    console.warn(`[queue] marked ${stalled.length} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
+    // Re-kick the queue so a pending successor (or the doc's recovery path)
+    // can pick up after the zombie is cleared.
+    for (let i = 0; i < this.concurrency; i++) {
+      void this.processNext();
+    }
+    void cutoffDate; // referenced for clarity; cutoff is what gates lastBeat
   }
 
   private isTypeAtCap(type: TaskType): boolean {
@@ -238,9 +344,9 @@ export class TaskQueue {
     }
 
     const payload: TaskPayload = {
-      ...(inputData ? (JSON.parse(inputData) as TaskPayload) : {}),
+      ...parseTaskInput<Partial<TaskPayload>>(inputData, {}),
       taskId,
-    };
+    } as TaskPayload;
 
     await db.asyncTask.update({
       where: { id: taskId },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
+import { parseTaskResult, parseTaskInput } from "@/lib/queue/task-json";
 
 interface TaskData {
   id: string;
@@ -42,7 +43,7 @@ export async function GET(
     type: task.type,
     status: task.status,
     progress: task.progress,
-    result: task.resultData ? JSON.parse(task.resultData) : null,
+    result: parseTaskResult<unknown>(task.resultData, null),
     error: task.errorMessage,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
@@ -103,17 +104,12 @@ export async function POST(
   // (which only covers queued/converting/splitting) and is semantically
   // correct: the user can click "Start Processing" again to retry.
   if (task.type === "document_convert") {
-    try {
-      const input = task.inputData ? JSON.parse(task.inputData) as { docId?: string } : {};
-      if (input.docId) {
-        await db.document.updateMany({
-          where: { id: input.docId, userId: user.id, status: { in: ["queued", "converting", "splitting"] } },
-          data: { status: "pending" },
-        }).catch(() => undefined);
-      }
-    } catch {
-      // Malformed inputData — the cancellation itself already succeeded;
-      // don't fail the response over a best-effort status reset.
+    const input = parseTaskInput<{ docId?: string }>(task.inputData, {});
+    if (input.docId) {
+      await db.document.updateMany({
+        where: { id: input.docId, userId: user.id, status: { in: ["queued", "converting", "splitting"] } },
+        data: { status: "pending" },
+      }).catch(() => undefined);
     }
   }
 

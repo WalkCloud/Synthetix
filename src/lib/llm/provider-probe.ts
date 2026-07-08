@@ -1,14 +1,57 @@
 import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
+import { fetchWithTimeout as fetchWithTimeoutRaw } from "@/lib/llm/http";
+import { parseRateLimitHeaders, hasRateLimitSignal } from "@/lib/llm/rate-limit-headers";
+import { updateCapacity } from "@/lib/llm/provider-capacity-store";
 
 const FETCH_TIMEOUT_MS = 15_000;
+/** Headroom applied when a probe reports a token/request limit — matches the
+ *  AIMD limiter's HEADROOM so the seeded ceiling is consistent with what the
+ *  limiter would have converged to. */
+const PROBE_HEADROOM = 0.8;
 
-async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+/** Probe-local wrapper that defaults to the probe's shorter timeout. */
+function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  return fetchWithTimeoutRaw(url, init ?? {}, FETCH_TIMEOUT_MS);
+}
+
+/**
+ * If the provider's response carries rate-limit headers (x-ratelimit-*,
+ * anthropic-ratelimit-*, Retry-After), seed the capacity store so the limiter
+ * can bootstrap at a sensible budget on first use — skipping the multi-minute
+ * slow-start climb. This is the "active learning" complement to AIMD's passive
+ * probing: mainstream providers (OpenAI, Anthropic, DeepSeek) emit these headers
+ * on every response, so we capture them for free during the connectivity/embedding
+ * probes that already run on provider add / Test Connection.
+ *
+ * Best-effort: a write failure must never break the probe.
+ */
+async function seedCapacityFromHeaders(
+  baseUrl: string,
+  headers: Headers,
+  providerType: string,
+): Promise<void> {
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
+    const info = parseRateLimitHeaders(headers);
+    if (!hasRateLimitSignal(info)) return;
+    // Derive the same provider key the limiter uses (type:normalizedBaseUrl).
+    const providerKey = `${providerType}:${normalizeProviderBaseUrl(baseUrl)}`;
+    const patch: { discoveredCeiling?: number; emitsRateLimitHeaders: boolean } = {
+      emitsRateLimitHeaders: true,
+    };
+    // Prefer an explicit token limit; fall back to request limit × avg request.
+    if (info.limitTokens && info.limitTokens > 0) {
+      patch.discoveredCeiling = Math.round(info.limitTokens * PROBE_HEADROOM);
+    } else if (info.remainingTokens && info.remainingTokens > 0) {
+      // No limit-* header (common for DeepSeek/OpenAI-compatible). Use remaining
+      // as a floor for the ceiling — it's a live signal that at least this much
+      // is sustainable right now.
+      patch.discoveredCeiling = Math.max(info.remainingTokens, 32_000);
+    } else if (info.limitRequests && info.limitRequests > 0) {
+      patch.discoveredCeiling = info.limitRequests * 4000;
+    }
+    await updateCapacity(providerKey, patch);
+  } catch {
+    // best-effort — never fail the probe over a capacity-seed write
   }
 }
 
@@ -25,12 +68,19 @@ export async function testConnectivity(
   baseUrl: string,
   ver: string,
   headers: Record<string, string>,
+  providerType: string = "openai_compatible",
 ): Promise<{ connected: boolean; error?: string }> {
   const modelsRes = await fetchWithTimeout(`${baseUrl}${ver}/models`, {
     method: "GET",
     headers,
   });
-  if (modelsRes.ok) return { connected: true };
+  if (modelsRes.ok) {
+    // Connectivity confirmed — opportunistically seed the capacity store from
+    // any rate-limit headers so the AIMD limiter can skip slow-start on first
+    // use. Best-effort; failure is swallowed inside seedCapacityFromHeaders.
+    void seedCapacityFromHeaders(baseUrl, modelsRes.headers, providerType);
+    return { connected: true };
+  }
 
   const embedRes = await fetchWithTimeout(`${baseUrl}${ver}/embeddings`, {
     method: "POST",
@@ -38,6 +88,8 @@ export async function testConnectivity(
     body: JSON.stringify({ input: "test", model: "test" }),
   });
   if (embedRes.ok || embedRes.status === 400 || embedRes.status === 404) {
+    // Even a 400/404 carries rate-limit headers on most providers — seed them.
+    void seedCapacityFromHeaders(baseUrl, embedRes.headers, providerType);
     return { connected: true };
   }
   const errorText = await embedRes.text().catch(() => "");

@@ -44,7 +44,7 @@ export async function POST(
       headers["Authorization"] = `Bearer ${decrypt(provider.apiKey)}`;
     }
 
-    const conn = await testConnectivity(baseUrl, ver, headers);
+    const conn = await testConnectivity(baseUrl, ver, headers, provider.providerType);
     if (!conn.connected) {
       return NextResponse.json({ success: true, data: { connected: false, error: conn.error } });
     }
