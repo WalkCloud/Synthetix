@@ -102,19 +102,19 @@ export function TopologyDetailPanel({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+              <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
                 <span className="text-[10px] text-muted-foreground block">{d.sections}</span>
                 <span className="text-[13px] font-semibold text-foreground">{completedSections}/{totalSections}</span>
               </div>
-              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+              <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
                 <span className="text-[10px] text-muted-foreground block">{d.coverage}</span>
                 <span className="text-[13px] font-semibold text-foreground">{sectionsWithReferences}/{totalSections}</span>
               </div>
-              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+              <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
                 <span className="text-[10px] text-muted-foreground block">{d.references}</span>
                 <span className="text-[13px] font-semibold text-foreground">{totalReferences}</span>
               </div>
-              <div className="rounded-lg bg-secondary/50 px-2.5 py-2">
+              <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
                 <span className="text-[10px] text-muted-foreground block">{d.sources}</span>
                 <span className="text-[13px] font-semibold text-foreground">{uniqueDocuments}</span>
               </div>
@@ -156,7 +156,7 @@ export function TopologyDetailPanel({
             </span>
             <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
               {node.referenceChunks.map((chunk, i) => (
-                <div key={i} className="rounded-lg bg-secondary/50 px-2.5 py-1.5">
+                <div key={i} className="rounded-lg border border-border bg-background/60 px-2.5 py-1.5">
                   {chunk.sourceAnchor && (
                     <p className="text-[11px] text-foreground font-medium break-all">{chunk.sourceAnchor}</p>
                   )}

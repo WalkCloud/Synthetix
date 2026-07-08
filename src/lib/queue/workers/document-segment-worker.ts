@@ -13,7 +13,7 @@
  * the doc operating on chunks (the pre-segmentation behaviour).
  */
 import { db } from "@/lib/db";
-import { loadProcessingTask, resolveProcessingModels } from "@/lib/documents/pipeline";
+import { loadProcessingTask, resolveProcessingModels, type ProcessingContext } from "@/lib/documents/pipeline";
 import { segmentAndPersistDocument } from "@/lib/documents/segmentation";
 import { shouldEnqueueWikiSynthesis } from "./index-mode-flags";
 
@@ -25,8 +25,13 @@ export async function processDocumentSegment(
     data: { status: "running", progress: 10 },
   });
 
+  // Declared outside try so the catch block can access it for the wiki
+  // fallback submission. When loadProcessingTask itself throws, ctx is null
+  // and we skip the wiki fallback (there's no docId to submit for).
+  let ctx: ProcessingContext | null = null;
+
   try {
-    const ctx = await loadProcessingTask(taskId);
+    ctx = await loadProcessingTask(taskId);
     await resolveProcessingModels(ctx);
 
     await db.asyncTask.update({
@@ -90,7 +95,9 @@ export async function processDocumentSegment(
 
     // Segmentation failed — still submit wiki so it falls back to chunks.
     // Without this, a segmentation failure would skip wiki entirely.
-    if (shouldEnqueueWikiSynthesis(ctx.options)) {
+    // Guard: if ctx itself failed to load (loadProcessingTask threw),
+    // there's no docId to submit for, so skip the wiki fallback.
+    if (ctx && shouldEnqueueWikiSynthesis(ctx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);

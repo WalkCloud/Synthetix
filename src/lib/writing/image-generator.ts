@@ -5,6 +5,7 @@ import { resolveModel } from "@/lib/llm/resolve-model";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import { normalizeProviderBaseUrl } from "@/lib/llm/provider-endpoints";
 import { decrypt } from "@/lib/crypto";
+import { mergeAssetMetadata } from "@/lib/writing/asset-metadata";
 
 const ASSETS_DIR = path.join(process.cwd(), "data", "assets", "sections");
 
@@ -224,8 +225,7 @@ export async function generateImageAsset(assetId: string, userId?: string): Prom
         path: relativePath,
         mimeType: "image/png",
         status: "ready",
-        metadata: JSON.stringify({
-          ...(asset.metadata ? JSON.parse(asset.metadata) : {}),
+        metadata: mergeAssetMetadata(asset.metadata, {
           prompt: request.prompt,
           generatedAt: new Date().toISOString(),
         }),
@@ -239,8 +239,7 @@ export async function generateImageAsset(assetId: string, userId?: string): Prom
       where: { id: assetId },
       data: {
         status: "failed",
-        metadata: JSON.stringify({
-          ...(asset.metadata ? JSON.parse(asset.metadata) : {}),
+        metadata: mergeAssetMetadata(asset.metadata, {
           error: message,
           failedAt: new Date().toISOString(),
         }),

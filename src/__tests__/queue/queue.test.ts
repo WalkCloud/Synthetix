@@ -419,3 +419,104 @@ describe("TaskQueue", () => {
     expect(result).toEqual({});
   });
 });
+
+describe("TaskQueue — heartbeat stall detection", () => {
+  const TEST_TYPE_HB = "_test_heartbeat";
+  let queue: TaskQueue;
+
+  beforeEach(async () => {
+    // Short timeout so the test scans a tight window. heartbeatTimeoutMs=60ms
+    // means anything older than 60ms without a heartbeat is stalled.
+    queue = new TaskQueue({ heartbeatScanIntervalMs: 1000, heartbeatTimeoutMs: 60 });
+    await db.user.upsert({
+      where: { id: TEST_USER_ID },
+      create: { id: TEST_USER_ID, username: "test-queue-user", passwordHash: "x" },
+      update: {},
+    });
+    await db.asyncTask.deleteMany({ where: { type: TEST_TYPE_HB } });
+  });
+
+  afterEach(async () => {
+    queue.stopHeartbeatScan();
+    await db.asyncTask.deleteMany({ where: { type: TEST_TYPE_HB } });
+  });
+
+  it("marks a running task failed when its lastHeartbeatAt is stale", async () => {
+    // Create a running task with a heartbeat from 10 minutes ago (well past the 60ms cutoff).
+    const staleHeartbeat = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const task = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: TEST_TYPE_HB,
+        status: "running",
+        progress: 40,
+        inputData: "{}",
+        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: staleHeartbeat }),
+      },
+    });
+
+    // scanHeartbeats is private — access via the instance for testing.
+    await (queue as unknown as { scanHeartbeats: () => Promise<void> }).scanHeartbeats();
+
+    const after = await db.asyncTask.findUnique({ where: { id: task.id } });
+    expect(after?.status).toBe("failed");
+    expect(after?.errorMessage).toMatch(/heartbeat timeout/i);
+  });
+
+  it("does NOT fail a running task with a fresh heartbeat", async () => {
+    const freshHeartbeat = new Date().toISOString(); // now
+    const task = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: TEST_TYPE_HB,
+        status: "running",
+        progress: 55,
+        inputData: "{}",
+        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: freshHeartbeat }),
+      },
+    });
+
+    await (queue as unknown as { scanHeartbeats: () => Promise<void> }).scanHeartbeats();
+
+    const after = await db.asyncTask.findUnique({ where: { id: task.id } });
+    expect(after?.status).toBe("running");
+  });
+
+  it("falls back to updatedAt when resultData has no lastHeartbeatAt", async () => {
+    // A task that just started (no heartbeat yet) — updatedAt is recent, so it
+    // must NOT be falsely marked stalled.
+    const task = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: TEST_TYPE_HB,
+        status: "running",
+        progress: 0,
+        inputData: "{}",
+        resultData: null,
+      },
+    });
+
+    await (queue as unknown as { scanHeartbeats: () => Promise<void> }).scanHeartbeats();
+
+    const after = await db.asyncTask.findUnique({ where: { id: task.id } });
+    expect(after?.status).toBe("running");
+
+    // But if updatedAt is ancient, it SHOULD be failed (no heartbeat + no recent claim).
+    await db.asyncTask.update({
+      where: { id: task.id },
+      data: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+    await (queue as unknown as { scanHeartbeats: () => Promise<void> }).scanHeartbeats();
+    const after2 = await db.asyncTask.findUnique({ where: { id: task.id } });
+    expect(after2?.status).toBe("failed");
+  });
+
+  it("startHeartbeatScan is idempotent and stopHeartbeatScan clears the timer", () => {
+    expect(queue.startHeartbeatScan.bind(queue)).not.toThrow();
+    queue.startHeartbeatScan(); // second call — no-op, no second timer
+    queue.stopHeartbeatScan();
+    // After stop, starting again should work fresh.
+    expect(queue.startHeartbeatScan.bind(queue)).not.toThrow();
+    queue.stopHeartbeatScan();
+  });
+});

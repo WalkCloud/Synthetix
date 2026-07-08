@@ -18,6 +18,11 @@ const GRAPH_INDEX_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 4 hours
 const DOCUMENT_CONVERT_TIMEOUT_MS = readPositiveInt("DOCUMENT_CONVERT_TIMEOUT_MS", 60 * 60 * 1000); // 60 minutes
 const WIKI_SYNTHESIZE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — per-chunk LLM calls (fast each, but large docs have 80+ chunks)
 const DOCUMENT_SEGMENT_TIMEOUT_MS = readPositiveInt("DOCUMENT_SEGMENT_TIMEOUT_MS", 30 * 60 * 1000); // 30 min — 1 planning call + few refinement calls, but large docs have many windows
+// Heartbeat-stall detection: a running task whose lastHeartbeatAt is older
+// than this is marked failed (zombie worker defense). Defaults align with the
+// LLM fetch timeout (5 min) — see queue.ts scanHeartbeats().
+const QUEUE_HEARTBEAT_SCAN_INTERVAL_MS = readPositiveInt("QUEUE_HEARTBEAT_SCAN_INTERVAL_MS", 2 * 60 * 1000);
+const QUEUE_HEARTBEAT_TIMEOUT_MS = readPositiveInt("QUEUE_HEARTBEAT_TIMEOUT_MS", 5 * 60 * 1000);
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -161,6 +166,8 @@ export function getQueue(): TaskQueue {
     queue = new TaskQueue({
       concurrency: QUEUE_TOTAL_CONCURRENCY,
       timeoutMs: 30 * 60 * 1000,
+      heartbeatScanIntervalMs: QUEUE_HEARTBEAT_SCAN_INTERVAL_MS,
+      heartbeatTimeoutMs: QUEUE_HEARTBEAT_TIMEOUT_MS,
       taskTimeoutMs: {
         draft_generate_all: LONG_DRAFT_TIMEOUT_MS,
         outline_generate: OUTLINE_GENERATE_TIMEOUT_MS,
@@ -259,6 +266,11 @@ export function getQueue(): TaskQueue {
       draining = true;
       void queue.drain();
     }
+
+    // Start the heartbeat-stall scanner so zombie workers (e.g. an LLM
+    // provider holding a connection open without replying) are failed within
+    // minutes instead of waiting for the 4h hard timeout.
+    queue.startHeartbeatScan();
 
     void recoverOrphanedPhaseOne();
   }

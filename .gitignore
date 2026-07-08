@@ -153,3 +153,6 @@ e2e/.report/
 
 # local secret/config notes
 模型服务配置信息.txt
+
+# ZCode CLI local workspace
+.zcode/

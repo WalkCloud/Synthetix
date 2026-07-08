@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { SectionMeta, GenerationMode, ModelOption } from "@/types/writing";
 import { isSectionDone } from "@/lib/writing/status";
 import { getReviewDisplayState } from "@/lib/writing/display-content";
@@ -12,6 +12,7 @@ import { ComparisonView } from "./comparison-view";
 import { ContentRenderer } from "./content-renderer";
 import { Spinner } from "@/components/shared/spinner";
 import { useLocale } from "@/lib/i18n";
+import { useTypewriter } from "@/hooks/writing/use-typewriter";
 
 interface EditorPanelProps {
   section: SectionMeta | null;
@@ -72,16 +73,23 @@ export function EditorPanel({
   const [wordLimit, setWordLimit] = useState(800);
   const [additionalRequirements, setAdditionalRequirements] = useState("");
   const [editingContent, setEditingContent] = useState<string | null>(null);
-  const [displayedContent, setDisplayedContent] = useState("");
-  const typingRef = useRef<number | null>(null);
-  const targetRef = useRef("");
 
-  const [displayContentA, setDisplayContentA] = useState("");
-  const [displayContentB, setDisplayContentB] = useState("");
-  const typingRefA = useRef<number | null>(null);
-  const typingRefB = useRef<number | null>(null);
-  const targetRefA = useRef("");
-  const targetRefB = useRef("");
+  const isCompareStreaming = genMode === "compare" && isGenerating;
+
+  // Typewriter effects — unified via useTypewriter hook (design §4.7).
+  // Three instances: single generation, compare A, compare B.
+  const displayedContent = useTypewriter({
+    active: isGenerating,
+    target: streamingContent,
+  });
+  const displayContentA = useTypewriter({
+    active: isCompareStreaming,
+    target: streamContentA,
+  });
+  const displayContentB = useTypewriter({
+    active: isCompareStreaming,
+    target: streamContentB,
+  });
 
   // Update wordLimit when section changes
   useEffect(() => {
@@ -89,100 +97,6 @@ export function EditorPanel({
       setWordLimit(section.estimatedWords);
     }
   }, [section?.estimatedWords]);
-
-  useEffect(() => {
-    if (!isGenerating || !streamingContent) {
-      targetRef.current = "";
-      setDisplayedContent("");
-      if (typingRef.current) {
-        cancelAnimationFrame(typingRef.current);
-        typingRef.current = null;
-      }
-      return;
-    }
-
-    targetRef.current = streamingContent;
-
-    if (typingRef.current) return;
-
-    const tick = () => {
-      setDisplayedContent((prev) => {
-        const target = targetRef.current;
-        if (prev.length >= target.length) {
-          typingRef.current = null;
-          return prev;
-        }
-        const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
-        const next = target.slice(0, Math.min(prev.length + step, target.length));
-        return next;
-      });
-      typingRef.current = requestAnimationFrame(tick);
-    };
-    typingRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      if (typingRef.current) {
-        cancelAnimationFrame(typingRef.current);
-        typingRef.current = null;
-      }
-    };
-  }, [isGenerating, streamingContent]);
-
-  const isCompareStreaming = genMode === "compare" && isGenerating;
-
-  useEffect(() => {
-    if (!isCompareStreaming || !streamContentA) {
-      targetRefA.current = "";
-      setDisplayContentA("");
-      if (typingRefA.current) {
-        cancelAnimationFrame(typingRefA.current);
-        typingRefA.current = null;
-      }
-      return;
-    }
-    targetRefA.current = streamContentA;
-    if (typingRefA.current) return;
-    const tick = () => {
-      setDisplayContentA((prev) => {
-        const target = targetRefA.current;
-        if (prev.length >= target.length) { typingRefA.current = null; return prev; }
-        const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
-        return target.slice(0, Math.min(prev.length + step, target.length));
-      });
-      typingRefA.current = requestAnimationFrame(tick);
-    };
-    typingRefA.current = requestAnimationFrame(tick);
-    return () => {
-      if (typingRefA.current) { cancelAnimationFrame(typingRefA.current); typingRefA.current = null; }
-    };
-  }, [isCompareStreaming, streamContentA]);
-
-  useEffect(() => {
-    if (!isCompareStreaming || !streamContentB) {
-      targetRefB.current = "";
-      setDisplayContentB("");
-      if (typingRefB.current) {
-        cancelAnimationFrame(typingRefB.current);
-        typingRefB.current = null;
-      }
-      return;
-    }
-    targetRefB.current = streamContentB;
-    if (typingRefB.current) return;
-    const tick = () => {
-      setDisplayContentB((prev) => {
-        const target = targetRefB.current;
-        if (prev.length >= target.length) { typingRefB.current = null; return prev; }
-        const step = Math.max(1, Math.ceil((target.length - prev.length) / 8));
-        return target.slice(0, Math.min(prev.length + step, target.length));
-      });
-      typingRefB.current = requestAnimationFrame(tick);
-    };
-    typingRefB.current = requestAnimationFrame(tick);
-    return () => {
-      if (typingRefB.current) { cancelAnimationFrame(typingRefB.current); typingRefB.current = null; }
-    };
-  }, [isCompareStreaming, streamContentB]);
 
   const handleGenerate = useCallback(() => {
     onSaveEstimatedWords?.(wordLimit);

@@ -174,3 +174,134 @@ function findMarkerById(content: string, markerId: string): ParsedMarker | null 
   const markers = parseAllMarkers(content);
   return markers.find((m) => m.markerId === markerId) || null;
 }
+
+// ─── Marker replacement (used by confirm-asset route) ───────────────────────
+
+/**
+ * Extract key=value fields from a marker body.
+ *
+ * Supports two formats:
+ * - Pipe-delimited: `assetId|id=xxx|title=yyy` (confirmed markers)
+ * - Newline-delimited: `id=xxx\ntitle=yyy` (request markers)
+ *
+ * Extracted from confirm-asset/route.ts to centralise marker field parsing.
+ */
+function extractMarkerFields(body: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  if (body.includes("|")) {
+    const parts = body.split("|");
+    for (let i = 1; i < parts.length; i++) {
+      const eqIdx = parts[i].indexOf("=");
+      if (eqIdx > 0) {
+        fields[parts[i].slice(0, eqIdx).trim()] = parts[i].slice(eqIdx + 1).trim();
+      }
+    }
+  } else {
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        fields[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
+      }
+    }
+  }
+  return fields;
+}
+
+export interface ReplaceMarkerSuccess {
+  ok: true;
+  content: string;
+}
+
+export interface ReplaceMarkerFailure {
+  ok: false;
+  reason: "not_found" | "unchanged";
+}
+
+export type ReplaceMarkerResult = ReplaceMarkerSuccess | ReplaceMarkerFailure;
+
+/**
+ * Replace a request or confirmed marker with a confirmed asset marker.
+ *
+ * Finds the marker by `markerId` in `content`, preserves all fields except
+ * `id`, and constructs a new `[IMAGE:assetId|id=...|...]` or
+ * `[DIAGRAM:assetId|id=...|...]` block.
+ *
+ * - `assetType` determines the tag: "image", "mermaid", "svg" → IMAGE;
+ *   anything else → DIAGRAM.
+ * - Returns `{ ok: false, reason: "not_found" }` if no marker with the
+ *   given id exists.
+ * - Returns `{ ok: false, reason: "unchanged" }` if the replacement
+ *   produced no change (defensive — should not normally happen).
+ *
+ * Extracted from confirm-asset/route.ts to eliminate the second,
+ * divergent copy of marker parsing logic.
+ */
+export function replaceMarkerWithAsset(
+  content: string,
+  input: {
+    markerId: string;
+    assetId: string;
+    assetType: string;
+  },
+): ReplaceMarkerResult {
+  const { markerId, assetId, assetType } = input;
+  const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const requestRe = new RegExp(
+    `\\[(IMAGE_REQUEST|DIAGRAM_REQUEST):[\\s\\S]*?id=${escapedMarkerId}[\\s\\S]*?\\]`,
+  );
+  const assetRe = new RegExp(
+    `\\[(IMAGE|DIAGRAM):[\\s\\S]*?\\|id=${escapedMarkerId}[\\s\\S]*?\\]`,
+  );
+
+  let match = content.match(requestRe);
+  let source: "request" | "asset" = "request";
+
+  if (!match) {
+    match = content.match(assetRe);
+    source = "asset";
+  }
+
+  if (!match) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const isImageType = assetType === "image" || assetType === "mermaid" || assetType === "svg";
+  const tag = isImageType ? "IMAGE" : "DIAGRAM";
+
+  let preservedFields: Record<string, string> = {};
+  if (source === "request") {
+    const innerRe = new RegExp(`\\[(IMAGE_REQUEST|DIAGRAM_REQUEST):([\\s\\S]*?)\\]`);
+    const innerMatch = match[0].match(innerRe);
+    if (innerMatch) {
+      preservedFields = extractMarkerFields(innerMatch[2]);
+    }
+  } else {
+    const innerRe = new RegExp(`\\[(IMAGE|DIAGRAM):([\\s\\S]*?)\\]`);
+    const innerMatch = match[0].match(innerRe);
+    if (innerMatch) {
+      preservedFields = extractMarkerFields(innerMatch[2]);
+    }
+  }
+
+  const restFields = { ...preservedFields };
+  delete restFields.id;
+  const fieldParts = Object.entries({ id: markerId, ...restFields })
+    .map(([k, v]) => `${k}=${v}`)
+    .join("|");
+
+  const replacement = `[${tag}:${assetId}|${fieldParts}]`;
+
+  const updatedContent = content.replace(
+    source === "request" ? requestRe : assetRe,
+    replacement,
+  );
+
+  if (updatedContent === content) {
+    return { ok: false, reason: "unchanged" };
+  }
+
+  return { ok: true, content: updatedContent };
+}

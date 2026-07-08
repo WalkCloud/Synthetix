@@ -73,6 +73,16 @@ const AI_STEP_TOKENS = readPositiveIntEnv("LLM_LIMITER_AI_STEP_TOKENS", 4_000);
 /** Max budget we'll ever allow, even if the provider seems infinite. */
 const CEILING_CAP_TOKENS = readPositiveIntEnv("LLM_LIMITER_CEILING_CAP_TOKENS", 500_000);
 /**
+ * Optimistic starting budget for a provider with NO persisted capacity record.
+ * Previously FLOOR_TOKENS (4000), forcing every new provider through a 4-16 min
+ * slow-start climb before reaching useful concurrency — so switching providers
+ * (DeepSeek/Qwen/Claude/ChatGPT/火山方舟) always paid a multi-minute cold-start
+ * tax. Most mainstream providers tolerate several concurrent calls, so we start
+ * optimistic and let AIMD multiplicative-decrease rein it in on a real 429.
+ * Provider-agnostic: no per-vendor config. Mirrors the Python limiter.
+ */
+const INITIAL_BUDGET_TOKENS = readPositiveIntEnv("LLM_LIMITER_INITIAL_BUDGET_TOKENS", 32_000);
+/**
  * Hard cap on IN-FLIGHT REQUEST COUNT per provider. This is the load-bearing
  * safety rail: the token-budget path can be bypassed when a single request
  * exceeds the budget (the "big request let-through" in reserveTokens), so
@@ -89,6 +99,15 @@ const CEILING_CAP_TOKENS = readPositiveIntEnv("LLM_LIMITER_CEILING_CAP_TOKENS", 
  * limit. Override per-deployment via LLM_LIMITER_MAX_REQUESTS.
  */
 const MAX_REQUEST_CONCURRENCY = readPositiveIntEnv("LLM_LIMITER_MAX_REQUESTS", 2);
+/**
+ * Floor on the effective request concurrency derived from the AIMD budget.
+ * Mirrors the Python side's LLM_LIMITER_GRAPH_MIN_CONCURRENCY intent (though
+ * the Node side applies it as the Semaphore's lower bound at construction).
+ * Default 1 keeps prior behaviour on the Node side (where the budget path is
+ * the primary limiter); raise it to prevent fully-serial fallback. The Python
+ * graph limiter defaults its own floor to 2 — see workers/python/adaptive_limiter.py.
+ */
+const MIN_REQUEST_CONCURRENCY = readPositiveIntEnv("LLM_LIMITER_MIN_CONCURRENCY", 1);
 /** How often (ms) to persist a record even if only the budget drifted. */
 const PERSIST_INTERVAL_MS = 30_000;
 
@@ -137,6 +156,14 @@ export class AdaptiveLimiter {
   /** single-flight cooldown: all acquires block until this epoch ms. */
   private cooldownUntil = 0;
 
+  /**
+   * Transient network-blip counter (observability only — does NOT shrink the
+   * budget or enter cooldown). Mirrors the Python limiter's _network_blips.
+   * Incremented by notifyNetworkBlip(); see that method for why network
+   * instability must NOT be treated as a capacity signal.
+   */
+  private networkBlips = 0;
+
   /** Budget semaphore: one permit per in-flight request (caps request count
    *  as a SECONDARY limit on top of the token budget — even tiny requests
    *  can't exceed a sane request concurrency). */
@@ -156,7 +183,11 @@ export class AdaptiveLimiter {
     this.budgetTokens = opts?.initialBudget ?? FLOOR_TOKENS;
     this.ceilingTokens = opts?.initialCeiling ?? FLOOR_TOKENS;
     this.phase = this.budgetTokens > FLOOR_TOKENS ? "additive" : "slow-start";
-    this.requestSlots = new Semaphore(opts?.maxRequestConcurrency ?? MAX_REQUEST_CONCURRENCY);
+    // The request-slot Semaphore caps raw request concurrency. Apply the min
+    // floor so the Node side never degrades to fully-serial (1) when AIMD is
+    // being conservative — same rationale as the Python graph limiter.
+    const cap = opts?.maxRequestConcurrency ?? MAX_REQUEST_CONCURRENCY;
+    this.requestSlots = new Semaphore(Math.max(MIN_REQUEST_CONCURRENCY, cap));
   }
 
   /**
@@ -364,6 +395,19 @@ export class AdaptiveLimiter {
     // If remaining is low, proactively shrink so we don't blow through it.
     if (info.remainingTokens !== undefined && info.remainingTokens < this.budgetTokens) {
       this.budgetTokens = Math.max(FLOOR_TOKENS, info.remainingTokens);
+    } else if (
+      info.remainingTokens !== undefined
+      && info.remainingTokens > this.budgetTokens
+      && info.remainingTokens < this.ceilingTokens
+    ) {
+      // Provider reports headroom we're not using (e.g. DeepSeek/OpenAI return
+      // x-ratelimit-remaining-* but NOT x-ratelimit-limit-*). Without this, the
+      // budget could only climb back via slow AIMD/slow-start even when the
+      // provider explicitly says "you have plenty of room" — wasting throughput
+      // for minutes after a 429 cooldown or a cold start. Jump up toward (but
+      // not past) the probed ceiling, and switch to additive so we keep probing.
+      this.budgetTokens = info.remainingTokens;
+      this.phase = "additive";
     }
   }
 
@@ -404,6 +448,30 @@ export class AdaptiveLimiter {
 
     // Persist immediately — a 429 is precious calibration data.
     await this.persist();
+  }
+
+  /**
+   * Report a transient network error (timeout / reset / dns) that is NOT a
+   * capacity/rate-limit signal.
+   *
+   * Mirrors workers/python/adaptive_limiter.py notify_network_blip. Many model
+   * providers have flaky connectivity unrelated to load — treating those as
+   * 429s collapsed the AIMD budget (×0.75 per blip) and, because AIMD recovers
+   * slowly (additive +4000 per 20 successes), stranded extraction at
+   * concurrency=1 for the rest of the run. The adapter's own retry layer (3
+   * attempts) already absorbs transient blips; the limiter's job here is only
+   * to pause budget GROWTH briefly (reset consecutiveSuccesses) so we don't
+   * aggressively probe upward through a noisy period.
+   *
+   * Node-side adapters currently classify errors correctly (their is429 regex
+   * is /429|503|rate limit|overload/ — network errors do NOT match), so this
+   * method is not yet invoked from the hot path. It exists for interface parity
+   * with the Python limiter and so future Node-side network-error sensing can
+   * route here without restructuring.
+   */
+  async notifyNetworkBlip(): Promise<void> {
+    this.networkBlips += 1;
+    this.consecutiveSuccesses = 0;
   }
 
   /** A 429/503 happened — delegates to notifyRateLimited (release path). */
@@ -448,6 +516,8 @@ export class AdaptiveLimiter {
   get inflight(): number { return this.inflightTokens; }
   get currentPhase(): Phase { return this.phase; }
   get cooldownRemainingMs(): number { return Math.max(0, this.cooldownUntil - Date.now()); }
+  /** Count of transient network blips seen (observability). Never affects budget. */
+  get networkBlipCount(): number { return this.networkBlips; }
 }
 
 // ── process-global registry: one limiter per provider ───────────────────────
@@ -461,15 +531,22 @@ const LIMITER_ENABLED = process.env.LLM_LIMITER_ENABLED !== "false";
  * Get (or lazily create) the shared limiter for a provider. Bootstraps the
  * budget from persisted capacity if present, so we start near the known
  * ceiling instead of probing from floor every restart.
+ *
+ * Bootstrap priority:
+ *   1. Persisted discoveredCeiling × HEADROOM — probed before, skip slow-start.
+ *   2. INITIAL_BUDGET_TOKENS (default 32000) — fresh provider, start optimistic
+ *      (≈ full concurrency) instead of a 4-16 min slow-start climb. AIMD MD
+ *      reins it in on a real 429. Provider-agnostic cold start.
  */
 export async function getLimiter(providerKey: string): Promise<AdaptiveLimiter | null> {
   if (!LIMITER_ENABLED) return null;
   const existing = limiters.get(providerKey);
   if (existing) return existing;
 
-  // Bootstrap from persisted record (the "paid-once tuition").
-  let initialBudget = FLOOR_TOKENS;
-  let initialCeiling = FLOOR_TOKENS;
+  // Bootstrap from persisted record (the "paid-once tuition"), or fall back to
+  // an optimistic initial budget for a fresh provider (see INITIAL_BUDGET_TOKENS).
+  let initialBudget = INITIAL_BUDGET_TOKENS;
+  let initialCeiling = INITIAL_BUDGET_TOKENS;
   try {
     const rec = await readCapacity(providerKey);
     if (rec) {
@@ -478,7 +555,7 @@ export async function getLimiter(providerKey: string): Promise<AdaptiveLimiter |
       initialBudget = Math.max(FLOOR_TOKENS, Math.round(initialCeiling * HEADROOM));
     }
   } catch {
-    // corrupt/missing record → start from floor (will slow-start).
+    // corrupt/missing record → start from the optimistic initial budget.
   }
 
   const limiter = new AdaptiveLimiter(providerKey, {

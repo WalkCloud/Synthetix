@@ -181,7 +181,7 @@ const en = {
       or: "or",
       uploadFiles: "Upload Files",
       uploadFolder: "Upload Folder",
-      supportedFormats: "PDF, DOCX, PPTX, XLSX, HTML, EPUB, TXT, Markdown, CSV",
+      supportedFormats: "PDF, DOCX, PPTX, HTML, EPUB, TXT, Markdown",
       maxSize: "Maximum file size: 50MB",
       queuing: "Queuing for processing...",
       queued: "queued for processing",
@@ -613,9 +613,9 @@ const en = {
     uploadPrompt: "Please give me an outline suggestion based on the uploaded document.",
     uploadFailed: "Upload failed, please try again.",
     upload: {
-      title: "Upload requirement/background document (PDF, DOCX, PPTX, XLSX, HTML, TXT, MD; max 10MB)",
+      title: "Upload requirement/background document (PDF, DOCX, PPTX, HTML, EPUB, TXT, MD; max 10MB)",
       fileTooLarge: "File too large. Maximum size is 10MB.",
-      unsupportedFormat: "Unsupported format. Supported: PDF, DOCX, PPTX, XLSX, HTML, TXT, MD.",
+      unsupportedFormat: "Unsupported format. Supported: PDF, DOCX, PPTX, HTML, EPUB, TXT, MD.",
     },
     networkError: "Network error, please try again.",
     unknownError: "Unknown error",
@@ -674,6 +674,7 @@ const en = {
     emptySteps: ["Complete the outline", "Generate or edit sections", "Connect references"],
     noDraftsSteps: ["Create a draft", "Generate sections", "Review topology"],
     goWriting: "Go to Writing",
+    dragToRotate: "Drag to rotate",
     switchDraftHint: "You can also use the selector above to view topology for another draft.",
     createDraftHint: "After a draft exists, document topology will show the relationships among sections, references, and source material here.",
     nodeTypes: {

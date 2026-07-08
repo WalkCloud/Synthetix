@@ -118,14 +118,14 @@ export async function GET(request: Request) {
           type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
         },
         orderBy: { createdAt: "desc" },
-        select: { type: true, status: true, progress: true, inputData: true },
+        select: { id: true, type: true, status: true, progress: true, inputData: true },
       })
     : [];
   // Index tasks by docId for quick lookup (latest of each type per doc).
   // We keep the convert task's inputData so we can read the user's Knowledge
   // Mode (graphMode/wikiEnabled) from the stored options — matching the detail
   // page exactly, even before enhancement tasks start.
-  const tasksByDoc = new Map<string, { convertInputData?: string; tasks: Record<string, { status: string; progress: number }> }>();
+  const tasksByDoc = new Map<string, { convertInputData?: string; tasks: Record<string, { status: string; progress: number }>; graphTaskId?: string }>();
   for (const t of branchTasks) {
     try {
       const parsed = JSON.parse(t.inputData ?? "{}") as { docId?: string };
@@ -136,6 +136,10 @@ export async function GET(request: Request) {
         entry.convertInputData = t.inputData ?? undefined;
       }
       if (!entry.tasks[t.type]) entry.tasks[t.type] = { status: t.status, progress: t.progress };
+      // Track the latest rag_index task id per doc so the list can offer Cancel.
+      if (t.type === "rag_index" && (t.status === "running" || t.status === "pending")) {
+        entry.graphTaskId = t.id;
+      }
       tasksByDoc.set(did, entry);
     } catch {
       /* malformed input — skip */
@@ -168,10 +172,23 @@ export async function GET(request: Request) {
         graphMode,
         wikiEnabled,
       });
+      // The first active stage's i18n key (e.g. "stageConvert") so the list can
+      // show "转换中 30%" / "图谱 65%" alongside a single unified progress bar.
+      // overallPercent already aggregates across ALL stages + branches (0-100),
+      // so the list's progress matches the detail page and never freezes at one
+      // stage's number.
+      const activeStage = [...pipeline.stages, ...pipeline.branches].find((s) => s.status === "active");
       return {
         ...d,
         tags: d.tags.map((dt) => dt.tag),
         displayStatus: computeDisplayStatus(pipeline, d.status),
+        // Truthful cross-stage progress for the list's progress bar. Null when
+        // the doc isn't processing (ready/pending/failed) so the UI shows a
+        // static badge instead of a stale percentage.
+        overallPercent: pipeline.isProcessing ? pipeline.overallPercent : null,
+        activeStageKey: activeStage?.key ?? null,
+        // rag_index task id (if running) so the list can show a Cancel button.
+        graphTaskId: entry?.graphTaskId,
         ...(queuePositions.has(d.id) ? { queuePosition: queuePositions.get(d.id) } : {}),
       };
     }),
