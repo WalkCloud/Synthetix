@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Synthetix logo",
+    "version": "",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/WalkCloud/synthetix",
+    "source": "asset",
+    "copyright": ["Copyright © 2026 Synthetix contributors"],
+    "licenseText": "Synthetix brand logo — part of the Synthetix project, licensed under Apache License 2.0."
+  },
+  {
+    "name": "Synthetix application icon",
+    "version": "",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/WalkCloud/synthetix",
+    "source": "asset",
+    "copyright": ["Copyright © 2026 Synthetix contributors"],
+    "licenseText": "Synthetix application icon — part of the Synthetix project, licensed under Apache License 2.0."
+  },
+  {
+    "name": "GTE-multilingual-base embedding model (int8 ONNX)",
+    "version": "",
+    "license": "Apache-2.0",
+    "homepage": "https://huggingface.co/Alibaba-NLP/gte-multilingual-base",
+    "repository": "https://huggingface.co/Alibaba-NLP/gte-multilingual-base",
+    "source": "asset",
+    "copyright": ["Copyright (c) Alibaba-NLP"],
+    "licenseText": "gte-multilingual-base is released under the Apache License 2.0 by Alibaba-NLP. See the model card for details."
+  },
+  {
+    "name": "Plus Jakarta Sans (web font)",
+    "version": "",
+    "license": "OFL-1.1",
+    "homepage": "https://fonts.google.com/specimen/Plus+Jakarta+Sans",
+    "source": "asset",
+    "licenseText": "Plus Jakarta Sans is licensed under the SIL Open Font License 1.1."
+  },
+  {
+    "name": "Inter (web font)",
+    "version": "",
+    "license": "OFL-1.1",
+    "homepage": "https://fonts.google.com/specimen/Inter",
+    "source": "asset",
+    "licenseText": "Inter is licensed under the SIL Open Font License 1.1."
+  },
+  {
+    "name": "Lucide icons",
+    "version": "",
+    "license": "ISC",
+    "homepage": "https://lucide.dev",
+    "repository": "https://github.com/lucide-icons/lucide",
+    "source": "asset",
+    "licenseText": "Lucide is licensed under the ISC License."
+  }
+]

@@ -26,6 +26,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PYTHON_EXCLUDED_PACKAGES, normalizePkgName } from "./python-excluded-packages.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
@@ -237,7 +238,7 @@ function findIscc() {
 }
 
 // ---------- main ----------
-function main() {
+async function main() {
   const startedAt = Date.now();
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
   const VERSION = pkg.version;
@@ -420,6 +421,34 @@ function main() {
   const beforeTrim = dirSize(APP);
   log(`bundle assembled (pre-trim): ${human(beforeTrim)}`);
 
+  // --- Step 2b: generate legal artifacts (notices + LICENSE) ---
+  // Runs BEFORE trimming so stripDocs cannot delete LICENSE/NOTICE files that
+  // the scanner needs to read from next/react/react-dom/effect. The output is
+  // written into dist/app so electron-builder's extraResources (dist/app →
+  // resources/app, filter **/*) carries it into the installer verbatim.
+  log("Step 2b/5: generate legal artifacts (notices + LICENSE)");
+  try {
+    const { generateNotices, writeNotices } = await import("./generate-third-party-notices.mjs");
+    const notices = generateNotices({
+      nmRoot: path.join(APP, "node_modules"),
+      bundleRoot: APP,
+      assetManifest: path.join(ROOT, "legal", "assets-notices.json"),
+      strict: process.env.NOTICES_STRICT === "1",
+    });
+    // Write into the bundle's public/legal/ (served by Next.js) and root.
+    fs.mkdirSync(path.join(APP, "public", "legal"), { recursive: true });
+    writeNotices(notices, path.join(APP, "public", "legal"), pkg.license || "UNLICENSED");
+    // Also drop a top-level THIRD-PARTY-NOTICES.txt + LICENSE for easy access.
+    copyFile(
+      path.join(APP, "public", "legal", "THIRD-PARTY-NOTICES.txt"),
+      path.join(APP, "THIRD-PARTY-NOTICES.txt"),
+    );
+    copyFile(path.join(ROOT, "LICENSE"), path.join(APP, "LICENSE"));
+    log(`legal artifacts: ${notices.length} notices + LICENSE written to bundle`);
+  } catch (e) {
+    warn(`legal artifact generation failed (non-fatal): ${e.message}`);
+  }
+
   // --- Step 3: trim ---
   if (!SKIP_TRIM) {
     log("Step 3/5: trim Python runtime + Node cross-platform binaries");
@@ -471,36 +500,10 @@ function main() {
 // Remove (a) packages the workers never import (dev-environment leakage) and
 // (b) non-runtime CPython directories (docs, headers, tcl, static libs, caches).
 // Each removal is logged with freed bytes; we stop (not crash) on missing dirs.
-const PYTHON_UNUSED_PACKAGES = [
-  // AWS / cloud SDKs — never imported by any worker.
-  "aws_cdk", "aws-cdk.assets-handlers", "aws-cdk", "boto3", "botocore", "s3transfer", "jmespath",
-  // torch is KEPT — docling's import chain pulls it in at module load
-  // (models/extraction/transformers_extraction_model.py has a top-level
-  // `import torch`), so removing torch breaks `from docling.document_converter
-  // import DocumentConverter`. The chunking rewrite dropped the *runtime* need
-  // for torch, but docling still requires it at import time. Only these torch
-  // companion packages are unused:
-  "torchvision", "functorch", "torch_tensorrt",
-  // patchright (95MB) — a Playwright anti-detection fork, pure dev/test
-  // tooling. Zero references in any worker.
-  "patchright",
-  // scipy (89MB), sklearn (28MB) — not imported by workers, docling, lightrag,
-  // or torch at module load (verified empirically: torch imports sympy but not
-  // scipy/sklearn). sympy (29MB) is KEPT — torch's codegen imports it at load.
-  "scipy", "sklearn", "scikit_learn",
-  // rapidocr (32MB) — not imported; docling uses its own OCR pipeline.
-  "rapidocr",
-  // onnx (40MB, the format package) — distinct from onnxruntime (33MB, which
-  // IS used). onnxruntime does not require the onnx package (verified).
-  "onnx",
-  // faker (9.8MB) — fake-data generator, dev-only, zero worker references.
-  "faker",
-  // opencv — not imported by workers (docling uses it only for some parsers;
-  // we drop it and rely on the default pipeline; re-add if conversion fails).
-  "cv2", "opencv_python",
-  // misc dev tooling that leaked in.
-  "pip", "setuptools", "wheel", "ensurepip",
-];
+// Packages stripped from the bundle during trim. Imported from the shared
+// list (python-excluded-packages.mjs) so the notices generator and the trim
+// step agree on exactly what does NOT ship.
+const PYTHON_UNUSED_PACKAGES = PYTHON_EXCLUDED_PACKAGES;
 
 const PYTHON_UNUSED_DIRS = ["Doc", "include", "libs", "tcl", "share"];
 
@@ -685,8 +688,13 @@ function trimNodeModules(nmRoot) {
 function stripDocs(pkgDir) {
   let freed = 0;
   const stack = [pkgDir];
-  const docsRe = /\.(md|markdown|map|ts|flow|coffee)$/i;
-  const nameRe = /^(license|licence|changelog|readme|authors|contributors|notice|history|patents)/i;
+  // NEVER strip license/legal files — needed for open-source compliance even
+  // though the aggregated THIRD-PARTY-NOTICES.txt covers the bulk; keeping the
+  // originals is the conservative choice. `.ts` is also kept now (was removed
+  // before) because some loaders probe .d.ts at runtime.
+  const keepRe = /^(license|licence|notice|patents|authors|contributors)/i;
+  const trimNameRe = /^(changelog|readme|history)/i;
+  const docsRe = /\.(md|markdown|map|flow|coffee)$/i;
   while (stack.length) {
     const cur = stack.pop();
     let entries;
@@ -701,10 +709,9 @@ function stripDocs(pkgDir) {
         stack.push(full);
         continue;
       }
-      const isDocName = nameRe.test(e.name);
+      if (keepRe.test(e.name)) continue; // compliance: always retain
+      const isDocName = trimNameRe.test(e.name);
       const isDocExt = docsRe.test(e.name);
-      // Never strip .d.ts inside node_modules of a runtime bundle? Keep them —
-      // they're tiny and some loaders probe for them. Only strip .md/.map/etc.
       if (isDocName || isDocExt) {
         try {
           freed += fs.statSync(full).size;

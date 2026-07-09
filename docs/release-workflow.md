@@ -34,11 +34,18 @@ Edit these files (search-and-replace the old version string):
 - `package.json` → `"version": "1.0.1"`
 - `packaging/Synthetix-Electron.iss` → `MyAppVersion` and `OutputBaseFilename`
 
+Then regenerate the app version metadata so the About dialog shows the new
+version (this rewrites the git-tracked `src/generated/app-version.ts`):
+
+```bash
+npm run generate:meta
+```
+
 ```bash
 git checkout main
 git pull origin main
-# edit the two files, then:
-git add package.json packaging/Synthetix-Electron.iss
+# edit the two files + run generate:meta, then:
+git add package.json packaging/Synthetix-Electron.iss src/generated/app-version.ts
 git commit -m "release: v1.0.1"
 ```
 
@@ -70,6 +77,28 @@ If shipping a Windows installer, upload the built `.exe` as a release asset:
 gh release upload v1.0.1 dist/installer/Synthetix-Setup-v1.0.1.exe
 ```
 
+## Pre-release license compliance checklist
+
+Run through this before tagging a release. Full rationale in
+`docs/about-dialog-design-and-compliance-plan-2026-07-08.md` §12.
+
+- [ ] About dialog version matches `package.json` (`npm run generate:meta`).
+- [ ] About copyright text no longer says "All rights reserved / 保留所有权利".
+- [ ] Root `LICENSE` exists and is Apache-2.0.
+- [ ] `npm run generate:notices` succeeds and `public/legal/THIRD-PARTY-NOTICES.txt` is generated.
+- [ ] Notices cover npm, Python, Electron, and asset sources.
+- [ ] No `Unknown` license entries remain (review warnings emitted by the script).
+- [ ] No unreviewed GPL/LGPL/AGPL/MPL entries.
+- [ ] Windows installer (post-build) contains `resources/app/LICENSE` and `resources/app/THIRD-PARTY-NOTICES.txt`.
+- [ ] Strip step did not delete license/NOTICE material from next/react/react-dom/effect.
+
+To fail the build on uninspectable licenses (Unknown / copyleft), set
+`NOTICES_STRICT=1` when running the installer build:
+
+```bash
+NOTICES_STRICT=1 node scripts/build-installer.mjs --assemble-only
+```
+
 ## Quick reference: the whole flow as a script
 
 ```bash
@@ -83,6 +112,9 @@ sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VER\"/" package.json
 # For the .iss file, update MyAppVersion and OutputBaseFilename manually
 
 git add package.json packaging/Synthetix-Electron.iss
+# Regenerate app-version.ts with the new version, then stage it
+npm run generate:meta
+git add src/generated/app-version.ts
 git commit -m "release: v$VER"
 git tag -a v$VER -m "v$VER"
 git push origin main

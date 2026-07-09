@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Header } from "@/components/layout/header";
 import { LoadingState } from "@/components/shared/loading-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { getDashboardDocumentStatusDisplay } from "@/lib/dashboard/document-status";
-import { draftStatusLabels as statusLabels, draftStatusColors as statusColors } from "@/lib/text/status-labels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n";
@@ -23,6 +22,15 @@ interface DocumentSummary {
   originalName: string;
   status: string;
   createdAt: string;
+  /**
+   * Task-driven display status shared with the library list + detail page
+   * (ready | enhancing | processing | failed | pending). The dashboard API
+   * now computes this so the Recent Documents badge never disagrees with the
+   * library. Optional for legacy rows that predate this field.
+   */
+  displayStatus?: "ready" | "enhancing" | "processing" | "failed" | "pending";
+  overallPercent?: number | null;
+  activeStageKey?: string | null;
 }
 
 interface DashboardStats {
@@ -50,57 +58,76 @@ export default function DashboardPage() {
   const [recentDrafts, setRecentDrafts] = useState<DraftSummary[]>([]);
   const [recentDocs, setRecentDocs] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  // First-load flag lets the poller know whether to flip `loading` off. The
+  // poller only refreshes docs/drafts/stats and must not toggle the spinner.
+  const firstLoadDone = useRef(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [draftsRes, docsRes, usageRes] = await Promise.all([
-          fetch("/api/v1/drafts?limit=5"),
-          fetch("/api/v1/documents?limit=5"),
-          fetch("/api/v1/models/usage?days=30"),
-        ]);
+  const load = useCallback(async () => {
+    try {
+      const [draftsRes, docsRes, usageRes] = await Promise.all([
+        fetch("/api/v1/drafts?limit=5"),
+        fetch("/api/v1/documents?limit=5"),
+        fetch("/api/v1/models/usage?days=30"),
+      ]);
 
-        const draftsData = await draftsRes.json();
-        const docsData = await docsRes.json();
-        const usageData = await usageRes.json();
+      const draftsData = await draftsRes.json();
+      const docsData = await docsRes.json();
+      const usageData = await usageRes.json();
 
-        const drafts: DraftSummary[] = draftsData.success ? draftsData.data : [];
-        const docs: DocumentSummary[] = docsData.success ? docsData.data : [];
+      const drafts: DraftSummary[] = draftsData.success ? draftsData.data : [];
+      const docs: DocumentSummary[] = docsData.success ? docsData.data : [];
 
-        setRecentDrafts(drafts.slice(0, 5));
-        setRecentDocs(docs.slice(0, 5));
-        setStats({
-          docCount: docsData.total ?? docs.length,
-          draftCount: draftsData.total ?? drafts.length,
-          totalTokens: usageData.success
-            ? (usageData.data.summary?.totalInputTokens ?? 0) + (usageData.data.summary?.totalOutputTokens ?? 0)
-            : 0,
-          activeTasks: 0,
-        });
+      setRecentDrafts(drafts.slice(0, 5));
+      setRecentDocs(docs.slice(0, 5));
+      setStats({
+        docCount: docsData.total ?? docs.length,
+        draftCount: draftsData.total ?? drafts.length,
+        totalTokens: usageData.success
+          ? (usageData.data.summary?.totalInputTokens ?? 0) + (usageData.data.summary?.totalOutputTokens ?? 0)
+          : 0,
+        activeTasks: 0,
+      });
 
-        // Fetch running tasks count
-        fetch("/api/v1/tasks?status=pending,running&limit=50")
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.success) {
-              setStats((prev) => ({
-                ...prev,
-                activeTasks: d.data.filter(
-                  (task: { status: string }) => task.status === "running" || task.status === "pending"
-                ).length,
-              }));
-            }
-          })
-          .catch(() => {});
-      } catch {
-        // swallow — empty state renders
-      } finally {
+      // Fetch running tasks count
+      fetch("/api/v1/tasks?status=pending,running&limit=50")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success) {
+            setStats((prev) => ({
+              ...prev,
+              activeTasks: d.data.filter(
+                (task: { status: string }) => task.status === "running" || task.status === "pending"
+              ).length,
+            }));
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // swallow — empty state renders
+    } finally {
+      if (!firstLoadDone.current) {
+        firstLoadDone.current = true;
         setLoading(false);
       }
     }
-
-    load();
   }, []);
+
+  // Initial load on mount.
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Poll while any recent doc is still processing/enhancing so the Recent
+  // Documents badge stays in sync with the library (which also polls every 5s).
+  // Stops automatically once every doc reaches a terminal display status.
+  useEffect(() => {
+    const hasProcessing = recentDocs.some(
+      (d) => (d.displayStatus ?? "processing") === "processing" || d.displayStatus === "enhancing"
+    );
+    if (!hasProcessing) return;
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, [recentDocs, load]);
 
   const draftsInProgress = recentDrafts.filter((d) => d.status === "drafting").length;
 
@@ -226,7 +253,14 @@ export default function DashboardPage() {
                 <EmptyState title={t.dashboard.empty.noDocuments} description={t.dashboard.empty.noDocumentsDesc} />
               ) : (
                 recentDocs.map((doc, i) => {
-                  const sc = getDashboardDocumentStatusDisplay(doc.status);
+                  const ds = doc.displayStatus ?? "processing";
+                  const sc = getDashboardDocumentStatusDisplay(ds, {
+                    ready: t.common.states.ready,
+                    enhancing: t.common.states.enhancing,
+                    processing: t.common.states.processing,
+                    failed: t.common.states.failed,
+                    pending: t.common.states.pending,
+                  });
                   return (
                     <div
                       key={doc.id}
@@ -246,7 +280,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground mt-0.5">{format.relativeTime(doc.createdAt)}</p>
                       </div>
                       <div className={`flex items-center gap-1.5 px-2 py-0.5 ${sc.bg} ${sc.text} rounded-md text-[10px] font-semibold border ${sc.border}`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} ${doc.status === 'converting' ? 'animate-pulse' : ''}`}></div>
+                        <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} ${ds === 'processing' || ds === 'enhancing' ? 'animate-pulse' : ''}`}></div>
                         {sc.label}
                       </div>
                     </div>
@@ -272,6 +306,24 @@ export default function DashboardPage() {
               ) : (
                 recentDrafts.map((draft, i) => {
                   const progress = draft.progress ?? { completed: 0, total: 0 };
+                  // Localized draft-status label (was hardcoded English). Falls
+                  // back to the raw status for anything unmapped.
+                  const draftLabel =
+                    draft.status === "drafting"
+                      ? t.writing.draftList.drafting
+                      : draft.status === "modifying"
+                        ? t.writing.draftList.modifying
+                        : draft.status === "completed"
+                          ? t.common.states.completed
+                          : draft.status;
+                  const draftColor =
+                    draft.status === "drafting"
+                      ? "bg-orange-50 text-orange-600 dark:bg-orange-950/35 dark:text-orange-300"
+                      : draft.status === "modifying"
+                        ? "bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300"
+                        : draft.status === "completed"
+                          ? "bg-green-50 text-green-600 dark:bg-green-950/35 dark:text-green-300"
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/35 dark:text-blue-300";
                   return (
                     <div
                       key={draft.id}
@@ -294,8 +346,8 @@ export default function DashboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-center">
                           <h4 className="font-medium text-foreground text-sm truncate">{draft.title}</h4>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ml-2 flex-shrink-0 ${statusColors[draft.status] ?? ""}`}>
-                            {statusLabels[draft.status] ?? draft.status}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ml-2 flex-shrink-0 ${draftColor}`}>
+                            {draftLabel}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
