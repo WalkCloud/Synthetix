@@ -40,7 +40,7 @@
 | 3 | 文档处理流水线（7 阶段） | ✅ 通过 | Upload→Convert→Split→Embed→Index→Graph→Wiki；627 chunks、37 wiki 条目、图谱已生成 |
 | 4 | 头脑风暴多轮访谈 | ✅ 通过 | Exploration 阶段，AI 提出 3+ 结构化问题（A/B/C/D 选项），正确确认篇幅（验证了"篇幅作为最后一个独立问题"的修复） |
 | 5 | 大纲生成（STORM 式递归分解） | ✅ 通过 | 6 个顶级章节、深层级嵌套、~48,501 字预算；Edit/Regenerate/Import 按钮均启用 |
-| 6 | 章节正文生成 | ✅ 通过（RAG=Off 路径） | 第 1 节生成 823 字高质量中文内容，含架构图占位 |
+| 6 | 章节正文生成（两章） | ✅ 通过（RAG=Off 路径） | 第 1 节"项目背景与建设目标"824 字、第 2 节"需求分析与技术选型原则"731 字，均在 DB 持久化并在 UI 渲染（Model A 面板） |
 | 7 | 章节编辑 | ✅ 通过 | Edit 模式进入、修改内容、Save Edit 持久化 |
 | 8 | 章节重新生成 | ✅ 通过 | Regenerate 重新流式生成 800 字新内容 |
 | 9 | 删除 + 展示清理 | ✅ 通过 | 删除 draft/brainstorm/docs 后，Library/Wiki/Writing/Brainstorm/Topology/Dashboard 全部归零 |
@@ -65,11 +65,18 @@
 - 关键验证：**篇幅确认问题被正确处理为流程中的独立环节**（对应记忆中 S339 的修复），AI 在收到"8000-12000字"后继续推进而非提前结束。
 - `POST /api/v1/brainstorm/sessions/{id}/generate-outline` 触发 STORM 式递归分解，生成 6 顶级章节、多层嵌套大纲。
 
-### 3.4 撰写
-- Import to Writing 自动建 draft（132 个 section）。
-- 第 1 节生成（RAG=Off）：823 字，覆盖背景、平台定义、Hub-and-Spoke 架构、文档导航，并生成架构图请求占位。
-- Edit：进入编辑态 → 修改文本 → Save Edit 成功。
-- Regenerate：重新流式生成 800 字新内容。
+### 3.4 撰写（两章正文 + 编辑 + 重新生成）
+两轮验证均完成；第二轮（RAG=Off）确认第 1、2 章正文均正常产出。
+
+**第一轮（已删除）**：第 1 节生成 823 字，并验证 Edit（进入编辑态→修改→Save Edit 持久化）与 Regenerate（重新流式生成 800 字）。第 2 节在 RAG=Auto 下因图谱索引竞争卡在 `retrieving`，已定位根因（见 §4.1）。
+
+**第二轮（最终验证，draft `05b827d8`，146 sections）**：
+- 将第 1、2 节的 `rag_mode` 置为 `off`（DB 直接更新 `sections.rag_mode`），规避图谱索引竞争。
+- 第 1 节「项目背景与建设目标」：生成 824 字，DB `content` 长度 859、状态 `reviewing`；UI Model A 面板正常渲染，Copy/Edit/Regenerate/Confirm 按钮可用。内容覆盖传统架构痛点、云原生价值、平台三层定位、渐进演进原则。
+- 第 2 节「需求分析与技术选型原则」：生成 731 字，DB `content` 长度 731、状态 `reviewing`；UI Model A 面板正常渲染。内容覆盖六领域能力需求、选型核心约束（CNCF 标准、兼容性、扩展性）、可量化评估框架。
+- 两章均经"DB 持久化 + UI 渲染"双重确认（截图 `test-artifacts/section2-generated.png`）。
+
+> 关键经验：撰写章节时若 graph 索引仍在构建，章节级 RAG 切到 "Off" 可稳定生成；这是绕开 `rag_index` 并发竞争的可靠路径。
 
 ### 3.5 删除与清理验证
 删除后逐一核对各视图：
