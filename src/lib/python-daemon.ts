@@ -71,13 +71,24 @@ export class PythonDaemonClient {
   private stderrBuf = "";
   private inFlight: InFlight | null = null;
   private mutex: Promise<void> = Promise.resolve();
+  /** True while a daemon request is in-flight (set by gate, cleared on settle). */
+  private busy = false;
   private lastActivity = Date.now();
   private reaperTimer: NodeJS.Timeout | null = null;
   private pendingRestart = false;
   private seq = 1;
 
   /** Serialize callers so the daemon handles one request at a time. */
-  private gate<T>(fn: () => Promise<T>): Promise<T> {
+  private gate<T>(fn: () => Promise<T>, busyFailFast = false): Promise<T> {
+    if (busyFailFast && this.busy) {
+      // The daemon is busy with another request (typically a long graph index).
+      // Rather than blocking the caller up to timeoutMs, reject immediately so
+      // it can fall back to an alternative path (e.g. spawn). This keeps query
+      // calls responsive during indexing — without fast-fail, a query waits the
+      // full daemon timeout (60s) behind the index before falling back to spawn.
+      return Promise.reject(new Error("daemon busy"));
+    }
+    this.busy = true;
     const next = this.mutex.then(fn, fn);
     // Swallow the rejection on the chain link so a failed call never poisons
     // subsequent callers; the original caller still sees the rejection via next.
@@ -85,6 +96,8 @@ export class PythonDaemonClient {
       () => undefined,
       () => undefined,
     );
+    // Clear the busy flag once the request settles so the next caller can proceed.
+    next.finally(() => { this.busy = false; });
     return next;
   }
 
@@ -93,6 +106,9 @@ export class PythonDaemonClient {
     params: Record<string, unknown>,
     opts: DaemonCallOptions = {},
   ): Promise<T> {
+    // Query calls fast-fail when the daemon is busy (e.g. during a long graph
+    // index) so they fall back to spawn immediately instead of blocking 60s.
+    const busyFailFast = op === "query";
     return this.gate(async () => {
       this.lastActivity = Date.now();
       try {
