@@ -2,4 +2,4 @@
 // Ed25519 PUBLIC key for update-manifest verification (Plan A supply-chain
 // protection). Safe to commit; the matching private key is kept offline and
 // never enters the repo. See electron/manifest-signing.ts.
-export const updatePubkey = "302a300506032b6570032100db7f03048d3500612c350db80916059e09c19b97f4cf6f0fdae90923e2851c82" as const;
+export const updatePubkey = "302a300506032b6570032100cd04de7bb09240c0d6a51c7311a872b1b82421cc1f171ac441f185e086e2f15b" as const;
