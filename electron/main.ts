@@ -29,12 +29,79 @@ import {
   envFilePath,
 } from "./paths";
 import { runFirstRun } from "./first-run";
+import * as updater from "./updater";
+import { winFullApplier, setFullApplierHooks } from "./win-full-applier";
+import { winPatchApplier, setPatchApplierHooks } from "./win-patch-applier";
 
 // ─── globals ────────────────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let nextServer: ChildProcess | null = null;
 let isQuitting = false;
+// The port + dataDir the booted Next server used. Captured by boot() so the
+// patch applier can restart the server against a freshly-patched bundle without
+// re-running the full boot sequence (first-run, tray creation, etc.).
+let bootedPort: number | null = null;
+let bootedDataDir: string | null = null;
+
+// ─── auto-update wiring ─────────────────────────────────────────────────────
+// The appliers need to stop / restart the Next child and (for full) quit the
+// app; all of those operate on globals in THIS module, so we hand the appliers
+// callbacks (rather than exporting the globals). Registered once, at module
+// load, before any update can run.
+setFullApplierHooks({
+  stopNextServer: () =>
+    new Promise<void>((resolve) => {
+      if (!nextServer) {
+        resolve();
+        return;
+      }
+      isQuitting = true; // suppress the "unexpected exit" error dialog
+      gracefullyKill(nextServer, () => {
+        nextServer = null;
+        resolve();
+      });
+    }),
+  quitApp: () => {
+    isQuitting = true;
+    app.quit();
+  },
+});
+setPatchApplierHooks({
+  stopNextServer: () =>
+    new Promise<void>((resolve) => {
+      if (!nextServer) {
+        resolve();
+        return;
+      }
+      // For patch we do NOT set isQuitting — the app stays alive, we're just
+      // cycling the server child to release file locks before overwriting .next/.
+      const child = nextServer;
+      nextServer = null;
+      gracefullyKill(child, () => resolve());
+    }),
+  restartNextServer: () =>
+    new Promise<void>((resolve, reject) => {
+      if (bootedPort === null || bootedDataDir === null) {
+        reject(new Error("cannot restart server before initial boot completed"));
+        return;
+      }
+      startNextServer(bootedPort, bootedDataDir);
+      waitForServer(bootedPort)
+        .then(() => {
+          // Reload the patched UI in the existing window so the user sees the
+          // new version without manually refreshing.
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.loadURL(`http://${HOST}:${bootedPort}`);
+          }
+          resolve();
+        })
+        .catch(reject);
+    }),
+  currentVersion: () => app.getVersion(),
+});
+updater.registerApplier("full", winFullApplier);
+updater.registerApplier("patch", winPatchApplier);
 
 const HOST = "127.0.0.1";
 
@@ -150,7 +217,7 @@ async function boot(): Promise<void> {
   //    startup.ts finds an existing DB and skips its own npx prisma db push
   //    (which would fail in the packaged env — no npx available).
   try {
-    runFirstRun(dataDir, dbUrl);
+    runFirstRun(dataDir, dbUrl, app.getVersion());
   } catch (err) {
     fatalBootError(err);
     return;
@@ -168,6 +235,8 @@ async function boot(): Promise<void> {
 
   // 4) Spawn the Next.js server. cwd = resources/app/ so path.resolve() in the
   //    server code finds workers/ and .next/. Data paths come via env vars.
+  bootedPort = port;
+  bootedDataDir = dataDir;
   startNextServer(port, dataDir);
 
   // 5) Wait for readiness, then open the window.
@@ -179,7 +248,52 @@ async function boot(): Promise<void> {
     return;
   }
   createWindow(port);
+
+  // Kick off auto-update: a first check 30s after boot (give the user time to
+  // land in the app), then every 12h while the app runs. Manual checks via the
+  // About dialog IPC bypass this schedule. We don't block boot on the check.
+  scheduleUpdateChecks();
 }
+
+// ─── auto-update checks + IPC ───────────────────────────────────────────────
+const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12h
+const UPDATE_FIRST_CHECK_DELAY_MS = 30_000; // 30s after boot
+let updateCheckTimer: NodeJS.Timeout | null = null;
+
+/** Start the periodic update-check loop. Safe to call once at boot. */
+function scheduleUpdateChecks(): void {
+  const check = () => {
+    // Only auto-check when packaged — in dev (next dev / electron:dev) there is
+    // no real release channel to consult and a 404 just clutters the logs.
+    if (!app.isPackaged) return;
+    void updater.checkForUpdates().catch(() => {
+      /* surfaced via status; swallow to keep the timer alive */
+    });
+  };
+  setTimeout(check, UPDATE_FIRST_CHECK_DELAY_MS);
+  updateCheckTimer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+}
+
+/**
+ * Forward every update status change to the renderer (when a window exists).
+ * Mounted at module load so it's active before the first check fires.
+ */
+updater.onStatus((status) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("synthetix:update:progress", status);
+  }
+});
+
+// IPC: renderer reads the current status (e.g. when the About dialog opens).
+ipcMain.handle("synthetix:update:get-status", () => updater.getStatus());
+
+// IPC: renderer triggers a manual check (About dialog "check now" / open).
+ipcMain.handle("synthetix:update:check-now", async () => updater.checkForUpdates());
+
+// IPC: renderer triggers download + apply (the "立即更新" button).
+ipcMain.handle("synthetix:update:download-and-install", async () =>
+  updater.downloadAndInstall()
+);
 
 // ─── Next.js server child ───────────────────────────────────────────────────
 function startNextServer(port: number, dataDir: string): void {
@@ -408,6 +522,10 @@ function fatalBootError(err: unknown): void {
 
 // ─── shutdown ───────────────────────────────────────────────────────────────
 app.on("before-quit", (e) => {
+  if (updateCheckTimer) {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
+  }
   if (nextServer && !isQuitting) {
     e.preventDefault();
     isQuitting = true;

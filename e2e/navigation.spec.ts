@@ -91,12 +91,30 @@ test.describe("全局导航 @smoke", () => {
     await expect(page.locator("aside")).toBeVisible();
   });
 
-  test("NAV-05 关于弹窗可打开", async ({ page }) => {
+  test("NAV-05 关于弹窗可打开并显示版本与许可证入口", async ({ page }) => {
     await page.goto("/");
     await userMenuTrigger(page).click();
     await page.locator("aside .bg-popover button", { hasText: /关于|About/i }).click();
 
     // 弹窗：base-ui dialog，role=dialog
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5_000 });
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // 版本号应与 package.json 一致（不再硬编码 0.5.3.0）
+    await expect(dialog.locator("text=1.0.1")).toBeVisible({ timeout: 5_000 });
+
+    // 许可证入口（Apache-2.0 友好文案 + 第三方声明按钮）可见
+    await expect(dialog.locator("a", { hasText: /License|许可证/i })).toBeVisible();
+    await expect(
+      dialog.locator("button", { hasText: /Third-party|第三方开源声明/i }),
+    ).toBeVisible();
+  });
+
+  test("NAV-06 第三方开源声明页面可达", async ({ page }) => {
+    await page.goto("/legal/third-party-notices");
+    // 页面标题渲染（无 sidebar 的独立路由）
+    await expect(page.locator("h1")).toBeVisible({ timeout: 10_000 });
+    const heading = await page.locator("h1").textContent();
+    expect(heading).toMatch(/Third-party|第三方开源声明/);
   });
 });

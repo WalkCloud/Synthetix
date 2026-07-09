@@ -94,9 +94,56 @@ export type TranslationSchema = {
       title: string;
       subtitle: string;
       version: string;
-      techStack: string;
+      licenseStatement: string;
+      actions: {
+        viewLicense: string;
+        thirdPartyNotices: string;
+      };
       copyright: string;
+      update: {
+        checkForUpdates: string;
+        upToDate: string;
+        /** {version} is the target version string. */
+        newVersionAvailable: string;
+        checking: string;
+        downloading: string;
+        /** {percent} is 0–100. */
+        downloadProgress: string;
+        readyToInstall: string;
+        installing: string;
+        installNow: string;
+        later: string;
+        retry: string;
+        releaseNotes: string;
+        /** Label for the full reinstall path. {size} is a human-readable size. */
+        fullLabel: string;
+        /** Label for the patch/in-place path. {size} is a human-readable size. */
+        patchLabel: string;
+        error: string;
+      };
     };
+  };
+  legal: {
+    title: string;
+    intro: string;
+    coreTitle: string;
+    coreIntro: string;
+    fullListTitle: string;
+    fullListIntro: string;
+    searchPlaceholder: string;
+    package: string;
+    version: string;
+    license: string;
+    source: string;
+    copyAll: string;
+    copied: string;
+    download: string;
+    back: string;
+    loading: string;
+    noResults: string;
+    empty: string;
+    total: string;
+    all: string;
   };
   language: {
     en: string;
