@@ -127,3 +127,16 @@ compression: normal
 # (b) fail when a dev server holds better_sqlite3.node open (EPERM unlink).
 npmRebuild: false
 nodeGypRebuild: false
+
+# Update distribution. We publish our own latest.json (consumed by
+# electron/updater.ts) rather than electron-updater's latest.yml, because the
+# real app payload ships via extraResources and electron-updater's default
+# asar-only replacement is a no-op for Synthetix. The publish block is still
+# declared so electron-builder emits a latest.yml alongside the installer
+# (harmless, and useful for tooling that expects it) and so `gh release upload`
+# in scripts/publish-release.mjs knows the repo.
+publish:
+  provider: github
+  owner: WalkCloud
+  repo: Synthetix
+  # vPrefixedTagName: true (default) — tags are v<x.y.z>.

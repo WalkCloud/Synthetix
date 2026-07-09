@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/api-helpers";
+import { annotateDocumentsWithDisplayStatus } from "@/lib/documents/display-status";
 
 const VALID_DOCUMENT_SORT_FIELDS = new Set([
   "createdAt", "updatedAt", "originalName", "originalSize", "status",
@@ -60,9 +61,19 @@ export async function GET(request: Request) {
     }),
   ]);
 
+  // Compute a task-driven displayStatus shared with the library list + detail
+  // page so the dashboard's Recent Documents status never disagrees with the
+  // library (e.g. a doc whose coarse `status` column is stale at "ready" while
+  // a graph task actually "failed"). This mirrors the library route exactly.
+  const annotations = await annotateDocumentsWithDisplayStatus(db, user.id, documents);
+
   return NextResponse.json({
     success: true,
-    data: documents.map((d) => ({ ...d, tags: d.tags.map((dt) => dt.tag) })),
+    data: documents.map((d, i) => ({
+      ...d,
+      tags: d.tags.map((dt) => dt.tag),
+      ...annotations[i],
+    })),
     total,
     page,
     limit,

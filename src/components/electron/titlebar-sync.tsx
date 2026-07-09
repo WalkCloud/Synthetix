@@ -11,14 +11,10 @@ import { useTheme } from "next-themes";
  *
  * The min/max/close buttons are drawn by Windows in symbolColor; we pick a
  * readable slate tone per theme.
+ *
+ * The `window.synthetix` global type is declared once in src/types/electron.d.ts
+ * and shared by all renderer consumers (titlebar-sync, update-bridge, About).
  */
-declare global {
-  interface Window {
-    synthetix?: {
-      setTitleBarColor?: (bg: string, symbol: string) => Promise<unknown>;
-    };
-  }
-}
 
 const TITLEBAR_COLORS = {
   light: { bg: "#F8FAFC", symbol: "#334155" }, // slate-50 bg, slate-700 symbols
