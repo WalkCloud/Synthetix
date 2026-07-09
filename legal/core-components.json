@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Next.js",
+    "package": "next",
+    "category": "framework",
+    "description": {
+      "en": "React framework powering the web app and API routes",
+      "zh": "驱动 Web 应用与 API 路由的 React 框架"
+    }
+  },
+  {
+    "name": "React",
+    "package": "react",
+    "category": "framework",
+    "description": {
+      "en": "UI library for the component-based interface",
+      "zh": "基于组件的界面 UI 库"
+    }
+  },
+  {
+    "name": "Prisma",
+    "package": "prisma",
+    "category": "data",
+    "description": {
+      "en": "Type-safe ORM for SQLite / PostgreSQL",
+      "zh": "SQLite / PostgreSQL 类型安全 ORM"
+    }
+  },
+  {
+    "name": "Docling",
+    "package": "docling",
+    "category": "ai",
+    "description": {
+      "en": "Document conversion pipeline (PDF, DOCX, PPTX → Markdown)",
+      "zh": "文档转换引擎（PDF、DOCX、PPTX → Markdown）"
+    }
+  },
+  {
+    "name": "LightRAG",
+    "package": "lightrag-hku",
+    "category": "ai",
+    "description": {
+      "en": "RAG indexing, retrieval, and knowledge-graph engine",
+      "zh": "RAG 索引、检索与知识图谱引擎"
+    }
+  },
+  {
+    "name": "Transformers",
+    "package": "transformers",
+    "category": "ai",
+    "description": {
+      "en": "Local tokenization & model runtime (GTE embeddings)",
+      "zh": "本地分词与模型运行时（GTE 嵌入）"
+    }
+  },
+  {
+    "name": "d3-force",
+    "package": "d3-force",
+    "category": "viz",
+    "description": {
+      "en": "Force-directed graph layout for the knowledge graph",
+      "zh": "知识图谱的力导向图布局"
+    }
+  },
+  {
+    "name": "Electron",
+    "package": "electron",
+    "category": "platform",
+    "description": {
+      "en": "Cross-platform desktop shell (Windows installer)",
+      "zh": "跨平台桌面外壳（Windows 安装包）"
+    }
+  }
+]

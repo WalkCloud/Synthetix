@@ -19,7 +19,12 @@
     "e2e:report": "playwright show-report e2e/.report",
     "electron:dev": "pnpm build && tsc -p electron/tsconfig.json && cross-env-shell ELECTRON_IS_DEV=1 \"electron dist/electron-main/main.js\"",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "node scripts/build-electron.mjs"
+    "electron:build": "node scripts/build-electron.mjs",
+    "publish": "node scripts/publish-release.mjs",
+    "publish:beta": "node scripts/publish-release.mjs --channel beta",
+    "generate:meta": "node scripts/generate-app-metadata.mjs",
+    "generate:notices": "node scripts/generate-third-party-notices.mjs",
+    "generate:signing-key": "node scripts/generate-signing-key.mjs"
   },
   "main": "dist/electron-main/main.js",
   "dependencies": {

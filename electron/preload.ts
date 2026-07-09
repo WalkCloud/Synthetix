@@ -16,4 +16,23 @@ contextBridge.exposeInMainWorld("synthetix", {
   // No-op outside Electron (e.g. plain browser); the renderer checks existence.
   setTitleBarColor: (bg: string, symbol: string) =>
     ipcRenderer.invoke("synthetix:set-titlebar-color", bg, symbol),
+
+  // Auto-update bridge. The renderer accesses this through src/lib/update-bridge,
+  // which guards for the browser (self-hosted web) case where window.synthetix
+  // is undefined. Each method maps 1:1 to a main-process IPC handler in main.ts.
+  update: {
+    getStatus: () => ipcRenderer.invoke("synthetix:update:get-status"),
+    checkNow: () => ipcRenderer.invoke("synthetix:update:check-now"),
+    downloadAndInstall: () => ipcRenderer.invoke("synthetix:update:download-and-install"),
+    // Subscribe to status pushes from the main process. Returns an unsubscribe.
+    // `cb` receives the serialized UpdateStatus from updater.ts (kept loose here
+    // as `unknown` to avoid a hard type dependency from the preload bundle).
+    onProgress: (cb: (status: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: unknown) => cb(status);
+      ipcRenderer.on("synthetix:update:progress", handler);
+      return () => {
+        ipcRenderer.removeListener("synthetix:update:progress", handler);
+      };
+    },
+  },
 });

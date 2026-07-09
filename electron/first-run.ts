@@ -81,7 +81,18 @@ console.log("[migrate] done, " + migrations.length + " migrations processed");
 `;
 }
 
-export function runFirstRun(dataDir: string, dbUrl: string): FirstRunResult {
+/**
+ * Run first-run setup and/or schema migration.
+ *
+ * `currentVersion` is the app version this run is booting (from app.getVersion()).
+ * It is only used to name DB backups, never for migration gating — migrations
+ * ALWAYS run, which is safe because buildMigrateScript is idempotent (it skips
+ * rows already present in _prisma_migrations). The previous version of this
+ * function skipped migration when the DB existed, which silently broke upgrades:
+ * a new version ships new migrations, but an existing DB caused them to be
+ * skipped, leaving the service to connect to a stale schema.
+ */
+export function runFirstRun(dataDir: string, dbUrl: string, currentVersion: string): FirstRunResult {
   const envPath = envFilePath();
 
   fs.mkdirSync(dataDir, { recursive: true });
@@ -107,28 +118,63 @@ export function runFirstRun(dataDir: string, dbUrl: string): FirstRunResult {
   //    We spawn the bundled node.exe (not Electron's process.execPath) because
   //    better-sqlite3 is compiled for Node's ABI, not Electron's.
   const dbFile = dbUrl.replace(/^file:/, "").replace(/\//g, path.sep);
-  let createdDb = false;
-  if (!fs.existsSync(dbFile)) {
-    console.log("[first-run] creating database (better-sqlite3 migrations)…");
-    const migrationsDir = path.join(appRoot(), "prisma", "migrations");
-    const script = buildMigrateScript(dbFile, migrationsDir);
-    const nodeExe = bundledNodePath();
-    const res = spawnSync(nodeExe, ["-e", script], {
-      cwd: appRoot(),
-      env: { ...process.env },
-      stdio: "inherit",
-    });
-    if (res.status !== 0) {
-      // Clean up partial DB so next run can retry.
-      try { fs.unlinkSync(dbFile); } catch { /* ignore */ }
-      throw new Error(`database migration failed (node exit ${res.status})`);
+  const dbExists = fs.existsSync(dbFile);
+
+  // 3) Back up an existing DB before migrating, so a failed/aborted migration
+  //    can be rolled back. Named with the CURRENT version (the version that
+  //    last ran successfully against this DB). Keep exactly one backup per
+  //    version; a repeated boot of the same version reuses it.
+  const bakPath = path.join(dataDir, `dev.db.bak-${currentVersion}`);
+  let rolledBackupPath: string | null = null;
+  if (dbExists && !fs.existsSync(bakPath)) {
+    try {
+      fs.copyFileSync(dbFile, bakPath);
+      rolledBackupPath = bakPath;
+      console.log(`[first-run] backed up DB → ${path.basename(bakPath)}`);
+    } catch (err) {
+      // A failed backup is non-fatal: log and proceed. The migration itself
+      // is still safer to run than to skip (skipping means a guaranteed stale
+      // schema). We just lose the rollback safety net for this boot.
+      console.warn(`[first-run] DB backup failed (non-fatal): ${String(err)}`);
     }
-    createdDb = true;
-    console.log("[first-run] database ready");
+  }
+
+  // 4) ALWAYS run migrations. Idempotent: buildMigrateScript creates the
+  //    _prisma_migrations tracking table and skips already-applied rows, so a
+  //    fresh DB applies all migrations and an existing DB applies only new ones.
+  //    This is the upgrade-safe path — the previous "skip if exists" branch was
+  //    the schema-drift bug.
+  if (dbExists) {
+    console.log("[first-run] DB exists; applying pending migrations (idempotent)…");
   } else {
-    console.log("[first-run] database exists, skipping migration");
+    console.log("[first-run] creating database (better-sqlite3 migrations)…");
+  }
+  const migrationsDir = path.join(appRoot(), "prisma", "migrations");
+  const script = buildMigrateScript(dbFile, migrationsDir);
+  const nodeExe = bundledNodePath();
+  const res = spawnSync(nodeExe, ["-e", script], {
+    cwd: appRoot(),
+    env: { ...process.env },
+    stdio: "inherit",
+  });
+  if (res.status !== 0) {
+    // Migration failed. Restore from the backup we just took (if any) so the
+    // DB is left at its last-known-good state, then surface the error. A
+    // partial DB (no backup available, e.g. first-ever creation) is removed so
+    // the next boot can retry cleanly.
+    if (rolledBackupPath && fs.existsSync(rolledBackupPath)) {
+      try {
+        fs.copyFileSync(rolledBackupPath, dbFile);
+        console.log("[first-run] restored DB from backup after migration failure");
+      } catch (restoreErr) {
+        console.error(`[first-run] DB restore failed: ${String(restoreErr)}`);
+      }
+    } else {
+      try { fs.unlinkSync(dbFile); } catch { /* ignore */ }
+    }
+    throw new Error(`database migration failed (node exit ${res.status})`);
   }
 
   console.log("[first-run] setup complete");
-  return { createdEnv, createdDb };
+  return { createdEnv, createdDb: !dbExists };
 }
