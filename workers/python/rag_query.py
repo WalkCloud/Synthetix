@@ -31,7 +31,7 @@ import time
 import argparse
 import asyncio
 
-from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
 
 # Per-call timeout for the query-time LLM (keyword extraction etc.). The OpenAI
 # client default is 600s; without this cap a single slow/hanging call waited up
@@ -119,43 +119,29 @@ async def _get_or_build_rag(
     entry = _rag_cache.get(key)
     if entry is not None:
         cached_rag = entry.get("rag")
-        # Staleness guard: if an indexing lock appeared after we cached, the
-        # underlying data may have changed — drop and rebuild.
-        lock_file = os.path.join(working_dir, ".indexing.lock")
-        if cached_rag is not None and not os.path.exists(lock_file):
+        if cached_rag is not None:
+            # Snapshot-read: always reuse the cached instance, even when
+            # .indexing.lock is present (a write is in progress). The cached
+            # instance is a consistent point-in-time view of the store — it
+            # merely lacks the entities currently being written, which is
+            # acceptable for retrieval (an enhancement layer). This avoids the
+            # 5-20s rebuild (JSON/GraphML scan + storage reload) that used to
+            # block queries during indexing. After a write completes, the
+            # writer calls _invalidate_rag_cache(working_dir) so the next
+            # query rebuilds once with the fresh data.
             return cached_rag, False
-        # Fall through to rebuild.
-        _close_rag_safely(cached_rag)
-        _rag_cache.pop(key, None)
 
     from lightrag import LightRAG
 
     kv_storage, vector_storage, graph_storage, doc_status_storage, storage_kwargs = load_storage_config()
 
-    # JSON/GraphML integrity scan — ONLY on fresh builds, not every query.
-    # This used to run on every single query, adding seconds of filesystem
-    # traversal + parse per call; daemon residency makes it a one-time cost.
-    fix_corrupted_json_files(working_dir)
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            try:
-                os.remove(_fp)
-            except OSError:
-                pass
-    # Also check graphml for corruption
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
-        try:
-            import xml.etree.ElementTree as ET
-            ET.parse(_fp)
-        except (ET.ParseError, UnicodeDecodeError, OSError):
-            try:
-                os.remove(_fp)
-            except OSError:
-                pass
+    # NOTE: file integrity repair (fix_corrupted_json_files + JSON/GraphML
+    # scan) is deliberately NOT run on the read side. That logic mutates the
+    # filesystem (deletes/resets files) and races the writer when indexing is
+    # in progress. Repair is the write side's responsibility — rag_index.py
+    # runs it inside indexing_lock before writing. The read side only loads;
+    # a corrupt file surfaces as an error here and degrades gracefully via
+    # the fail-soft contract in semantic.ts (fallback to direct embedding).
 
     try:
         max_retries = 5

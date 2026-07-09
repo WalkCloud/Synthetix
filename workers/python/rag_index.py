@@ -469,22 +469,13 @@ async def index_document(
     rerank_fn = build_rerank_func(rerank_api_base, rerank_api_key, rerank_model)
     rerank_kwargs = {"rerank_model_func": rerank_fn} if rerank_fn else {}
 
-    fix_corrupted_json_files(working_dir)
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
-            
-    # Also check graphml for corruption
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
-        try:
-            import xml.etree.ElementTree as ET
-            ET.parse(_fp)
-        except (ET.ParseError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
+    # NOTE: fix_corrupted_json_files + integrity scan moved INSIDE
+    # indexing_lock below. Running it unlocked here races the read side
+    # (rag_query.py) which may be loading the same files — the scan mutates
+    # the filesystem (deletes/resets corrupt files) and can truncate a file
+    # the writer is about to use, or one the reader is loading. Inside the
+    # lock, the read side never repairs (it reuses a cached snapshot), so
+    # the two sides no longer contend on file repair.
 
     try:
         import time
@@ -571,6 +562,25 @@ async def index_document(
         raise
 
     with indexing_lock(working_dir, doc_id):
+        # File integrity repair — runs INSIDE the lock so it never races
+        # the read side. The read side (rag_query.py) no longer repairs
+        # files; it reuses a cached snapshot during indexing and only
+        # rebuilds (loading, not repairing) after the lock is released.
+        fix_corrupted_json_files(working_dir)
+        import glob as _glob
+        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
+            try:
+                with open(_fp, "r", encoding="utf-8") as _f:
+                    json.load(_f)
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                os.remove(_fp)
+        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
+            try:
+                import xml.etree.ElementTree as ET
+                ET.parse(_fp)
+            except (ET.ParseError, UnicodeDecodeError, OSError):
+                os.remove(_fp)
+
         await rag.initialize_storages()
         emit_progress("storage", 25, "Initialized graph storage")
 
@@ -658,6 +668,21 @@ async def index_document(
                 with suppress(asyncio.CancelledError):
                     await heartbeat_task
         emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
+
+    # The indexing_lock has been released (the `with` block just exited).
+    # Invalidate the read-side cache so the next query rebuilds with the
+    # freshly-written data. During indexing, queries reused the old cached
+    # snapshot (fast, no rebuild); now that the write is committed, we want
+    # subsequent queries to see the new entities/relations.
+    #
+    # Best-effort: in the daemon process this drops the resident LightRAG
+    # instance so the next query reloads. In a spawn (one-shot) process
+    # there is no shared cache to invalidate — the call is a harmless no-op.
+    try:
+        import rag_query
+        rag_query._invalidate_rag_cache(working_dir)
+    except Exception:
+        pass
 
     if index_mode == "graph" and llm_api_base and llm_model:
         try:
