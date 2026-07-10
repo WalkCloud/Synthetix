@@ -82,11 +82,19 @@ function fail(...m) {
 }
 
 function run(cmd, cmdArgs, opts = {}) {
-  const res = spawnSync(cmd, cmdArgs, { encoding: "utf8", shell: true, ...opts });
+  // Default to shell:true for git (which needs it for some subcommands), but
+  // allow callers to disable it for commands that take file-path arguments
+  // containing spaces. With shell:true on Windows, an unquoted path like
+  // "Synthetix Setup 1.0.1.exe" gets word-split by cmd.exe, breaking the
+  // upload. gh/node are real executables and don't need a shell wrapper.
+  const useShell = opts.shell !== undefined ? opts.shell : true;
+  const res = spawnSync(cmd, cmdArgs, { encoding: "utf8", shell: useShell, ...opts });
   if (res.status !== 0) {
     fail(`command failed (exit ${res.status}): ${cmd} ${cmdArgs.join(" ")}`);
   }
-  return res.stdout.trim();
+  // stdout is null when stdio:"inherit" (output goes straight to the terminal
+  // instead of being captured). Only trim when we actually captured output.
+  return res.stdout ? res.stdout.trim() : "";
 }
 
 function sha256OfFile(filePath) {
@@ -418,15 +426,54 @@ function main() {
     return;
   }
 
-  // 5) Upload to the GitHub Release for this tag. assetsToUpload always
-  //    includes the installer; patch builds also include the content zip.
-  //    The manifest is uploaded last (after its sha256 references are final).
+  // 5) Create the Release if it doesn't exist, then upload assets. gh release
+  //    upload requires the Release to already exist (it only attaches assets),
+  //    so create it first against the tag's commit. Use shell:false for every
+  //    gh invocation because file paths contain spaces and must stay one argv.
+  const releaseExists = spawnSync(
+    "gh",
+    ["release", "view", TAG, "--repo", repo],
+    { encoding: "utf8", shell: false }
+  );
+  if (releaseExists.status !== 0) {
+    log(`creating GitHub Release ${TAG}…`);
+    const notesTitle = `Synthetix ${VERSION}`;
+    const notesBody =
+      (patchBlock
+        ? `This release supports the **patch (quick update)** path from ${FROM.join(", ")}.\n\n`
+        : `This release uses the **full reinstall** update path.\n\n`) +
+      `See the changelog in the repository for details.`;
+    run(
+      "gh",
+      [
+        "release",
+        "create",
+        TAG,
+        "--repo",
+        repo,
+        "--title",
+        notesTitle,
+        "--notes",
+        notesBody,
+        "--verify-tag", // assert the tag exists remotely (it should — we pushed it)
+      ],
+      { stdio: "inherit", shell: false }
+    );
+    log(`✓ created Release ${TAG}`);
+  } else {
+    log(`Release ${TAG} already exists — attaching assets to it.`);
+  }
+
+  // Upload assets. assetsToUpload always includes the installer; patch builds
+  // also include the content zip. The manifest is uploaded last (after its
+  // sha256 references are final). shell:false keeps space-containing paths as
+  // single argv entries.
   assetsToUpload.push(manifestPath);
   log(`uploading ${assetsToUpload.length} asset(s) to GitHub Release ${TAG}…`);
   run(
     "gh",
     ["release", "upload", TAG, ...assetsToUpload, "--clobber"],
-    { stdio: "inherit" }
+    { stdio: "inherit", shell: false }
   );
   log(
     `✓ uploaded: ${assetsToUpload

@@ -166,3 +166,9 @@ e2e/.report/
 
 # Local test screenshots (not part of the project)
 /test-artifacts/
+
+# Dev server logs
+server.log
+
+# Temporary test/export artifacts
+/tmp/
