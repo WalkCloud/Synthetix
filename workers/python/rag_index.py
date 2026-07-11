@@ -25,6 +25,11 @@ import asyncio
 from contextlib import contextmanager, suppress
 from typing import Optional
 
+# Patch atomic_write BEFORE importing LightRAG storage classes so the retry
+# logic covers the high-frequency graphml flushes during entity extraction.
+from win_atomic_patch import apply_patch
+apply_patch()
+
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc

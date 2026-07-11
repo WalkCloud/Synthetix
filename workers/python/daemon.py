@@ -330,6 +330,15 @@ def _warm_imports():
     The ONNX model load is ~7s standalone; python-daemon.ts now allows 120s for
     the ping handshake, so synchronous pre-loop load is well within budget.
     """
+    # Apply the Windows atomic_write retry patch BEFORE importing lightrag so
+    # the retry covers both the daemon's query path (rag_query) and the index
+    # path (rag_index, called via handle_index).
+    try:
+        from win_atomic_patch import apply_patch
+        apply_patch()
+    except Exception:
+        pass  # non-critical: the patch only adds retry robustness
+
     try:
         import lightrag  # noqa: F401
         import lightrag.llm.openai  # noqa: F401

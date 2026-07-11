@@ -8,6 +8,7 @@ import { spawnPythonJson } from "@/lib/python";
 import { pythonDaemon, isDaemonEnabled } from "@/lib/python-daemon";
 import { searchByKeyword } from "@/lib/search/fts";
 import { buildSearchExcerpt } from "@/lib/search/excerpt";
+import { getQueryEmbedding, setQueryEmbedding } from "@/lib/search/query-embedding-cache";
 import type { SearchResult, SearchRerankStatus } from "@/types/documents";
 import type { QueryMode } from "@/lib/queue/types";
 
@@ -29,7 +30,7 @@ const RAG_QUERY_DAEMON_TIMEOUT_MS = 60_000;
 const LIGHTRAG_404_COOLDOWN_MS = 5 * 60 * 1000;
 const LIGHTRAG_NO_DATA_COOLDOWN_MS = 30 * 60 * 1000;
 const LIGHTRAG_INDEXING_COOLDOWN_MS = 5 * 60 * 1000;
-const MIN_COSINE_THRESHOLD = 0.55;
+const MIN_COSINE_THRESHOLD = 0.25;
 
 function stripSearchMarkup(value: string): string {
   return value.replace(/<\/?mark>/g, "");
@@ -53,6 +54,7 @@ interface RagQueryOutput {
   entities?: Array<{ entity_name: string; entity_type: string; description: string }>;
   relations?: Array<{ source_entity: string; target_entity: string; description: string; weight: number }>;
   error?: string;
+  warning?: string;
 }
 
 export function mapRagChunkToSearchResult(input: {
@@ -139,6 +141,7 @@ async function searchViaLightRAG(
         timeoutMs: RAG_QUERY_DAEMON_TIMEOUT_MS,
       });
       if (parsed.error) throw new Error(parsed.error);
+      if (parsed.warning) throw new Error(parsed.warning);
       return {
         chunks: parsed.chunks || [],
         mode: parsed.mode || mode,
@@ -149,6 +152,18 @@ async function searchViaLightRAG(
       // Don't let a daemon hiccup (cold start, OOM restart, transient error)
       // surface to the user — the spawn fallback produces the same result.
       const msg = err instanceof Error ? err.message : String(err);
+      // Deterministic state problems (lock, empty data, dim mismatch) will
+      // produce the exact same result via spawn — skip the wasteful cold-start
+      // retry and let the error propagate to the cooldown routing upstream.
+      if (
+        msg.includes("data unavailable") ||
+        msg.includes("indexing in progress") ||
+        msg.includes("no data indexed") ||
+        msg.includes("empty index") ||
+        msg.includes("Embedding dimension mismatch")
+      ) {
+        throw err;
+      }
       console.warn("[semantic] daemon query failed, falling back to spawn:", msg);
     }
   }
@@ -178,6 +193,9 @@ async function searchViaLightRAG(
   if (parsed.error) {
     throw new Error(parsed.error);
   }
+  if (parsed.warning) {
+    throw new Error(parsed.warning);
+  }
   return {
     chunks: parsed.chunks || [],
     mode: parsed.mode || mode,
@@ -198,10 +216,21 @@ async function searchViaDirectEmbedding(
   });
   if (!embedModel) return { results: [], inputTokens: 0 };
 
-  const provider = createLLMProvider(embedModel.provider);
-  const embedResult = await provider.embed([query], embedModel.modelId);
-  const embedTokens = embedResult.inputTokens ?? 0;
-  const queryEmbedding = new Float32Array(embedResult.embeddings[0]);
+  // Check the query-embedding cache first — a hit skips the ~450ms API call.
+  let queryEmbedding = getQueryEmbedding(userId, embedModelId, query);
+  let embedTokens = 0;
+  if (!queryEmbedding) {
+    const provider = createLLMProvider(embedModel.provider);
+    // Pass embeddingDim so the provider requests the correct dimensionality.
+    // Without this, providers like DashScope text-embedding-v4 default to 1024
+    // dims while stored chunk embeddings may be 2048 — the mismatch silently
+    // produces near-zero cosine scores and empty results.
+    const embedDim = embedModel.embeddingDim ?? undefined;
+    const embedResult = await provider.embed([query], embedModel.modelId, embedDim);
+    embedTokens = embedResult.inputTokens ?? 0;
+    queryEmbedding = new Float32Array(embedResult.embeddings[0]);
+    setQueryEmbedding(userId, embedModelId, query, queryEmbedding);
+  }
 
   const totalCount = await db.documentChunk.count({
     where: {
@@ -225,7 +254,7 @@ async function searchViaDirectEmbedding(
 
   if (chunks.length === 0) return { results: [], inputTokens: embedTokens };
 
-  const scored = chunks
+  const allScored = chunks
     .map((chunk) => {
       if (!chunk.embedding) return null;
       const chunkEmb = bufferToFloat32(new Uint8Array(chunk.embedding));
@@ -233,7 +262,9 @@ async function searchViaDirectEmbedding(
       return { chunk, raw };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
-    .sort((a, b) => b.raw - a.raw)
+    .sort((a, b) => b.raw - a.raw);
+
+  const scored = allScored
     .filter((r) => r.raw >= MIN_COSINE_THRESHOLD)
     .slice(0, limit);
 
@@ -301,17 +332,25 @@ export async function semanticSearch(
     throw new Error(`Semantic search unavailable: ${message}`);
   }
 
-  // Semantic + keyword branches are independent (different retrieval engines,
-  // different data sources) — run them in parallel and fuse with RRF when both
-  // resolve. The keyword branch used to be `await`ed AFTER the semantic branch,
-  // which added its full latency (incl. a possible first-call FTS rebuild) on
-  // top of the LightRAG query. Parallelizing hides it behind the slower branch.
-  const semanticPromise = runSemanticBranch(query, userId, limit, mode, ctx);
+  // Direct-embedding baseline + keyword (FTS) always run in parallel — these
+  // are the two always-available retrieval paths that depend only on
+  // DocumentChunk.embedding / document_fts, NOT on the graph indexing stage.
+  // LightRAG is an optional enhancement layer that may be unavailable during
+  // graph indexing, cold starts, or LLM failures.
+  const directPromise = runDirectEmbeddingBranch(query, userId, limit * 2, ctx);
   const keywordPromise = runKeywordBranch(query, userId, limit * 2);
 
-  const [semanticResults, keywordResults] = await Promise.all([semanticPromise, keywordPromise]);
+  const [directResults, keywordResults] = await Promise.all([directPromise, keywordPromise]);
 
-  const results = rrfFuse(semanticResults, keywordResults, limit, query);
+  // LightRAG enhancement: runs only when configured and not in cooldown. It
+  // never blocks the baseline — failures/timeouts return [] and the baseline
+  // results are still complete.
+  let lightragResults: SearchResult[] = [];
+  if (ctx.llmConfig && (lightRagCooldowns.get(userId) ?? 0) <= Date.now()) {
+    lightragResults = await runLightRagBranch(query, userId, limit, mode, ctx);
+  }
+
+  const results = rrfFuse(directResults, keywordResults, lightragResults, limit, query);
 
   // Attach images. Previously this looped every result and ran
   // allImages.filter(...) inside — O(results × images). Build the index once
@@ -352,117 +391,124 @@ export async function semanticSearch(
 }
 
 /**
- * Semantic branch: try LightRAG (daemon first, spawn fallback inside), and on
- * empty/failed LightRAG fall back to direct embedding scan. Returns the
- * semantic result list — never throws (failures land in the direct-embedding
- * fallback or return []).
+ * Direct-embedding baseline branch: always runs. Embeds the query and scans
+ * DocumentChunk.embedding vectors in SQLite via cosine similarity. This path
+ * is independent of LightRAG / graph indexing — it works as soon as the embed
+ * stage persists chunk embeddings.
  */
-async function runSemanticBranch(
+async function runDirectEmbeddingBranch(
+  query: string,
+  userId: string,
+  limit: number,
+  ctx: Awaited<ReturnType<typeof createRagContext>>,
+): Promise<SearchResult[]> {
+  const direct = await searchViaDirectEmbedding(query, userId, limit, ctx.embedModel.id);
+  if (direct.inputTokens > 0) {
+    await recordTokenUsage({
+      userId,
+      modelConfigId: ctx.embedModel.id,
+      module: "search",
+      inputTokens: direct.inputTokens,
+      outputTokens: 0,
+    }).catch(() => {});
+  }
+  return direct.results;
+}
+
+/**
+ * LightRAG enhancement branch: queries the graph-augmented retrieval layer.
+ * Returns [] on any failure (cooldown is set internally so subsequent queries
+ * skip LightRAG until it recovers). Never throws — the baseline branch
+ * guarantees complete results regardless.
+ */
+async function runLightRagBranch(
   query: string,
   userId: string,
   limit: number,
   mode: QueryMode,
   ctx: Awaited<ReturnType<typeof createRagContext>>,
 ): Promise<SearchResult[]> {
-  let semanticResults: SearchResult[] = [];
+  try {
+    const ragResults = await searchViaLightRAG(
+      query,
+      userId,
+      limit * 2,
+      mode,
+      ctx.embedDim,
+      ctx.embedConfig,
+      ctx.llmConfig!,
+      ctx.rerankConfig,
+    );
 
-  if (ctx.llmConfig && (lightRagCooldowns.get(userId) ?? 0) <= Date.now()) {
-    try {
-      const ragResults = await searchViaLightRAG(
+    if (ragResults.chunks.length === 0) return [];
+
+    const chunkIds = ragResults.chunks.map((r) => r.chunk_id);
+    const docIds = [...new Set(chunkIds.map((rid) => rid.split("/")[0]).filter(Boolean))];
+
+    const docs = await db.document.findMany({
+      where: { id: { in: docIds } },
+      select: { id: true, originalName: true },
+    });
+    const docMap = new Map(docs.map((d) => [d.id, { docId: d.id, docName: d.originalName }]));
+
+    const missingContent = ragResults.chunks.filter((r) => !r.content);
+    let contentFallback = new Map<string, string>();
+    if (missingContent.length > 0) {
+      const fallbackChunks = await db.documentChunk.findMany({
+        where: { id: { in: missingContent.map((r) => r.chunk_id) } },
+        select: { id: true, content: true },
+      });
+      contentFallback = new Map(fallbackChunks.map((c) => [c.id, c.content || ""]));
+    }
+
+    const rerankStatus: SearchRerankStatus = ctx.rerankConfig ? "enabled" : "missing";
+    return ragResults.chunks.map((r) => {
+      const docId = r.chunk_id.split("/")[0] || "";
+      const docInfo = docMap.get(docId);
+      const resolvedContent = r.content || contentFallback.get(r.chunk_id) || "";
+      return mapRagChunkToSearchResult({
+        chunk: { ...r, content: resolvedContent },
         query,
-        userId,
-        limit * 2,
         mode,
-        ctx.embedDim,
-        ctx.embedConfig,
-        ctx.llmConfig,
-        ctx.rerankConfig,
-      );
-
-      if (ragResults.chunks.length > 0) {
-        const chunkIds = ragResults.chunks.map((r) => r.chunk_id);
-        const docIds = [...new Set(chunkIds.map((rid) => rid.split("/")[0]).filter(Boolean))];
-
-        const docs = await db.document.findMany({
-          where: { id: { in: docIds } },
-          select: { id: true, originalName: true },
-        });
-        const docMap = new Map(docs.map((d) => [d.id, { docId: d.id, docName: d.originalName }]));
-
-        const missingContent = ragResults.chunks.filter((r) => !r.content);
-        let contentFallback = new Map<string, string>();
-        if (missingContent.length > 0) {
-          const fallbackChunks = await db.documentChunk.findMany({
-            where: { id: { in: missingContent.map((r) => r.chunk_id) } },
-            select: { id: true, content: true },
-          });
-          contentFallback = new Map(fallbackChunks.map((c) => [c.id, c.content || ""]));
-        }
-
-        const rerankStatus: SearchRerankStatus = ctx.rerankConfig ? "enabled" : "missing";
-        semanticResults = ragResults.chunks
-          .map((r) => {
-            const docId = r.chunk_id.split("/")[0] || "";
-            const docInfo = docMap.get(docId);
-            const resolvedContent = r.content || contentFallback.get(r.chunk_id) || "";
-            return mapRagChunkToSearchResult({
-              chunk: { ...r, content: resolvedContent },
-              query,
-              mode,
-              docId: docInfo?.docId || docId,
-              docName: docInfo?.docName || "",
-              rerank: rerankStatus,
-            });
-          });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("data unavailable") || message.includes("no data indexed") || message.includes("empty index")) {
-        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_NO_DATA_COOLDOWN_MS);
-      } else if (message.includes("indexing in progress")) {
-        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_INDEXING_COOLDOWN_MS);
-      } else if (message.includes("404")) {
-        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
-      } else if (message.includes("<timeout after")) {
-        // A timeout (daemon or spawn) is almost always a slow query-time LLM
-        // (mix/hybrid keyword extraction), NOT a data problem. Cooldown would
-        // suppress LightRAG for 5min and force every search onto the direct-
-        // embedding fallback — wrong call for a transient slow LLM. Log and
-        // move on; the next query will retry LightRAG immediately.
-        console.error("[semantic] LightRAG query timed out for user", userId, "(likely slow LLM, no cooldown set)");
-      } else {
-        lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
-        console.error("[semantic] LightRAG query failed for user", userId, err instanceof Error ? err.stack : err);
-      }
+        docId: docInfo?.docId || docId,
+        docName: docInfo?.docName || "",
+        rerank: rerankStatus,
+      });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("data unavailable") || message.includes("no data indexed") || message.includes("empty index")) {
+      lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_NO_DATA_COOLDOWN_MS);
+    } else if (message.includes("indexing in progress")) {
+      lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_INDEXING_COOLDOWN_MS);
+    } else if (message.includes("404")) {
+      lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
+    } else if (message.includes("<timeout after")) {
+      // A timeout (daemon or spawn) is almost always a slow query-time LLM
+      // (mix/hybrid keyword extraction), NOT a data problem. Cooldown would
+      // suppress LightRAG for 5min and force every search onto the direct-
+      // embedding fallback — wrong call for a transient slow LLM. Log and
+      // move on; the next query will retry LightRAG immediately.
+      console.error("[semantic] LightRAG query timed out for user", userId, "(likely slow LLM, no cooldown set)");
+    } else {
+      lightRagCooldowns.set(userId, Date.now() + LIGHTRAG_404_COOLDOWN_MS);
+      console.error("[semantic] LightRAG query failed for user", userId, err instanceof Error ? err.stack : err);
     }
+    return [];
   }
-
-  if (semanticResults.length === 0) {
-    const direct = await searchViaDirectEmbedding(query, userId, limit * 2, ctx.embedModel.id);
-    semanticResults = direct.results;
-    if (direct.inputTokens > 0) {
-      await recordTokenUsage({
-        userId,
-        modelConfigId: ctx.embedModel.id,
-        module: "search",
-        inputTokens: direct.inputTokens,
-        outputTokens: 0,
-      }).catch(() => {});
-    }
-  }
-
-  return semanticResults;
 }
 
 function rrfFuse(
-  semantic: SearchResult[],
+  direct: SearchResult[],
   keyword: SearchResult[],
+  lightrag: SearchResult[],
   limit: number,
   query = "",
 ): SearchResult[] {
   const K = 20;
-  const semanticWeight = 1.0;
+  const directWeight = 1.0;
   const keywordWeight = 1.35;
+  const lightragWeight = 0.85;
   const byChunk = new Map<string, { result: SearchResult; score: number }>();
 
   const exactPhraseBoost = (result: SearchResult): number => {
@@ -479,38 +525,49 @@ function rrfFuse(
     return 0;
   };
 
-  const add = (results: SearchResult[], weight: number, kind: "semantic" | "keyword") => {
+  // LightRAG chunk IDs use a composite "{docId}/{chunkId}" format, while
+  // direct-embedding and keyword use the raw DB chunk id. Normalize to the
+  // raw id so the same chunk from different sources merges correctly.
+  const normalizeChunkId = (id: string): string => {
+    const slash = id.lastIndexOf("/");
+    return slash >= 0 ? id.slice(slash + 1) : id;
+  };
+
+  const add = (results: SearchResult[], weight: number, kind: "semantic" | "keyword" | "lightrag") => {
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
       const cleanResult: SearchResult = {
         ...r,
         content: stripSearchMarkup(r.content || ""),
       };
+      const normalizedId = normalizeChunkId(cleanResult.chunkId);
+      const isVectorLike = kind === "semantic" || kind === "lightrag";
       const rankContribution = weight * (1 / (K + i + 1));
       const scoreContribution = Math.max(0, Math.min(1, cleanResult.score || 0)) * 0.01;
       const phraseBoost = exactPhraseBoost(cleanResult);
       const contribution = rankContribution + scoreContribution + phraseBoost;
-      const existing = byChunk.get(cleanResult.chunkId);
+      const existing = byChunk.get(normalizedId);
       const base = existing?.result || cleanResult;
-      const visibleScore = kind === "semantic"
+      const visibleScore = isVectorLike
         ? Math.min(1, Math.max(0, (cleanResult.score || 0) + phraseBoost))
         : cleanResult.score;
       const merged: SearchResult = {
         ...base,
-        score: kind === "semantic" || !existing ? Math.max(base.score || 0, visibleScore || 0) : base.score,
+        score: isVectorLike || !existing ? Math.max(base.score || 0, visibleScore || 0) : base.score,
         source: existing ? "fused" : (kind === "keyword" ? "keyword" : cleanResult.source || "lightrag"),
         debug: {
           ...base.debug,
-          ...(kind === "semantic" ? { semanticRank: i + 1 } : { keywordRank: i + 1, keywordScore: cleanResult.score }),
+          ...(isVectorLike ? { semanticRank: i + 1 } : { keywordRank: i + 1, keywordScore: cleanResult.score }),
           fusionScore: Math.round(((existing?.score || 0) + contribution) * 1000) / 1000,
         },
       };
-      byChunk.set(cleanResult.chunkId, { result: merged, score: (existing?.score || 0) + contribution });
+      byChunk.set(normalizedId, { result: merged, score: (existing?.score || 0) + contribution });
     }
   };
 
-  add(semantic, semanticWeight, "semantic");
+  add(direct, directWeight, "semantic");
   add(keyword, keywordWeight, "keyword");
+  add(lightrag, lightragWeight, "lightrag");
 
   return Array.from(byChunk.values())
     .sort((a, b) => (b.result.score || 0) - (a.result.score || 0) || b.score - a.score)

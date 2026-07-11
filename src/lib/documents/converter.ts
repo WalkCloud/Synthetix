@@ -17,7 +17,11 @@ const CONVERT_TIMEOUT_MS = Number(process.env.CONVERTER_TIMEOUT_MS || 60 * 60 * 
 // on read; a mismatch forces a fresh conversion.
 // v2: Docling upgraded to 2.107.0 — heading-level inference, ODF/EPUB backends,
 // richer table/picture metadata invalidate prior conversions.
-const CONVERSION_CACHE_VERSION = 2;
+// Bumped to 3: the PDF conversion path was fixed (convert.py now bypasses
+// docling's std::bad_alloc crash via pypdfium2 for mid-size PDFs, and adds a
+// post-conversion coverage check). Old cached results for affected PDFs are
+// truncated and must be regenerated, so we invalidate all prior caches.
+const CONVERSION_CACHE_VERSION = 3;
 const CACHE_FILENAME = ".convert-cache.json";
 
 export interface ConversionResult {

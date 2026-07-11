@@ -31,6 +31,10 @@ import time
 import argparse
 import asyncio
 
+# Patch atomic_write before importing LightRAG (covers spawn-mode query path).
+from win_atomic_patch import apply_patch
+apply_patch()
+
 from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
 
 # Per-call timeout for the query-time LLM (keyword extraction etc.). The OpenAI

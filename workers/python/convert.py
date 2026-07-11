@@ -238,28 +238,47 @@ def _build_converter(input_file: str, ext: str, needs_ocr: bool | None = None) -
 
 # ── pypdfium2 fast-path bypass ────────────────────────────────────────────
 #
-# docling-parse's C++ backend has a known memory-accumulation bug
-# (std::bad_alloc on every page after ~page 6-30) on large PDFs in the
-# docling-parse 7.x line on Windows. Upgrading to 7.5.0 (which contains
-# the cache-cap fix PR #287) does NOT resolve it — verified on a 277-page
-# digital PDF where 259/277 pages still fail.
+# docling-parse's C++ backend has a memory-accumulation issue on Windows
+# that surfaces as two distinct failure modes:
 #
-# For large digital PDFs (≥80 pages, ≥50% text layer) we bypass docling
-# entirely and extract text with pypdfium2 (Chrome's PDFium, via a C
-# binding). It is dramatically cheaper: 277 pages → 7MB peak / ~1s, vs
-# docling crashing at 2GB+. The trade-off is no table recognition and a
-# heuristic-only structure.json — both acceptable for RAG, and the
-# downstream pipeline already has graceful-degradation paths for missing
-# structure (markdown-AST chunking + LLM refinement; atom pages stay null).
+#   1. Silent truncation (the common case): individual pages hit
+#      std::bad_alloc, docling's pipeline swallows the error, and convert()
+#      returns successfully with only the surviving pages. Verified on a
+#      45-page PDF where pages 4-45 all failed (only the TOC pages survived).
+#      → Handled by _should_retry_via_pypdfium (post-conversion coverage check).
 #
-# See project docs / GH issues docling-parse #286, #227, docling #3671.
+#   2. Process-level crash (the catastrophic case): on very large PDFs the
+#      memory accumulation exhausts the process and docling raises or the
+#      worker is killed, producing no usable output at all. Upstream reports
+#      (docling-parse #286, #227, docling #3671) describe this for
+#      multi-hundred-page PDFs. The coverage check cannot recover from this
+#      because convert() never returns.
+#      → Handled by the pre-emptive bypass below.
+#
+# For large digital PDFs we skip docling entirely and extract text with
+# pypdfium2 (Chrome's PDFium, via a C binding). It is dramatically cheaper
+# and crash-free. The trade-off is no table recognition and a heuristic-only
+# structure.json — both acceptable for RAG, and the downstream pipeline has
+# graceful-degradation paths for missing structure (markdown-AST chunking +
+# LLM refinement).
 
 # Pages at/above this count AND with sufficient text-layer coverage bypass
-# docling for the pypdfium2 fast path. 80 is well above the 45-page PDF
-# that converted cleanly and well below the 277-page PDF that crashed —
-# leaving ample safety margin on both sides.
+# docling for the pypdfium2 fast path. This threshold ONLY guards against
+# failure mode 2 (process crash); failure mode 1 (silent truncation) is
+# content-driven and can occur at any size, so it is handled separately by
+# the post-conversion coverage check. Do NOT lower this threshold to catch
+# mid-size truncations — that would sacrifice docling's table/structure
+# quality for PDFs that convert fine. The coverage check is the right tool
+# for truncations.
 BYPASS_MIN_PAGES = 80
 BYPASS_MIN_TEXT_RATIO = 0.5
+
+# Post-conversion coverage thresholds. If docling's output covers fewer than
+# this fraction of the PDF's text-bearing pages, OR fewer than this fraction
+# of the PDF's extractable characters, we treat the conversion as a silent
+# failure and retry via the pypdfium2 bypass. See _should_retry_via_pypdfium.
+COVERAGE_MIN_PAGE_RATIO = 0.6
+COVERAGE_MIN_CHAR_RATIO = 0.4
 
 # Minimum text length on a single page for it to count as "has text layer".
 TEXT_LAYER_MIN_CHARS = 50
@@ -402,20 +421,25 @@ def _convert_via_pypdfium(path: str, output_dir: str, on_progress: "ConvertProgr
     }
 
 
-def _quick_pdf_char_count(path: str, max_pages: int = 30) -> int:
+def _quick_pdf_char_count(path: str, max_pages: int = 0) -> int:
     """Fast total-character probe for the docling-failure fallback decision.
 
-    Samples up to `max_pages` pages (front-loaded: early pages are cheapest
-    to load and usually representative) and returns the total non-whitespace
-    char count. Used to decide whether docling's near-empty output means it
-    silently failed (bad_alloc swallowed) and we should retry via pypdfium2.
+    Returns the total non-whitespace char count across the PDF's pages. Used
+    to decide whether docling's near-empty output means it silently failed
+    (bad_alloc swallowed) and we should retry via pypdfium2.
+
+    When max_pages <= 0, scans ALL pages (pages are cheap to probe via the
+    C binding: ~1s for a few hundred pages). A positive max_pages caps the
+    scan to the first N pages (front-loaded sampling) for callers that only
+    need a rough estimate.
     """
     try:
         import pypdfium2  # type: ignore
         pdf = pypdfium2.PdfDocument(path)
         try:
             total = 0
-            for i in range(min(max_pages, len(pdf))):
+            limit = len(pdf) if max_pages <= 0 else min(max_pages, len(pdf))
+            for i in range(limit):
                 try:
                     text = pdf[i].get_textpage().get_text_range()
                     total += len(text.strip())
@@ -426,6 +450,104 @@ def _quick_pdf_char_count(path: str, max_pages: int = 30) -> int:
             pdf.close()
     except Exception:
         return 0
+
+
+def _docling_output_page_set(doc) -> set[int]:
+    """Collect the set of page numbers that docling actually produced output for.
+
+    When docling-parse hits std::bad_alloc on a page, that page's items are
+    simply absent from the resulting document. By comparing the set of pages
+    docling covered against the PDF's total page count, we can detect silent
+    truncation even when the surviving pages (e.g. a long TOC) contribute
+    enough characters to mask the loss.
+    """
+    pages: set[int] = set()
+    for item, _level in doc.iterate_items():
+        prov = getattr(item, "prov", None)
+        if not prov:
+            continue
+        entry = prov[0] if isinstance(prov, list) else prov
+        pno = getattr(entry, "page_no", None)
+        if pno is None and isinstance(entry, dict):
+            pno = entry.get("page_no")
+        if isinstance(pno, int) and pno > 0:
+            pages.add(pno)
+    return pages
+
+
+def _pdf_text_page_count(path: str) -> tuple[int, int]:
+    """Count total pages and text-bearing pages in the PDF via pypdfium2.
+
+    Returns (total_pages, text_pages). Used by the post-conversion coverage
+    check to know how many pages *should* have content.
+    """
+    try:
+        import pypdfium2  # type: ignore
+        pdf = pypdfium2.PdfDocument(path)
+        try:
+            total = len(pdf)
+            text_pages = 0
+            for i in range(total):
+                try:
+                    text = pdf[i].get_textpage().get_text_range()
+                    if len(text.strip()) > TEXT_LAYER_MIN_CHARS:
+                        text_pages += 1
+                except Exception:
+                    continue
+            return total, text_pages
+        finally:
+            pdf.close()
+    except Exception:
+        return 0, 0
+
+
+def _should_retry_via_pypdfium(path: str, doc, markdown: str) -> tuple[bool, str]:
+    """Decide whether docling silently failed and we should retry via pypdfium2.
+
+    docling-parse's C++ backend can hit std::bad_alloc on individual pages
+    without raising — the page is just missing from the output. When enough
+    pages fail the resulting markdown is incomplete, yet non-empty (a long TOC
+    alone can yield tens of thousands of chars). The old check (markdown <
+    100 chars) only caught near-total failures and missed this partial-truncation
+    case.
+
+    Two independent signals are evaluated; either one triggers the retry:
+
+    1. Page coverage — docling produced output for fewer than
+       COVERAGE_MIN_PAGE_RATIO of the PDF's text-bearing pages.
+    2. Character coverage — docling's non-whitespace char count is less than
+       COVERAGE_MIN_CHAR_RATIO of what pypdfium2 extracts from the same PDF.
+
+    Returns (should_retry, reason). The reason string is suitable for logging.
+    """
+    md_chars = len(markdown.strip())
+    if md_chars == 0:
+        return True, "docling produced empty output"
+
+    total_pages, text_pages = _pdf_text_page_count(path)
+    if text_pages == 0:
+        # No text layer detectable — likely a scanned PDF; can't judge coverage.
+        return False, "no text layer to compare"
+
+    # Signal 1: page coverage.
+    docling_pages = _docling_output_page_set(doc)
+    page_ratio = len(docling_pages) / text_pages if text_pages else 1.0
+    if page_ratio < COVERAGE_MIN_PAGE_RATIO:
+        return True, (
+            f"page coverage {len(docling_pages)}/{text_pages} "
+            f"({page_ratio:.0%}) < {COVERAGE_MIN_PAGE_RATIO:.0%}"
+        )
+
+    # Signal 2: character coverage (catches cases where page set looks fine
+    # but individual pages were truncated to fragments).
+    pdf_chars = _quick_pdf_char_count(path)
+    if pdf_chars > 500 and md_chars < pdf_chars * COVERAGE_MIN_CHAR_RATIO:
+        return True, (
+            f"char coverage {md_chars}/{pdf_chars} "
+            f"({md_chars / pdf_chars:.0%}) < {COVERAGE_MIN_CHAR_RATIO:.0%}"
+        )
+
+    return False, "ok"
 
 
 def _build_image_manifest(doc, output_dir: str) -> tuple[list[dict], int]:
@@ -578,9 +700,12 @@ def convert(input_file: str, output_dir: str) -> dict:
     ext = os.path.splitext(input_file)[1].lower()
 
     # ── PDF bypass decision ───────────────────────────────────────────────
-    # Large digital PDFs (≥80 pages, ≥50% text layer) bypass docling entirely
-    # — docling-parse's C++ backend has a memory-accumulation bug that crashes
-    # on these. See the BYPASS constants above for thresholds & rationale.
+    # Only the largest digital PDFs (≥BYPASS_MIN_PAGES) bypass docling
+    # pre-emptively, to avoid the *hard-crash* failure mode (C++ backend
+    # exhausting memory and raising). Smaller PDFs go through docling first
+    # to preserve its table/structure quality; if docling silently truncates
+    # them the post-conversion coverage check below catches it and retries
+    # via pypdfium2.
     if ext == ".pdf":
         total_pages, text_pages, text_ratio = _pdf_text_layer_ratio(input_file)
         if total_pages >= BYPASS_MIN_PAGES and text_ratio >= BYPASS_MIN_TEXT_RATIO:
@@ -607,16 +732,18 @@ def convert(input_file: str, output_dir: str) -> dict:
     markdown = doc.export_to_markdown()
 
     # ── PDF failure fallback ──────────────────────────────────────────────
-    # docling sometimes "succeeds" (no exception) but emits near-empty output
-    # because every page hit std::bad_alloc and the error was swallowed by
-    # the pipeline. Detect this: if the PDF actually has text (per a fast
-    # pypdfium2 probe) but docling returned almost nothing, retry via bypass.
-    if ext == ".pdf" and len(markdown.strip()) < 100:
-        quick_chars = _quick_pdf_char_count(input_file)
-        if quick_chars > 200 and len(markdown.strip()) < quick_chars * 0.5:
+    # docling sometimes "succeeds" (no exception) but emits truncated output
+    # because pages hit std::bad_alloc and the error was swallowed by the
+    # pipeline. The old check (markdown < 100 chars) only caught near-total
+    # failures; a long TOC alone can yield tens of thousands of chars while
+    # every content page was lost. We now compare docling's output against
+    # the PDF's actual content via two coverage signals (page + char ratio).
+    if ext == ".pdf":
+        should_retry, reason = _should_retry_via_pypdfium(input_file, doc, markdown)
+        if should_retry:
             print(
-                f"[convert] docling returned {len(markdown)} chars but PDF has "
-                f"~{quick_chars} chars in first 30 pages — falling back to pypdfium2",
+                f"[convert] docling output failed coverage check ({reason}); "
+                f"falling back to pypdfium2",
                 file=sys.stderr, flush=True,
             )
             return _convert_via_pypdfium(input_file, output_dir)

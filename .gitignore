@@ -85,7 +85,10 @@ data/
 qa-*.png
 qa-*.mjs
 qa-*.py
-screenshots/
+/screenshots/
+e2e/.screenshots/
+e2e/.report/
+# Note: docs/screenshots/ (README product screenshots) is intentionally tracked.
 
 # temp/test files
 tmp-*.txt

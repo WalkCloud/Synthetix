@@ -442,7 +442,19 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   ): Promise<EmbedResponseWithRateLimit> {
     const url = buildEmbeddingsUrl(this.normalizedBase);
     const body: Record<string, unknown> = { input: texts, model: model || "text-embedding" };
-    if (dimensions) body.dimensions = dimensions;
+    if (dimensions) {
+      body.dimensions = dimensions;
+    } else {
+      // Not passing dimensions means the provider uses its default (e.g.
+      // text-embedding-v4 defaults to 1024, not 2048). This is intentional
+      // for the dimension probe (dimension.ts) but a latent bug for any
+      // retrieval/indexing path that forgets to pass it — the returned
+      // vectors will have the wrong dimensionality vs stored chunks.
+      // Log a warning so missing-dimension call sites are discoverable.
+      if (texts.length > 0 && texts[0] !== "dimension probe") {
+        console.warn(`[llm] embed called without dimensions for model "${model}" — provider default will be used. Check call site to prevent dimension mismatch.`);
+      }
+    }
 
     let response: Response;
     try {
