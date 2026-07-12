@@ -4,7 +4,7 @@ const findMany = vi.fn();
 const manageRag = vi.fn();
 
 vi.mock("@/lib/auth/session", () => ({
-  getAuthUser: vi.fn(async () => ({ id: "user-1", username: "kevin", role: "admin" })),
+  getAuthUser: vi.fn(async () => ({ id: "user-1", username: "test-user", role: "admin" })),
 }));
 
 vi.mock("@/lib/db", () => ({

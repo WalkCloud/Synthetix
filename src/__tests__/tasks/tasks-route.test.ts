@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const findMany = vi.fn();
 
 vi.mock("@/lib/auth/session", () => ({
-  getAuthUser: vi.fn(async () => ({ id: "user-1", username: "kevin", role: "admin" })),
+  getAuthUser: vi.fn(async () => ({ id: "user-1", username: "test-user", role: "admin" })),
 }));
 
 vi.mock("@/lib/db", () => ({

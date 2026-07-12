@@ -70,7 +70,7 @@ function step(title) {
 // ---------- run ----------
 const ADMIN = {
   username: "admin",
-  password: "ChangeMe@12345",
+  password: process.env.E2E_ADMIN_PASSWORD ?? "Test@12345",
   displayName: "Admin",
 };
 
