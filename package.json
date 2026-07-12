@@ -5,6 +5,27 @@
   "license": "Apache-2.0",
   "author": "Synthetix",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WalkCloud/Synthetix.git"
+  },
+  "homepage": "https://github.com/WalkCloud/Synthetix#readme",
+  "bugs": {
+    "url": "https://github.com/WalkCloud/Synthetix/issues"
+  },
+  "keywords": [
+    "ai",
+    "rag",
+    "writing",
+    "knowledge-graph",
+    "self-hosted",
+    "lightrag",
+    "local-first",
+    "electron"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

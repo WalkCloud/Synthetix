@@ -167,6 +167,14 @@ e2e/.report/
 # ZCode CLI local workspace
 .zcode/
 
+# AI tooling artifacts (not for distribution)
+.antigravitycli/
+
+# root-level QA screenshots (curated ones live in docs/screenshots/)
+/knowledge-graph-verification*.png
+/synthetix-dashboard*.png
+/topology-screenshot*.png
+
 # Local test screenshots (not part of the project)
 /test-artifacts/
 

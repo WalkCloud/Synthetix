@@ -5,11 +5,9 @@
  * 这些不需要完整文档处理，快速可跑，验证删除 API 的错误处理。
  */
 import { test, expect, request } from "@playwright/test";
-import { ADMIN } from "./helpers/constants";
-import path from "path";
+import { ADMIN, SMALL_DOC } from "./helpers/constants";
 
-const VM_TEST_DIR = "Z:\\VM ShareFolder\\test";
-const SMALL_DOC_PATH = path.join(VM_TEST_DIR, "[REDACTED-CLIENT-B]容器云平台建设方案参考-20260305.docx");
+const SMALL_DOC_PATH = SMALL_DOC.path;
 
 test.describe("5B · 边界删除 @smoke", () => {
   test("DEL-11 删除不存在的文档应 404", async () => {

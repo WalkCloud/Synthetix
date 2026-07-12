@@ -2,20 +2,27 @@
  * 共享常量与类型 — 测试环境配置、文档路径、知识模式定义。
  *
  * 文档分配策略（见测试方案第二章）：
- *   full      → 大文档（90MB，heavy 档）
- *   其余三项  → 小文档（17MB，medium 档）
+ *   full      → 大文档（heavy 档）
+ *   其余三项  → 小文档（medium 档）
+ *
+ * Test fixtures: set E2E_TEST_DIR to a directory containing your test
+ * documents. The e2e suite looks for `sample-large.docx` and `sample-small.docx`
+ * there. See e2e/fixtures/ for minimal sample files.
  */
 import path from "path";
 
-/** 登录凭证（用户已配置的真实账号）。 */
-export const ADMIN = { username: "admin", password: "ChangeMe@12345" } as const;
+/** 登录凭证 — 默认测试账号，可通过环境变量覆盖。 */
+export const ADMIN = {
+  username: process.env.E2E_ADMIN_USERNAME ?? "admin",
+  password: process.env.E2E_ADMIN_PASSWORD ?? "Test@12345",
+} as const;
 
 /** 测试资源统一标识，用于 teardown 定向清理。 */
 export const E2E_PREFIX = "[E2E]";
 export const E2E_TAG = "e2e";
 
-/** VM 共享目录中的真实业务文档。 */
-const VM_TEST_DIR = "Z:\\VM ShareFolder\\test";
+/** Test document directory (override with E2E_TEST_DIR env var). */
+const TEST_DIR = process.env.E2E_TEST_DIR ?? "./e2e/fixtures";
 
 /**
  * 用户实际测试文档目录（E:\test doc）。三份覆盖 epub/docx/pdf 三种格式，
@@ -25,7 +32,7 @@ const VM_TEST_DIR = "Z:\\VM ShareFolder\\test";
  * 注意：使用正斜杠避免反斜杠转义问题（\t 会被解析为 TAB 字符）。
  * Node 的 path.join 和 fs 在 Windows 上对正斜杠完全兼容。
  */
-const USER_TEST_DIR = "E:/test doc";
+const USER_TEST_DIR = process.env.E2E_USER_TEST_DIR ?? "./e2e/fixtures";
 
 /**
  * Resolve the actual files in USER_TEST_DIR at runtime rather than hardcoding
@@ -73,17 +80,17 @@ function resolveUserTestDocs(): { path: string; tier: "light" | "medium"; format
 /** 用户测试文档集（三种格式）— 生命周期压力测试使用。 */
 export const USER_TEST_DOCS = resolveUserTestDocs();
 
-/** 大文档（仅用于 full 模式）：[REDACTED-CLIENT-A]容器平台投标技术方案。 */
+/** 大文档（仅用于 full 模式）— 放在 TEST_DIR 中。 */
 export const BIG_DOC = {
-  path: path.join(VM_TEST_DIR, "[REDACTED-CLIENT-A]容器平台投标技术方案_260427.docx"),
-  sizeBytes: 94_351_487,
+  path: path.join(TEST_DIR, "sample-large.docx"),
+  sizeBytes: 0,
   tier: "heavy" as const,
 };
 
-/** 小文档（用于 standard/graph/wiki）：[REDACTED-CLIENT-B]容器云平台建设方案。 */
+/** 小文档（用于 standard/graph/wiki）— 放在 TEST_DIR 中。 */
 export const SMALL_DOC = {
-  path: path.join(VM_TEST_DIR, "[REDACTED-CLIENT-B]容器云平台建设方案参考-20260305.docx"),
-  sizeBytes: 17_209_926,
+  path: path.join(TEST_DIR, "sample-small.docx"),
+  sizeBytes: 0,
   tier: "medium" as const,
 };
 

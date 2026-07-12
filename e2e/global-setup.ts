@@ -1,7 +1,8 @@
 /**
- * Global Setup（config.globalSetup）— 登录 admin/ChangeMe@12345，落盘 storageState。
+ * Global Setup（config.globalSetup）— 登录测试账号，落盘 storageState。
  * 后续所有 spec 复用登录态（config use.storageState 指向此文件）。
  *
+ * 凭证从 ADMIN 常量读取（可通过 E2E_ADMIN_USERNAME / E2E_ADMIN_PASSWORD 环境变量覆盖）。
  * 这是一个普通 async 函数，不是测试用例。
  */
 import { chromium, expect, type FullConfig } from "@playwright/test";

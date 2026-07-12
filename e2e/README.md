@@ -1,11 +1,9 @@
 # Synthetix 浏览器端 E2E 测试
 
-> 测试方案：`docs/test-plan-browser-2026-06-29.md`
-
 ## 运行环境
 
 - dev server 运行在 `http://localhost:3000`（`npm run dev`）
-- 登录账号：`admin / ChangeMe@12345`（真实环境，非 mock）
+- 登录账号：通过环境变量配置 `E2E_ADMIN_USERNAME` / `E2E_ADMIN_PASSWORD`（默认 `admin / Test@12345`）
 - Playwright 1.59.1 + chromium 浏览器（与项目 PDF 导出共用）
 
 ## 运行命令
@@ -29,10 +27,14 @@ pnpm e2e:report
 
 ## 测试文档
 
-| 文档 | 大小 | 用于模式 |
-|---|---|---|
-| `./e2e/test-fixtures\[REDACTED-CLIENT-A]容器平台投标技术方案_260427.docx` | 90 MB | 仅 full（完整分析） |
-| `./e2e/test-fixtures\[REDACTED-CLIENT-B]容器云平台建设方案参考-20260305.docx` | 17 MB | standard / graph / wiki |
+测试文档放在 `E2E_TEST_DIR` 环境变量指定的目录中（默认 `./e2e/fixtures`）：
+
+| 文档 | 用于模式 |
+|---|---|
+| `sample-large.docx` | 仅 full（完整分析） |
+| `sample-small.docx` | standard / graph / wiki |
+
+请提供自己的测试文档并重命名为上述文件名。`e2e/fixtures/` 下有一个最小化的示例文件。
 
 ## 结构
 
