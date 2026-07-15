@@ -93,6 +93,14 @@ Keyword and semantic search over indexed document chunks, with relevance scores 
 </details>
 
 <details>
+<summary>Knowledge graph</summary>
+
+![Knowledge graph](./docs/screenshots/knowledge-graph-en.png)
+
+A force-directed graph of entities and relationships extracted by LightRAG — inspect conceptual structure and connections across the document corpus.
+</details>
+
+<details>
 <summary>Knowledge Wiki</summary>
 
 ![Knowledge Wiki](./docs/screenshots/wiki-en.png)
@@ -496,6 +504,14 @@ Synthetix 正是围绕这些问题构建的。它结合三层知识架构、基�
 ![知识搜索](./docs/screenshots/search-zh.png)
 
 对已索引文档块进行关键词和语义搜索，带相关度分数和来源预览。
+</details>
+
+<details>
+<summary>知识图谱</summary>
+
+![知识图谱](./docs/screenshots/knowledge-graph-zh.png)
+
+LightRAG 抽取的实体与关系的力导向图——直观检查整个文档语料中的概念结构与关联。
 </details>
 
 <details>
