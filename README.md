@@ -360,9 +360,7 @@ LLM providers
 ## Documentation
 
 - [Release workflow](docs/release-workflow.md)
-- [Desktop packaging plan](docs/desktop-packaging-distribution-plan-2026-06-29.md)
-- [Wiki synthesis layer design](docs/wiki-synthesis-layer-design-2026-06-22.md)
-- [Domain segmentation, graph, and Wiki optimization](docs/domain-segmentation-graph-wiki-optimization-final-2026-06-28.md)
+- [Changelog](CHANGELOG.md)
 
 ## Development
 
@@ -774,9 +772,7 @@ LLM providers
 ## 文档
 
 - [发版流程](docs/release-workflow.md)
-- [桌面端打包方案](docs/desktop-packaging-distribution-plan-2026-06-29.md)
-- [Wiki 综合层设计](docs/wiki-synthesis-layer-design-2026-06-22.md)
-- [领域分段、图谱与 Wiki 优化](docs/domain-segmentation-graph-wiki-optimization-final-2026-06-28.md)
+- [更新日志](CHANGELOG.md)
 
 ## 开发
 
