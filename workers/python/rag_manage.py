@@ -7,6 +7,8 @@ Actions:
   entities          List/search entities by keyword
   entity-detail      Get entity with relations (--entity-name)
   graph              Export subgraph (--entity-name, --depth)
+  core-graph        Core graph from highest-degree entity (single-center, may bias to one doc)
+  overview-graph    Cross-document overview — samples entities from ALL documents evenly
   delete-by-doc      Delete all indexed data for a document (--doc-id)
   create-entity      Create entity (--entity-name, --entity-type, --description)
   edit-entity        Edit entity (--entity-name, --field, --value)
@@ -531,6 +533,150 @@ async def action_graph_summary(rag) -> dict:
         return {"error": str(e), "entities": [], "top": []}
 
 
+async def action_overview_graph(rag, max_nodes: int = 80, min_degree: int = 2) -> dict:
+    """Return a cross-document overview graph that includes entities from ALL documents.
+
+    Unlike ``action_core_graph`` (which expands from a single highest-degree entity
+    and thus biases toward one document), this function samples high-degree entities
+    from every document proportionally, plus all cross-document shared entities,
+    to form a representative overview of the entire knowledge base.
+
+    Algorithm:
+      1. Read the full NetworkX graph directly (no per-entity fan-out).
+      2. Classify each node by its source document (from the ``source_id`` property).
+      3. Identify cross-document nodes (source_id spans >1 doc) — these are the
+         natural bridges between document sub-graphs.
+      4. For each document, pick its top-N highest-degree entities.
+      5. Combine cross-document nodes + per-document samples into the result set.
+      6. Include edges where both endpoints are in the result set.
+    """
+    try:
+        graph_store = getattr(rag, "chunk_entity_relation_graph", None)
+        if graph_store is None:
+            return {"entity": "", "graph": {"nodes": [], "edges": []}, "total_entities": 0}
+
+        # Access the underlying NetworkX graph. _get_graph() returns the live graph
+        # (reloading from disk if another process committed). We read it once.
+        graph = await graph_store._get_graph()
+        if graph is None or graph.number_of_nodes() == 0:
+            return {"entity": "", "graph": {"nodes": [], "edges": []}, "total_entities": 0}
+
+        total_nodes = graph.number_of_nodes()
+        total_edges = graph.number_of_edges()
+
+        # ── Step 1: classify nodes by document and compute degrees ──
+        node_degree_map = dict(graph.degree())
+        # source_id property key in GraphML is "source_id" (LightRAG convention)
+        doc_nodes: dict[str, list[str]] = {}   # docId → [node_id, ...]
+        cross_doc_nodes: list[str] = []
+        node_source_ids: dict[str, set] = {}   # node_id → set of docId prefixes
+
+        for node_id in graph.nodes():
+            props = graph.nodes[node_id]
+            source_id = props.get("source_id", "") or ""
+            chunks = source_id.split("<SEP>")
+            doc_ids = set()
+            for c in chunks:
+                c = c.strip()
+                if "/" in c:
+                    doc_ids.add(c.split("/")[0][:8])
+            node_source_ids[node_id] = doc_ids
+            if len(doc_ids) > 1:
+                cross_doc_nodes.append(node_id)
+            for did in doc_ids:
+                doc_nodes.setdefault(did, []).append(node_id)
+
+        # ── Step 2: budget allocation ──
+        # Reserve slots for cross-document nodes first, then distribute the rest
+        # evenly across documents.
+        cross_budget = min(len(cross_doc_nodes), max_nodes // 3)
+        remaining = max_nodes - cross_budget
+        num_docs = max(len(doc_nodes), 1)
+        per_doc = max(remaining // num_docs, 5)
+
+        selected: set[str] = set()
+
+        # Cross-document nodes: sort by degree, take top cross_budget.
+        cross_sorted = sorted(cross_doc_nodes, key=lambda n: node_degree_map.get(n, 0), reverse=True)
+        selected.update(cross_sorted[:cross_budget])
+
+        # Per-document nodes: sort by degree, take top per_doc from each.
+        for did, nodes in doc_nodes.items():
+            doc_sorted = sorted(nodes, key=lambda n: node_degree_map.get(n, 0), reverse=True)
+            selected.update(doc_sorted[:per_doc])
+
+        # If we're under max_nodes, fill remaining slots with the highest-degree
+        # nodes not yet selected (regardless of document).
+        if len(selected) < max_nodes:
+            all_sorted = sorted(graph.nodes(), key=lambda n: node_degree_map.get(n, 0), reverse=True)
+            for nid in all_sorted:
+                if len(selected) >= max_nodes:
+                    break
+                selected.add(nid)
+
+        # ── Step 3: filter by min_degree (relaxed if it removes too many) ──
+        if min_degree > 1:
+            degree_filtered = {n for n in selected if node_degree_map.get(n, 0) >= min_degree}
+            # Keep at least 60% of selected; otherwise relax threshold.
+            if len(degree_filtered) < len(selected) * 0.6:
+                degree_filtered = {n for n in selected if node_degree_map.get(n, 0) >= 1}
+            selected = degree_filtered
+
+        # ── Step 4: build node and edge lists ──
+        # Sort selected nodes by degree for consistent display ordering.
+        selected_sorted = sorted(selected, key=lambda n: node_degree_map.get(n, 0), reverse=True)
+
+        result_nodes = []
+        for nid in selected_sorted:
+            props = graph.nodes[nid]
+            source_id = props.get("source_id", "") or ""
+            # Determine doc membership for the frontend to color/label.
+            doc_ids = node_source_ids.get(nid, set())
+            result_nodes.append({
+                "id": nid,
+                "label": nid,
+                "type": props.get("entity_type", "") or props.get("type", "") or "entity",
+                "description": (props.get("description", "") or "").split("<SEP>")[0].strip()[:200],
+                "source_id": source_id.split("<SEP>")[0].strip(),
+                "file_path": (props.get("file_path", "") or "").split("<SEP>")[0].strip(),
+                "degree": node_degree_map.get(nid, 0),
+                "doc_ids": sorted(doc_ids),
+            })
+
+        result_edges = []
+        for u, v in graph.edges():
+            if u in selected and v in selected:
+                props = graph.edges[u, v]
+                desc = (props.get("description", "") or "").split("<SEP>")[0].strip()
+                result_edges.append({
+                    "source": u,
+                    "target": v,
+                    "label": desc,
+                    "description": desc,
+                    "weight": props.get("weight", 1) or 1,
+                    "keywords": props.get("keywords", "") or "",
+                    "source_id": (props.get("source_id", "") or "").split("<SEP>")[0].strip(),
+                })
+
+        return {
+            "entity": "",
+            "graph": {
+                "nodes": result_nodes,
+                "edges": result_edges,
+            },
+            "total_entities": total_nodes,
+            "total_edges": total_edges,
+            "cross_doc_entities": len(cross_doc_nodes),
+            "documents": sorted(doc_nodes.keys()),
+            "leaf_count": total_nodes - len(result_nodes),
+        }
+    except Exception as e:
+        print(f"action_overview_graph error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return {"error": str(e), "entity": "", "graph": {"nodes": [], "edges": []}}
+
+
 async def action_core_graph(rag, max_nodes: int = 50, min_degree: int = 2) -> dict:
     """Return a clean core graph: only nodes with degree >= min_degree, hiding leaf nodes."""
     try:
@@ -726,6 +872,8 @@ async def main_async(args) -> None:
         result = await action_list_entities(rag, args.keyword or "", args.limit)
     elif action == "graph-summary":
         result = await action_graph_summary(rag)
+    elif action == "overview-graph":
+        result = await action_overview_graph(rag, args.max_nodes or 80, args.min_degree or 1)
     elif action == "core-graph":
         result = await action_core_graph(rag, args.max_nodes or 50, args.min_degree or 2)
     elif action == "entity-detail":
@@ -758,7 +906,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="LightRAG knowledge graph management")
     parser.add_argument("--user-id", required=True)
     parser.add_argument("--action", required=True,
-                        choices=["entities", "entity-detail", "graph", "core-graph", "graph-summary", "delete-by-doc",
+                        choices=["entities", "entity-detail", "graph", "core-graph", "overview-graph", "graph-summary", "delete-by-doc",
                                  "create-entity", "edit-entity", "merge-entities", "delete-entity"])
     parser.add_argument("--keyword", default="")
     parser.add_argument("--entity-name", default="")

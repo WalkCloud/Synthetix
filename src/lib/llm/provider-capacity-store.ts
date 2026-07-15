@@ -57,25 +57,61 @@ function resolveCapacityFile(): string {
  * on a cold limiter), writes are infrequent (only on ceiling change). The
  * cache is loaded lazily once per process; subsequent writes update both the
  * cache and the file.
+ *
+ * The Python graph worker (rag_index.py) writes to the SAME file with the SAME
+ * key format (after the unification fix). To pick up Python's budget changes
+ * (e.g. a 429-driven multiplicative-decrease), we check the file's mtime on
+ * every read — if the file was modified by another process, we reload it.
+ * This is cheap (a single stat) and ensures cross-process budget sharing
+ * without polling overhead.
  */
 let cache: StoreShape | null = null;
+let cacheMtimeMs = 0;
 let loadPromise: Promise<StoreShape> | null = null;
 
-async function load(): Promise<StoreShape> {
-  if (cache) return cache;
+async function load(forceReload = false): Promise<StoreShape> {
+  if (cache && !forceReload) {
+    // Check if the file was modified by another process (Python graph worker).
+    // A stat is ~microseconds and avoids stale budget reads across processes.
+    const file = resolveCapacityFile();
+    const stat = await fsp.stat(file).catch(() => null);
+    if (stat && stat.mtimeMs === cacheMtimeMs) {
+      return cache; // file unchanged — cache is fresh
+    }
+    // File changed externally → fall through to reload.
+  }
   if (loadPromise) return loadPromise;
 
   loadPromise = (async () => {
     const file = resolveCapacityFile();
+    const stat = await fsp.stat(file).catch(() => null);
+    if (cache && stat && stat.mtimeMs === cacheMtimeMs && !forceReload) {
+      return cache;
+    }
     try {
       const raw = await fsp.readFile(file, "utf-8");
       const parsed = JSON.parse(raw) as StoreShape;
       cache = parsed && typeof parsed === "object" ? parsed : {};
+      // Migrate: remove legacy "graph:" prefixed keys (pre-unification Python
+      // used a separate namespace). These are now dead records — the unified
+      // key format is "openai_compatible:<normalized_url>" on both sides.
+      let migrated = false;
+      for (const key of Object.keys(cache)) {
+        if (key.startsWith("graph:")) {
+          delete cache[key];
+          migrated = true;
+        }
+      }
+      if (migrated) {
+        // Persist the cleaned store so we don't re-process on every load.
+        // (Deferred — we just update cache; the next persist() will write it.)
+      }
     } catch {
       // Missing / corrupt file → empty store. Not an error: a fresh deploy
       // simply has no learned capacity yet, and the limiter probes from floor.
       cache = {};
     }
+    cacheMtimeMs = stat?.mtimeMs ?? 0;
     return cache;
   })();
 
@@ -149,10 +185,20 @@ async function persist(): Promise<void> {
     // Windows rename can race; fall back to direct write.
     await fsp.writeFile(file, JSON.stringify(cache, null, 2), "utf-8");
   }
+  // Update mtime so our own write doesn't trigger a spurious reload.
+  const stat = await fsp.stat(file).catch(() => null);
+  cacheMtimeMs = stat?.mtimeMs ?? 0;
+}
+
+/** Force a reload from disk on the next read, picking up changes written by
+ *  the Python process. Called by the limiter's periodic sync. */
+export async function reloadCapacityStore(): Promise<void> {
+  await load(true);
 }
 
 /** Test helper: drop the in-process cache so the next read hits disk. */
 export function _resetCapacityCacheForTests(): void {
   cache = null;
+  cacheMtimeMs = 0;
   loadPromise = null;
 }

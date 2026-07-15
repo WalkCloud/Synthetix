@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const ctx = await createRagContext(user.id, { requireLlm: true });
     const result = await manageRag({
       userId: user.id,
-      action: mode === "core" ? "core-graph" : "graph",
+      action: mode === "core" ? "core-graph" : mode === "overview" ? "overview-graph" : "graph",
       embedConfig: ctx.embedConfig,
       llmConfig: ctx.llmConfig!,
       rerankConfig: ctx.rerankConfig,

@@ -5,7 +5,27 @@ Eliminates code duplication across rag_index.py, rag_query.py, rag_manage.py.
 import sys
 import json
 import os
+import re
 import glob as glob_mod
+
+
+def normalize_api_base(url: str) -> str:
+    """Normalize an API base URL to match Node's ``normalizeProviderBaseUrl``.
+
+    The adaptive limiter persists per-provider capacity keyed by
+    ``f"{provider_type}:{normalized_url}"``. Node (src/lib/llm/provider-endpoints.ts)
+    strips trailing slashes, version segments (/v1, /v2), and endpoint suffixes
+    (/embeddings, /chat/completions) before constructing the key. Python must
+    produce the SAME key for the two processes to share a single budget record;
+    otherwise they maintain independent AIMD budgets for the same provider and
+    double-count load against the shared API quota.
+    """
+    url = re.sub(r"/+$", "", url)                                   # strip trailing slash(es)
+    url = re.sub(r"/embeddings(/\w+)?$", "", url)                   # strip /embeddings or /embeddings/<dim>
+    url = re.sub(r"/chat/completions$", "", url)                    # strip /chat/completions
+    url = re.sub(r"/v\d+/(chat/completions|embeddings)(/\w+)?$", "", url)  # strip /vN/<endpoint>
+    url = re.sub(r"/v\d+$", "", url)                                # strip trailing /vN
+    return url
 
 # ── JSON safety ──────────────────────────────────────────────────────────────
 

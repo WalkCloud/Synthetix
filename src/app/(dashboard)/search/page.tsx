@@ -115,7 +115,7 @@ export default function SearchPage() {
     stopKgLoadingTimer();
     kgLoadingTimerRef.current = setInterval(tickLoading, 200);
     try {
-      const params = new URLSearchParams({ depth: "2", max_nodes: "150", mode: "core", min_degree: "1" });
+      const params = new URLSearchParams({ depth: "2", max_nodes: "150", mode: "overview", min_degree: "1" });
       if (entity) { params.set("entity", entity); params.set("mode", "graph"); }
       const res = await fetch(`/api/v1/knowledge/graph?${params}`);
       const d = await res.json();

@@ -12,7 +12,7 @@ English | [简体中文](#简体中文)
 
 <p align="center">
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.1-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-7c3aed">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.13%2B-3776ab">
   <img alt="Offline-first" src="https://img.shields.io/badge/offline--first-cloud--ready-16a34a">
@@ -426,7 +426,7 @@ Synthetix is licensed under the [Apache License 2.0](LICENSE). Third-party notic
 
 <p align="center">
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.1-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-7c3aed">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.13%2B-3776ab">
   <img alt="Offline-first" src="https://img.shields.io/badge/offline--first-cloud--ready-16a34a">

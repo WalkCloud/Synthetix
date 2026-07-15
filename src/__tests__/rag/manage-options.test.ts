@@ -10,6 +10,7 @@ describe("RagManageOptions discriminated union", () => {
         return { entityName: options.entityName, depth: options.depth };
       case "graph":
       case "core-graph":
+      case "overview-graph":
         return { entityName: options.entityName, minDegree: options.minDegree };
       case "create-entity":
         return { entityName: options.entityName, entityType: options.entityType, description: options.description };
@@ -51,6 +52,12 @@ describe("RagManageOptions discriminated union", () => {
     const opts: RagManageOptions = { action: "core-graph", ...baseConfig, entityName: "API" };
     const result = extractActionSpecificFields(opts);
     expect(result).toEqual({ entityName: "API", minDegree: undefined });
+  });
+
+  it("overview-graph action is valid", () => {
+    const opts: RagManageOptions = { action: "overview-graph", ...baseConfig, maxNodes: 80, minDegree: 2 };
+    const result = extractActionSpecificFields(opts);
+    expect(result).toEqual({ entityName: undefined, minDegree: 2 });
   });
 
   it("create-entity action requires all fields", () => {

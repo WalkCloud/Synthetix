@@ -42,6 +42,7 @@ import { delay } from "./retry-after";
 import {
   updateCapacity,
   readCapacity,
+  reloadCapacityStore,
   type ProviderCapacityRecord,
 } from "./provider-capacity-store";
 import type { RateLimitInfo } from "./rate-limit-headers";
@@ -110,6 +111,9 @@ const MAX_REQUEST_CONCURRENCY = readPositiveIntEnv("LLM_LIMITER_MAX_REQUESTS", 2
 const MIN_REQUEST_CONCURRENCY = readPositiveIntEnv("LLM_LIMITER_MIN_CONCURRENCY", 1);
 /** How often (ms) to persist a record even if only the budget drifted. */
 const PERSIST_INTERVAL_MS = 30_000;
+/** How often (ms) to re-read the shared capacity file for cross-process budget
+ *  sync (Python graph worker may shrink the budget on a 429). */
+const SYNC_INTERVAL_MS = readPositiveIntEnv("LLM_LIMITER_SYNC_INTERVAL_MS", 10_000);
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -172,6 +176,12 @@ export class AdaptiveLimiter {
   private readonly budgetLock = new Semaphore(1);
 
   private lastPersistAt = 0;
+
+  /** Timestamp (epoch ms) of the last cross-process budget sync. The Python
+   *  graph worker shares the same provider-capacity.json and may shrink the
+   *  budget on a 429. We periodically re-read the file so the Node side picks
+   *  up Python's learning instead of double-probing the same provider. */
+  private lastSyncAt = 0;
   private lastPersistedBudget = 0;
 
   constructor(providerKey: string, opts?: {
@@ -199,6 +209,11 @@ export class AdaptiveLimiter {
    */
   async acquire(opts: AcquireOptions): Promise<(info?: ReleaseInfo) => Promise<void>> {
     const want = Math.max(opts.estimatedTokens, 1);
+
+    // Sync budget from the shared file if another process (Python graph worker)
+    // may have written a lower budget due to a 429. Cheap (one stat + optional
+    // read) and bounded to once per 10s per provider.
+    await this.maybeSyncBudgetFromStore();
 
     // 1. Respect single-flight cooldown (a sibling request hit a 429).
     await this.waitForCooldown();
@@ -489,6 +504,37 @@ export class AdaptiveLimiter {
     if (now - this.lastPersistAt < PERSIST_INTERVAL_MS) return;
     if (Math.abs(this.budgetTokens - this.lastPersistedBudget) < AI_STEP_TOKENS) return;
     await this.persist();
+  }
+
+  /**
+   * Periodically re-read the shared capacity file to pick up budget changes
+   * written by the Python graph worker (which shares the same provider key
+   * after the unification fix). If Python shrank the budget (e.g. on a 429),
+   * we adopt the lower value so the Node side doesn't over-send while the
+   * provider is congested. Conservative: only shrinks (never grows) from
+   * the file — growth still happens via our own AIMD success path.
+   */
+  private async maybeSyncBudgetFromStore(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSyncAt < SYNC_INTERVAL_MS) return;
+    this.lastSyncAt = now;
+
+    try {
+      // Reload the store from disk (the mtime check inside load() skips the
+      // actual file read if nothing changed since the last load).
+      await reloadCapacityStore();
+      const rec = await readCapacity(this.providerKey);
+      if (rec && rec.budgetTokens > 0 && rec.budgetTokens < this.budgetTokens) {
+        // Python learned the provider is under pressure — adopt the lower
+        // budget so interactive requests (brainstorm/chat) back off too.
+        this.budgetTokens = rec.budgetTokens;
+        if (rec.discoveredCeiling > 0 && rec.discoveredCeiling < this.ceilingTokens) {
+          this.ceilingTokens = rec.discoveredCeiling;
+        }
+      }
+    } catch {
+      // Best-effort: a failed sync must never block the acquire.
+    }
   }
 
   private async persist(): Promise<void> {

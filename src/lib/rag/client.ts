@@ -19,7 +19,7 @@ interface RagBaseOptions {
 export type RagManageOptions =
   | (RagBaseOptions & { action: "entities"; keyword?: string; limit?: number })
   | (RagBaseOptions & { action: "entity-detail"; entityName: string; depth?: number; maxNodes?: number })
-  | (RagBaseOptions & { action: "graph" | "core-graph"; entityName?: string; depth?: number; maxNodes?: number; minDegree?: number })
+  | (RagBaseOptions & { action: "graph" | "core-graph" | "overview-graph"; entityName?: string; depth?: number; maxNodes?: number; minDegree?: number })
   | (RagBaseOptions & { action: "create-entity"; entityName: string; entityType: string; description: string })
   | (RagBaseOptions & { action: "delete-entity"; entityName: string })
   | (RagBaseOptions & { action: "merge-entities"; sources: string; target: string })
@@ -61,6 +61,7 @@ export async function manageRag(
       break;
     case "graph":
     case "core-graph":
+    case "overview-graph":
       if (options.entityName) args.push("--entity-name", options.entityName);
       if (options.depth) args.push("--depth", String(options.depth));
       if (options.maxNodes) args.push("--max-nodes", String(options.maxNodes));

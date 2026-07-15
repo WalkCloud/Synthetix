@@ -462,10 +462,14 @@ async def index_document(
                     return await _call_graph_llm_with_connection_retry(call_openai)
                 raise
 
-        # Per-provider limiter key. Prefixed "graph:" so graph-extraction
-        # capacity is tracked separately from the Node-side wiki/embed limiter
-        # (different call patterns), while still persisted to the shared file.
-        provider_key = f"graph:{llm_api_base.rstrip('/')}"
+        # Per-provider limiter key. Must match the Node-side key format
+        # (openai_compatible:<normalized_url>) so both processes share a single
+        # AIMD budget record in provider-capacity.json. Without this alignment,
+        # graph extraction and interactive requests (brainstorm/wiki/chat) each
+        # probe the provider independently and double-count load, causing 429s
+        # and unresponsiveness during indexing.
+        from rag_common import normalize_api_base
+        provider_key = f"openai_compatible:{normalize_api_base(llm_api_base)}"
         llm_func = wrap_llm_func(raw_llm_func, provider_key)
     else:
         async def llm_func(*args, **kwargs) -> str:
