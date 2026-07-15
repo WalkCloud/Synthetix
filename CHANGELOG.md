@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Knowledge graph management**: entity CRUD and merge operations in `rag_manage.py` — create, edit, delete, and merge entities directly from the knowledge graph.
 - **Adaptive LLM concurrency**: new capacity tracking and adaptive limiter (`adaptive-limiter.ts`, `provider-capacity-store.ts`) for smarter request throttling under load.
 - **Knowledge graph screenshots**: bilingual force-directed graph views added to README product tour.
-- **Promotion copy**: marketing documentation for Douyin, Xiaohongshu, and WeChat Moments (`docs/promotion/`).
 - **Screenshot capture tool**: `scripts/capture-sanitized-screenshots.mjs` for reproducible, sensitive-info-masked product screenshots.
 
 ### Changed
