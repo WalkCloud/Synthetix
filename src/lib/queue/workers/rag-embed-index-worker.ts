@@ -14,21 +14,21 @@ import { cancelledOutcome, type WorkerResult, type TaskExecutionContext } from "
 
 export async function processRagEmbedIndex(
   taskId: string,
-  _ctx: TaskExecutionContext,
+  ctx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   let docId: string | undefined;
 
   try {
-    const ctx = await loadProcessingTask(taskId);
-    docId = ctx.docId;
-    await assertLatestRagEmbedIndexTask(ctx.doc.userId, ctx.docId, taskId);
-    await resolveProcessingModels(ctx);
+    const procCtx = await loadProcessingTask(taskId, ctx.signal);
+    docId = procCtx.docId;
+    await assertLatestRagEmbedIndexTask(procCtx.doc.userId, procCtx.docId, taskId);
+    await resolveProcessingModels(procCtx);
 
     // ── 1. Embedding (also re-splits oversize chunks to their final shape) ──
-    const needEmbedding = (ctx.options.indexTarget || "full") !== "original";
-    if (ctx.embedModel && needEmbedding) {
+    const needEmbedding = (procCtx.options.indexTarget || "full") !== "original";
+    if (procCtx.embedModel && needEmbedding) {
       await db.document.update({
-        where: { id: ctx.docId },
+        where: { id: procCtx.docId },
         data: { status: "embedding" },
       });
       await db.asyncTask.updateMany({
@@ -36,8 +36,8 @@ export async function processRagEmbedIndex(
         data: { progress: 40 },
       });
 
-      await embedDocumentChunks(ctx);
-      await assertLatestRagEmbedIndexTask(ctx.doc.userId, ctx.docId, taskId);
+      await embedDocumentChunks(procCtx);
+      await assertLatestRagEmbedIndexTask(procCtx.doc.userId, procCtx.docId, taskId);
     }
 
     // ── 2. FTS sync — UNCONDITIONAL ──────────────────────────────────────────
@@ -48,12 +48,12 @@ export async function processRagEmbedIndex(
     // finalized (including any oversize-chunk re-split), and is idempotent
     // (DELETE-then-INSERT per doc), so calling it again from indexDocument's
     // basic path is harmless.
-    await syncFtsIndexForDocument(ctx.docId).catch((err) => {
+    await syncFtsIndexForDocument(procCtx.docId).catch((err) => {
       console.warn("FTS index sync failed:", err);
     });
 
     await db.document.update({
-      where: { id: ctx.docId },
+      where: { id: procCtx.docId },
       data: { status: "indexing" },
     });
     await db.asyncTask.updateMany({
@@ -71,9 +71,9 @@ export async function processRagEmbedIndex(
     // segmentation duration (~6 min), but quality improves dramatically.
     // If segmentation is disabled/unsupported, the segment worker's failure
     // path still submits wiki (falling back to chunks) so wiki is never skipped.
-    if (shouldEnqueueWikiSynthesis(ctx.options)) {
+    if (shouldEnqueueWikiSynthesis(procCtx.options)) {
       const stillExists = await db.document.findUnique({
-        where: { id: ctx.docId },
+        where: { id: procCtx.docId },
         select: { id: true },
       });
       if (stillExists) {
@@ -83,8 +83,8 @@ export async function processRagEmbedIndex(
         // submits wiki_synthesize anyway (chunk fallback).
         await getQueue().submit(
           "document_segment",
-          { docId: ctx.docId, options: ctx.options },
-          ctx.doc.userId,
+          { docId: procCtx.docId, options: procCtx.options },
+          procCtx.doc.userId,
           { parentTaskId: taskId },
         );
       }
@@ -98,14 +98,14 @@ export async function processRagEmbedIndex(
     //   - basic mode: run LightRAG basic here (unchanged behaviour).
     //   - graph mode: skip basic; the rag_index task inserts directly with
     //     graph extraction, reusing the embeddings.bin cache (no re-embed).
-    const willGraph = shouldEnqueueGraphIndex(ctx.options);
+    const willGraph = shouldEnqueueGraphIndex(procCtx.options);
     let indexResult: Awaited<ReturnType<typeof indexDocument>> = null;
 
     if (!willGraph) {
-      const originalIndexMode = ctx.options.indexMode;
-      ctx.options.indexMode = "basic";
-      indexResult = await indexDocument(ctx);
-      ctx.options.indexMode = originalIndexMode;
+      const originalIndexMode = procCtx.options.indexMode;
+      procCtx.options.indexMode = "basic";
+      indexResult = await indexDocument(procCtx);
+      procCtx.options.indexMode = originalIndexMode;
     }
 
     await db.asyncTask.updateMany({
@@ -113,11 +113,11 @@ export async function processRagEmbedIndex(
       data: { progress: 92 },
     });
 
-    const mdForTags = ctx.markdownPath
-      ? await fs.promises.readFile(ctx.markdownPath, "utf-8").catch(() => "")
+    const mdForTags = procCtx.markdownPath
+      ? await fs.promises.readFile(procCtx.markdownPath, "utf-8").catch(() => "")
       : "";
     if (mdForTags) {
-      await autoTagDocument(ctx, mdForTags);
+      await autoTagDocument(procCtx, mdForTags);
     }
 
     // ── 5. Status + graph enqueue ────────────────────────────────────────────
@@ -129,7 +129,7 @@ export async function processRagEmbedIndex(
     // while the graph branch still shows as "active" in the pipeline UI. The
     // graph worker's later `status: ready` write is now idempotent.
     await db.document.update({
-      where: { id: ctx.docId },
+      where: { id: procCtx.docId },
       data: { status: "ready" },
     });
 
@@ -139,15 +139,15 @@ export async function processRagEmbedIndex(
       // rag_index task would start a long graph extraction against a doc
       // that no longer exists, recreating orphan entities/relations.
       const stillExists = await db.document.findUnique({
-        where: { id: ctx.docId },
+        where: { id: procCtx.docId },
         select: { id: true },
       });
       if (stillExists) {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit(
           "rag_index",
-          { docId: ctx.docId, options: ctx.options },
-          ctx.doc.userId,
+          { docId: procCtx.docId, options: procCtx.options },
+          procCtx.doc.userId,
           { parentTaskId: taskId },
         );
       }

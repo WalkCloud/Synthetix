@@ -33,22 +33,22 @@ export function buildGraphTaskProgressUpdate(
   };
 }
 
-export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionContext): Promise<WorkerResult> {
-  const ctx = await loadProcessingTask(taskId);
-  await resolveProcessingModels(ctx);
+export async function processDocumentGraph(taskId: string, ctx: TaskExecutionContext): Promise<WorkerResult> {
+  const procCtx = await loadProcessingTask(taskId, ctx.signal);
+  await resolveProcessingModels(procCtx);
 
   // The attempt counter is stashed in inputData by retries (1st run has none → 0).
-  const attempt = typeof (ctx.options as Record<string, unknown> | undefined)?.[ATTEMPT_KEY] === "number"
-    ? Number((ctx.options as Record<string, unknown>)[ATTEMPT_KEY])
+  const attempt = typeof (procCtx.options as Record<string, unknown> | undefined)?.[ATTEMPT_KEY] === "number"
+    ? Number((procCtx.options as Record<string, unknown>)[ATTEMPT_KEY])
     : 0;
 
   // Check if document still exists before starting graph extraction
-  const currentDoc = await db.document.findUnique({ where: { id: ctx.docId } });
+  const currentDoc = await db.document.findUnique({ where: { id: procCtx.docId } });
   if (!currentDoc || currentDoc.status === "failed") {
     return cancelledOutcome("Document no longer exists", { ok: false }, 0);
   }
 
-  ctx.options.indexMode = "graph";
+  procCtx.options.indexMode = "graph";
 
   try {
     await db.asyncTask.updateMany({
@@ -56,7 +56,7 @@ export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionCo
       data: { progress: 20 },
     });
 
-    const indexResult = await indexDocument(ctx, async (event) => {
+    const indexResult = await indexDocument(procCtx, async (event) => {
       await db.asyncTask.updateMany({
         where: { id: taskId, status: "running" },
         data: buildGraphTaskProgressUpdate(event),
@@ -69,7 +69,7 @@ export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionCo
     const ragResult = indexResult?.rag as { status?: string; timeoutOccurred?: boolean; error?: string } | undefined;
     const graphTimedOut = ragResult?.status === "failed" && !!ragResult?.timeoutOccurred;
     if (graphTimedOut) {
-      console.warn(`[graph] doc ${ctx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
+      console.warn(`[graph] doc ${procCtx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
     }
 
     // Graph extraction is the FINAL pipeline stage. The embed worker left the
@@ -78,7 +78,7 @@ export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionCo
     // (LightRAG soft-failures are non-blocking: basic indexing already
     // succeeded, so the doc is usable and "ready" is correct.)
     await db.document.update({
-      where: { id: ctx.docId },
+      where: { id: procCtx.docId },
       data: { status: "ready" },
     }).catch(() => {});
 
@@ -93,7 +93,7 @@ export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionCo
       timeoutOccurred: graphTimedOut || undefined,
     };
   } catch (error) {
-    return handleGraphFailure(taskId, ctx.docId, ctx.doc.userId, error, attempt);
+    return handleGraphFailure(taskId, procCtx.docId, procCtx.doc.userId, error, attempt);
   }
 }
 

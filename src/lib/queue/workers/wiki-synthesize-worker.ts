@@ -16,17 +16,15 @@ import { failedOutcome, type WorkerResult, type TaskExecutionContext } from "@/l
 
 export async function processWikiSynthesize(
   taskId: string,
-  _ctx: TaskExecutionContext,
+  taskCtx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   let docId: string | undefined;
 
   try {
-    const ctx = await loadProcessingTask(taskId);
-    docId = ctx.docId;
+    const procCtx = await loadProcessingTask(taskId, taskCtx.signal);
+    docId = procCtx.docId;
 
-    // Resolve the writing LLM (same pattern as rag-embed-index-worker +
-    // auto-tagger). Without a writing model we skip gracefully.
-    await resolveProcessingModels(ctx);
+    await resolveProcessingModels(procCtx);
 
     await db.asyncTask.updateMany({
       where: { id: taskId, status: "running" },
@@ -40,7 +38,7 @@ export async function processWikiSynthesize(
     // yet on the first run; in that case we use chunks (the pre-segmentation
     // behaviour). This keeps Wiki non-blocking on segmentation.
     const segments = await db.documentSegment.findMany({
-      where: { documentId: ctx.docId },
+      where: { documentId: procCtx.docId },
       orderBy: { index: "asc" },
     });
 
@@ -50,7 +48,7 @@ export async function processWikiSynthesize(
     if (segments.length >= 2) {
       // Reconstruct each segment's text from its atom range for full context.
       const atoms = await db.documentAtom.findMany({
-        where: { documentId: ctx.docId },
+        where: { documentId: procCtx.docId },
         orderBy: { index: "asc" },
         select: { index: true, content: true },
       });
@@ -71,13 +69,13 @@ export async function processWikiSynthesize(
         };
       });
       inputUnitType = "segment";
-      console.log(`[wiki] doc ${ctx.docId}: using ${synthChunks.length} segments as input (vs ${await db.documentChunk.count({ where: { documentId: ctx.docId } }).catch(() => 0)} chunks)`);
+      console.log(`[wiki] doc ${procCtx.docId}: using ${synthChunks.length} segments as input (vs ${await db.documentChunk.count({ where: { documentId: procCtx.docId } }).catch(() => 0)} chunks)`);
     } else {
       // Fallback: load chunks from the DB — NOT the full markdown. This keeps
       // the LLM context-bounded: the synthesizer processes one unit at a time
       // regardless of total document size.
       const chunks = await db.documentChunk.findMany({
-        where: { documentId: ctx.docId },
+        where: { documentId: procCtx.docId },
         orderBy: { index: "asc" },
         select: { id: true, index: true, content: true, tokenCount: true, title: true },
       });
@@ -112,7 +110,7 @@ export async function processWikiSynthesize(
       data: { progress: 50 },
     });
 
-    const result = await synthesizeDocument(ctx, synthChunks, inputUnitType, (processed, total, phase = "extract") => {
+    const result = await synthesizeDocument(procCtx, synthChunks, inputUnitType, (processed, total, phase = "extract") => {
       const frac = total > 0 ? processed / total : 0;
       const [floor, ceil] = phase === "merge" ? [65, 88] : phase === "summary" ? [88, 98] : [30, 65];
       const pct = Math.round(floor + frac * (ceil - floor));

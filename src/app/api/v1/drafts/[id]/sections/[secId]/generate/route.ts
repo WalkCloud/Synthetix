@@ -62,6 +62,14 @@ export async function POST(
     });
   });
 
+  // Bridge client disconnect (request.signal) into the generation: if the
+  // client goes away we abort the LLM stream so the worker doesn't keep
+  // generating into the void. ReadableStream.cancel() also fires on disconnect.
+  const disconnectController = new AbortController();
+  const onAbort = () => disconnectController.abort();
+  if (request.signal.aborted) disconnectController.abort();
+  else request.signal.addEventListener("abort", onAbort, { once: true });
+
   const readable = new ReadableStream({
     async start(controller) {
       try {
@@ -164,6 +172,11 @@ export async function POST(
         try { controller.enqueue(encoder.encode(sseError(message))); } catch {}
         try { controller.close(); } catch {}
       }
+    },
+    cancel() {
+      // Client disconnected — abort any in-flight LLM stream so the worker
+      // doesn't keep generating into the void.
+      disconnectController.abort();
     },
   });
 

@@ -49,6 +49,8 @@ export interface ProcessingContext {
   contextWindow: number;
   splitThreshold: number;
   chunkMaxTokens: number;
+  /** Cancellation signal propagated from the task execution context. */
+  signal?: AbortSignal;
 }
 
 export interface SplitPlan {
@@ -106,7 +108,7 @@ export async function persistEmbeddingUpdates(
   }
 }
 
-export async function loadProcessingTask(taskId: string): Promise<ProcessingContext> {
+export async function loadProcessingTask(taskId: string, signal?: AbortSignal): Promise<ProcessingContext> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Task ${taskId} not found`);
 
@@ -143,6 +145,7 @@ export async function loadProcessingTask(taskId: string): Promise<ProcessingCont
     contextWindow: 4096,
     splitThreshold: 2048,
     chunkMaxTokens: 1536,
+    signal,
   };
 }
 
@@ -435,6 +438,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
         validTexts.slice(start, end),
         embedModel.modelId,
         embedModel.embeddingDim ?? undefined,
+        ctx.signal,
       );
       totalEmbedTokens += embedResult.inputTokens;
       const updates = embedResult.embeddings.map((emb, ei) => {

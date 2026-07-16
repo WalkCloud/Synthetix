@@ -20,16 +20,16 @@ import { cancelledOutcome, type WorkerResult, type TaskExecutionContext } from "
 
 export async function processDocumentSegment(
   taskId: string,
-  _ctx: TaskExecutionContext,
+  taskCtx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   // Declared outside try so the catch block can access it for the wiki
-  // fallback submission. When loadProcessingTask itself throws, ctx is null
+  // fallback submission. When loadProcessingTask itself throws, procCtx is null
   // and we skip the wiki fallback (there's no docId to submit for).
-  let ctx: ProcessingContext | null = null;
+  let procCtx: ProcessingContext | null = null;
 
   try {
-    ctx = await loadProcessingTask(taskId);
-    await resolveProcessingModels(ctx);
+    procCtx = await loadProcessingTask(taskId, taskCtx.signal);
+    await resolveProcessingModels(procCtx);
 
     await db.asyncTask.updateMany({
       where: { id: taskId, status: "running" },
@@ -38,63 +38,52 @@ export async function processDocumentSegment(
 
     // Skip if the document was deleted while queued.
     const stillExists = await db.document.findUnique({
-      where: { id: ctx.docId },
+      where: { id: procCtx.docId },
       select: { id: true },
     });
     if (!stillExists) {
       return cancelledOutcome("Document no longer exists", { ok: false }, 0);
     }
 
-    const result = await segmentAndPersistDocument(ctx);
+    const result = await segmentAndPersistDocument(procCtx);
 
     console.log(
-      `[segment] doc ${ctx.docId}: ${result.segmentCount} segments from ${result.atomCount} atoms ` +
+      `[segment] doc ${procCtx.docId}: ${result.segmentCount} segments from ${result.atomCount} atoms ` +
       `(${result.method}, coverage=${result.coverageRate.toFixed(2)}, ${result.segmentationMs}ms)`,
     );
 
-    // ── Submit wiki_synthesize NOW that segments are persisted ──────────────
-    // Segments exist in the DB, so wiki-synthesize-worker's `segments.length >= 2`
-    // check passes and it processes the 9 large, coherent segments instead of
-    // the 40 raw chunks. This is the key anti-fragmentation change.
-    if (shouldEnqueueWikiSynthesis(ctx.options)) {
+    if (shouldEnqueueWikiSynthesis(procCtx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit(
           "wiki_synthesize",
-          { docId: ctx.docId, options: ctx.options },
-          ctx.doc.userId,
+          { docId: procCtx.docId, options: procCtx.options },
+          procCtx.doc.userId,
           { parentTaskId: taskId },
         );
-        console.log(`[segment] doc ${ctx.docId}: submitted wiki_synthesize (using ${result.segmentCount} segments)`);
+        console.log(`[segment] doc ${procCtx.docId}: submitted wiki_synthesize (using ${result.segmentCount} segments)`);
       } catch (wikiSubmitErr) {
-        // Wiki submission failure must not invalidate the segmentation result.
-        console.warn(`[segment] doc ${ctx.docId}: failed to submit wiki_synthesize:`, wikiSubmitErr);
+        console.warn(`[segment] doc ${procCtx.docId}: failed to submit wiki_synthesize:`, wikiSubmitErr);
       }
     }
 
     return { ok: true, segment: result };
   } catch (error) {
-    // Segmentation failed — still submit wiki so it falls back to chunks.
-    // Without this, a segmentation failure would skip wiki entirely.
-    // Guard: if ctx itself failed to load (loadProcessingTask threw),
-    // there's no docId to submit for, so skip the wiki fallback.
-    if (ctx && shouldEnqueueWikiSynthesis(ctx.options)) {
+    if (procCtx && shouldEnqueueWikiSynthesis(procCtx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");
         await getQueue().submit(
           "wiki_synthesize",
-          { docId: ctx.docId, options: ctx.options },
-          ctx.doc.userId,
+          { docId: procCtx.docId, options: procCtx.options },
+          procCtx.doc.userId,
           { parentTaskId: taskId },
         );
-        console.log(`[segment] doc ${ctx.docId}: segmentation failed, submitted wiki_synthesize (chunk fallback)`);
+        console.log(`[segment] doc ${procCtx.docId}: segmentation failed, submitted wiki_synthesize (chunk fallback)`);
       } catch (wikiSubmitErr) {
-        console.warn(`[segment] doc ${ctx.docId}: failed to submit wiki_synthesize after seg failure:`, wikiSubmitErr);
+        console.warn(`[segment] doc ${procCtx.docId}: failed to submit wiki_synthesize after seg failure:`, wikiSubmitErr);
       }
     }
 
-    // Non-blocking: the document stays usable via chunks. Re-throw so the queue
-    // records the failure, but the document is already ready.
     throw error;
   }
 }
