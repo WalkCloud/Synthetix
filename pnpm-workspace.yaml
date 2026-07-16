@@ -1,7 +1,7 @@
 allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true
-  electron: set this to true or false
+  electron: true
   msw: true
   prisma: true
   sharp: true

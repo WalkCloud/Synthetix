@@ -17,11 +17,11 @@
 
 ## Checklist
 
-- [ ] `npm run typecheck` passes with zero errors
-- [ ] `npm run test:run` passes (or I've added tests for new functionality)
-- [ ] `npm run lint` passes
-- [ ] `npm run build` passes
-- [ ] `npm run electron:compile` passes when Electron code is affected
+- [ ] `pnpm run typecheck` passes with zero errors
+- [ ] `pnpm run test:run` passes (or I've added tests for new functionality)
+- [ ] `pnpm run lint` passes
+- [ ] `pnpm run build` passes
+- [ ] `pnpm run electron:compile` passes when Electron code is affected
 - [ ] User-facing strings are added to both `en.ts` and `zh-CN.ts` (if UI changes)
 - [ ] I've updated relevant documentation (README, CONTRIBUTING, etc.)
 
