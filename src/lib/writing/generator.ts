@@ -461,11 +461,27 @@ export async function compareSectionStream(
 
   const enrichment = await enrichSectionContext(section, draft.title, providerA, modelAConfig.modelId);
 
+  // Phase 3 fix: compare mode MUST also retrieve Wiki context — previously it
+  // only ran RAG, missing the synthesized knowledge layer that single mode gets.
+  const wikiResult = await fetchWikiContext(
+    draft.title,
+    section,
+    userId,
+    providerA,
+    modelAConfig.modelId,
+  ).catch(() => ({ entries: [] as NonNullable<ContextInput["wikiEntries"]>, usedEntryIds: [] as string[] }));
+  const wikiEntries = wikiResult.entries;
+  const wikiEntryIds = wikiResult.usedEntryIds;
+
+  const ragLimit = wikiEntries.length >= 3
+    ? Math.ceil(RAG_REFERENCE_LIMIT / 2)
+    : RAG_REFERENCE_LIMIT;
   const ragReferences = await fetchRagReferences(
     draft.title,
     section,
     userId,
     parseRagConfig(section),
+    ragLimit,
   );
 
   callbacks.onReferences?.(ragReferences);
@@ -490,6 +506,7 @@ export async function compareSectionStream(
     section,
     completedSections,
     ragReferences,
+    wikiEntries: wikiEntries.length > 0 ? wikiEntries : undefined,
     constraints: effectiveConstraints,
   }, detectDocLocale(draft.title));
 
