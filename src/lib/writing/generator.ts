@@ -242,7 +242,7 @@ interface PreparedGenerationContext {
 }
 
 /** Resolve the LLM provider/model, preferring an explicit custom config. */
-async function resolveGenerationProvider(
+export async function resolveGenerationProvider(
   userId: string,
   customModelConfigId?: string,
 ): Promise<{
@@ -256,7 +256,7 @@ async function resolveGenerationProvider(
       where: { id: customModelConfigId },
       include: { provider: true },
     });
-    if (!modelConfig?.provider) {
+    if (!modelConfig?.provider || modelConfig.provider.userId !== userId) {
       throw new Error(`Model config ${customModelConfigId} not found`);
     }
     return {

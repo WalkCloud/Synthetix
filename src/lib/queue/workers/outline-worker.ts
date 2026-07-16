@@ -44,6 +44,20 @@ async function isTaskCancelled(taskId: string): Promise<boolean> {
   return task?.status === "cancelled";
 }
 
+export async function resolveOutlineChatModel(
+  userId: string,
+  modelConfigId?: string,
+) {
+  const chatModel = modelConfigId
+    ? await db.modelConfig.findFirst({
+        where: { id: modelConfigId, provider: { userId } },
+        include: { provider: true },
+      })
+    : await resolveModel("chat", userId);
+  if (!chatModel) throw new Error("No chat model configured");
+  return chatModel;
+}
+
 async function summarizeConversation(
   provider: ReturnType<typeof createLLMProvider>,
   model: string,
@@ -92,10 +106,7 @@ export async function generateOutline(
   // Prefer a user-selected model (validated by the route) over the default
   // chat model. Mirrors pipeline.ts:resolveProcessingModels' explicit-model
   // pattern: a chosen ID wins, otherwise resolveModel picks the user default.
-  const chatModel = modelConfigId
-    ? await db.modelConfig.findUnique({ where: { id: modelConfigId }, include: { provider: true } })
-    : await resolveModel("chat", userId);
-  if (!chatModel) throw new Error("No chat model configured");
+  const chatModel = await resolveOutlineChatModel(userId, modelConfigId);
   const modelId = chatModel.modelId;
 
   const conversation = session.messages
