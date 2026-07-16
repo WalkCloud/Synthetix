@@ -1,7 +1,12 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import { maskSecret, mergeSecretUpdates } from "@/lib/settings/secrets";
-import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import {
+  InvalidSecretUpdateError,
+  maskSecret,
+  mergeSecretUpdates,
+  parseClearSecrets,
+} from "@/lib/settings/secrets";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -49,7 +54,9 @@ export async function PUT(request: Request) {
 
   const body = await request.json();
   const current = readSettings(user.id);
-  const updates = mergeSecretUpdates(current, {
+  try {
+    const clearSecrets = parseClearSecrets(body.clearSecrets);
+    const updates = mergeSecretUpdates(current, {
     ragVectorDb: body.ragVectorDb,
     ragPgUrl: body.ragPgUrl,
     ragPgHost: body.ragPgHost,
@@ -66,9 +73,14 @@ export async function PUT(request: Request) {
     ragMilvusPassword: body.ragMilvusPassword,
     ragMilvusDbName: body.ragMilvusDbName,
     ragQdrantUrl: body.ragQdrantUrl,
-    ragQdrantApiKey: body.ragQdrantApiKey,
-  });
-  writeSettings(user.id, updates);
-
-  return successResponse({ saved: true });
+      ragQdrantApiKey: body.ragQdrantApiKey,
+    }, clearSecrets);
+    writeSettings(user.id, updates, clearSecrets);
+    return successResponse({ saved: true });
+  } catch (error) {
+    if (error instanceof InvalidSecretUpdateError) {
+      return errorResponse({ code: "validationError", message: error.message }, 422);
+    }
+    throw error;
+  }
 }

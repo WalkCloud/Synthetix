@@ -11,8 +11,9 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/settings/store", () => ({
   readSettings: () => ({ ...settings }),
-  writeSettings: (_userId: string, updates: Partial<UserSettings>) => {
+  writeSettings: (_userId: string, updates: Partial<UserSettings>, clearSecrets: string[] = []) => {
     settings = { ...settings, ...updates };
+    for (const field of clearSecrets) delete (settings as Record<string, unknown>)[field];
   },
 }));
 
@@ -99,6 +100,49 @@ describe("settings secret routes", () => {
 
     expect(settings.s3SecretKey).toBe("existing-storage-secret");
     expect(settings.ragNeo4jPassword).toBe("existing-neo4j-secret");
+  });
+
+  it("clears route secrets only through the explicit clearSecrets contract", async () => {
+    settings = {
+      s3AccessKey: "existing-access",
+      s3SecretKey: "existing-storage-secret",
+      ragNeo4jPassword: "existing-neo4j-secret",
+    };
+
+    const storageResponse = await putStorage(putRequest("http://t/api/v1/settings/storage", {
+      storageType: "s3",
+      clearSecrets: ["s3SecretKey"],
+    }));
+    const ragResponse = await putRag(putRequest("http://t/api/v1/settings/rag", {
+      ragVectorDb: "neo4j",
+      clearSecrets: ["ragNeo4jPassword"],
+    }));
+
+    expect(storageResponse.status).toBe(200);
+    expect(ragResponse.status).toBe(200);
+    expect(settings.s3AccessKey).toBe("existing-access");
+    expect(settings.s3SecretKey).toBeUndefined();
+    expect(settings.ragNeo4jPassword).toBeUndefined();
+    expect((await json(await getStorage())).s3SecretKeyConfigured).toBe(false);
+    expect((await json(await getRag())).ragNeo4jPasswordConfigured).toBe(false);
+  });
+
+  it("rejects unknown clear targets and replace-clear conflicts without writing", async () => {
+    settings = { s3AccessKey: "existing-access" };
+    const before = { ...settings };
+
+    const unknown = await putStorage(putRequest("http://t/api/v1/settings/storage", {
+      clearSecrets: ["s3Bucket"],
+    }));
+    expect(unknown.status).toBe(422);
+    expect(settings).toEqual(before);
+
+    const conflict = await putStorage(putRequest("http://t/api/v1/settings/storage", {
+      s3AccessKey: "replacement",
+      clearSecrets: ["s3AccessKey"],
+    }));
+    expect(conflict.status).toBe(422);
+    expect(settings).toEqual(before);
   });
 
   it("does not expose a PostgreSQL password in database GET or duplicate it into user settings", async () => {

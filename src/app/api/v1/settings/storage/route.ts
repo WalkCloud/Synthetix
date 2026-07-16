@@ -1,7 +1,12 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import { maskSecret, mergeSecretUpdates } from "@/lib/settings/secrets";
-import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import {
+  InvalidSecretUpdateError,
+  maskSecret,
+  mergeSecretUpdates,
+  parseClearSecrets,
+} from "@/lib/settings/secrets";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { db } from "@/lib/db";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -114,7 +119,9 @@ export async function PUT(request: Request) {
 
   const body = await request.json();
   const current = readSettings(user.id);
-  const updates = mergeSecretUpdates(current, {
+  try {
+    const clearSecrets = parseClearSecrets(body.clearSecrets);
+    const updates = mergeSecretUpdates(current, {
     storageType: body.storageType,
     localPath: body.localPath,
     cachePath: body.cachePath,
@@ -126,9 +133,14 @@ export async function PUT(request: Request) {
     minioEndpoint: body.minioEndpoint,
     minioBucket: body.minioBucket,
     minioAccessKey: body.minioAccessKey,
-    quotaGB: body.quotaGB,
-  });
-  writeSettings(user.id, updates);
-
-  return successResponse({ saved: true });
+      quotaGB: body.quotaGB,
+    }, clearSecrets);
+    writeSettings(user.id, updates, clearSecrets);
+    return successResponse({ saved: true });
+  } catch (error) {
+    if (error instanceof InvalidSecretUpdateError) {
+      return errorResponse({ code: "validationError", message: error.message }, 422);
+    }
+    throw error;
+  }
 }

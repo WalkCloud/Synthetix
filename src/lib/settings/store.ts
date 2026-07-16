@@ -110,9 +110,13 @@ export function readSettings(userId: string): UserSettings {
   return decryptSettings(parsed);
 }
 
-export function writeSettings(userId: string, updates: Partial<UserSettings>): void {
+export function writeSettings(
+  userId: string,
+  updates: Partial<UserSettings>,
+  clearSecrets: readonly import("@/lib/settings/secrets").SecretField[] = [],
+): void {
   const current = readSettings(userId);
-  const merged = mergeSecretUpdates(current, updates);
+  const merged = mergeSecretUpdates(current, updates, clearSecrets);
   const filePath = getSettingsPath(userId);
   const tmpPath = `${filePath}.tmp.${crypto.randomBytes(4).toString("hex")}`;
 

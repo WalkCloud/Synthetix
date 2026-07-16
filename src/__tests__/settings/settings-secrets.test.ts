@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  InvalidSecretUpdateError,
   mergeSecretUpdates,
   maskSecret,
+  parseClearSecrets,
   SECRET_FIELDS,
 } from "@/lib/settings/secrets";
 
@@ -48,5 +50,27 @@ describe("settings secret helpers", () => {
     });
 
     expect(mergeSecretUpdates(current, { s3AccessKey: "new-access" }).s3AccessKey).toBe("new-access");
+  });
+
+  it("clears only explicitly allow-listed secret fields", () => {
+    const current = {
+      s3AccessKey: "existing-access",
+      s3SecretKey: "existing-secret",
+      s3Bucket: "bucket",
+    };
+    expect(mergeSecretUpdates(current, {}, ["s3AccessKey"])).toEqual({
+      s3SecretKey: "existing-secret",
+      s3Bucket: "bucket",
+    });
+    expect(parseClearSecrets(["s3AccessKey", "s3AccessKey"])).toEqual(["s3AccessKey"]);
+  });
+
+  it("rejects unknown clear targets and replace-clear conflicts", () => {
+    expect(() => parseClearSecrets(["s3Bucket"])).toThrow(InvalidSecretUpdateError);
+    expect(() => mergeSecretUpdates(
+      { s3AccessKey: "old" },
+      { s3AccessKey: "new" },
+      ["s3AccessKey"],
+    )).toThrow(/replace and clear/i);
   });
 });
