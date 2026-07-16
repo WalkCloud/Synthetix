@@ -1,0 +1,160 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { UserSettings } from "@/lib/settings/store";
+
+let settings: UserSettings = {};
+let globalDbConfig: Record<string, unknown> | null = null;
+let lastDbWrite: Record<string, unknown> | null = null;
+
+vi.mock("@/lib/auth/session", () => ({
+  getAuthUser: async () => ({ id: "settings-route-user" }),
+}));
+
+vi.mock("@/lib/settings/store", () => ({
+  readSettings: () => ({ ...settings }),
+  writeSettings: (_userId: string, updates: Partial<UserSettings>) => {
+    settings = { ...settings, ...updates };
+  },
+}));
+
+vi.mock("@/lib/settings/db-config", () => ({
+  readDbGlobalConfig: () => globalDbConfig,
+  writeDbGlobalConfig: (config: Record<string, unknown>) => {
+    lastDbWrite = config;
+    globalDbConfig = config;
+  },
+}));
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    document: {
+      aggregate: async () => ({ _sum: { originalSize: 0, markdownSize: 0 } }),
+    },
+  },
+}));
+
+import { GET as getRag, PUT as putRag } from "@/app/api/v1/settings/rag/route";
+import { GET as getStorage, PUT as putStorage } from "@/app/api/v1/settings/storage/route";
+import { GET as getDatabase, PUT as putDatabase } from "@/app/api/v1/settings/database/route";
+
+async function json(response: Response) {
+  return (await response.json()).data;
+}
+
+function putRequest(url: string, body: Record<string, unknown>): Request {
+  return new Request(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("settings secret routes", () => {
+  beforeEach(() => {
+    settings = {};
+    globalDbConfig = null;
+    lastDbWrite = null;
+  });
+
+  it("masks storage and RAG secrets without returning connection URLs containing credentials", async () => {
+    settings = {
+      s3AccessKey: "ACCESS-1234",
+      s3SecretKey: "SECRET-5678",
+      ragPgUrl: "postgresql://user:password@db.internal/rag",
+      ragPgPassword: "rag-password",
+      ragQdrantApiKey: "qdrant-key",
+    };
+
+    const storage = await json(await getStorage());
+    const rag = await json(await getRag());
+    const serialized = JSON.stringify({ storage, rag });
+
+    expect(storage.s3AccessKey).toBe("••••1234");
+    expect(storage.s3AccessKeyConfigured).toBe(true);
+    expect(storage.s3SecretKey).toBe("••••5678");
+    expect(storage.s3SecretKeyConfigured).toBe(true);
+    expect(rag.ragPgUrl).toBe("");
+    expect(rag.ragPgUrlConfigured).toBe(true);
+    expect(rag.ragPgPasswordConfigured).toBe(true);
+    expect(rag.ragQdrantApiKeyConfigured).toBe(true);
+    expect(serialized).not.toContain("password@db.internal");
+    expect(serialized).not.toContain("rag-password");
+    expect(serialized).not.toContain("qdrant-key");
+  });
+
+  it("preserves route secrets when PUT sends empty strings", async () => {
+    settings = {
+      s3SecretKey: "existing-storage-secret",
+      ragNeo4jPassword: "existing-neo4j-secret",
+    };
+
+    await putStorage(putRequest("http://t/api/v1/settings/storage", {
+      storageType: "s3",
+      s3Bucket: "documents",
+      s3SecretKey: "",
+    }));
+    await putRag(putRequest("http://t/api/v1/settings/rag", {
+      ragVectorDb: "milvus",
+      ragNeo4jPassword: "",
+    }));
+
+    expect(settings.s3SecretKey).toBe("existing-storage-secret");
+    expect(settings.ragNeo4jPassword).toBe("existing-neo4j-secret");
+  });
+
+  it("does not expose a PostgreSQL password in database GET or duplicate it into user settings", async () => {
+    const originalDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://app:env-password@db.internal/synthetix";
+    globalDbConfig = {
+      dbType: "postgresql",
+      pgHost: "db.internal",
+      pgPort: 5432,
+      pgDatabase: "synthetix",
+      pgUser: "app",
+      pgPassword: "global-secret",
+    };
+
+    try {
+      const data = await json(await getDatabase());
+      expect(data.connectionUrl).not.toContain("env-password");
+      expect(data.pgPassword).toBe("••••cret");
+      expect(data.pgPasswordConfigured).toBe(true);
+
+      await putDatabase(putRequest("http://t/api/v1/settings/database", {
+        dbType: "postgresql",
+        pgHost: "db.internal",
+        pgPort: 5432,
+        pgDatabase: "synthetix",
+        pgUser: "app",
+        pgPassword: "new-global-secret",
+      }));
+
+      expect(settings.pgPassword).toBeUndefined();
+      expect(lastDbWrite?.pgPassword).toBe("new-global-secret");
+    } finally {
+      if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+  });
+
+  it("preserves the global database password when PUT omits it", async () => {
+    globalDbConfig = {
+      dbType: "postgresql",
+      pgHost: "old-host",
+      pgPort: 5432,
+      pgDatabase: "synthetix",
+      pgUser: "app",
+      pgPassword: "existing-global-secret",
+    };
+
+    await putDatabase(putRequest("http://t/api/v1/settings/database", {
+      dbType: "postgresql",
+      pgHost: "new-host",
+      pgPort: 5432,
+      pgDatabase: "synthetix",
+      pgUser: "app",
+      pgPassword: "",
+    }));
+
+    expect(lastDbWrite?.pgPassword).toBe("existing-global-secret");
+  });
+});
