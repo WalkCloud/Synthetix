@@ -485,7 +485,7 @@ function main() {
     ? ` (patch from ${FROM.join(", ")} + full fallback)`
     : " (full)";
   log(`\nDone. Users on <${VERSION} will see the update${kindSummary}.`);
-  log(`Update manifest: https://github.com/${repo}/releases/download/latest/${manifestFile}`);
+  log(`Update manifest: https://github.com/${repo}/releases/latest/download/${manifestFile}`);
 }
 
 // Exported for tests (src/__tests__/scripts/runtime-hash.test.ts and

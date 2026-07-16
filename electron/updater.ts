@@ -32,6 +32,15 @@ import { appRoot } from "./paths";
 // to verify every fetched manifest before it's trusted (Plan A supply-chain
 // guard). Lives under electron/ so the main-process tsconfig compiles it.
 import { updatePubkey } from "./generated/update-pubkey";
+// Pure, electron-free trust helpers (unit-tested in
+// src/__tests__/scripts/update-policy.test.ts).
+import {
+  resolveDownloadAsset as resolveDownloadAssetImpl,
+  publicStatus as publicStatusImpl,
+  shouldAllowUnsignedManifest as shouldAllowUnsignedManifestImpl,
+  type VerifiedAsset,
+  type AssetStatus as PolicyAssetStatus,
+} from "./update-policy";
 
 // ─── public types (mirrored on the renderer side via preload) ───────────────
 
@@ -40,6 +49,10 @@ export type Platform = "win-x64" | "darwin-arm64" | "darwin-x64";
 
 /** Which install path the engine has resolved for an available update. */
 export type UpdatePath = "patch" | "full";
+
+// `VerifiedAsset` is re-exported from update-policy.ts (pure, electron-free).
+// The interface is intentionally not redeclared here so the two definitions
+// cannot drift.
 
 export type UpdateStatus =
   /** No check has run yet (initial state before first check completes). */
@@ -59,6 +72,12 @@ export type UpdateStatus =
       releaseNotes?: Record<string, string>;
       /** Whether skipping is blocked (current < minRequiredVersion). */
       forced: boolean;
+      /**
+       * Asset descriptor pinned at verification time. Internal — stripped by
+       * `publicStatus()` before crossing the IPC boundary so the renderer still
+       * sees the historical shape.
+       */
+      verifiedAsset: VerifiedAsset;
     }
   /** Download in progress. `path` retained so the UI label stays consistent. */
   | { kind: "downloading"; path: UpdatePath; version: string; progress: number; downloadedBytes: number; totalBytes: number }
@@ -117,7 +136,12 @@ function manifestUrl(): string {
   const override = process.env.SYNTHETIX_UPDATE_URL;
   if (override) return override;
   const channel = (process.env.SYNTHETIX_UPDATE_CHANNEL ?? "stable").toLowerCase();
-  return `https://github.com/WalkCloud/Synthetix/releases/download/latest/${channel}.json`;
+  // GitHub's "latest release" asset download endpoint is
+  // `/releases/latest/download/<asset>`. The earlier form
+  // `/releases/download/latest/<asset>` treated `latest` as a tag name and
+  // 404'd unless a release was literally tagged "latest" — which is not how
+  // `gh release upload` populates the latest-release slot.
+  return `https://github.com/WalkCloud/Synthetix/releases/latest/download/${channel}.json`;
 }
 
 /** The platform key the engine selects assets for. */
@@ -375,6 +399,37 @@ export function getStatus(): UpdateStatus {
   return currentStatus;
 }
 
+/**
+ * Status shape safe to cross the preload IPC boundary. Strips the `available`
+ * variant's internal `verifiedAsset` (pinned url/sha256 captured at
+ * verification time) — the renderer has no need for download internals, and
+ * not surfacing them avoids leaking the asset URL into renderer/devtools.
+ * Delegates to the pure, electron-free `publicStatus` in update-policy.ts.
+ */
+export type PublicUpdateStatus = ReturnType<typeof publicStatus>;
+
+export function publicStatus<S extends UpdateStatus>(status: S): S {
+  return publicStatusImpl(status as unknown as PolicyAssetStatus) as unknown as S;
+}
+
+/**
+ * Pure asset-resolution used by `downloadUpdate`. The url/sha256 come ONLY
+ * from `verifiedAsset` (captured at verification time), so a second-manifest
+ * TOCTOU swap cannot redirect the download. Delegates to update-policy.ts.
+ */
+export function resolveDownloadAsset(status: UpdateStatus) {
+  return resolveDownloadAssetImpl(status as unknown as PolicyAssetStatus);
+}
+
+/**
+ * Whether an unsigned manifest may be accepted. Production/packaged builds
+ * always require a signature; only an unpackaged dev build with
+ * SYNTHETIX_ALLOW_UNSIGNED_UPDATES=1 may skip. Delegates to update-policy.ts.
+ */
+export function shouldAllowUnsignedManifest(): boolean {
+  return shouldAllowUnsignedManifestImpl(app.isPackaged, process.env.SYNTHETIX_ALLOW_UNSIGNED_UPDATES);
+}
+
 function setStatus(next: UpdateStatus): void {
   currentStatus = next;
   for (const l of listeners) {
@@ -413,9 +468,14 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
       throw new Error(`manifest rejected: ${verified.reason}`);
     }
     if (verified.unsigned) {
-      // No signature field. Allowed during the transition period; tighten to
-      // reject once every published release carries a signature.
-      console.warn("[updater] manifest is UNSIGNED — accepting (transition mode)");
+      // No signature field. Production/packaged builds MUST refuse unsigned
+      // manifests — only an unpackaged dev build that explicitly opts in via
+      // SYNTHETIX_ALLOW_UNSIGNED_UPDATES=1 may skip verification (for local
+      // testing against a self-signed mirror).
+      if (!shouldAllowUnsignedManifest()) {
+        throw new Error("manifest is UNSIGNED — refusing update (signature required)");
+      }
+      console.warn("[updater] manifest is UNSIGNED — accepting (dev build, SYNTHETIX_ALLOW_UNSIGNED_UPDATES=1)");
     }
     if (!verified.manifest) {
       throw new Error("manifest parsed but contained no signable content");
@@ -497,6 +557,11 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
       sizeBytes: asset.size,
       releaseNotes: manifest.releaseNotes,
       forced,
+      // Pin the asset descriptor captured from the JUST-VERIFIED manifest.
+      // downloadUpdate consumes this directly and never re-fetches the
+      // manifest, so a second-response TOCTOU swap cannot redirect the
+      // download or replace the expected sha256.
+      verifiedAsset: { url: asset.url, size: asset.size, sha256: asset.sha256 },
     };
     setStatus(status);
     return status;
@@ -512,36 +577,24 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
  * Download the asset of the currently-available update, verify it, and leave
  * it staged. Does not install — call applyStagedUpdate() (or let the user
  * confirm first). If a status is already "ready", this is a no-op.
+ *
+ * Security: the url/sha256 come ONLY from `verifiedAsset`, which was captured
+ * when `checkForUpdates` verified the manifest signature. We do NOT re-fetch
+ * the manifest here, so a TOCTOU swap of a second manifest response cannot
+ * redirect the download or substitute the expected hash.
  */
 export async function downloadUpdate(): Promise<UpdateStatus> {
   if (currentStatus.kind !== "available") {
     return currentStatus;
   }
-  const { path: pathKind, version, sizeBytes } = currentStatus;
-  const platformKey = currentPlatform();
-  // Re-fetch manifest to get the asset URL — we don't cache it long-term, and
-  // this keeps a single source of truth for url/sha256.
-  let manifest: LatestManifest;
-  try {
-    manifest = JSON.parse(await fetchText(manifestUrl())) as LatestManifest;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    setStatus({ kind: "error", message: `failed to resolve download: ${message}` });
+  const resolved = resolveDownloadAsset(currentStatus);
+  if (!resolved) {
+    setStatus({ kind: "error", message: "no verified asset descriptor available — run checkForUpdates again" });
     return currentStatus;
   }
-  const block = manifest.platforms[platformKey];
-  if (!block) {
-    setStatus({ kind: "error", message: `no platform block for ${platformKey}` });
-    return currentStatus;
-  }
-  const asset = pathKind === "patch" ? block.patch : block.full;
-  if (!asset) {
-    setStatus({ kind: "error", message: `no ${pathKind} asset on manifest` });
-    return currentStatus;
-  }
+  const { url, sha256, size: sizeBytes, destExt, version, path: pathKind } = resolved;
 
-  const ext = pathKind === "patch" ? "zip" : "exe";
-  const destPath = path.join(stagingDir(), `synthetix-${version}-${pathKind}.${ext}`);
+  const destPath = path.join(stagingDir(), `synthetix-${version}-${pathKind}.${destExt}`);
   downloadAbort = new AbortController();
   setStatus({
     kind: "downloading",
@@ -553,9 +606,9 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
   });
   try {
     await downloadFile(
-      asset.url,
+      url,
       destPath,
-      asset.sha256,
+      sha256,
       (received, total) => {
         const progress = total > 0 ? received / total : 0;
         setStatus({
