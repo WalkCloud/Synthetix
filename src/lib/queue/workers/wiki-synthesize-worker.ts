@@ -111,7 +111,7 @@ export async function processWikiSynthesize(
       data: { progress: 50 },
     });
 
-    const result = await synthesizeDocument(ctx, synthChunks, (processed, total, phase = "extract") => {
+    const result = await synthesizeDocument(ctx, synthChunks, inputUnitType, (processed, total, phase = "extract") => {
       const frac = total > 0 ? processed / total : 0;
       const [floor, ceil] = phase === "merge" ? [65, 88] : phase === "summary" ? [88, 98] : [30, 65];
       const pct = Math.round(floor + frac * (ceil - floor));
@@ -136,6 +136,7 @@ export async function processWikiSynthesize(
       chunksProcessed: result.chunksProcessed,
       chunksTotal: result.chunksTotal,
       chunksFailed: result.chunksFailed,
+      failedUnitIds: result.failedUnitIds,
       extractionMs: result.extractionMs,
       mergeMs: result.mergeMs,
       summaryMs: result.summaryMs,
