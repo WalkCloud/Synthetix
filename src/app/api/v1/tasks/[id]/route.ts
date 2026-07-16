@@ -87,14 +87,20 @@ export async function POST(
     return NextResponse.json(response, { status: 400 });
   }
 
-  await db.asyncTask.update({
-    where: { id },
+  const cancelled = await db.asyncTask.updateMany({
+    where: { id, status: { in: ["pending", "running"] } },
     data: {
       status: "cancelled",
       errorMessage: "Cancelled by user",
       updatedAt: new Date(),
     },
   });
+  if (cancelled.count === 0) {
+    return NextResponse.json({
+      success: false,
+      error: "Task is no longer cancellable",
+    }, { status: 409 });
+  }
 
   // When a document_convert task is cancelled, reset the document's status
   // back to "pending". Otherwise the document stays in "converting"/"queued"

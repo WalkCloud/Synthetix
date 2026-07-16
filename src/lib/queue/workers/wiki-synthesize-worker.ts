@@ -12,15 +12,11 @@
 import { db } from "@/lib/db";
 import { loadProcessingTask, resolveProcessingModels } from "@/lib/documents/pipeline";
 import { synthesizeDocument, type SynthChunk } from "@/lib/wiki/synthesizer";
+import { failedOutcome, type WorkerResult } from "@/lib/queue/types";
 
 export async function processWikiSynthesize(
   taskId: string,
-): Promise<{ ok: boolean; wiki?: Awaited<ReturnType<typeof synthesizeDocument>> }> {
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: { status: "running", progress: 10 },
-  });
-
+): Promise<WorkerResult> {
   let docId: string | undefined;
 
   try {
@@ -31,8 +27,8 @@ export async function processWikiSynthesize(
     // auto-tagger). Without a writing model we skip gracefully.
     await resolveProcessingModels(ctx);
 
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 30 },
     });
 
@@ -86,11 +82,18 @@ export async function processWikiSynthesize(
       });
 
       if (chunks.length === 0) {
-        await db.asyncTask.update({
-          where: { id: taskId },
-          data: { status: "completed", progress: 100, resultData: JSON.stringify({ entriesCreated: 0, reason: "no chunks" }) },
-        });
-        return { ok: true, wiki: { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true } };
+        return {
+          ok: true,
+          reason: "no chunks",
+          wiki: {
+            entriesCreated: 0,
+            entriesUpdated: 0,
+            docSummaryCreated: false,
+            chunksProcessed: 0,
+            chunksTotal: 0,
+            completed: true,
+          },
+        };
       }
 
       synthChunks = chunks.map((c) => ({
@@ -103,8 +106,8 @@ export async function processWikiSynthesize(
       inputUnitType = "chunk";
     }
 
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 50 },
     });
 
@@ -113,17 +116,18 @@ export async function processWikiSynthesize(
       const [floor, ceil] = phase === "merge" ? [65, 88] : phase === "summary" ? [88, 98] : [30, 65];
       const pct = Math.round(floor + frac * (ceil - floor));
       // Fire-and-forget: never let a progress write block or fail the task.
-      db.asyncTask.update({ where: { id: taskId }, data: { progress: pct } }).catch(() => {});
+      db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
+        data: { progress: pct },
+      }).catch(() => {});
     });
 
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        progress: 98,
-      },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
+      data: { progress: 98 },
     });
 
-    const resultData = JSON.stringify({
+    const resultData = {
       inputUnitType,
       inputUnitCount: synthChunks.length,
       entriesCreated: result.entriesCreated,
@@ -137,43 +141,18 @@ export async function processWikiSynthesize(
       summaryMs: result.summaryMs,
       fusionCalls: result.fusionCalls,
       completed: result.completed,
-    });
+    };
 
     if (!result.completed) {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: {
-          status: "failed",
-          progress: 100,
-          errorMessage: "Wiki synthesis did not complete",
-          resultData,
-        },
-      });
-      return { ok: false, wiki: result };
+      return failedOutcome("Wiki synthesis did not complete", resultData);
     }
 
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "completed",
-        progress: 100,
-        resultData,
-      },
-    });
-
-    return { ok: true, wiki: result };
+    return resultData;
   } catch (error) {
     if (docId) {
       // Wiki failure does NOT mark the document as failed — it is already
       // `ready`. We only record the task failure for diagnostics.
     }
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Wiki synthesis failed",
-      },
-    });
     // Re-throw so the queue records the failure, but the document stays ready
     throw error;
   }

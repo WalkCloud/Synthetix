@@ -47,6 +47,29 @@ export interface TaskResult {
   [key: string]: unknown;
 }
 
+export type WorkerOutcome =
+  | { workerOutcome: true; status: "completed"; result: TaskResult }
+  | { workerOutcome: true; status: "failed"; error: string; result?: TaskResult; progress?: number }
+  | { workerOutcome: true; status: "cancelled"; error?: string; result?: TaskResult; progress?: number };
+
+export type WorkerResult = TaskResult | WorkerOutcome;
+
+export function completedOutcome(result: TaskResult): WorkerOutcome {
+  return { workerOutcome: true, status: "completed", result };
+}
+
+export function failedOutcome(error: string, result?: TaskResult): WorkerOutcome {
+  return { workerOutcome: true, status: "failed", error, result };
+}
+
+export function cancelledOutcome(error?: string, result?: TaskResult, progress?: number): WorkerOutcome {
+  return { workerOutcome: true, status: "cancelled", error, result, progress };
+}
+
+export function isWorkerOutcome(result: WorkerResult): result is WorkerOutcome {
+  return result.workerOutcome === true;
+}
+
 export interface TaskInfo {
   id: string;
   type: TaskType;
@@ -58,5 +81,5 @@ export interface TaskInfo {
 
 export type WorkerFn = (
   payload: TaskPayload,
-  onProgress: (progress: number) => void,
-) => Promise<TaskResult>;
+  onProgress: (progress: number) => void | Promise<void>,
+) => Promise<WorkerResult>;

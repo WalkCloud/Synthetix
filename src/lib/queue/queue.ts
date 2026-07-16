@@ -8,7 +8,9 @@ import type {
   TaskResult,
   TaskInfo,
   WorkerFn,
+  WorkerOutcome,
 } from "./types";
+import { isWorkerOutcome } from "./types";
 
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -141,26 +143,17 @@ export class TaskQueue {
   }
 
   async cancel(taskId: string): Promise<boolean> {
-    const task = await db.asyncTask.findUnique({
-      where: { id: taskId },
+    const cancelled = await db.asyncTask.updateMany({
+      where: {
+        id: taskId,
+        status: { in: ["pending", "running"] },
+      },
+      data: {
+        status: "cancelled",
+        updatedAt: new Date(),
+      },
     });
-
-    if (!task) {
-      return false;
-    }
-
-    if (task.status === "pending" || task.status === "running") {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: {
-          status: "cancelled",
-          updatedAt: new Date(),
-        },
-      });
-      return true;
-    }
-
-    return false;
+    return cancelled.count === 1;
   }
 
   /**
@@ -228,15 +221,15 @@ export class TaskQueue {
     }
     if (stalled.length === 0) return;
     const elapsed = Math.round(this.heartbeatTimeoutMs / 1000);
-    await db.asyncTask.updateMany({
-      where: { id: { in: stalled } },
+    const failed = await db.asyncTask.updateMany({
+      where: { id: { in: stalled }, status: "running" },
       data: {
         status: "failed",
         errorMessage: `Task heartbeat timeout — no activity for ${elapsed}s`,
         updatedAt: new Date(),
       },
     });
-    console.warn(`[queue] marked ${stalled.length} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
+    console.warn(`[queue] marked ${failed.count} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
     // Re-kick the queue so a pending successor (or the doc's recovery path)
     // can pick up after the zombie is cleared.
     for (let i = 0; i < this.concurrency; i++) {
@@ -324,6 +317,40 @@ export class TaskQueue {
     return this.timeoutMs;
   }
 
+  private async commitOutcome(taskId: string, outcome: WorkerOutcome): Promise<void> {
+    const data = outcome.status === "completed"
+      ? {
+          status: "completed" as const,
+          progress: 100,
+          resultData: JSON.stringify(outcome.result),
+          errorMessage: null,
+          updatedAt: new Date(),
+        }
+      : outcome.status === "failed"
+        ? {
+            status: "failed" as const,
+            progress: outcome.progress ?? 100,
+            resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
+            errorMessage: outcome.error,
+            updatedAt: new Date(),
+          }
+        : {
+            status: "cancelled" as const,
+            progress: outcome.progress,
+            resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
+            errorMessage: outcome.error ?? null,
+            updatedAt: new Date(),
+          };
+
+    const committed = await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
+      data,
+    });
+    if (committed.count === 0) {
+      console.warn(`[queue] task ${taskId} already reached a terminal state; ignored late ${outcome.status} outcome`);
+    }
+  }
+
   private async executeTask(
     taskId: string,
     taskType: TaskType,
@@ -332,8 +359,8 @@ export class TaskQueue {
     const workerFn = this.workers.get(taskType);
 
     if (!workerFn) {
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: {
           status: "failed",
           errorMessage: `No worker registered for task type: ${taskType}`,
@@ -348,26 +375,18 @@ export class TaskQueue {
       taskId,
     } as TaskPayload;
 
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "running",
-        updatedAt: new Date(),
-      },
-    });
-
-    // Check if task was cancelled before starting work
     const currentTask = await db.asyncTask.findUnique({
       where: { id: taskId },
+      select: { status: true },
     });
-    if (currentTask?.status === "cancelled") {
+    if (currentTask?.status !== "running") {
       return;
     }
 
     const onProgress = async (progress: number): Promise<void> => {
       const clipped = Math.max(0, Math.min(100, progress));
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: {
           progress: clipped,
           updatedAt: new Date(),
@@ -375,11 +394,10 @@ export class TaskQueue {
       });
     };
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const resultPromise = workerFn(payload, onProgress);
       const timeoutMs = this.getTimeoutMs(taskType);
-
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const result = timeoutMs === null
         ? await resultPromise
         : await Promise.race([
@@ -390,50 +408,26 @@ export class TaskQueue {
               }, timeoutMs);
             }),
           ]);
-      // Clear the timeout timer once the worker wins the race. Without this,
-      // the timeout's rejection callback keeps a reference to the resolver
-      // scope alive long after success, and on a long-running worker the
-      // pending timer can still fire and raise an unhandled rejection.
-      if (timeoutId) clearTimeout(timeoutId);
 
-      // Check cancellation after completion
-      const finalTask = await db.asyncTask.findUnique({
-        where: { id: taskId },
-      });
-      if (finalTask?.status === "cancelled") {
-        return;
-      }
-
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: {
-          status: "completed",
-          progress: 100,
-          resultData: JSON.stringify(result),
-          updatedAt: new Date(),
-        },
-      });
+      await this.commitOutcome(
+        taskId,
+        isWorkerOutcome(result)
+          ? result
+          : { workerOutcome: true, status: "completed", result },
+      );
     } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       try {
-        const errorTask = await db.asyncTask.findUnique({
-          where: { id: taskId },
+        await this.commitOutcome(taskId, {
+          workerOutcome: true,
+          status: "failed",
+          error: errorMessage,
         });
-        if (errorTask?.status !== "cancelled") {
-          await db.asyncTask.update({
-            where: { id: taskId },
-            data: {
-              status: "failed",
-              errorMessage,
-              updatedAt: new Date(),
-            },
-          });
-        }
       } catch {
         // Task record may have been deleted (e.g. test cleanup)
       }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 }

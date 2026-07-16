@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TaskQueue } from "@/lib/queue/queue";
-import type { WorkerFn, TaskResult } from "@/lib/queue/types";
+import { cancelledOutcome, completedOutcome, failedOutcome, type WorkerFn, type TaskResult } from "@/lib/queue/types";
 import { db } from "@/lib/db";
 
 const TEST_USER_ID = "test-queue-user";
@@ -208,6 +208,101 @@ describe("TaskQueue", () => {
 
     // Clean up blocking worker
     resolveWorker!({ done: true });
+  });
+
+  it("keeps a running task cancelled when its worker resolves late", async () => {
+    let resolveWorker: (value: TaskResult) => void = () => {};
+    const workerStarted = new Promise<void>((resolve) => {
+      queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
+        resolve();
+        return new Promise<TaskResult>((workerResolve) => {
+          resolveWorker = workerResolve;
+        });
+      });
+    });
+
+    const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await workerStarted;
+    expect(await queue.cancel(taskId)).toBe(true);
+
+    resolveWorker({ late: true });
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("cancelled");
+    });
+
+    const info = await queue.getStatus(taskId);
+    expect(info?.result).toBeUndefined();
+  });
+
+  it("keeps a running task cancelled when its worker rejects late", async () => {
+    let rejectWorker: (reason: Error) => void = () => {};
+    const workerStarted = new Promise<void>((resolve) => {
+      queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
+        resolve();
+        return new Promise<TaskResult>((_workerResolve, workerReject) => {
+          rejectWorker = workerReject;
+        });
+      });
+    });
+
+    const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await workerStarted;
+    expect(await queue.cancel(taskId)).toBe(true);
+
+    rejectWorker(new Error("late failure"));
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("cancelled");
+    });
+
+    expect((await queue.getStatus(taskId))?.error).not.toBe("late failure");
+  });
+
+  it("ignores late worker progress after a hard timeout", async () => {
+    const timeoutQueue = new TaskQueue({ timeoutMs: 20 });
+    let reportLateProgress: (() => void) | undefined;
+    timeoutQueue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, onProgress) => {
+      reportLateProgress = () => { void onProgress(88); };
+      return new Promise<TaskResult>(() => {});
+    });
+
+    const taskId = await timeoutQueue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await vi.waitFor(async () => {
+      expect((await timeoutQueue.getStatus(taskId))?.status).toBe("failed");
+    }, { timeout: 1000 });
+
+    const before = await timeoutQueue.getStatus(taskId);
+    reportLateProgress?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const after = await timeoutQueue.getStatus(taskId);
+
+    expect(after?.status).toBe("failed");
+    expect(after?.progress).toBe(before?.progress);
+    expect(after?.error).toMatch(/timed out/i);
+  });
+
+  it("persists explicit worker outcomes without exposing the control envelope", async () => {
+    const outcomes = new TaskQueue({ concurrency: 1, timeoutMs: 2000 });
+    const completedType = "_test_outcome_completed";
+    const failedType = "_test_outcome_failed";
+    const cancelledType = "_test_outcome_cancelled";
+    outcomes.registerWorker(completedType, async () => completedOutcome({ value: "done" }));
+    outcomes.registerWorker(failedType, async () => failedOutcome("handled failure", { value: "partial" }));
+    outcomes.registerWorker(cancelledType, async () => cancelledOutcome("superseded", { value: "retry" }));
+
+    const completedId = await outcomes.submit(completedType, {}, TEST_USER_ID);
+    const failedId = await outcomes.submit(failedType, {}, TEST_USER_ID);
+    const cancelledId = await outcomes.submit(cancelledType, {}, TEST_USER_ID);
+
+    await vi.waitFor(async () => {
+      expect((await outcomes.getStatus(completedId))?.status).toBe("completed");
+      expect((await outcomes.getStatus(failedId))?.status).toBe("failed");
+      expect((await outcomes.getStatus(cancelledId))?.status).toBe("cancelled");
+    }, { timeout: 3000 });
+
+    expect((await outcomes.getStatus(completedId))?.result).toEqual({ value: "done" });
+    expect((await outcomes.getStatus(failedId))?.result).toEqual({ value: "partial" });
+    expect((await outcomes.getStatus(failedId))?.error).toBe("handled failure");
+    expect((await outcomes.getStatus(cancelledId))?.result).toEqual({ value: "retry" });
   });
 
   it("should return null for nonexistent task status", async () => {

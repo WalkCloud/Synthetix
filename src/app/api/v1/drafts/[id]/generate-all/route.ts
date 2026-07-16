@@ -85,15 +85,29 @@ export async function POST(
   if (existing) {
     const elapsed = now - new Date(existing.updatedAt).getTime();
     if (existing.status === "running" && elapsed > STALE_RUNNING_MS) {
-      await db.asyncTask.update({
-        where: { id: existing.id },
+      const failed = await db.asyncTask.updateMany({
+        where: { id: existing.id, status: "running" },
         data: {
           status: "failed",
           errorMessage: "Generation task became stale. Start again to resume from unfinished sections.",
           updatedAt: new Date(),
         },
       });
-      await resetOrphanedDraftSections(draftId);
+      if (failed.count === 1) {
+        await resetOrphanedDraftSections(draftId);
+      } else {
+        const current = await db.asyncTask.findUnique({
+          where: { id: existing.id },
+          select: { status: true, progress: true },
+        });
+        if (current) {
+          return successResponse({
+            taskId: existing.id,
+            status: current.status,
+            progress: current.progress,
+          });
+        }
+      }
     } else {
       return successResponse({
         taskId: existing.id,

@@ -10,15 +10,11 @@ import { autoTagDocument } from "@/lib/documents/auto-tagger";
 import { assertLatestRagEmbedIndexTask, SupersededRagEmbedIndexTaskError } from "@/lib/documents/processing-tasks";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { shouldEnqueueGraphIndex, shouldEnqueueWikiSynthesis } from "./index-mode-flags";
+import { cancelledOutcome, type WorkerResult } from "@/lib/queue/types";
 
 export async function processRagEmbedIndex(
   taskId: string,
-): Promise<{ ok: boolean; rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string }> {
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: { status: "running", progress: 10 },
-  });
-
+): Promise<WorkerResult> {
   let docId: string | undefined;
 
   try {
@@ -34,8 +30,8 @@ export async function processRagEmbedIndex(
         where: { id: ctx.docId },
         data: { status: "embedding" },
       });
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: { progress: 40 },
       });
 
@@ -59,8 +55,8 @@ export async function processRagEmbedIndex(
       where: { id: ctx.docId },
       data: { status: "indexing" },
     });
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 70 },
     });
 
@@ -106,8 +102,8 @@ export async function processRagEmbedIndex(
       ctx.options.indexMode = originalIndexMode;
     }
 
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 92 },
     });
 
@@ -129,10 +125,6 @@ export async function processRagEmbedIndex(
     await db.document.update({
       where: { id: ctx.docId },
       data: { status: "ready" },
-    });
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: { status: "completed", progress: 100 },
     });
 
     if (willGraph) {
@@ -157,7 +149,10 @@ export async function processRagEmbedIndex(
     };
   } catch (error) {
     if (error instanceof SupersededRagEmbedIndexTaskError) {
-      return { ok: false };
+      return cancelledOutcome(
+        "Superseded by newer RAG embed/index task",
+        { ok: false, superseded: true },
+      );
     }
     if (docId) {
       await db.document.update({
@@ -165,13 +160,6 @@ export async function processRagEmbedIndex(
         data: { status: "failed" },
       }).catch(() => {});
     }
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "failed",
-        errorMessage: error instanceof Error ? error.message : "RAG embed/index failed",
-      },
-    });
     throw error;
   }
 }

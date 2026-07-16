@@ -46,8 +46,8 @@ async function updateTaskDraftProgress(
     skipped?: number;
   },
 ): Promise<void> {
-  await db.asyncTask.update({
-    where: { id: taskId },
+  await db.asyncTask.updateMany({
+    where: { id: taskId, status: "running" },
     data: {
       resultData: JSON.stringify(data),
       updatedAt: new Date(),

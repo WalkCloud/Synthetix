@@ -41,13 +41,6 @@ export async function isLatestDocumentConvertTask(userId: string, docId: string,
 
 export async function assertLatestDocumentConvertTask(userId: string, docId: string, taskId: string): Promise<void> {
   if (!(await isLatestDocumentConvertTask(userId, docId, taskId))) {
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "cancelled",
-        errorMessage: "Superseded by newer document processing task",
-      },
-    }).catch(() => undefined);
     throw new SupersededDocumentProcessingTaskError();
   }
 }
@@ -89,13 +82,6 @@ async function isLatestRagEmbedIndexTask(userId: string, docId: string, taskId: 
 
 export async function assertLatestRagEmbedIndexTask(userId: string, docId: string, taskId: string): Promise<void> {
   if (!(await isLatestRagEmbedIndexTask(userId, docId, taskId))) {
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "cancelled",
-        errorMessage: "Superseded by newer RAG embed/index task",
-      },
-    }).catch(() => undefined);
     throw new SupersededRagEmbedIndexTaskError();
   }
 }

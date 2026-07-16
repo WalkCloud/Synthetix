@@ -420,8 +420,8 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const reportProgress = (justEmbedded: number): void => {
     embeddedCount += justEmbedded;
     const embedProgress = 40 + Math.round((embeddedCount / Math.max(totalToEmbed, 1)) * 28);
-    void db.asyncTask.update({
-      where: { id: ctx.taskId },
+    void db.asyncTask.updateMany({
+      where: { id: ctx.taskId, status: "running" },
       data: { progress: embedProgress },
     }).catch(() => undefined);
   };

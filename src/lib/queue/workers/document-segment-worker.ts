@@ -16,15 +16,11 @@ import { db } from "@/lib/db";
 import { loadProcessingTask, resolveProcessingModels, type ProcessingContext } from "@/lib/documents/pipeline";
 import { segmentAndPersistDocument } from "@/lib/documents/segmentation";
 import { shouldEnqueueWikiSynthesis } from "./index-mode-flags";
+import { cancelledOutcome, type WorkerResult } from "@/lib/queue/types";
 
 export async function processDocumentSegment(
   taskId: string,
-): Promise<{ ok: boolean; segment?: Awaited<ReturnType<typeof segmentAndPersistDocument>> }> {
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: { status: "running", progress: 10 },
-  });
-
+): Promise<WorkerResult> {
   // Declared outside try so the catch block can access it for the wiki
   // fallback submission. When loadProcessingTask itself throws, ctx is null
   // and we skip the wiki fallback (there's no docId to submit for).
@@ -34,8 +30,8 @@ export async function processDocumentSegment(
     ctx = await loadProcessingTask(taskId);
     await resolveProcessingModels(ctx);
 
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 30 },
     });
 
@@ -45,23 +41,10 @@ export async function processDocumentSegment(
       select: { id: true },
     });
     if (!stillExists) {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: { status: "cancelled", errorMessage: "Document no longer exists", progress: 0 },
-      });
-      return { ok: false };
+      return cancelledOutcome("Document no longer exists", { ok: false }, 0);
     }
 
     const result = await segmentAndPersistDocument(ctx);
-
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "completed",
-        progress: 100,
-        resultData: JSON.stringify(result),
-      },
-    });
 
     console.log(
       `[segment] doc ${ctx.docId}: ${result.segmentCount} segments from ${result.atomCount} atoms ` +
@@ -85,14 +68,6 @@ export async function processDocumentSegment(
 
     return { ok: true, segment: result };
   } catch (error) {
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Document segmentation failed",
-      },
-    }).catch(() => undefined);
-
     // Segmentation failed — still submit wiki so it falls back to chunks.
     // Without this, a segmentation failure would skip wiki entirely.
     // Guard: if ctx itself failed to load (loadProcessingTask threw),
