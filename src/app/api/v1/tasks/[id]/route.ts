@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
-import { parseTaskResult, parseTaskInput } from "@/lib/queue/task-json";
+import { parseTaskResult } from "@/lib/queue/task-json";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 interface TaskData {
   id: string;
@@ -110,10 +111,10 @@ export async function POST(
   // (which only covers queued/converting/splitting) and is semantically
   // correct: the user can click "Start Processing" again to retry.
   if (task.type === "document_convert") {
-    const input = parseTaskInput<{ docId?: string }>(task.inputData, {});
-    if (input.docId) {
+    const documentId = compareTaskIdentitySources(task).authoritative.documentId;
+    if (documentId) {
       await db.document.updateMany({
-        where: { id: input.docId, userId: user.id, status: { in: ["queued", "converting", "splitting"] } },
+        where: { id: documentId, userId: user.id, status: { in: ["queued", "converting", "splitting"] } },
         data: { status: "pending" },
       }).catch(() => undefined);
     }

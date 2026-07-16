@@ -1,17 +1,20 @@
 import { db } from "@/lib/db";
 import { documentLifecycle } from "@/lib/documents/lifecycle";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 export async function cleanupDeletedDocument(taskId: string): Promise<{ ok: boolean; result?: unknown }> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Cleanup task not found: ${taskId}`);
 
-  const payload = task.inputData ? JSON.parse(task.inputData) as { docId?: string } : {};
-  if (!payload.docId) throw new Error("Missing docId in document cleanup task");
+  const identity = compareTaskIdentitySources(task);
+  const docId = identity.authoritative.documentId
+    ?? (task.inputData ? (JSON.parse(task.inputData) as { docId?: string }).docId : null);
+  if (!docId) throw new Error("Missing docId in document cleanup task");
 
   await db.asyncTask.updateMany({
     where: { id: taskId, status: "running" },
     data: { progress: 25 },
   });
-  const result = await documentLifecycle.cleanupDeletedDocument(task.userId, payload.docId, taskId);
+  const result = await documentLifecycle.cleanupDeletedDocument(task.userId, docId, taskId);
   return { ok: true, result };
 }

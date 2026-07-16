@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 import { convertDocumentFile, type ConversionResult } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens, type SplitChunk } from "@/lib/documents/splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
@@ -110,7 +111,8 @@ export async function loadProcessingTask(taskId: string): Promise<ProcessingCont
   if (!task) throw new Error(`Task ${taskId} not found`);
 
   const input = JSON.parse(task.inputData || "{}");
-  const docId = input.docId;
+  const docId = compareTaskIdentitySources(task).authoritative.documentId
+    ?? (typeof input.docId === "string" ? input.docId : null);
   if (!docId) throw new Error("Missing docId in task input");
 
   const options: ProcessingOptions = (input.options as ProcessingOptions) || {};
