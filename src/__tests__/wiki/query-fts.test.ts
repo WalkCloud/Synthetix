@@ -50,6 +50,11 @@ async function seed(
 beforeAll(async () => {
   schemaReady = await schemaHasWikiEntries();
   if (schemaReady) {
+    await db.user.upsert({
+      where: { id: TEST_USER_ID },
+      create: { id: TEST_USER_ID, username: TEST_USER_ID, passwordHash: "test-hash" },
+      update: {},
+    });
     await db.wikiEntry.deleteMany({ where: { userId: TEST_USER_ID } }).catch(() => {});
   }
 });
