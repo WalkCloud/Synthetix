@@ -238,34 +238,54 @@ async function searchViaDirectEmbedding(
       document: { userId },
     },
   });
-  const take = Math.min(totalCount, 2000);
-  const chunks = await db.documentChunk.findMany({
-    where: {
-      embedding: { not: null },
-      document: { userId },
-    },
-    select: {
-      id: true,
-      embedding: true,
-      document: { select: { id: true, originalName: true } },
-    },
-    take,
-  });
 
-  if (chunks.length === 0) return { results: [], inputTokens: embedTokens };
+  // Process in batches to avoid loading the entire corpus into memory at once.
+  // Previously this had a hard cap of 2000 chunks, which silently truncated
+  // search results for large document sets. Now we scan all chunks in pages,
+  // keeping a running top-k so memory stays bounded regardless of corpus size.
+  const BATCH_SIZE = 500;
+  const runningTop: Array<{ chunk: { id: string; embedding: Uint8Array; document: { id: string; originalName: string } }; raw: number }> = [];
 
-  const allScored = chunks
-    .map((chunk) => {
-      if (!chunk.embedding) return null;
+  for (let offset = 0; offset < totalCount; offset += BATCH_SIZE) {
+    const batch = await db.documentChunk.findMany({
+      where: {
+        embedding: { not: null },
+        document: { userId },
+      },
+      select: {
+        id: true,
+        embedding: true,
+        document: { select: { id: true, originalName: true } },
+      },
+      take: BATCH_SIZE,
+      skip: offset,
+    });
+
+    for (const chunk of batch) {
+      if (!chunk.embedding) continue;
       const chunkEmb = bufferToFloat32(new Uint8Array(chunk.embedding));
       const raw = cosineSimilarity(queryEmbedding, chunkEmb);
-      return { chunk, raw };
-    })
-    .filter((r): r is NonNullable<typeof r> => r !== null)
-    .sort((a, b) => b.raw - a.raw);
+      if (raw < MIN_COSINE_THRESHOLD) continue;
+      runningTop.push({
+        chunk: {
+          id: chunk.id,
+          embedding: chunk.embedding,
+          document: chunk.document,
+        },
+        raw,
+      });
+    }
 
-  const scored = allScored
-    .filter((r) => r.raw >= MIN_COSINE_THRESHOLD)
+    // Trim the running top to limit * 3 to keep memory bounded while allowing
+    // some margin for the final sort + dedup by document.
+    if (runningTop.length > limit * 3) {
+      runningTop.sort((a, b) => b.raw - a.raw);
+      runningTop.length = limit * 3;
+    }
+  }
+
+  const scored = runningTop
+    .sort((a, b) => b.raw - a.raw)
     .slice(0, limit);
 
   if (scored.length === 0) return { results: [], inputTokens: embedTokens };
