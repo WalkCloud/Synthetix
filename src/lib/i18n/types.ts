@@ -1028,6 +1028,8 @@ export type TranslationSchema = {
       status: string;
       integrityVerified: string;
       integrityFailed: string;
+      unsupportedPostgresTitle: string;
+      unsupportedPostgresDescription: string;
     };
     storage: {
       title: string;

@@ -101,6 +101,7 @@ export function DatabaseTab() {
   const [showPassword, setShowPassword] = useState(false);
   const [dbConnectionUrl, setDbConnectionUrl] = useState("file:./dev.db");
   const [pgConfigured, setPgConfigured] = useState(false);
+  const [unsupportedPostgresConfigDetected, setUnsupportedPostgresConfigDetected] = useState(false);
   const [savingDb, setSavingDb] = useState(false);
   const [dbMsg, setDbMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -119,6 +120,7 @@ export function DatabaseTab() {
           setPgPasswordConfigured(!!s.pgPasswordConfigured);
           setDbConnectionUrl(s.connectionUrl || "file:./dev.db");
           setPgConfigured(s.pgConfigured || false);
+          setUnsupportedPostgresConfigDetected(!!s.unsupportedPostgresConfigDetected);
         }
       })
       .catch(() => {});
@@ -153,7 +155,7 @@ export function DatabaseTab() {
     }
   }
 
-  const configured = dbType === "sqlite" || !!(pgHost && pgDatabase);
+  const configured = !unsupportedPostgresConfigDetected && (dbType === "sqlite" || !!(pgHost && pgDatabase));
   const activeIsPg = pgConfigured && dbType === "postgresql";
 
   return (
@@ -199,8 +201,19 @@ export function DatabaseTab() {
         </div>
       </div>
 
-      {/* PostgreSQL Config (only when PG selected in the card) */}
-      {dbType === "postgresql" && (
+      {unsupportedPostgresConfigDetected && (
+        <div className="bg-amber-50 border border-amber-200 rounded-[16px] p-5 dark:bg-amber-950/20 dark:border-amber-900/60">
+          <div className="font-semibold text-amber-900 dark:text-amber-200">
+            {t.settings.database.unsupportedPostgresTitle}
+          </div>
+          <p className="mt-2 text-sm leading-6 text-amber-800 dark:text-amber-300">
+            {t.settings.database.unsupportedPostgresDescription}
+          </p>
+        </div>
+      )}
+
+      {/* PostgreSQL Config (only when supported and selected) */}
+      {dbType === "postgresql" && !unsupportedPostgresConfigDetected && (
         <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">
@@ -256,7 +269,7 @@ export function DatabaseTab() {
       )}
 
       {/* SQLite Monitor Panel */}
-      {!activeIsPg && (
+      {!activeIsPg && !unsupportedPostgresConfigDetected && (
         <div className="bg-card border rounded-[16px]">
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <div className="flex items-center gap-2.5">

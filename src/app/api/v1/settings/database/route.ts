@@ -1,8 +1,15 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import { readDbGlobalConfig, writeDbGlobalConfig } from "@/lib/settings/db-config";
+import { readDbGlobalConfig } from "@/lib/settings/db-config";
 import { maskSecret } from "@/lib/settings/secrets";
-import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import {
+  MAIN_POSTGRES_SUPPORTED,
+  MAIN_POSTGRES_UNSUPPORTED_MESSAGE,
+  SUPPORTED_MAIN_DB_TYPES,
+  detectUnsupportedMainPostgres,
+  isPostgresDatabaseUrl,
+} from "@/lib/settings/main-db-capability";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 function maskConnectionUrl(value: string): string {
   if (!value.includes("://")) return value;
@@ -21,19 +28,33 @@ export async function GET() {
 
   const settings = readSettings(user.id);
   const globalConfig = readDbGlobalConfig();
+  const databaseUrl = process.env.DATABASE_URL;
+  const unsupportedPostgresConfigDetected = detectUnsupportedMainPostgres({
+    databaseUrl,
+    userDbType: settings.dbType,
+    globalDbType: globalConfig?.dbType,
+  });
   const password = maskSecret(globalConfig?.pgPassword || settings.pgPassword);
+  const dbType = settings.dbType === "postgresql"
+    || globalConfig?.dbType === "postgresql"
+    || isPostgresDatabaseUrl(databaseUrl)
+    ? "postgresql"
+    : "sqlite";
 
   return successResponse({
-    dbType: settings.dbType ?? (process.env.DATABASE_URL?.startsWith("postgresql") ? "postgresql" : "sqlite"),
-    sqlitePath: settings.sqlitePath ?? process.env.DATABASE_URL?.replace("file:", "") ?? "./dev.db",
-    pgHost: settings.pgHost ?? globalConfig?.pgHost ?? process.env.POSTGRES_HOST ?? "",
-    pgPort: settings.pgPort ?? globalConfig?.pgPort ?? parseInt(process.env.POSTGRES_PORT || "5432", 10),
-    pgDatabase: settings.pgDatabase ?? globalConfig?.pgDatabase ?? process.env.POSTGRES_DATABASE ?? "",
-    pgUser: settings.pgUser ?? globalConfig?.pgUser ?? process.env.POSTGRES_USER ?? "",
+    dbType,
+    supportedDbTypes: SUPPORTED_MAIN_DB_TYPES,
+    mainPostgresSupported: MAIN_POSTGRES_SUPPORTED,
+    unsupportedPostgresConfigDetected,
+    sqlitePath: settings.sqlitePath ?? (databaseUrl?.startsWith("file:") ? databaseUrl.replace("file:", "") : "./dev.db"),
+    pgHost: settings.pgHost ?? globalConfig?.pgHost ?? "",
+    pgPort: settings.pgPort ?? globalConfig?.pgPort ?? 5432,
+    pgDatabase: settings.pgDatabase ?? globalConfig?.pgDatabase ?? "",
+    pgUser: settings.pgUser ?? globalConfig?.pgUser ?? "",
     pgPassword: password.masked,
     pgPasswordConfigured: password.configured,
     pgConfigured: globalConfig?.dbType === "postgresql" && !!globalConfig.pgHost,
-    connectionUrl: maskConnectionUrl(process.env.DATABASE_URL ?? "file:./dev.db"),
+    connectionUrl: maskConnectionUrl(databaseUrl ?? "file:./dev.db"),
   });
 }
 
@@ -42,26 +63,17 @@ export async function PUT(request: Request) {
   if (!user) return authErrorResponse();
 
   const body = await request.json();
+  if (body.dbType === "postgresql") {
+    return errorResponse({
+      code: "conflict",
+      message: MAIN_POSTGRES_UNSUPPORTED_MESSAGE,
+    }, 409);
+  }
+
   writeSettings(user.id, {
     dbType: body.dbType,
     sqlitePath: body.sqlitePath,
-    pgHost: body.pgHost,
-    pgPort: body.pgPort,
-    pgDatabase: body.pgDatabase,
-    pgUser: body.pgUser,
   });
-
-  if (body.dbType === "postgresql" && body.pgHost && body.pgDatabase) {
-    const currentGlobalConfig = readDbGlobalConfig();
-    writeDbGlobalConfig({
-      dbType: "postgresql",
-      pgHost: body.pgHost,
-      pgPort: parseInt(String(body.pgPort || "5432"), 10),
-      pgDatabase: body.pgDatabase,
-      pgUser: body.pgUser || "",
-      pgPassword: body.pgPassword || currentGlobalConfig?.pgPassword || "",
-    });
-  }
 
   return successResponse({
     saved: true,

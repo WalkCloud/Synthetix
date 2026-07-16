@@ -119,7 +119,11 @@ describe("settings secret routes", () => {
       expect(data.pgPassword).toBe("••••cret");
       expect(data.pgPasswordConfigured).toBe(true);
 
-      await putDatabase(putRequest("http://t/api/v1/settings/database", {
+      expect(data.supportedDbTypes).toEqual(["sqlite"]);
+      expect(data.mainPostgresSupported).toBe(false);
+      expect(data.unsupportedPostgresConfigDetected).toBe(true);
+
+      const response = await putDatabase(putRequest("http://t/api/v1/settings/database", {
         dbType: "postgresql",
         pgHost: "db.internal",
         pgPort: 5432,
@@ -128,15 +132,18 @@ describe("settings secret routes", () => {
         pgPassword: "new-global-secret",
       }));
 
+      expect(response.status).toBe(409);
       expect(settings.pgPassword).toBeUndefined();
-      expect(lastDbWrite?.pgPassword).toBe("new-global-secret");
+      expect(lastDbWrite).toBeNull();
+      expect(globalDbConfig?.pgPassword).toBe("global-secret");
     } finally {
       if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = originalDatabaseUrl;
     }
   });
 
-  it("preserves the global database password when PUT omits it", async () => {
+  it("rejects PostgreSQL before modifying legacy user or global configuration", async () => {
+    settings = { dbType: "postgresql", pgHost: "old-user-host" };
     globalDbConfig = {
       dbType: "postgresql",
       pgHost: "old-host",
@@ -145,16 +152,41 @@ describe("settings secret routes", () => {
       pgUser: "app",
       pgPassword: "existing-global-secret",
     };
+    const beforeSettings = { ...settings };
+    const beforeGlobal = { ...globalDbConfig };
 
-    await putDatabase(putRequest("http://t/api/v1/settings/database", {
+    const response = await putDatabase(putRequest("http://t/api/v1/settings/database", {
       dbType: "postgresql",
       pgHost: "new-host",
       pgPort: 5432,
       pgDatabase: "synthetix",
       pgUser: "app",
-      pgPassword: "",
+      pgPassword: "replacement-secret",
     }));
 
-    expect(lastDbWrite?.pgPassword).toBe("existing-global-secret");
+    expect(response.status).toBe(409);
+    expect(settings).toEqual(beforeSettings);
+    expect(globalDbConfig).toEqual(beforeGlobal);
+    expect(lastDbWrite).toBeNull();
+  });
+
+  it("exposes SQLite capability fields without treating RAG PostgreSQL variables as main database selection", async () => {
+    const oldHost = process.env.POSTGRES_HOST;
+    const oldRagUrl = process.env.LIGHTRAG_PG_DATABASE_URL;
+    process.env.POSTGRES_HOST = "rag.internal";
+    process.env.LIGHTRAG_PG_DATABASE_URL = "postgresql://rag:secret@rag.internal/rag";
+    try {
+      const data = await json(await getDatabase());
+      expect(data.dbType).toBe("sqlite");
+      expect(data.supportedDbTypes).toEqual(["sqlite"]);
+      expect(data.mainPostgresSupported).toBe(false);
+      expect(data.unsupportedPostgresConfigDetected).toBe(false);
+      expect(data.pgHost).toBe("");
+    } finally {
+      if (oldHost === undefined) delete process.env.POSTGRES_HOST;
+      else process.env.POSTGRES_HOST = oldHost;
+      if (oldRagUrl === undefined) delete process.env.LIGHTRAG_PG_DATABASE_URL;
+      else process.env.LIGHTRAG_PG_DATABASE_URL = oldRagUrl;
+    }
   });
 });

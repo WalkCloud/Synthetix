@@ -1042,6 +1042,8 @@ const zhCN = {
       status: "状态",
       integrityVerified: "数据库完整性已验证",
       integrityFailed: "完整性检查失败",
+      unsupportedPostgresTitle: "检测到不受支持的旧版 PostgreSQL 配置",
+      unsupportedPostgresDescription: "该配置会保留以便旧版本回滚，但当前版本不能编辑或使用。主应用数据库请使用 SQLite；LightRAG pgvector 仍可独立使用。",
     },
     storage: {
       title: "存储设置",

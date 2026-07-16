@@ -1,8 +1,7 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-import { readDbGlobalConfig, buildPgConnectionString } from "@/lib/settings/db-config";
+import { readDbGlobalConfig } from "@/lib/settings/db-config";
+import { assertSupportedMainDatabase } from "@/lib/settings/main-db-capability";
 import { resolvePrismaUrl } from "@/lib/db-path";
 
 const globalForPrisma = globalThis as unknown as {
@@ -11,12 +10,10 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient(): PrismaClient {
   const globalConfig = readDbGlobalConfig();
-
-  if (globalConfig && globalConfig.dbType === "postgresql") {
-    const connectionString = buildPgConnectionString(globalConfig);
-    const pool = new Pool({ connectionString, max: 10 });
-    return new PrismaClient({ adapter: new PrismaPg(pool) });
-  }
+  assertSupportedMainDatabase({
+    databaseUrl: process.env.DATABASE_URL,
+    globalDbType: globalConfig?.dbType,
+  });
 
   const adapter = new PrismaBetterSqlite3({
     url: resolvePrismaUrl(),

@@ -1046,6 +1046,8 @@ const en = {
       status: "Status",
       integrityVerified: "Database integrity verified",
       integrityFailed: "Integrity check failed",
+      unsupportedPostgresTitle: "Unsupported legacy PostgreSQL configuration detected",
+      unsupportedPostgresDescription: "This configuration is preserved for rollback but cannot be edited or used by this build. Use SQLite for the main application database. LightRAG pgvector remains available independently.",
     },
     storage: {
       title: "Storage Settings",
