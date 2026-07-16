@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
+import { loadOwnedDraft } from "@/lib/api-helpers";
 import { getAssetFilePath } from "@/lib/writing/diagram-generator";
 import fs from "node:fs/promises";
 
@@ -13,6 +14,9 @@ export async function GET(
   }
 
   const { id: draftId, secId: sectionId, assetId } = await params;
+
+  const draft = await loadOwnedDraft(draftId, user.id, { id: true });
+  if (draft instanceof Response) return draft;
 
   const asset = await db.sectionAsset.findFirst({
     where: { id: assetId, draftId, sectionId },
