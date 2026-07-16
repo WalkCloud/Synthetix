@@ -9,6 +9,7 @@ import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import { db } from "@/lib/db";
 import type { TaskPayload, TaskResult, ProcessingOptions } from "./types";
+export { DocumentMutationBusyError, executionRegistry } from "./execution-registry";
 
 let queue: TaskQueue | null = null;
 

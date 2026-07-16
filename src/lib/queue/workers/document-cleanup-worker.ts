@@ -12,6 +12,6 @@ export async function cleanupDeletedDocument(taskId: string): Promise<{ ok: bool
     where: { id: taskId, status: "running" },
     data: { progress: 25 },
   });
-  const result = await documentLifecycle.cleanupDeletedDocument(task.userId, payload.docId);
+  const result = await documentLifecycle.cleanupDeletedDocument(task.userId, payload.docId, taskId);
   return { ok: true, result };
 }

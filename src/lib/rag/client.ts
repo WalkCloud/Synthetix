@@ -25,6 +25,16 @@ export type RagManageOptions =
   | (RagBaseOptions & { action: "merge-entities"; sources: string; target: string })
   | (RagBaseOptions & { action: "delete-by-doc"; docId: string });
 
+export class RagIndexBusyError extends Error {
+  readonly code = "RAG_INDEX_BUSY";
+  readonly retryable = true;
+
+  constructor(readonly result: Record<string, unknown>) {
+    super("RAG index is busy; document cleanup can be retried after indexing settles");
+    this.name = "RagIndexBusyError";
+  }
+}
+
 export async function manageRag(
   options: RagManageOptions
 ): Promise<Record<string, unknown>> {
@@ -81,5 +91,9 @@ export async function manageRag(
       break;
   }
 
-  return spawnPythonJson(RAG_MANAGE_SCRIPT, args);
+  const result = await spawnPythonJson<Record<string, unknown>>(RAG_MANAGE_SCRIPT, args);
+  if (options.action === "delete-by-doc" && result.status === "busy") {
+    throw new RagIndexBusyError(result);
+  }
+  return result;
 }

@@ -6,9 +6,8 @@ import {
   cancelActiveDocumentConvertTasks,
   cancelActiveRagEmbedIndexTasks,
   cancelActiveFollowupTasks,
-  waitForDocActiveTasksToSettle,
 } from "@/lib/documents/processing-tasks";
-import { getQueue } from "@/lib/queue";
+import { DocumentMutationBusyError, executionRegistry, getQueue } from "@/lib/queue";
 
 export async function POST(
   request: Request,
@@ -94,15 +93,40 @@ export async function POST(
   // the embed worker (in parallel with the long graph/basic phase), so they
   // must be cancelled here too — otherwise a lingering graph extraction or
   // wiki synthesis from the old run would race the fresh convert pipeline.
-  await cancelActiveDocumentConvertTasks(user.id, id);
-  await cancelActiveRagEmbedIndexTasks(user.id, id);
-  await cancelActiveFollowupTasks(user.id, id);
-  await waitForDocActiveTasksToSettle(user.id, id);
+  try {
+    return await executionRegistry.withDocumentMutation(user.id, [id], async () => {
+      const activeInsideGate = await db.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM async_tasks
+         WHERE user_id = ?
+           AND type = 'document_convert'
+           AND status IN ('pending', 'running')
+           AND input_data LIKE ?
+         ORDER BY created_at DESC LIMIT 1`,
+        user.id,
+        filter,
+      );
+      if (activeInsideGate[0]?.id) {
+        return successResponse({ documentId: id, taskId: activeInsideGate[0].id, deduped: true });
+      }
 
-  await db.document.update({ where: { id }, data: { status: "queued" } });
-  await db.documentChunk.deleteMany({ where: { documentId: id } }).catch(() => {});
+      await cancelActiveDocumentConvertTasks(user.id, id);
+      await cancelActiveRagEmbedIndexTasks(user.id, id);
+      await cancelActiveFollowupTasks(user.id, id);
+      await executionRegistry.awaitDocumentExecutions(user.id, [id]);
 
-  const taskId = await getQueue().submit("document_convert", { docId: id, options }, user.id);
+      await db.document.update({ where: { id }, data: { status: "queued" } });
+      await db.documentChunk.deleteMany({ where: { documentId: id } });
 
-  return successResponse({ documentId: id, taskId });
+      const taskId = await getQueue().submit("document_convert", { docId: id, options }, user.id);
+      return successResponse({ documentId: id, taskId });
+    });
+  } catch (error) {
+    if (error instanceof DocumentMutationBusyError) {
+      return errorResponse({
+        code: "conflict",
+        message: "Document processing is still active. Try again after the current operation settles.",
+      }, 409);
+    }
+    throw error;
+  }
 }
