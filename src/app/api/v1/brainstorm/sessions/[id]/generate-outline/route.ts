@@ -4,7 +4,7 @@ import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-hel
 import { getQueue } from "@/lib/queue";
 import { resolveLocale } from "@/lib/i18n/server";
 import { resolveBrainstormLocale } from "@/lib/brainstorm/messages";
-import { taskMatchesSession } from "@/lib/brainstorm/task-matching";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 import { hasCapability } from "@/lib/llm/capabilities";
 
 export async function POST(
@@ -52,15 +52,15 @@ export async function POST(
     }
   }
 
-  const activeTasks = await db.asyncTask.findMany({
-    where: {
-      type: "outline_generate",
-      status: { in: ["pending", "running"] },
-      userId: user.id,
-    },
-    select: { id: true, status: true, progress: true, inputData: true },
-  });
-  const existingTask = activeTasks.find((task) => taskMatchesSession(task.inputData, id));
+  const existingTask = (await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "sessionId",
+    value: id,
+    types: ["outline_generate"],
+    statuses: ["pending", "running"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
   if (existingTask) {
     getQueue();
     return successResponse({ taskId: existingTask.id, status: "pending", progress: 0 }, 201);

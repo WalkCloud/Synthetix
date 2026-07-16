@@ -3,7 +3,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { getQueue } from "@/lib/queue";
 import { getBrainstormMessages } from "@/lib/brainstorm/messages";
-import { taskMatchesSession } from "@/lib/brainstorm/task-matching";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 export async function GET(
   _request: Request,
@@ -38,15 +38,14 @@ export async function PATCH(
 
     // Cancel any pending/running outline_generate tasks for this session
     const queue = getQueue();
-    const runningTasks = await db.asyncTask.findMany({
-      where: {
-        type: "outline_generate",
-        status: { in: ["pending", "running"] },
-        userId: user.id,
-      },
-      select: { id: true, inputData: true },
+    const runningTasks = await findTasksByResourceIdentity({
+      userId: user.id,
+      field: "sessionId",
+      value: id,
+      types: ["outline_generate"],
+      statuses: ["pending", "running"],
     });
-    for (const task of runningTasks.filter((task) => taskMatchesSession(task.inputData, id))) {
+    for (const task of runningTasks) {
       await queue.cancel(task.id).catch(() => {});
     }
 
