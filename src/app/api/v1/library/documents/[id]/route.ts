@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { computeDocumentPipeline, computeDisplayStatus, type PipelineTaskView } from "@/lib/documents/pipeline-stages";
 import { derivePipelineModes } from "@/lib/queue/workers/index-mode-flags";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 export async function GET(
   _request: Request,
@@ -32,14 +33,12 @@ export async function GET(
   // async_tasks (convert / embed-index / graph) so the detail page shows
   // truthful stage dots + percentages — including the graph phase, which
   // otherwise runs invisibly after the doc is already "ready".
-  const tasks = await db.asyncTask.findMany({
-    where: {
-      userId: user.id,
-      inputData: { contains: `"docId":"${id}"` },
-      type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize", "document_segment"] },
-    },
-    orderBy: { createdAt: "desc" },
-    select: { type: true, status: true, progress: true, inputData: true, createdAt: true, updatedAt: true },
+  const tasks = await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "documentId",
+    value: id,
+    types: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize", "document_segment"],
+    order: "desc",
   });
   const latest = (type: string) => tasks.find((t) => t.type === type);
   const convertRow = latest("document_convert");

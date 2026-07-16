@@ -9,6 +9,7 @@ import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import { db } from "@/lib/db";
 import type { TaskPayload, TaskResult, ProcessingOptions } from "./types";
+import { findTasksByResourceIdentity } from "./task-identity-query";
 export { DocumentMutationBusyError, executionRegistry } from "./execution-registry";
 
 let queue: TaskQueue | null = null;
@@ -94,31 +95,26 @@ export async function resolveRecoveryOptions(
   // older than 1h is treated as stale (matching drain()'s window) so a
   // crashed worker doesn't permanently block recovery.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const active = await db.asyncTask.findFirst({
-    where: {
-      userId,
-      type: "document_convert",
-      inputData: { contains: `"docId":"${docId}"` },
-      OR: [
-        { status: "pending" },
-        { status: "running", updatedAt: { gte: oneHourAgo } },
-      ],
-    },
-    select: { id: true },
+  const active = await findTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    statuses: ["pending", "running"],
+    order: "desc",
   });
-  if (active) return null;
+  if (active.some((task) => task.status === "pending" || task.updatedAt >= oneHourAgo)) return null;
 
   // Genuinely stuck (e.g. server crashed mid-conversion and the task row is
   // gone/terminal): reuse the original options if a prior task recorded them.
-  const latest = await db.asyncTask.findFirst({
-    where: {
-      userId,
-      type: "document_convert",
-      inputData: { contains: `"docId":"${docId}"` },
-    },
-    orderBy: { createdAt: "desc" },
-    select: { inputData: true },
-  });
+  const latest = (await findTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
   if (latest?.inputData) {
     try {
       const parsed = JSON.parse(latest.inputData) as { options?: ProcessingOptions };
