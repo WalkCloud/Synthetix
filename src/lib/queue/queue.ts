@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { Semaphore } from "@/lib/concurrency/limiter";
 import { parseTaskResult, parseTaskInput } from "@/lib/queue/task-json";
@@ -77,15 +78,35 @@ export class TaskQueue {
   }
 
   async drain(): Promise<void> {
-    // Only reset tasks that were running in the last hour — stale tasks
-    // from earlier sessions shouldn't be re-executed
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Lease-aware restart recovery: only recover tasks whose lease has expired
+    // (or was never set). Tasks with a valid unexpired lease are left alone —
+    // their worker is likely still running in a sibling process. Tasks with
+    // cancel_requested are transitioned to cancelled (the cancel intent
+    // survives restart).
+    const now = new Date();
+
+    // Cancel-intent tasks from a crashed process go straight to cancelled.
+    await db.asyncTask.updateMany({
+      where: { status: "cancel_requested" },
+      data: { status: "cancelled", finishedAt: now, updatedAt: now },
+    });
+
+    // Recover running tasks whose lease has expired or was never set. A task
+    // with a valid lease stays running — it may be owned by a concurrent process.
     await db.asyncTask.updateMany({
       where: {
         status: "running",
-        updatedAt: { gte: oneHourAgo },
+        OR: [
+          { leaseExpiresAt: null },
+          { leaseExpiresAt: { lt: now } },
+        ],
       },
-      data: { status: "pending", updatedAt: new Date() },
+      data: {
+        status: "pending",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        updatedAt: now,
+      },
     });
 
     for (let i = 0; i < this.concurrency; i++) {
@@ -158,6 +179,8 @@ export class TaskQueue {
         status: "cancelled",
         cancelRequestedAt: new Date(),
         finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
         updatedAt: new Date(),
       },
     });
@@ -250,6 +273,8 @@ export class TaskQueue {
         status: "failed",
         errorMessage: `Task heartbeat timeout — no activity for ${elapsed}s`,
         finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
         updatedAt: new Date(),
       },
     });
@@ -280,6 +305,7 @@ export class TaskQueue {
       document_id: string | null;
       operation_id: string | null;
       attempt: number | null;
+      execution_generation: number | null;
     } | null = null;
     try {
       if (this.activeCount >= this.concurrency) {
@@ -298,6 +324,8 @@ export class TaskQueue {
       // SQLite serialises the UPDATE so two concurrent processNext() calls cannot
       // claim the same row.
       const placeholders = eligibleTypes.map(() => "?").join(", ");
+      const leaseOwner = `${process.pid}-${crypto.randomUUID()}`;
+      const leaseExpiry = new Date(Date.now() + this.heartbeatTimeoutMs * 2);
       const claimed = await db.$queryRawUnsafe<{
         id: string;
         type: string;
@@ -306,18 +334,23 @@ export class TaskQueue {
         document_id: string | null;
         operation_id: string | null;
         attempt: number | null;
+        execution_generation: number | null;
       }[]>(
         `UPDATE async_tasks
-         SET status = 'running', started_at = ?, updated_at = ?
+         SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?,
+             lease_owner = ?, lease_expires_at = ?,
+             execution_generation = COALESCE(execution_generation, 0) + 1
          WHERE id = (
            SELECT id FROM async_tasks
            WHERE status = 'pending' AND type IN (${placeholders})
            ORDER BY created_at ASC
            LIMIT 1
          ) AND status = 'pending'
-         RETURNING id, type, user_id, input_data, document_id, operation_id, attempt`,
+         RETURNING id, type, user_id, input_data, document_id, operation_id, attempt, execution_generation`,
         new Date(),
         new Date(),
+        leaseOwner,
+        leaseExpiry,
         ...eligibleTypes,
       );
 
@@ -337,6 +370,7 @@ export class TaskQueue {
         document_id: task.document_id,
         operation_id: task.operation_id,
         attempt: task.attempt,
+        execution_generation: task.execution_generation,
       };
     } finally {
       release();
@@ -353,6 +387,7 @@ export class TaskQueue {
         claimedTask.document_id,
         claimedTask.operation_id,
         claimedTask.attempt ?? 0,
+        claimedTask.execution_generation ?? 1,
       );
     } finally {
       const taskType = claimedTask.type;
@@ -374,7 +409,7 @@ export class TaskQueue {
     return this.timeoutMs;
   }
 
-  private async commitOutcome(taskId: string, outcome: WorkerOutcome): Promise<void> {
+  private async commitOutcome(taskId: string, outcome: WorkerOutcome, executionGeneration?: number): Promise<void> {
     const data = outcome.status === "completed"
       ? {
           status: "completed" as const,
@@ -382,6 +417,8 @@ export class TaskQueue {
           resultData: JSON.stringify(outcome.result),
           errorMessage: null,
           finishedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
           updatedAt: new Date(),
         }
       : outcome.status === "failed"
@@ -391,6 +428,8 @@ export class TaskQueue {
             resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
             errorMessage: outcome.error,
             finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
             updatedAt: new Date(),
           }
         : {
@@ -399,14 +438,21 @@ export class TaskQueue {
             resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
             errorMessage: outcome.error ?? null,
             finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
             updatedAt: new Date(),
           };
 
     // Match both `running` (nominal) and `cancel_requested` (the non-terminal
-    // state written by cancel() for a running task). This is where the deferred
-    // terminal `cancelled` write happens once the worker Promise settles.
+    // state written by cancel() for a running task). When executionGeneration
+    // is provided, fence: a stale worker from an older generation must not
+    // overwrite a newer generation's terminal state.
     const committed = await db.asyncTask.updateMany({
-      where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
+      where: {
+        id: taskId,
+        status: { in: ["running", "cancel_requested"] },
+        ...(executionGeneration !== undefined ? { executionGeneration } : {}),
+      },
       data,
     });
     if (committed.count === 0) {
@@ -422,6 +468,7 @@ export class TaskQueue {
     documentId: string | null,
     operationId: string | null,
     attempt: number,
+    executionGeneration: number,
   ): Promise<void> {
     const workerFn = this.workers.get(taskType);
 
@@ -470,6 +517,7 @@ export class TaskQueue {
         data: {
           progress: clipped,
           heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + this.heartbeatTimeoutMs * 2),
           updatedAt: new Date(),
         },
       });
@@ -478,7 +526,11 @@ export class TaskQueue {
     const heartbeat = async (): Promise<void> => {
       await db.asyncTask.updateMany({
         where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
-        data: { heartbeatAt: new Date(), updatedAt: new Date() },
+        data: {
+          heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + this.heartbeatTimeoutMs * 2),
+          updatedAt: new Date(),
+        },
       });
     };
 
@@ -530,13 +582,14 @@ export class TaskQueue {
           workerOutcome: true,
           status: "cancelled",
           error: "Cancelled by user",
-        });
+        }, executionGeneration);
       } else {
         await this.commitOutcome(
           taskId,
           isWorkerOutcome(result)
             ? result
             : { workerOutcome: true, status: "completed", result },
+          executionGeneration,
         );
       }
     } catch (error: unknown) {
@@ -546,6 +599,7 @@ export class TaskQueue {
         await this.commitOutcome(taskId, isAbort
           ? { workerOutcome: true, status: "cancelled", error: "Cancelled by user" }
           : { workerOutcome: true, status: "failed", error: errorMessage },
+          executionGeneration,
         );
       } catch {
         // Task record may have been deleted (e.g. test cleanup)

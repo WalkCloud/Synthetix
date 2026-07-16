@@ -89,6 +89,9 @@ model AsyncTask {
   heartbeatAt      DateTime? @map("heartbeat_at")
   cancelRequestedAt DateTime? @map("cancel_requested_at")
   finishedAt       DateTime? @map("finished_at")
+  leaseOwner       String?  @map("lease_owner")
+  leaseExpiresAt   DateTime? @map("lease_expires_at")
+  executionGeneration Int?  @map("execution_generation")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
