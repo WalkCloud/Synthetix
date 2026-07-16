@@ -13,7 +13,7 @@ import {
   buildModelsUrl,
   buildProviderHeaders,
 } from "./provider-endpoints";
-import { computeBackoffMs, delay, isBalanceExhausted } from "./retry-after";
+import { computeBackoffMs, delay, delayWithSignal, isBalanceExhausted } from "./retry-after";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 import {
@@ -41,9 +41,9 @@ type EmbedResponseWithRateLimit = EmbedResponse & { rateLimit?: RateLimitInfo };
 // Timeouts are env-configurable via LLM_FETCH_TIMEOUT_MS / LM_EMBED_TIMEOUT_MS /
 // LLM_STREAM_READ_TIMEOUT_MS (see ./env). Defaults preserve prior behaviour.
 
-/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS. */
-function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
-  return fetchWithTimeoutRaw(url, init, timeoutMs);
+/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS and threads caller signal. */
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS, callerSignal?: AbortSignal): Promise<Response> {
+  return fetchWithTimeoutRaw(url, init, timeoutMs, callerSignal);
 }
 
 function estimateMessagesTokens(messages: ChatParams["messages"]): number {
@@ -134,13 +134,13 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         method: "POST",
         headers: buildProviderHeaders(this.apiKey),
         body: JSON.stringify(body),
-      });
+      }, FETCH_TIMEOUT_MS, params.signal);
     } catch (err) {
       // Network failure / DNS error / timeout — retryable. Mirrors the
       // embedWithRetry pattern: a transient network blip must not sink a
       // long-running multi-chunk pipeline (wiki synthesis, graph extraction).
       if (remaining > 0) {
-        await delay(computeBackoffMs(null, remaining));
+        await delayWithSignal(computeBackoffMs(null, remaining), params.signal);
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (network): ${err instanceof Error ? err.message : String(err)}`);
@@ -190,7 +190,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         // clock. Falls back to jittered exponential when no hint is present.
         // capacityMode: a 429/5xx here is a genuine capacity signal, so honour
         // a long Retry-After (up to 6h) instead of clamping to 5 min.
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
+        await delayWithSignal(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }), params.signal);
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
@@ -262,7 +262,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
       method: "POST",
       headers: buildProviderHeaders(this.apiKey),
       body: JSON.stringify(body),
-    });
+    }, FETCH_TIMEOUT_MS, params.signal);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
@@ -300,7 +300,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         );
       }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
+        await delayWithSignal(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }), params.signal);
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;
@@ -322,10 +322,12 @@ export class OpenAICompatibleAdapter implements LLMProvider {
 
     try {
       while (true) {
-        // Race each read against a stall timeout. The timer MUST be cleared on
-        // the success path — otherwise every read leaks a pending setTimeout
-        // handle for the lifetime of the stream (a long generation can emit
-        // hundreds of chunks, so this leak compounds).
+        // Race each read against a stall timeout AND caller cancellation. The
+        // timer MUST be cleared on the success path — otherwise every read
+        // leaks a pending setTimeout handle for the lifetime of the stream.
+        if (params.signal?.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
         let stallTimer: ReturnType<typeof setTimeout> | undefined;
         const readResult = await Promise.race([
           reader.read(),
@@ -335,6 +337,9 @@ export class OpenAICompatibleAdapter implements LLMProvider {
               STREAM_READ_TIMEOUT_MS,
             );
           }),
+          ...(params.signal ? [new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            params.signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+          })] : []),
         ]).finally(() => {
           if (stallTimer) clearTimeout(stallTimer);
         });
@@ -407,13 +412,13 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     };
   }
 
-  async embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse> {
+  async embed(texts: string[], model?: string, dimensions?: number, signal?: AbortSignal): Promise<EmbedResponse> {
     const limiter = this.limiterPromise ? await this.limiterPromise : null;
     const est = estimateTokens(texts.join("\n")) + 64;
     const release = limiter ? await limiter.acquire({ estimatedTokens: est }) : null;
     const started = Date.now();
     try {
-      const res = await this.embedWithRetry(texts, model, dimensions, 3);
+      const res = await this.embedWithRetry(texts, model, dimensions, 3, signal);
       if (release) {
         void release({
           status: 200,
@@ -439,6 +444,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     model: string | undefined,
     dimensions: number | undefined,
     remaining: number,
+    signal?: AbortSignal,
   ): Promise<EmbedResponseWithRateLimit> {
     const url = buildEmbeddingsUrl(this.normalizedBase);
     const body: Record<string, unknown> = { input: texts, model: model || "text-embedding" };
@@ -462,13 +468,13 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         method: "POST",
         headers: buildProviderHeaders(this.apiKey),
         body: JSON.stringify(body),
-      }, EMBED_FETCH_TIMEOUT_MS);
+      }, EMBED_FETCH_TIMEOUT_MS, signal);
     } catch (err) {
       // Network failure / timeout — retryable. A single dropped connection must
       // not sink the whole rag_embed_index batch and force a full re-embed.
       if (remaining > 0) {
-        await delay(computeBackoffMs(null, remaining));
-        return this.embedWithRetry(texts, model, dimensions, remaining - 1);
+        await delayWithSignal(computeBackoffMs(null, remaining), signal);
+        return this.embedWithRetry(texts, model, dimensions, remaining - 1, signal);
       }
       throw new Error(`Embed request failed (network): ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -486,8 +492,8 @@ export class OpenAICompatibleAdapter implements LLMProvider {
         );
       }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
-        return this.embedWithRetry(texts, model, dimensions, remaining - 1);
+        await delayWithSignal(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }), signal);
+        return this.embedWithRetry(texts, model, dimensions, remaining - 1, signal);
       }
       throw new Error(`Embed request failed (${response.status}): ${errorText || response.statusText}`);
     }
