@@ -6,6 +6,8 @@ export interface PythonSpawnOptions {
   parseJson?: boolean;
   onProgressEvent?: (event: Record<string, unknown>) => void;
   onUsageEvent?: (event: Record<string, unknown>) => void;
+  /** Additional environment variables merged into the child's env (for secrets). */
+  env?: Record<string, string>;
 }
 
 export const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
@@ -77,6 +79,8 @@ export function spawnPython(
   const { timeout = 120_000, parseJson = true, onProgressEvent, onUsageEvent } = options;
 
   const spawnEnv = buildPythonSpawnEnv();
+  // Merge caller-provided env (for secrets that must not appear in argv).
+  if (options.env) Object.assign(spawnEnv, options.env);
 
   return new Promise((resolve, reject) => {
     const proc = spawn(PYTHON_PATH, [script, ...args], {

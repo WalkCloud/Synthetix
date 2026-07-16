@@ -948,15 +948,18 @@ def main() -> None:
     parser.add_argument("--min-degree", type=int, default=2)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--embed-api-base", default="")
-    parser.add_argument("--embed-api-key", default="")
+    parser.add_argument("--embed-api-key", default=os.environ.get("RAG_EMBED_API_KEY", ""),
+                        help="Embedding API key (prefer RAG_EMBED_API_KEY env var)")
     parser.add_argument("--embed-model", default="")
     parser.add_argument("--embed-dim", type=int, default=0,
                         help="Embedding vector dimension (0=auto-detect)")
     parser.add_argument("--llm-api-base", default="")
-    parser.add_argument("--llm-api-key", default="")
+    parser.add_argument("--llm-api-key", default=os.environ.get("RAG_LLM_API_KEY", ""),
+                        help="LLM API key (prefer RAG_LLM_API_KEY env var)")
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--rerank-api-base", default="")
-    parser.add_argument("--rerank-api-key", default="")
+    parser.add_argument("--rerank-api-key", default=os.environ.get("RAG_RERANK_API_KEY", ""),
+                        help="Rerank API key (prefer RAG_RERANK_API_KEY env var)")
     parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 
