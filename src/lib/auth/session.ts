@@ -45,19 +45,9 @@ async function getRefreshToken(): Promise<string | null> {
 
 export async function getAuthUser(): Promise<AuthUser | null> {
   const accessToken = await getAccessToken();
-  if (accessToken) {
-    try {
-      const payload = await verifyToken(accessToken, "access");
-      return payloadToAuthUser(payload);
-    } catch {
-      // access token expired, try refresh below
-    }
-  }
-
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) return null;
+  if (!accessToken) return null;
   try {
-    const payload = await verifyToken(refreshToken, "refresh");
+    const payload = await verifyToken(accessToken, "access");
     return payloadToAuthUser(payload);
   } catch {
     return null;
