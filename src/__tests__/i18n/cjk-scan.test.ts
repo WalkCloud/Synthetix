@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
+import ts from "typescript";
 
 /**
  * Scan runtime code for unauthorized CJK characters.
@@ -19,7 +20,15 @@ describe("CJK hardcoded string scan", () => {
     "lib",
   ];
 
-  // Files/patterns to exclude (these are allowed to contain Chinese)
+  // Exact-purpose allowlist entries. Keep these file-scoped and narrowly justified.
+  const exactExcludePaths = new Map([
+    [path.join("lib", "documents", "outline", "sanitize.ts"), "input parser tokens"],
+    [path.join("lib", "documents", "outline", "structure-split.ts"), "input parser tokens"],
+    [path.join("lib", "llm", "retry-after.ts"), "provider protocol markers"],
+    [path.join("lib", "documents", "outline", "outline-refine-prompt.ts"), "dedicated LLM prompt data"],
+  ].map(([entry, reason]) => [entry.replace(/\\/g, "/"), reason]));
+
+  // Existing files/patterns excluded from the runtime-string scan.
   const excludePatterns = [
     // Locale data files
     path.join("lib", "i18n", "locales", "zh-CN.ts"),
@@ -51,6 +60,7 @@ describe("CJK hardcoded string scan", () => {
   ];
 
   function shouldExclude(filePath: string): boolean {
+    if (exactExcludePaths.has(filePath)) return true;
     return excludePatterns.some(
       (pattern) => filePath.includes(pattern.replace(/\\/g, "/"))
     );
@@ -70,6 +80,43 @@ describe("CJK hardcoded string scan", () => {
     return files;
   }
 
+  function stripComments(content: string, file: string): string {
+    const scriptKind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, scriptKind);
+    // TypeScript offsets are UTF-16 code-unit positions; split("") preserves that indexing.
+    const chars = content.split("");
+    const ranges = new Map<string, ts.CommentRange>();
+
+    function collect(rangesToAdd: ts.CommentRange[] | undefined): void {
+      for (const range of rangesToAdd ?? []) {
+        ranges.set(`${range.pos}:${range.end}`, range);
+      }
+    }
+
+    function visit(node: ts.Node): void {
+      collect(ts.getLeadingCommentRanges(content, node.getFullStart()));
+      collect(ts.getTrailingCommentRanges(content, node.getEnd()));
+      if (ts.isJsxExpression(node) && node.expression == null) {
+        const innerStart = node.getStart(sourceFile) + 1;
+        const innerEnd = node.getEnd() - 1;
+        const inner = content.slice(innerStart, innerEnd).trim();
+        if (inner.startsWith("/*") && inner.endsWith("*/")) {
+          ranges.set(`${innerStart}:${innerEnd}`, { pos: innerStart, end: innerEnd, kind: ts.SyntaxKind.MultiLineCommentTrivia });
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+    for (const range of ranges.values()) {
+      for (let i = range.pos; i < range.end; i++) {
+        if (chars[i] !== "\n" && chars[i] !== "\r") chars[i] = " ";
+      }
+    }
+
+    return chars.join("");
+  }
+
   it("runtime code has no unauthorized Chinese hardcoded strings", () => {
     const violations: { file: string; line: number; content: string }[] = [];
 
@@ -82,12 +129,10 @@ describe("CJK hardcoded string scan", () => {
         const relativePath = path.relative(srcRoot, file).replace(/\\/g, "/");
         if (shouldExclude(relativePath)) continue;
 
-        const content = fs.readFileSync(file, "utf-8");
+        const content = stripComments(fs.readFileSync(file, "utf-8"), file);
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
-          // Skip comments
-          if (line.trimStart().startsWith("//") || line.trimStart().startsWith("*")) continue;
           // Skip strings that are clearly in locale data definitions
           if (line.includes("satisfies TranslationSchema")) continue;
 

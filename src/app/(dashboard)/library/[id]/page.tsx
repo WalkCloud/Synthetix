@@ -402,7 +402,7 @@ function stageColor(status: PipelineStageStatus): string {
 
 function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitchTab }: OverviewTabProps) {
   const chunks = chunksRaw ?? [];
-  const { t, locale } = useLocale();
+  const { t, format: localeFormat } = useLocale();
   // Prefer displayStatus (pipeline-derived: distinguishes "enhancing" while
   // graph/wiki branches still run from a true "ready"). Falls back to the raw
   // doc.status for legacy docs without a computed pipeline.
@@ -424,15 +424,9 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
-    const zh = locale === "zh-CN";
-    if (zh) {
-      if (h > 0) return `${h}时${m}分`;
-      if (m > 0) return `${m}分${s}秒`;
-      return `${s}秒`;
-    }
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+    if (h > 0) return localeFormat.template(td.durationHoursMinutes, { hours: h, minutes: m });
+    if (m > 0) return localeFormat.template(td.durationMinutesSeconds, { minutes: m, seconds: s });
+    return localeFormat.template(td.durationSeconds, { seconds: s });
   };
 
   // Live elapsed timer: ticks every second while processing, based on the

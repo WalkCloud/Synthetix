@@ -385,6 +385,9 @@ export type TranslationSchema = {
       processingTime: string;
       enhancementTime: string;
       processingInProgress: string;
+      durationHoursMinutes: string;
+      durationMinutesSeconds: string;
+      durationSeconds: string;
       overview: string;
       format: string;
       size: string;
