@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signToken, verifyToken, ACCESS_EXPIRES, REFRESH_EXPIRES, ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "@/lib/auth/token-core";
+import { signAccessToken, signRefreshToken } from "@/lib/auth/jwt";
+import { verifyToken, ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "@/lib/auth/token-core";
+import type { JWTPayload } from "@/types/auth";
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
@@ -16,12 +18,6 @@ function isPublicPath(pathname: string): boolean {
     (publicPath) =>
       pathname === publicPath || pathname.startsWith(publicPath + "/")
   );
-}
-
-interface TokenPayload {
-  userId: string;
-  username: string;
-  role: string;
 }
 
 export async function proxy(request: NextRequest) {
@@ -43,18 +39,23 @@ export async function proxy(request: NextRequest) {
   const refreshToken = request.cookies.get(REFRESH_TOKEN_KEY)?.value;
 
   if (accessToken) {
-    const payload = await verifyToken<TokenPayload>(accessToken);
+    const payload = await verifyToken<JWTPayload>(accessToken, "access");
     if (payload) {
       return NextResponse.next();
     }
   }
 
   if (refreshToken) {
-    const payload = await verifyToken<TokenPayload>(refreshToken);
+    const payload = await verifyToken<JWTPayload>(refreshToken, "refresh");
     if (payload) {
+      const tokenPayload: Omit<JWTPayload, "kind"> = {
+        userId: payload.userId,
+        username: payload.username,
+        role: payload.role,
+      };
       const [newAccessToken, newRefreshToken] = await Promise.all([
-        signToken(payload as unknown as Record<string, unknown>, ACCESS_EXPIRES),
-        signToken(payload as unknown as Record<string, unknown>, REFRESH_EXPIRES),
+        signAccessToken(tokenPayload),
+        signRefreshToken(tokenPayload),
       ]);
 
       const response = NextResponse.next();

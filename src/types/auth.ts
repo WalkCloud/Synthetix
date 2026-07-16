@@ -8,8 +8,11 @@ export interface AuthUser {
   role: UserRole;
 }
 
+export type TokenKind = "access" | "refresh";
+
 export interface JWTPayload {
   userId: string;
   username: string;
   role: UserRole;
+  kind: TokenKind;
 }

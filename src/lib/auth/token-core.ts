@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import type { TokenKind } from "@/types/auth";
 
 if (!process.env.JWT_SECRET) {
   throw new Error(
@@ -17,19 +18,22 @@ export const REFRESH_MAX_AGE = 60 * 60 * 24 * 7;
 export async function signToken(
   payload: Record<string, unknown>,
   expiresIn: string,
+  kind: TokenKind,
 ): Promise<string> {
-  return new SignJWT({ ...payload })
+  return new SignJWT({ ...payload, kind })
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime(expiresIn)
     .setIssuedAt()
     .sign(secret);
 }
 
-export async function verifyToken<T = Record<string, unknown>>(
+export async function verifyToken<T extends { kind?: TokenKind } = { kind?: TokenKind }>(
   token: string,
+  expectedKind?: TokenKind,
 ): Promise<T | null> {
   try {
     const { payload } = await jwtVerify(token, secret);
+    if (expectedKind && payload.kind !== expectedKind) return null;
     return payload as unknown as T;
   } catch {
     return null;
