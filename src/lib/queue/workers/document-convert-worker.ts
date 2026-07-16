@@ -54,7 +54,7 @@ export async function processDocumentConvert(
         where: { id: taskId, status: "running" },
         data: buildConvertTaskProgressUpdate(event),
       });
-    });
+    }, taskId);
     return { ok: true, docId };
   } catch (error) {
     if (error instanceof SupersededDocumentProcessingTaskError) {

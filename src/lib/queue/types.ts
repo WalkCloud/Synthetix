@@ -43,6 +43,25 @@ export interface TaskPayload {
   [key: string]: unknown;
 }
 
+export interface SubmitTaskOptions {
+  operationId?: string;
+  parentTaskId?: string;
+  attempt?: number;
+}
+
+export interface TaskResourceIdentity {
+  documentId: string | null;
+  draftId: string | null;
+  sectionId: string | null;
+  sessionId: string | null;
+}
+
+export interface TaskIdentity extends TaskResourceIdentity {
+  operationId: string;
+  parentTaskId: string | null;
+  attempt: number;
+}
+
 export interface TaskResult {
   [key: string]: unknown;
 }

@@ -40,6 +40,7 @@ export async function runPhaseOne(
   docId: string,
   options: ProcessingOptions,
   onProgress?: PhaseOneProgressFn,
+  parentTaskId?: string,
 ): Promise<void> {
   const ctx = await createPhaseOneContext(docId, options);
 
@@ -102,5 +103,5 @@ export async function runPhaseOne(
     docId: ctx.docId,
     sourceTaskId: docId,
     options: ctx.options,
-  }, ctx.doc.userId);
+  }, ctx.doc.userId, parentTaskId ? { parentTaskId } : undefined);
 }

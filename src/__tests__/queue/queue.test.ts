@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TaskQueue } from "@/lib/queue/queue";
 import { cancelledOutcome, completedOutcome, failedOutcome, type WorkerFn, type TaskResult } from "@/lib/queue/types";
 import { db } from "@/lib/db";
+import { executionRegistry } from "@/lib/queue/execution-registry";
 
 const TEST_USER_ID = "test-queue-user";
 
@@ -66,6 +67,59 @@ describe("TaskQueue", () => {
     expect(info).not.toBeNull();
     expect(info!.type).toBe(TEST_TYPE_UPLOAD);
     expect(info!.status).toBeDefined();
+
+    const stored = await db.asyncTask.findUniqueOrThrow({ where: { id: taskId } });
+    expect(JSON.parse(stored.inputData || "{}")).toEqual({ filename: "test.pdf" });
+    expect(stored.operationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(stored.parentTaskId).toBeNull();
+    expect(stored.attempt).toBe(0);
+  });
+
+  it("dual-writes document identity without changing the legacy payload", async () => {
+    const taskType = "_test_dual_write";
+    queue.registerWorker(taskType, async () => ({ ok: true }));
+
+    const payload = { docId: "doc-dual-write", options: { indexMode: "graph" } };
+    const taskId = await queue.submit(taskType, payload, TEST_USER_ID);
+    const stored = await db.asyncTask.findUniqueOrThrow({ where: { id: taskId } });
+
+    expect(stored.documentId).toBe("doc-dual-write");
+    expect(stored.draftId).toBeNull();
+    expect(stored.sessionId).toBeNull();
+    expect(JSON.parse(stored.inputData || "{}")).toEqual(payload);
+  });
+
+  it("uses relational document identity before the legacy payload", async () => {
+    const taskType = "_test_relational_identity";
+    let releaseWorker: (() => void) | undefined;
+    queue.registerWorker(taskType, async () => {
+      await new Promise<void>((resolve) => { releaseWorker = resolve; });
+      return { ok: true };
+    });
+
+    const taskId = crypto.randomUUID();
+    await db.asyncTask.create({
+      data: {
+        id: taskId,
+        userId: TEST_USER_ID,
+        type: taskType,
+        inputData: JSON.stringify({ docId: "doc-legacy" }),
+        documentId: "doc-relational",
+        operationId: crypto.randomUUID(),
+        attempt: 0,
+      },
+    });
+
+    void queue.processNext();
+    await vi.waitFor(async () => {
+      expect(await executionRegistry.hasActiveExecution(TEST_USER_ID, "doc-relational")).toBe(true);
+    });
+    expect(await executionRegistry.hasActiveExecution(TEST_USER_ID, "doc-legacy")).toBe(false);
+
+    releaseWorker?.();
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("completed");
+    });
   });
 
   it("should execute a task and mark it completed", async () => {

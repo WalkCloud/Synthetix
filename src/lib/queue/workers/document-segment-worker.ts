@@ -58,7 +58,12 @@ export async function processDocumentSegment(
     if (shouldEnqueueWikiSynthesis(ctx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");
-        await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        await getQueue().submit(
+          "wiki_synthesize",
+          { docId: ctx.docId, options: ctx.options },
+          ctx.doc.userId,
+          { parentTaskId: taskId },
+        );
         console.log(`[segment] doc ${ctx.docId}: submitted wiki_synthesize (using ${result.segmentCount} segments)`);
       } catch (wikiSubmitErr) {
         // Wiki submission failure must not invalidate the segmentation result.
@@ -75,7 +80,12 @@ export async function processDocumentSegment(
     if (ctx && shouldEnqueueWikiSynthesis(ctx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");
-        await getQueue().submit("wiki_synthesize", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        await getQueue().submit(
+          "wiki_synthesize",
+          { docId: ctx.docId, options: ctx.options },
+          ctx.doc.userId,
+          { parentTaskId: taskId },
+        );
         console.log(`[segment] doc ${ctx.docId}: segmentation failed, submitted wiki_synthesize (chunk fallback)`);
       } catch (wikiSubmitErr) {
         console.warn(`[segment] doc ${ctx.docId}: failed to submit wiki_synthesize after seg failure:`, wikiSubmitErr);

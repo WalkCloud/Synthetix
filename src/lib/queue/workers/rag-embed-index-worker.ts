@@ -80,7 +80,12 @@ export async function processRagEmbedIndex(
         // LLM-guided domain segmentation runs now. On success it submits
         // wiki_synthesize (so wiki reads segments, not chunks). On failure it
         // submits wiki_synthesize anyway (chunk fallback).
-        await getQueue().submit("document_segment", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        await getQueue().submit(
+          "document_segment",
+          { docId: ctx.docId, options: ctx.options },
+          ctx.doc.userId,
+          { parentTaskId: taskId },
+        );
       }
     }
 
@@ -138,7 +143,12 @@ export async function processRagEmbedIndex(
       });
       if (stillExists) {
         const { getQueue } = await import("@/lib/queue");
-        await getQueue().submit("rag_index", { docId: ctx.docId, options: ctx.options }, ctx.doc.userId);
+        await getQueue().submit(
+          "rag_index",
+          { docId: ctx.docId, options: ctx.options },
+          ctx.doc.userId,
+          { parentTaskId: taskId },
+        );
       }
     }
 

@@ -9,9 +9,11 @@ import type {
   TaskInfo,
   WorkerFn,
   WorkerOutcome,
+  SubmitTaskOptions,
 } from "./types";
 import { isWorkerOutcome } from "./types";
 import { executionRegistry } from "./execution-registry";
+import { resolveTaskIdentity } from "./task-identity";
 
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -93,12 +95,14 @@ export class TaskQueue {
     type: TaskType,
     payload: TaskPayload,
     userId: string,
+    options?: SubmitTaskOptions,
   ): Promise<string> {
     if (!this.workers.has(type)) {
       throw new Error(`No worker registered for task type: ${type}`);
     }
 
     const id = uuidv4();
+    const identity = await resolveTaskIdentity({ type, payload, userId, options });
 
     await db.asyncTask.create({
       data: {
@@ -108,6 +112,7 @@ export class TaskQueue {
         status: "pending",
         progress: 0,
         inputData: JSON.stringify(payload),
+        ...identity,
       },
     });
 
@@ -249,7 +254,13 @@ export class TaskQueue {
     // Scheduling section is serialised. claimedTask is the row we successfully
     // reserved (or null if none was eligible).
     const release = await this.schedulerLock.acquire();
-    let claimedTask: { id: string; type: TaskType; user_id: string; input_data: string | null } | null = null;
+    let claimedTask: {
+      id: string;
+      type: TaskType;
+      user_id: string;
+      input_data: string | null;
+      document_id: string | null;
+    } | null = null;
     try {
       if (this.activeCount >= this.concurrency) {
         return;
@@ -267,7 +278,13 @@ export class TaskQueue {
       // SQLite serialises the UPDATE so two concurrent processNext() calls cannot
       // claim the same row.
       const placeholders = eligibleTypes.map(() => "?").join(", ");
-      const claimed = await db.$queryRawUnsafe<{ id: string; type: string; user_id: string; input_data: string | null }[]>(
+      const claimed = await db.$queryRawUnsafe<{
+        id: string;
+        type: string;
+        user_id: string;
+        input_data: string | null;
+        document_id: string | null;
+      }[]>(
         `UPDATE async_tasks
          SET status = 'running', updated_at = ?
          WHERE id = (
@@ -276,7 +293,7 @@ export class TaskQueue {
            ORDER BY created_at ASC
            LIMIT 1
          ) AND status = 'pending'
-         RETURNING id, type, user_id, input_data`,
+         RETURNING id, type, user_id, input_data, document_id`,
         new Date(),
         ...eligibleTypes,
       );
@@ -289,7 +306,13 @@ export class TaskQueue {
       const taskType = task.type as TaskType;
       this.activeCount += 1;
       this.activePerType.set(taskType, (this.activePerType.get(taskType) ?? 0) + 1);
-      claimedTask = { id: task.id, type: taskType, user_id: task.user_id, input_data: task.input_data };
+      claimedTask = {
+        id: task.id,
+        type: taskType,
+        user_id: task.user_id,
+        input_data: task.input_data,
+        document_id: task.document_id,
+      };
     } finally {
       release();
     }
@@ -297,7 +320,13 @@ export class TaskQueue {
     if (!claimedTask) return;
 
     try {
-      await this.executeTask(claimedTask.id, claimedTask.type, claimedTask.user_id, claimedTask.input_data);
+      await this.executeTask(
+        claimedTask.id,
+        claimedTask.type,
+        claimedTask.user_id,
+        claimedTask.input_data,
+        claimedTask.document_id,
+      );
     } finally {
       const taskType = claimedTask.type;
       // Both decrements happen after executeTask returns; any other waiter
@@ -357,6 +386,7 @@ export class TaskQueue {
     taskType: TaskType,
     userId: string,
     inputData: string | null,
+    documentId: string | null,
   ): Promise<void> {
     const workerFn = this.workers.get(taskType);
 
@@ -377,9 +407,11 @@ export class TaskQueue {
       ...parsedPayload,
       taskId,
     } as TaskPayload;
-    const docId = typeof parsedPayload.docId === "string" && parsedPayload.docId.length > 0
-      ? parsedPayload.docId
-      : null;
+    const docId = documentId ?? (
+      typeof parsedPayload.docId === "string" && parsedPayload.docId.length > 0
+        ? parsedPayload.docId
+        : null
+    );
 
     const currentTask = await db.asyncTask.findUnique({
       where: { id: taskId },

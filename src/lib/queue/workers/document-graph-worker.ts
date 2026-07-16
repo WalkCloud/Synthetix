@@ -127,6 +127,7 @@ async function handleGraphFailure(
           "rag_index",
           { docId, options: { indexMode: "graph", [ATTEMPT_KEY]: attempt + 1 } },
           userId,
+          { parentTaskId: taskId },
         ),
       ).catch((err) => console.warn(`[graph] failed to re-enqueue retry for doc ${docId}:`, err));
     }, delay);
