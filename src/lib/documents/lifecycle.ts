@@ -4,6 +4,7 @@ import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
+import { cancelTasksByResourceIdentity, findTaskIdsByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
 // chunk triggers an LLM call. We must let the in-flight Python subprocess exit
@@ -224,28 +225,30 @@ export const documentLifecycle = createDocumentLifecycleService({
     });
   },
   async cancelDocumentTasks(userId, docId) {
-    await db.asyncTask.updateMany({
-      where: {
-        userId,
-        status: { in: ["pending", "running"] },
-        inputData: { contains: docId },
-      },
-      data: { status: "cancelled", errorMessage: "Document deleted" },
+    await cancelTasksByResourceIdentity({
+      userId,
+      field: "documentId",
+      value: docId,
+      statuses: ["pending", "running"],
+      errorMessage: "Document deleted",
     }).catch(() => undefined);
   },
   async cancelDocumentTasksBatch(userId, docIds) {
     if (docIds.length === 0) return;
-    // One statement cancels all in-flight tasks whose payload mentions any of
-    // the deleted docs. `contains` is OR-implicit across docIds only via a
-    // loop here — SQLite Prisma's `contains` doesn't accept an array. We keep
-    // it simple: cancel any running/pending task whose inputData contains any
-    // of the docIds. This matches the single-doc behaviour.
-    await db.asyncTask.updateMany({
-      where: {
+    const taskIds = new Set<string>();
+    for (const docId of docIds) {
+      for (const taskId of await findTaskIdsByResourceIdentity({
         userId,
-        status: { in: ["pending", "running"] },
-        OR: docIds.map((docId) => ({ inputData: { contains: docId } })),
-      },
+        field: "documentId",
+        value: docId,
+        statuses: ["pending", "running"],
+      })) {
+        taskIds.add(taskId);
+      }
+    }
+    if (taskIds.size === 0) return;
+    await db.asyncTask.updateMany({
+      where: { id: { in: [...taskIds] }, status: { in: ["pending", "running"] } },
       data: { status: "cancelled", errorMessage: "Document deleted" },
     }).catch(() => undefined);
   },

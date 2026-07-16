@@ -8,6 +8,7 @@ import {
   cancelActiveFollowupTasks,
 } from "@/lib/documents/processing-tasks";
 import { DocumentMutationBusyError, executionRegistry, getQueue } from "@/lib/queue";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 export async function POST(
   request: Request,
@@ -40,19 +41,18 @@ export async function POST(
   // otherwise shadow the original graph config, so inheritance would never
   // recover it. Any field the caller explicitly provides still wins.
   if (Object.keys(options).length === 0) {
-    const prevTasks = await db.$queryRawUnsafe<{ input_data: string | null }[]>(
-      `SELECT input_data FROM async_tasks
-       WHERE user_id = ?
-         AND type = 'document_convert'
-         AND input_data LIKE ?
-       ORDER BY created_at DESC LIMIT 10`,
-      user.id,
-      `%"docId":"${id}"%`,
-    );
+    const prevTasks = await findTasksByResourceIdentity({
+      userId: user.id,
+      field: "documentId",
+      value: id,
+      types: ["document_convert"],
+      order: "desc",
+      take: 10,
+    });
     for (const row of prevTasks) {
-      if (!row.input_data) continue;
+      if (!row.inputData) continue;
       try {
-        const prev = JSON.parse(row.input_data);
+        const prev = JSON.parse(row.inputData);
         const prevOpts = prev?.options;
         // Only inherit when the stored options actually carry meaningful
         // settings (at least one key). An empty {} (e.g. from an earlier
@@ -71,17 +71,15 @@ export async function POST(
   // surfacing as the "converting → failed → ready" status flicker. If a
   // pending/running document_convert already exists for this doc, return it
   // verbatim so the caller polls the same task.
-  const filter = `%"docId":"${id}"%`;
-  const existingPending = await db.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM async_tasks
-     WHERE user_id = ?
-       AND type = 'document_convert'
-       AND status IN ('pending', 'running')
-       AND input_data LIKE ?
-     ORDER BY created_at DESC LIMIT 1`,
-    user.id,
-    filter,
-  );
+  const existingPending = await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "documentId",
+    value: id,
+    types: ["document_convert"],
+    statuses: ["pending", "running"],
+    order: "desc",
+    take: 1,
+  });
   if (existingPending[0]?.id) {
     return successResponse({ documentId: id, taskId: existingPending[0].id, deduped: true });
   }
@@ -95,16 +93,15 @@ export async function POST(
   // wiki synthesis from the old run would race the fresh convert pipeline.
   try {
     return await executionRegistry.withDocumentMutation(user.id, [id], async () => {
-      const activeInsideGate = await db.$queryRawUnsafe<{ id: string }[]>(
-        `SELECT id FROM async_tasks
-         WHERE user_id = ?
-           AND type = 'document_convert'
-           AND status IN ('pending', 'running')
-           AND input_data LIKE ?
-         ORDER BY created_at DESC LIMIT 1`,
-        user.id,
-        filter,
-      );
+      const activeInsideGate = await findTasksByResourceIdentity({
+        userId: user.id,
+        field: "documentId",
+        value: id,
+        types: ["document_convert"],
+        statuses: ["pending", "running"],
+        order: "desc",
+        take: 1,
+      });
       if (activeInsideGate[0]?.id) {
         return successResponse({ documentId: id, taskId: activeInsideGate[0].id, deduped: true });
       }

@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { cancelTasksByResourceIdentity, findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 export class SupersededDocumentProcessingTaskError extends Error {
   constructor() {
@@ -7,35 +7,27 @@ export class SupersededDocumentProcessingTaskError extends Error {
   }
 }
 
-function docIdFilter(docId: string): string {
-  return `%"docId":"${docId}"%`;
-}
-
 export async function cancelActiveDocumentConvertTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void> {
-  await db.asyncTask.updateMany({
-    where: {
-      userId,
-      type: "document_convert",
-      status: { in: ["pending", "running"] },
-      inputData: { contains: `"docId":"${docId}"` },
-      ...(exceptTaskId ? { id: { not: exceptTaskId } } : {}),
-    },
-    data: {
-      status: "cancelled",
-      errorMessage: "Superseded by newer document processing task",
-    },
+  await cancelTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    statuses: ["pending", "running"],
+    exceptTaskId,
+    errorMessage: "Superseded by newer document processing task",
   });
 }
 
 export async function isLatestDocumentConvertTask(userId: string, docId: string, taskId: string): Promise<boolean> {
-  const rows = await db.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM async_tasks
-     WHERE user_id = ? AND type = 'document_convert'
-       AND input_data LIKE ?
-     ORDER BY created_at DESC LIMIT 1`,
+  const rows = await findTasksByResourceIdentity({
     userId,
-    docIdFilter(docId),
-  );
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    order: "desc",
+    take: 1,
+  });
   return rows[0]?.id === taskId;
 }
 
@@ -53,30 +45,26 @@ export class SupersededRagEmbedIndexTaskError extends Error {
 }
 
 export async function cancelActiveRagEmbedIndexTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void> {
-  await db.asyncTask.updateMany({
-    where: {
-      userId,
-      type: "rag_embed_index",
-      status: { in: ["pending", "running"] },
-      inputData: { contains: `"docId":"${docId}"` },
-      ...(exceptTaskId ? { id: { not: exceptTaskId } } : {}),
-    },
-    data: {
-      status: "cancelled",
-      errorMessage: "Superseded by newer document processing task",
-    },
+  await cancelTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["rag_embed_index"],
+    statuses: ["pending", "running"],
+    exceptTaskId,
+    errorMessage: "Superseded by newer document processing task",
   });
 }
 
 async function isLatestRagEmbedIndexTask(userId: string, docId: string, taskId: string): Promise<boolean> {
-  const rows = await db.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM async_tasks
-     WHERE user_id = ? AND type = 'rag_embed_index'
-       AND input_data LIKE ?
-     ORDER BY created_at DESC LIMIT 1`,
+  const rows = await findTasksByResourceIdentity({
     userId,
-    docIdFilter(docId),
-  );
+    field: "documentId",
+    value: docId,
+    types: ["rag_embed_index"],
+    order: "desc",
+    take: 1,
+  });
   return rows[0]?.id === taskId;
 }
 
@@ -97,18 +85,14 @@ export async function assertLatestRagEmbedIndexTask(userId: string, docId: strin
  * out via waitForDocActiveTasksToSettle (which includes 'rag_index').
  */
 export async function cancelActiveFollowupTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void> {
-  await db.asyncTask.updateMany({
-    where: {
-      userId,
-      type: { in: ["rag_index", "wiki_synthesize", "document_segment"] },
-      status: { in: ["pending", "running"] },
-      inputData: { contains: `"docId":"${docId}"` },
-      ...(exceptTaskId ? { id: { not: exceptTaskId } } : {}),
-    },
-    data: {
-      status: "cancelled",
-      errorMessage: "Superseded by newer document processing task",
-    },
+  await cancelTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["rag_index", "wiki_synthesize", "document_segment"],
+    statuses: ["pending", "running"],
+    exceptTaskId,
+    errorMessage: "Superseded by newer document processing task",
   });
 }
 
@@ -129,18 +113,15 @@ export async function waitForDocActiveTasksToSettle(
   timeoutMs = 30_000,
 ): Promise<void> {
   const start = Date.now();
-  const filter = `%"docId":"${docId}"%`;
   while (Date.now() - start < timeoutMs) {
-    const rows = await db.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM async_tasks
-       WHERE user_id = ?
-         AND type IN ('document_convert', 'rag_embed_index', 'rag_index', 'wiki_synthesize', 'document_segment')
-         AND status = 'running'
-         AND input_data LIKE ?
-       LIMIT 1`,
+    const rows = await findTasksByResourceIdentity({
       userId,
-      filter,
-    );
+      field: "documentId",
+      value: docId,
+      types: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize", "document_segment"],
+      statuses: ["running"],
+      take: 1,
+    });
     if (!rows[0]) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
