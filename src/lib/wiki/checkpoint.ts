@@ -101,21 +101,83 @@ export async function readWikiCheckpoint(
   return value as WikiCheckpointV2;
 }
 
-export async function writeWikiCheckpoint(filePath: string, checkpoint: WikiCheckpointV2): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
+interface CheckpointFileHandle {
+  writeFile(data: string, encoding: BufferEncoding): Promise<void>;
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface WikiCheckpointFileSystem {
+  mkdir(dirPath: string): Promise<void>;
+  open(filePath: string, flags: string): Promise<CheckpointFileHandle>;
+  rename(from: string, to: string): Promise<void>;
+  rm(filePath: string): Promise<void>;
+  unlink(filePath: string): Promise<void>;
+  syncDirectory(dirPath: string): Promise<void>;
+}
+
+const defaultFileSystem: WikiCheckpointFileSystem = {
+  async mkdir(dirPath) {
+    await fs.mkdir(dirPath, { recursive: true });
+  },
+  open(filePath, flags) {
+    return fs.open(filePath, flags);
+  },
+  rename(from, to) {
+    return fs.rename(from, to);
+  },
+  async rm(filePath) {
+    await fs.rm(filePath, { force: true });
+  },
+  unlink(filePath) {
+    return fs.unlink(filePath);
+  },
+  async syncDirectory(dirPath) {
+    let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    try {
+      handle = await fs.open(dirPath, "r");
+      await handle.sync();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EINVAL")) return;
+      throw error;
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  },
+};
+
+export async function writeWikiCheckpoint(
+  filePath: string,
+  checkpoint: WikiCheckpointV2,
+  fileSystem: WikiCheckpointFileSystem = defaultFileSystem,
+): Promise<void> {
+  const dirPath = path.dirname(filePath);
+  await fileSystem.mkdir(dirPath);
   const tempPath = `${filePath}.tmp.${process.pid}.${crypto.randomBytes(4).toString("hex")}`;
+  let handle: CheckpointFileHandle | undefined;
   try {
-    await fs.writeFile(tempPath, JSON.stringify(checkpoint), "utf8");
-    await fs.rename(tempPath, filePath);
+    handle = await fileSystem.open(tempPath, "wx");
+    await handle.writeFile(JSON.stringify(checkpoint), "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await fileSystem.rename(tempPath, filePath);
+    await fileSystem.syncDirectory(dirPath);
   } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    await handle?.close().catch(() => undefined);
+    await fileSystem.rm(tempPath).catch(() => undefined);
     throw error;
   }
 }
 
-export async function clearWikiCheckpoint(filePath: string): Promise<void> {
+export async function clearWikiCheckpoint(
+  filePath: string,
+  fileSystem: WikiCheckpointFileSystem = defaultFileSystem,
+): Promise<void> {
   try {
-    await fs.unlink(filePath);
+    await fileSystem.unlink(filePath);
+    await fileSystem.syncDirectory(path.dirname(filePath));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
