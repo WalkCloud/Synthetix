@@ -2,6 +2,7 @@ allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true
   electron: true
+  esbuild: true
   msw: true
   prisma: true
   sharp: true

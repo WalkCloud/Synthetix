@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/db";
-import { parseTaskInput } from "@/lib/queue/task-json";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 import type {
   SubmitTaskOptions,
   TaskIdentity,
@@ -82,17 +82,6 @@ export function inferTaskResourceIdentity(
   throw new InvalidTaskIdentityError(`Unsupported task type: ${type}`);
 }
 
-function legacyResourceIdentity(type: TaskType, inputData: string | null): TaskResourceIdentity {
-  return inferTaskResourceIdentity(type, parseTaskInput<TaskPayload>(inputData, {}));
-}
-
-function legacyAttempt(type: TaskType, inputData: string | null): number {
-  if (type !== "rag_index") return 0;
-  const input = parseTaskInput<{ options?: Record<string, unknown> }>(inputData, {});
-  const attempt = input.options?._graphAttempt;
-  return typeof attempt === "number" && Number.isInteger(attempt) && attempt >= 0 ? attempt : 0;
-}
-
 function assertMatchingResource(
   child: TaskResourceIdentity,
   parent: TaskResourceIdentity,
@@ -149,31 +138,50 @@ export async function resolveTaskIdentity(input: {
     throw new InvalidTaskIdentityError(`Task ${input.type} cannot follow ${parentType}`);
   }
 
-  const relationalParent: TaskResourceIdentity = {
+  const comparison = compareTaskIdentitySources({
+    type: parent.type,
+    inputData: parent.inputData,
     documentId: parent.documentId,
     draftId: parent.draftId,
     sectionId: parent.sectionId,
     sessionId: parent.sessionId,
+    attempt: parent.attempt,
+  });
+  if (comparison.legacy.status === "malformed" || comparison.legacy.status === "ambiguous") {
+    throw new InvalidTaskIdentityError("Parent task has invalid legacy identity");
+  }
+  const parentResource: TaskResourceIdentity = {
+    documentId: comparison.authoritative.documentId,
+    draftId: comparison.authoritative.draftId,
+    sectionId: comparison.authoritative.sectionId,
+    sessionId: comparison.authoritative.sessionId,
   };
-  const hasRelationalResource = Object.values(relationalParent).some((value) => value !== null);
-  const parentResource = hasRelationalResource
-    ? relationalParent
-    : legacyResourceIdentity(parentType, parent.inputData);
   assertMatchingResource(resource, parentResource);
 
   const operationId = parent.operationId ?? uuidv4();
-  const parentAttempt = parent.attempt ?? legacyAttempt(parentType, parent.inputData);
-  if (!parent.operationId || parent.attempt === null || !hasRelationalResource) {
-    const upgraded = await db.asyncTask.updateMany({
-      where: { id: parent.id, userId: input.userId },
-      data: {
-        ...parentResource,
-        operationId,
-        attempt: parentAttempt,
-      },
-    });
-    if (upgraded.count !== 1) {
-      throw new InvalidTaskIdentityError("Parent task could not be upgraded");
+  const parentAttempt = comparison.authoritative.attempt ?? 0;
+  if (
+    !parent.operationId
+    || parent.attempt === null
+    || parent.documentId === null && parentResource.documentId !== null
+    || parent.draftId === null && parentResource.draftId !== null
+    || parent.sectionId === null && parentResource.sectionId !== null
+    || parent.sessionId === null && parentResource.sessionId !== null
+  ) {
+    const updates = [
+      ["documentId", parent.documentId, parentResource.documentId],
+      ["draftId", parent.draftId, parentResource.draftId],
+      ["sectionId", parent.sectionId, parentResource.sectionId],
+      ["sessionId", parent.sessionId, parentResource.sessionId],
+      ["attempt", parent.attempt, parentAttempt],
+      ["operationId", parent.operationId, operationId],
+    ] as const;
+    for (const [field, current, value] of updates) {
+      if (current !== null || value === null) continue;
+      await db.asyncTask.updateMany({
+        where: { id: parent.id, userId: input.userId, [field]: null },
+        data: { [field]: value },
+      });
     }
   }
   if (options.operationId && options.operationId !== operationId) {
