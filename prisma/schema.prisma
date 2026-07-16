@@ -78,6 +78,13 @@ model AsyncTask {
   inputData    String?  @map("input_data")
   resultData   String?  @map("result_data")
   errorMessage String?  @map("error_message")
+  documentId   String?  @map("document_id")
+  draftId      String?  @map("draft_id")
+  sectionId    String?  @map("section_id")
+  sessionId    String?  @map("session_id")
+  operationId  String?  @map("operation_id")
+  parentTaskId String?  @map("parent_task_id")
+  attempt      Int?
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -85,6 +92,12 @@ model AsyncTask {
 
   @@index([userId, type, createdAt])
   @@index([userId, createdAt])
+  @@index([userId, documentId, type, createdAt])
+  @@index([userId, draftId, type, createdAt])
+  @@index([userId, sectionId, type, createdAt])
+  @@index([userId, sessionId, type, createdAt])
+  @@index([operationId])
+  @@index([parentTaskId])
   @@map("async_tasks")
 }
 
