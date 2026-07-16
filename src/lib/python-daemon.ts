@@ -96,8 +96,15 @@ export class PythonDaemonClient {
       () => undefined,
       () => undefined,
     );
-    // Clear the busy flag once the request settles so the next caller can proceed.
-    next.finally(() => { this.busy = false; });
+    // Clear the busy flag once the request settles so the next caller can
+    // proceed. Do not use an ignored `next.finally(...)` here: `finally`
+    // returns a new promise that mirrors `next`'s rejection, so a failed daemon
+    // call creates an unhandled-rejection twin even when the original caller
+    // correctly awaits/catches `next`.
+    void next.then(
+      () => { this.busy = false; },
+      () => { this.busy = false; },
+    );
     return next;
   }
 
