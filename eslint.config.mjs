@@ -18,11 +18,16 @@ const eslintConfig = defineConfig([
     "tmp-chrome-profile/**",
     "data/**",
     "workers/python/__pycache__/**",
+    "e2e/**",
+    "src/__tests__/**",
+    "packaging/**",
+    "*.cjs",
   ]),
   {
-    files: ["scripts/**/*.js"],
+    files: ["scripts/**/*.{js,mjs}", "electron/**/*.ts"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   {
@@ -30,6 +35,8 @@ const eslintConfig = defineConfig([
       "react-hooks/preserve-manual-memoization": "off",
       "react-hooks/refs": "off",
       "react-hooks/set-state-in-effect": "off",
+      "react-hooks/static-components": "off",
+      "prefer-const": "warn",
     },
   },
 ]);

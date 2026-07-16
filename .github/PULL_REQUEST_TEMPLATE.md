@@ -17,9 +17,11 @@
 
 ## Checklist
 
-- [ ] `npx tsc --noEmit` passes with zero errors
-- [ ] `pnpm test:run` passes (or I've added tests for new functionality)
-- [ ] `pnpm lint` passes
+- [ ] `npm run typecheck` passes with zero errors
+- [ ] `npm run test:run` passes (or I've added tests for new functionality)
+- [ ] `npm run lint` passes
+- [ ] `npm run build` passes
+- [ ] `npm run electron:compile` passes when Electron code is affected
 - [ ] User-facing strings are added to both `en.ts` and `zh-CN.ts` (if UI changes)
 - [ ] I've updated relevant documentation (README, CONTRIBUTING, etc.)
 
