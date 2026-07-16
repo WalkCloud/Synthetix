@@ -151,10 +151,10 @@ describe("TaskQueue", () => {
 
   it("should track progress updates", async () => {
     const workerFn = vi.fn<WorkerFn>(
-      async (_payload, onProgress) => {
-        onProgress(25);
-        onProgress(50);
-        onProgress(75);
+      async (_payload, ctx) => {
+        ctx.reportProgress(25);
+        ctx.reportProgress(50);
+        ctx.reportProgress(75);
         return { done: true };
       },
     );
@@ -264,7 +264,7 @@ describe("TaskQueue", () => {
     resolveWorker!({ done: true });
   });
 
-  it("keeps a running task cancelled when its worker resolves late", async () => {
+  it("writes cancel_requested for a running task, then cancelled when the worker resolves", async () => {
     let resolveWorker: (value: TaskResult) => void = () => {};
     const workerStarted = new Promise<void>((resolve) => {
       queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
@@ -277,18 +277,23 @@ describe("TaskQueue", () => {
 
     const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
     await workerStarted;
-    expect(await queue.cancel(taskId)).toBe(true);
 
+    // Running cancel transitions to non-terminal cancel_requested (not cancelled yet)
+    expect(await queue.cancel(taskId)).toBe(true);
+    let info = await queue.getStatus(taskId);
+    expect(info!.status).toBe("cancel_requested");
+
+    // Terminal cancelled is written only when the worker Promise settles
     resolveWorker({ late: true });
     await vi.waitFor(async () => {
       expect((await queue.getStatus(taskId))?.status).toBe("cancelled");
     });
 
-    const info = await queue.getStatus(taskId);
+    info = await queue.getStatus(taskId);
     expect(info?.result).toBeUndefined();
   });
 
-  it("keeps a running task cancelled when its worker rejects late", async () => {
+  it("writes cancel_requested for a running task, then cancelled when the worker rejects", async () => {
     let rejectWorker: (reason: Error) => void = () => {};
     const workerStarted = new Promise<void>((resolve) => {
       queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
@@ -302,6 +307,7 @@ describe("TaskQueue", () => {
     const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
     await workerStarted;
     expect(await queue.cancel(taskId)).toBe(true);
+    expect((await queue.getStatus(taskId))?.status).toBe("cancel_requested");
 
     rejectWorker(new Error("late failure"));
     await vi.waitFor(async () => {
@@ -314,8 +320,8 @@ describe("TaskQueue", () => {
   it("ignores late worker progress after a hard timeout", async () => {
     const timeoutQueue = new TaskQueue({ timeoutMs: 20 });
     let reportLateProgress: (() => void) | undefined;
-    timeoutQueue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, onProgress) => {
-      reportLateProgress = () => { void onProgress(88); };
+    timeoutQueue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, ctx) => {
+      reportLateProgress = () => { void ctx.reportProgress(88); };
       return new Promise<TaskResult>(() => {});
     });
 
@@ -592,7 +598,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
 
   it("marks a running task failed when its lastHeartbeatAt is stale", async () => {
     // Create a running task with a heartbeat from 10 minutes ago (well past the 60ms cutoff).
-    const staleHeartbeat = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const task = await db.asyncTask.create({
       data: {
         userId: TEST_USER_ID,
@@ -600,7 +605,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 40,
         inputData: "{}",
-        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: staleHeartbeat }),
+        heartbeatAt: new Date(Date.now() - 10 * 60 * 1000),
       },
     });
 
@@ -613,7 +618,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
   });
 
   it("does NOT fail a running task with a fresh heartbeat", async () => {
-    const freshHeartbeat = new Date().toISOString(); // now
     const task = await db.asyncTask.create({
       data: {
         userId: TEST_USER_ID,
@@ -621,7 +625,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 55,
         inputData: "{}",
-        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: freshHeartbeat }),
+        heartbeatAt: new Date(),
       },
     });
 
@@ -631,7 +635,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
     expect(after?.status).toBe("running");
   });
 
-  it("falls back to updatedAt when resultData has no lastHeartbeatAt", async () => {
+  it("falls back to updatedAt when heartbeatAt is null", async () => {
     // A task that just started (no heartbeat yet) — updatedAt is recent, so it
     // must NOT be falsely marked stalled.
     const task = await db.asyncTask.create({
@@ -641,7 +645,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 0,
         inputData: "{}",
-        resultData: null,
       },
     });
 

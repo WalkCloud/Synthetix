@@ -7,6 +7,7 @@ import type {
   TaskPayload,
   TaskResult,
   TaskInfo,
+  TaskExecutionContext,
   WorkerFn,
   WorkerOutcome,
   SubmitTaskOptions,
@@ -60,6 +61,7 @@ export class TaskQueue {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatScanIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -149,17 +151,36 @@ export class TaskQueue {
   }
 
   async cancel(taskId: string): Promise<boolean> {
-    const cancelled = await db.asyncTask.updateMany({
-      where: {
-        id: taskId,
-        status: { in: ["pending", "running"] },
-      },
+    // Pending tasks have no live worker — flip straight to terminal cancelled.
+    const pendingCancel = await db.asyncTask.updateMany({
+      where: { id: taskId, status: "pending" },
       data: {
         status: "cancelled",
+        cancelRequestedAt: new Date(),
+        finishedAt: new Date(),
         updatedAt: new Date(),
       },
     });
-    return cancelled.count === 1;
+    if (pendingCancel.count === 1) return true;
+
+    // Running tasks have a live worker — request cancel non-terminally and
+    // trigger the abort. The terminal `cancelled` is written only when the
+    // real worker Promise settles in commitOutcome. This prevents a still-
+    // running worker from mutating side effects after the task already shows
+    // `cancelled`.
+    const runningCancel = await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
+      data: {
+        status: "cancel_requested",
+        cancelRequestedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    if (runningCancel.count === 1) {
+      this.abortControllers.get(taskId)?.abort();
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -204,22 +225,18 @@ export class TaskQueue {
     // Fetch running tasks. We can't filter on the JSON lastHeartbeatAt in SQL,
     // so we fetch and parse in JS. Limit to a sane batch to bound work.
     const running = await db.asyncTask.findMany({
-      where: { status: "running" },
-      select: { id: true, type: true, resultData: true, updatedAt: true },
+      where: { status: { in: ["running", "cancel_requested"] } },
+      select: { id: true, type: true, heartbeatAt: true, updatedAt: true },
       take: 200,
     });
     const stalled: string[] = [];
     for (const t of running) {
-      // Prefer lastHeartbeatAt from resultData; fall back to updatedAt (so a
-      // task that hasn't emitted its first progress event yet is judged by its
-      // claim time, not falsely considered stalled).
+      // Prefer the heartbeatAt column; fall back to updatedAt (so a task that
+      // hasn't emitted its first progress event yet is judged by its claim
+      // time, not falsely considered stalled).
       let lastBeat = t.updatedAt;
-      if (t.resultData) {
-        const parsed = parseTaskResult<{ lastHeartbeatAt?: string } | null>(t.resultData, null);
-        if (parsed?.lastHeartbeatAt) {
-          const parsedDate = new Date(parsed.lastHeartbeatAt);
-          if (Number.isFinite(parsedDate.getTime())) lastBeat = parsedDate;
-        }
+      if (t.heartbeatAt && t.heartbeatAt.getTime() > 0) {
+        lastBeat = t.heartbeatAt;
       }
       if (lastBeat.getTime() < cutoff) {
         stalled.push(t.id);
@@ -228,10 +245,11 @@ export class TaskQueue {
     if (stalled.length === 0) return;
     const elapsed = Math.round(this.heartbeatTimeoutMs / 1000);
     const failed = await db.asyncTask.updateMany({
-      where: { id: { in: stalled }, status: "running" },
+      where: { id: { in: stalled }, status: { in: ["running", "cancel_requested"] } },
       data: {
         status: "failed",
         errorMessage: `Task heartbeat timeout — no activity for ${elapsed}s`,
+        finishedAt: new Date(),
         updatedAt: new Date(),
       },
     });
@@ -260,6 +278,8 @@ export class TaskQueue {
       user_id: string;
       input_data: string | null;
       document_id: string | null;
+      operation_id: string | null;
+      attempt: number | null;
     } | null = null;
     try {
       if (this.activeCount >= this.concurrency) {
@@ -284,16 +304,19 @@ export class TaskQueue {
         user_id: string;
         input_data: string | null;
         document_id: string | null;
+        operation_id: string | null;
+        attempt: number | null;
       }[]>(
         `UPDATE async_tasks
-         SET status = 'running', updated_at = ?
+         SET status = 'running', started_at = ?, updated_at = ?
          WHERE id = (
            SELECT id FROM async_tasks
            WHERE status = 'pending' AND type IN (${placeholders})
            ORDER BY created_at ASC
            LIMIT 1
          ) AND status = 'pending'
-         RETURNING id, type, user_id, input_data, document_id`,
+         RETURNING id, type, user_id, input_data, document_id, operation_id, attempt`,
+        new Date(),
         new Date(),
         ...eligibleTypes,
       );
@@ -312,6 +335,8 @@ export class TaskQueue {
         user_id: task.user_id,
         input_data: task.input_data,
         document_id: task.document_id,
+        operation_id: task.operation_id,
+        attempt: task.attempt,
       };
     } finally {
       release();
@@ -326,6 +351,8 @@ export class TaskQueue {
         claimedTask.user_id,
         claimedTask.input_data,
         claimedTask.document_id,
+        claimedTask.operation_id,
+        claimedTask.attempt ?? 0,
       );
     } finally {
       const taskType = claimedTask.type;
@@ -354,6 +381,7 @@ export class TaskQueue {
           progress: 100,
           resultData: JSON.stringify(outcome.result),
           errorMessage: null,
+          finishedAt: new Date(),
           updatedAt: new Date(),
         }
       : outcome.status === "failed"
@@ -362,6 +390,7 @@ export class TaskQueue {
             progress: outcome.progress ?? 100,
             resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
             errorMessage: outcome.error,
+            finishedAt: new Date(),
             updatedAt: new Date(),
           }
         : {
@@ -369,11 +398,15 @@ export class TaskQueue {
             progress: outcome.progress,
             resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
             errorMessage: outcome.error ?? null,
+            finishedAt: new Date(),
             updatedAt: new Date(),
           };
 
+    // Match both `running` (nominal) and `cancel_requested` (the non-terminal
+    // state written by cancel() for a running task). This is where the deferred
+    // terminal `cancelled` write happens once the worker Promise settles.
     const committed = await db.asyncTask.updateMany({
-      where: { id: taskId, status: "running" },
+      where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
       data,
     });
     if (committed.count === 0) {
@@ -387,6 +420,8 @@ export class TaskQueue {
     userId: string,
     inputData: string | null,
     documentId: string | null,
+    operationId: string | null,
+    attempt: number,
   ): Promise<void> {
     const workerFn = this.workers.get(taskType);
 
@@ -396,6 +431,7 @@ export class TaskQueue {
         data: {
           status: "failed",
           errorMessage: `No worker registered for task type: ${taskType}`,
+          finishedAt: new Date(),
           updatedAt: new Date(),
         },
       });
@@ -418,23 +454,53 @@ export class TaskQueue {
       select: { status: true },
     });
     if (currentTask?.status !== "running") {
+      // Was cancelled (→ cancel_requested) between claim and execution start.
       return;
     }
 
-    const onProgress = async (progress: number): Promise<void> => {
+    // One AbortController per execution. cancel() triggers abort(); the worker
+    // Promise then settles and commitOutcome writes the terminal state.
+    const controller = new AbortController();
+    this.abortControllers.set(taskId, controller);
+
+    const reportProgress = async (progress: number): Promise<void> => {
       const clipped = Math.max(0, Math.min(100, progress));
       await db.asyncTask.updateMany({
-        where: { id: taskId, status: "running" },
+        where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
         data: {
           progress: clipped,
+          heartbeatAt: new Date(),
           updatedAt: new Date(),
         },
       });
     };
 
+    const heartbeat = async (): Promise<void> => {
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
+        data: { heartbeatAt: new Date(), updatedAt: new Date() },
+      });
+    };
+
+    const ctx: TaskExecutionContext = {
+      taskId,
+      taskType,
+      userId,
+      operationId: operationId ?? undefined,
+      attempt,
+      signal: controller.signal,
+      reportProgress,
+      heartbeat,
+      throwIfCancelled: () => {
+        if (controller.signal.aborted) {
+          throw new Error("Task was cancelled");
+        }
+      },
+    };
+
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const startWorker = () => workerFn(payload, onProgress);
+      const startWorker = () => workerFn(payload, ctx);
       const resultPromise = docId
         ? await executionRegistry.startDocumentExecution({
             taskId,
@@ -456,25 +522,37 @@ export class TaskQueue {
             }),
           ]);
 
-      await this.commitOutcome(
-        taskId,
-        isWorkerOutcome(result)
-          ? result
-          : { workerOutcome: true, status: "completed", result },
-      );
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      try {
+      // If cancel was requested while the worker was running, the final
+      // outcome is always `cancelled` regardless of what the worker returned.
+      // A late success must not un-cancel a task the user asked to abort.
+      if (controller.signal.aborted) {
         await this.commitOutcome(taskId, {
           workerOutcome: true,
-          status: "failed",
-          error: errorMessage,
+          status: "cancelled",
+          error: "Cancelled by user",
         });
+      } else {
+        await this.commitOutcome(
+          taskId,
+          isWorkerOutcome(result)
+            ? result
+            : { workerOutcome: true, status: "completed", result },
+        );
+      }
+    } catch (error: unknown) {
+      const isAbort = controller.signal.aborted;
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      try {
+        await this.commitOutcome(taskId, isAbort
+          ? { workerOutcome: true, status: "cancelled", error: "Cancelled by user" }
+          : { workerOutcome: true, status: "failed", error: errorMessage },
+        );
       } catch {
         // Task record may have been deleted (e.g. test cleanup)
       }
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      this.abortControllers.delete(taskId);
     }
   }
 }

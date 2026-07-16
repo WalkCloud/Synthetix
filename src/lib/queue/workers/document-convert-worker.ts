@@ -4,7 +4,7 @@ import {
   assertLatestDocumentConvertTask,
   SupersededDocumentProcessingTaskError,
 } from "@/lib/documents/processing-tasks";
-import { cancelledOutcome, type ProcessingOptions, type WorkerResult } from "@/lib/queue/types";
+import { cancelledOutcome, type ProcessingOptions, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 export function buildConvertTaskProgressUpdate(
@@ -27,6 +27,7 @@ export function buildConvertTaskProgressUpdate(
 
 export async function processDocumentConvert(
   taskId: string,
+  ctx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Task ${taskId} not found`);
@@ -55,6 +56,7 @@ export async function processDocumentConvert(
         where: { id: taskId, status: "running" },
         data: buildConvertTaskProgressUpdate(event),
       });
+      await ctx.heartbeat();
     }, taskId);
     return { ok: true, docId };
   } catch (error) {

@@ -85,6 +85,10 @@ model AsyncTask {
   operationId  String?  @map("operation_id")
   parentTaskId String?  @map("parent_task_id")
   attempt      Int?
+  startedAt        DateTime? @map("started_at")
+  heartbeatAt      DateTime? @map("heartbeat_at")
+  cancelRequestedAt DateTime? @map("cancel_requested_at")
+  finishedAt       DateTime? @map("finished_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -98,6 +102,7 @@ model AsyncTask {
   @@index([userId, sessionId, type, createdAt])
   @@index([operationId])
   @@index([parentTaskId])
+  @@index([status, heartbeatAt])
   @@map("async_tasks")
 }
 

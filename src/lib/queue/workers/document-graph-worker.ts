@@ -11,7 +11,7 @@ import {
   GRAPH_MAX_RETRIES,
   type GraphErrorType,
 } from "./graph-error";
-import { cancelledOutcome, completedOutcome, type WorkerResult } from "@/lib/queue/types";
+import { cancelledOutcome, completedOutcome, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 
 /** Attempt count is carried in task inputData so a re-enqueued retry knows its index. */
 const ATTEMPT_KEY = "_graphAttempt";
@@ -33,7 +33,7 @@ export function buildGraphTaskProgressUpdate(
   };
 }
 
-export async function processDocumentGraph(taskId: string): Promise<WorkerResult> {
+export async function processDocumentGraph(taskId: string, _ctx: TaskExecutionContext): Promise<WorkerResult> {
   const ctx = await loadProcessingTask(taskId);
   await resolveProcessingModels(ctx);
 

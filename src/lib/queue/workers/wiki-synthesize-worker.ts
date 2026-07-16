@@ -12,10 +12,11 @@
 import { db } from "@/lib/db";
 import { loadProcessingTask, resolveProcessingModels } from "@/lib/documents/pipeline";
 import { synthesizeDocument, type SynthChunk } from "@/lib/wiki/synthesizer";
-import { failedOutcome, type WorkerResult } from "@/lib/queue/types";
+import { failedOutcome, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 
 export async function processWikiSynthesize(
   taskId: string,
+  _ctx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   let docId: string | undefined;
 

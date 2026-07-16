@@ -10,10 +10,11 @@ import { autoTagDocument } from "@/lib/documents/auto-tagger";
 import { assertLatestRagEmbedIndexTask, SupersededRagEmbedIndexTaskError } from "@/lib/documents/processing-tasks";
 import { syncFtsIndexForDocument } from "@/lib/search/fts";
 import { shouldEnqueueGraphIndex, shouldEnqueueWikiSynthesis } from "./index-mode-flags";
-import { cancelledOutcome, type WorkerResult } from "@/lib/queue/types";
+import { cancelledOutcome, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 
 export async function processRagEmbedIndex(
   taskId: string,
+  _ctx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   let docId: string | undefined;
 

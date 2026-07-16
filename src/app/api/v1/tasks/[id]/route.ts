@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/session";
 import type { ApiResponse } from "@/types/api";
 import { parseTaskResult } from "@/lib/queue/task-json";
 import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
+import { getQueue } from "@/lib/queue";
 
 interface TaskData {
   id: string;
@@ -88,15 +89,11 @@ export async function POST(
     return NextResponse.json(response, { status: 400 });
   }
 
-  const cancelled = await db.asyncTask.updateMany({
-    where: { id, status: { in: ["pending", "running"] } },
-    data: {
-      status: "cancelled",
-      errorMessage: "Cancelled by user",
-      updatedAt: new Date(),
-    },
-  });
-  if (cancelled.count === 0) {
+  // Delegate to queue.cancel(): pending tasks go straight to terminal
+  // `cancelled`; running tasks transition to non-terminal `cancel_requested`
+  // + abort, then terminal `cancelled` when the worker settles.
+  const cancelled = await getQueue().cancel(id);
+  if (!cancelled) {
     return NextResponse.json({
       success: false,
       error: "Task is no longer cancellable",

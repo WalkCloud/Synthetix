@@ -8,7 +8,7 @@ import { normalizeGeneratedOutline, fillMissingEstimatedWords } from "@/lib/brai
 import { parseMarkdownToSections } from "@/lib/brainstorm/outline-markdown";
 import { evaluateOutlineQuality } from "@/lib/brainstorm/outline-quality";
 import { composeArchetypeKey } from "@/lib/brainstorm/archetypes";
-import type { TaskPayload, TaskResult } from "@/lib/queue/types";
+import type { TaskPayload, TaskResult, TaskExecutionContext } from "@/lib/queue/types";
 import type { OutlineSection } from "@/lib/outline-tree";
 import { renumberSections } from "@/lib/outline-tree";
 import { getBrainstormMessages, resolveBrainstormLocale } from "@/lib/brainstorm/messages";
@@ -36,12 +36,8 @@ function parseJsonObject(raw: string): Record<string, unknown> {
   }
 }
 
-async function isTaskCancelled(taskId: string): Promise<boolean> {
-  const task = await db.asyncTask.findUnique({
-    where: { id: taskId },
-    select: { status: true },
-  });
-  return task?.status === "cancelled";
+async function isTaskCancelled(ctx: TaskExecutionContext): Promise<boolean> {
+  return ctx.signal.aborted;
 }
 
 export async function resolveOutlineChatModel(
@@ -89,9 +85,10 @@ async function summarizeConversation(
 
 export async function generateOutline(
   payload: TaskPayload,
-  onProgress: (progress: number) => void,
+  ctx: TaskExecutionContext,
 ): Promise<TaskResult> {
   const { taskId, sessionId, userId, locale: payloadLocale, modelConfigId } = payload as OutlineGeneratePayload;
+  const onProgress = (progress: number) => { void ctx.reportProgress(progress); };
 
   onProgress(5);
 
@@ -309,7 +306,7 @@ export async function generateOutline(
   // ── Phase C: Store ───────────────────────────────────────────────
   onProgress(92);
 
-  if (await isTaskCancelled(taskId)) {
+  if (await isTaskCancelled(ctx)) {
     return { cancelled: true };
   }
 
@@ -325,7 +322,7 @@ export async function generateOutline(
     inputTokens: totalInputTokens, outputTokens: totalOutputTokens, referenceId: sessionId,
   });
 
-  if (await isTaskCancelled(taskId)) {
+  if (await isTaskCancelled(ctx)) {
     return { cancelled: true };
   }
 

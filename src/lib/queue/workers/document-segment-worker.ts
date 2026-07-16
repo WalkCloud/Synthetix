@@ -16,10 +16,11 @@ import { db } from "@/lib/db";
 import { loadProcessingTask, resolveProcessingModels, type ProcessingContext } from "@/lib/documents/pipeline";
 import { segmentAndPersistDocument } from "@/lib/documents/segmentation";
 import { shouldEnqueueWikiSynthesis } from "./index-mode-flags";
-import { cancelledOutcome, type WorkerResult } from "@/lib/queue/types";
+import { cancelledOutcome, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 
 export async function processDocumentSegment(
   taskId: string,
+  _ctx: TaskExecutionContext,
 ): Promise<WorkerResult> {
   // Declared outside try so the catch block can access it for the wiki
   // fallback submission. When loadProcessingTask itself throws, ctx is null

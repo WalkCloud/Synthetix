@@ -12,6 +12,7 @@ export type TaskType =
 export type TaskStatus =
   | "pending"
   | "running"
+  | "cancel_requested"
   | "completed"
   | "failed"
   | "cancelled";
@@ -98,7 +99,19 @@ export interface TaskInfo {
   error?: string;
 }
 
+export interface TaskExecutionContext {
+  taskId: string;
+  taskType: TaskType;
+  userId: string;
+  operationId?: string;
+  attempt: number;
+  signal: AbortSignal;
+  reportProgress: (progress: number) => void | Promise<void>;
+  heartbeat: () => void | Promise<void>;
+  throwIfCancelled: () => void;
+}
+
 export type WorkerFn = (
   payload: TaskPayload,
-  onProgress: (progress: number) => void | Promise<void>,
+  ctx: TaskExecutionContext,
 ) => Promise<WorkerResult>;
