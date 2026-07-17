@@ -14,7 +14,6 @@ from rag_index import (
     _is_transient_llm_connection_error,
     emit_progress,
     get_insert_batch_size,
-    indexing_lock,
     insert_chunks,
     should_bulk_insert_graph,
     sort_chunk_files,
@@ -66,16 +65,6 @@ class RagIndexHelperTests(unittest.TestCase):
             sort_chunk_files(files),
             ["chunk_010.md", "chunk_101.md", "chunk_999.md", "chunk_1000.md"],
         )
-
-    def test_indexing_lock_is_removed_after_exception(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            lock_path = os.path.join(tmp, ".indexing.lock")
-            with self.assertRaises(RuntimeError):
-                with indexing_lock(tmp, "doc-1"):
-                    self.assertTrue(os.path.exists(lock_path))
-                    raise RuntimeError("boom")
-
-            self.assertFalse(os.path.exists(lock_path))
 
     def test_insert_chunks_uses_bulk_batches_when_supported(self):
         rag = FakeRag()

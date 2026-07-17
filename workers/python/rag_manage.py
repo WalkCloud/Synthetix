@@ -162,6 +162,15 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
 def _hard_delete_doc_from_storage(working_dir: str, doc_id: str) -> dict:
     """Purge every trace of doc_id from LightRAG's file-based KV stores + vector DBs.
 
+    DEPRECATED — DO NOT CALL from the normal delete/reindex path. This function
+    edits LightRAG JSON/VDB/GraphML files directly (bypassing the storage
+    abstraction and its atomic-write/lock protocol) and its GraphML orphan
+    heuristic is imprecise. Normal document removal must go through
+    lightrag_adapter.purge_application_document, which uses LightRAG's
+    source-aware _purge_doc_chunks_and_kg and preserves other documents'
+    contributions to shared entities/relations. This function is retained only
+    as an explicit offline diagnostic tool; it has no live callers.
+
     Operates directly on the JSON files in working_dir, bypassing LightRAG's
     in-memory state (which may be inconsistent after a failed soft delete). Safe
     because the process is exiting right after — the next process re-reads these

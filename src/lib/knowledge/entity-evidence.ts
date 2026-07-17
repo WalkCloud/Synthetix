@@ -11,9 +11,9 @@
  *   data/rag/<userId>/kv_store_text_chunks.json    → { chunk_id: { content, ... } }
  *
  * Both files are written by LightRAG on every index and are the canonical
- * entity→chunk mapping (the same source `_hard_delete_doc_from_storage` in
- * rag_manage.py trusts for deletion). Reading them directly gives sub-100ms
- * evidence lookups with no LLM, no embedding, no Python.
+ * entity→chunk mapping (the same source the LightRAG adapter
+ * purge_application_document uses for source-aware deletion). Reading them
+ * directly gives sub-100ms evidence lookups with no LLM, no embedding, no Python.
  *
  * Cache: parsed JSON is memoized per user with an mtime check. The files only
  * change on index/delete (both go through `invalidateEntityEvidenceCache`),

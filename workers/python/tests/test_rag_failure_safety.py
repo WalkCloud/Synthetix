@@ -133,7 +133,11 @@ class QueryDoesNotDeleteWriterLock(unittest.TestCase):
         from rag_query import query_rag
 
         with tempfile.TemporaryDirectory() as tmp:
-            rag_dir = os.path.join(tmp, "data", "rag", "user-1")
+            # query_rag resolves its workspace via resolve_user_rag_dir, which
+            # reads RAG_ROOT. Point RAG_ROOT at the temp tree so the query
+            # reads/writes the same dir we seeded the stale lock in.
+            rag_root = os.path.join(tmp, "rag")
+            rag_dir = os.path.join(rag_root, "user-1")
             os.makedirs(rag_dir)
 
             # Create a lock file with an OLD mtime (2 hours ago).
@@ -148,24 +152,32 @@ class QueryDoesNotDeleteWriterLock(unittest.TestCase):
             with open(os.path.join(rag_dir, "kv_store_full_docs.json"), "w") as f:
                 json.dump({"doc-A": {}}, f)
 
-            # query_rag will fail at LightRAG init, but we only care that
-            # the lock file survives the quick health check.
+            old_env = os.environ.get("RAG_ROOT")
+            os.environ["RAG_ROOT"] = rag_root
             try:
-                asyncio.run(query_rag(
-                    user_id="user-1",
-                    query="test",
-                    mode="local",
-                    embed_api_base="",
-                    embed_api_key="",
-                    embed_model="x",
-                    embed_dim=1024,
-                    llm_api_base="",
-                    llm_api_key="",
-                    llm_model="x",
-                    _env_override=None,
-                ))
-            except Exception:
-                pass  # LightRAG init may fail; lock survival is what matters
+                # query_rag will fail at LightRAG init, but we only care that
+                # the lock file survives the quick health check (which used to
+                # delete stale locks by mtime age).
+                try:
+                    asyncio.run(query_rag(
+                        user_id="user-1",
+                        query_text="test",
+                        mode="local",
+                        embed_api_base="",
+                        embed_api_key="",
+                        embed_model="x",
+                        embed_dim=1024,
+                        llm_api_base="",
+                        llm_api_key="",
+                        llm_model="x",
+                    ))
+                except Exception:
+                    pass  # LightRAG init may fail; lock survival is what matters
+            finally:
+                if old_env is None:
+                    os.environ.pop("RAG_ROOT", None)
+                else:
+                    os.environ["RAG_ROOT"] = old_env
 
             # The lock file MUST still exist.
             self.assertTrue(

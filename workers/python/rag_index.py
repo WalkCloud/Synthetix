@@ -22,7 +22,7 @@ import os
 import struct
 import argparse
 import asyncio
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from typing import Optional
 
 # Patch atomic_write BEFORE importing LightRAG storage classes so the retry
@@ -247,17 +247,13 @@ def sort_chunk_files(files: list[str]) -> list[str]:
     return sorted(chunk_files, key=lambda f: (chunk_index(f), f))
 
 
-@contextmanager
-def indexing_lock(working_dir: str, doc_id: str):
-    """Create the lock that rag_query.py already treats as indexing-in-progress."""
-    lock_path = os.path.join(working_dir, ".indexing.lock")
-    with open(lock_path, "w", encoding="utf-8") as fp:
-        fp.write(doc_id)
-    try:
-        yield lock_path
-    finally:
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
+# NOTE: the old `indexing_lock` context manager (a non-exclusive .indexing.lock
+# marker file) was REMOVED. It has been superseded by the per-user cross-process
+# mutation lock (workers/python/rag_mutation_lock.py), which uses real OS-level
+# directory-creation atomicity, owner tokens, heartbeats, and PID/start-identity
+# stale recovery. Do NOT reintroduce a marker-file "lock" — it cannot provide
+# mutual exclusion and allowed concurrent writers to corrupt the shared
+# workspace. See docs/rag-knowledge-graph-data-integrity-remediation.md.
 
 
 async def insert_chunks(rag, chunk_records: list[dict], batch_size: int = 20, force_serial: bool = False, on_progress=None) -> int:

@@ -279,9 +279,10 @@ export const documentLifecycle = createDocumentLifecycleService({
     if (health.status === "healthy") return;
 
     // If there are stale doc_status entries for docs that don't exist in DB, clean them.
-    // delete-by-doc now includes a storage-level hard-delete fallback (see
-    // rag_manage.py _hard_delete_doc_from_storage), so the vast majority of
-    // orphans are removed here even when LightRAG's soft delete fails.
+    // delete-by-doc routes through the source-aware LightRAG adapter
+    // (workers/python/lightrag_adapter.py purge_application_document), which
+    // removes the document's chunks/entities/relations while preserving other
+    // documents' contributions to shared entities.
     if (health.staleRagDocIds.length > 0) {
       for (const staleId of health.staleRagDocIds) {
         const docId = staleId.split("/")[0];
