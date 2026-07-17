@@ -10,9 +10,9 @@ mockChild.stdout = new EventEmitter();
 mockChild.stderr = new EventEmitter();
 mockChild.kill = vi.fn();
 
-const spawnMock = vi.fn((_cmd, _args, _opts) => mockChild);
+const spawnMock = vi.fn((_cmd: string, _args: string[], _opts: Record<string, unknown>) => mockChild);
 vi.mock("child_process", () => ({
-  spawn: (...args: unknown[]) => spawnMock(...args),
+  spawn: (cmd: string, args: string[], opts: Record<string, unknown>) => spawnMock(cmd, args, opts),
 }));
 
 // Import after mock is set up.
