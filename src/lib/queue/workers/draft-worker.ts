@@ -307,6 +307,13 @@ export async function generateDraftAll(
         skipped: sections.length - targets.length,
       });
     } catch (error) {
+      // If the user cancelled while this section was generating, treat it as
+      // a cancellation, not a failure. The abort signal is checked first to
+      // avoid incorrectly surfacing "生成失败" when the user clicked stop.
+      if (await isCancelled()) {
+        await restoreSectionAfterCancel(section.id);
+        return { generated, cancelled: true, errors };
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       errors.push({ sectionId: section.id, title: section.title, error: message });
       await db.section.update({

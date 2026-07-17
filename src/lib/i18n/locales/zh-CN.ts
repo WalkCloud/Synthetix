@@ -633,6 +633,9 @@ const zhCN = {
       stopTitle: "当前正在执行的模型调用返回后停止",
       stopping: "停止中...",
       stop: "停止",
+      resume: "继续",
+      resumeTitle: "从当前进度继续生成剩余章节",
+      resuming: "继续中...",
     },
   },
   brainstorm: {

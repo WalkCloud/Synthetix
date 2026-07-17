@@ -72,6 +72,10 @@ export function useGenerateAll(
         await loadDraft();
         if (["completed", "failed", "cancelled"].includes(t.status)) {
           setTaskId(null);
+        } else if (t.status === "cancel_requested") {
+          // Keep polling — the worker is finishing the in-flight section
+          // and will transition to "cancelled" shortly. Don't stop polling
+          // or the UI will freeze on cancel_requested forever.
         }
       } catch {}
     }
@@ -135,6 +139,39 @@ export function useGenerateAll(
   }, [taskId, loadDraft]);
 
   const isRunning = task?.status === "pending" || task?.status === "running";
+  const isPaused = (task?.status === "cancelled" || task?.status === "cancel_requested") && !isRunning;
 
-  return { task, isRunning, isStarting, isCancelling, start, cancel };
+  const resume = useCallback(async (modelConfigId?: string) => {
+    setIsStarting(true);
+    try {
+      const res = await fetch(`/api/v1/drafts/${id}/generate-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          overwrite: false,
+          stopOnError: true,
+          modelConfigId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast.error(getLocalizedError(data));
+        return;
+      }
+      setTaskId(data.data.taskId);
+      setTask({
+        id: data.data.taskId,
+        type: "draft_generate_all",
+        status: data.data.status || "pending",
+        progress: data.data.progress ?? 0,
+      });
+      await loadDraft();
+    } catch (error) {
+      toast.error(getLocalizedError({ error: error instanceof Error ? error.message : undefined }));
+    } finally {
+      setIsStarting(false);
+    }
+  }, [id, loadDraft]);
+
+  return { task, isRunning, isPaused, isStarting, isCancelling, start, cancel, resume };
 }

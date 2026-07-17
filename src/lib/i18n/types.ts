@@ -631,6 +631,9 @@ export type TranslationSchema = {
       stopTitle: string;
       stopping: string;
       stop: string;
+      resume: string;
+      resumeTitle: string;
+      resuming: string;
     };
   };
   brainstorm: {

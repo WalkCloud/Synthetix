@@ -637,6 +637,9 @@ const en = {
       stopTitle: "Stop after the current in-flight model call returns",
       stopping: "Stopping...",
       stop: "Stop",
+      resume: "Resume",
+      resumeTitle: "Continue generating remaining sections from current progress",
+      resuming: "Resuming...",
     },
   },
   brainstorm: {
