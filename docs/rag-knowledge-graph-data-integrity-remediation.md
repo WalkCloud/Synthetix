@@ -1199,3 +1199,62 @@ os.remove(_fp)
 7. 清空旧测试数据并重新上传验证
 8. 清理构建目录并发布 v1.0.4
 ```
+
+---
+
+## 19. 实施后审计发现的遗漏（必须修复）
+
+在分支 `fix/rag-cross-document-integrity`（HEAD `6ddab55`）完成 Batch 0–6 后，对全部实现做了一次交叉审计，发现以下仍可导致跨文档数据损坏或验证失效的遗漏。这些属于计划的固有盲点（计划只要求“Python writer 持锁”“取消打通真实进程”），实施时漏掉了 Node 侧 reset 路径与 queue 自身的中止通道，必须在继续重传验证前修复。
+
+### 19.1 Node 侧 reset 绕过用户级锁（高危）
+
+`src/lib/documents/storage.ts:84-88` 的 `deleteUserRagData()` 直接 `fsp.rm` 整个用户工作区，不获取任何锁。它被三处调用：
+
+- `lifecycle.ts:115` 最后一个文档删除后 reset。
+- `lifecycle.ts:322` orphan 清理时 reset。
+- `orphan-cleanup.ts:101-111` 服务启动时 fire-and-forget reset。
+
+这些路径若与同用户正在运行的 Python writer（持有锁）并发，会把该用户全部文档的 RAG 数据 `rm -rf` 掉，正是本次要根治的同类问题。Python 锁只保护 Python↔Python；Node↔Python 完全无保护。
+
+修复：增加 Node 侧 lock adapter（`src/lib/rag/mutation-lock.ts`，与 `workers/python/rag_mutation_lock.py` 同协议、同锁目录），所有 Node 直接 reset/删除用户工作区路径必须先获取该用户锁；或改为通过 Python workspace-management action 执行 reset。
+
+### 19.2 queue 超时与心跳停滞不中止 Python writer（高危可用性）
+
+`src/lib/queue/queue.ts:565-575` 的 timeout 分支只 `reject`，不调用 `controller.abort()`；`scanHeartbeats()`（`:245-288`）直接 `updateMany` 把任务标 `failed`，也不 abort。只有用户显式 `cancel()` 会 abort（`:203`）。
+
+后果：超时或心跳停滞后，Python daemon 仍持有锁继续运行（最长 4h graph timeout），期间同用户其他所有写操作持续收到 `RAG_MUTATION_BUSY`，且锁因为 owner PID 仍存活而不可回收。
+
+修复：timeout 与 stall 路径必须和 user cancel 一样调用 `controller.abort()`，让 Python 进程树被终止并释放锁，之后才允许下一 writer。
+
+### 19.3 失败的回归测试未真正验证（中危）
+
+`workers/python/tests/test_rag_failure_safety.py:165-166` 向 `query_rag()` 传了不存在的 `_env_override=None` 参数，`query_rag` 无此参数也无 `**kwargs`，测试以 `TypeError` 失败，没有真正验证“query 不删除 writer lock”。
+
+修复：去掉无效参数，或改用实际存在的入参；保证该测试真实覆盖 lock 生存。
+
+### 19.4 残留死代码与过时注释（低危，但误导）
+
+- `workers/python/rag_manage.py:162-389` 的 `_hard_delete_doc_from_storage`、`_purge_vdb`、`_purge_vdb_prefix` 已无调用方，但其中 GraphML-orphan 启发式（`:287-311` 的 `len(tok.split("/")[0]) >= 32` 魔法值）是错误的，被误激活会误删共享实体。应删除或封进显式诊断入口。
+- `src/lib/documents/lifecycle.ts:282-284` 与 `src/lib/knowledge/entity-evidence.ts:14` 的注释仍声称有 storage-level hard-delete fallback，现已失真。
+- `workers/python/rag_mutation_lock.py:17-18` 文档引用了不存在的 `src/lib/rag/mutation-lock.ts`。
+- `workers/python/rag_index.py:250-260` 的 `indexing_lock` context manager 已无人调用，且 `.indexing.lock` marker 已不再由任何 writer 写入，应删除以免误用。
+
+修复：删除死代码，更正注释，或在保留处加显式 deprecation 标记。
+
+### 19.5 rag_manage / rag_query 不可取消（中危）
+
+`src/lib/rag/client.ts:96-102` 的 `manageRag()` 与 `src/lib/search/semantic.ts:140,192` 的查询调用 `spawnPythonJson` / `pythonDaemon.call` 时未转发调用方 signal。计划要求取消到达 manage/query，目前只有 index 路径打通。
+
+修复：在 `manageRag` 和查询路径透传 `AbortSignal`（来自 queue ctx 或 request）。
+
+### 19.6 补救批次提交边界
+
+```text
+fix: gate Node-side RAG workspace reset behind mutation lock
+fix: abort Python writers on queue timeout and heartbeat stall
+test: repair query lock-survival regression test
+fix: remove dead hard-delete code and stale comments
+fix: forward AbortSignal to rag_manage and rag_query
+```
+
+完成上述补救后，再执行第 7 步清空测试数据并重新上传三份文档验证，否则 Node reset 仍可能清空正在重建的工作区，验证结果不可信。
