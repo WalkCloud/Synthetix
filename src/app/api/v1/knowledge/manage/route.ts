@@ -36,7 +36,7 @@ export async function POST(request: Request) {
         if (!entityName || !entityType || !description) {
           return errorResponse({ code: "invalidInput", message: "entityName, entityType, and description required" }, 400);
         }
-        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName, entityType, description });
+        result = await manageRag({ userId: user.id, action: "create-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName, entityType, description, signal: request.signal });
         break;
       }
       case "delete-entity": {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         if (!entityName) {
           return errorResponse({ code: "invalidInput", message: "entityName required" }, 400);
         }
-        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName });
+        result = await manageRag({ userId: user.id, action: "delete-entity", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, entityName, signal: request.signal });
         break;
       }
       case "merge-entities": {
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
         if (!sources || !target || !Array.isArray(sources) || sources.length < 2) {
           return errorResponse({ code: "invalidInput", message: "sources (array of 2+ names) and target required" }, 400);
         }
-        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, sources: sources.join(","), target });
+        result = await manageRag({ userId: user.id, action: "merge-entities", embedConfig: ctx.embedConfig, llmConfig: ctx.llmConfig!, rerankConfig: ctx.rerankConfig, embedDim: ctx.embedDim, sources: sources.join(","), target, signal: request.signal });
         break;
       }
       default:

@@ -37,6 +37,7 @@ export async function GET(request: Request) {
       depth,
       maxNodes,
       minDegree,
+      signal: request.signal,
     });
     if (result.error) {
       return errorResponse(result.error as string, 500);

@@ -24,6 +24,7 @@ export async function GET(request: Request) {
       embedDim: ctx.embedDim,
       keyword,
       limit,
+      signal: request.signal,
     });
     if (result.error) {
       return errorResponse(result.error as string, 500);

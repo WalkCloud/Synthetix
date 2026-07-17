@@ -33,6 +33,7 @@ export async function GET(
       entityName: decodeURIComponent(name),
       depth,
       maxNodes,
+      signal: request.signal,
     });
     if (result.error) {
       return errorResponse(result.error as string, 500);

@@ -14,6 +14,10 @@ interface RagBaseOptions {
   embedConfig: EmbedConfig;
   llmConfig: EmbedConfig;
   rerankConfig?: EmbedConfig;
+  /** Optional cancellation signal (e.g. request.signal). When aborted, the
+   * spawned rag_manage.py process tree is killed so a long delete/merge can be
+   * cancelled instead of running to completion holding the mutation lock. */
+  signal?: AbortSignal;
 }
 
 export type RagManageOptions =
@@ -94,6 +98,7 @@ export async function manageRag(
   }
 
   const result = await spawnPythonJson<Record<string, unknown>>(RAG_MANAGE_SCRIPT, args, {
+    signal: options.signal,
     env: {
       RAG_EMBED_API_KEY: options.embedConfig.apiKey,
       RAG_LLM_API_KEY: options.llmConfig.apiKey,
