@@ -329,6 +329,13 @@ function startNextServer(port: number, dataDir: string): void {
     DB_PATH: dataDir,
     DATA_DIR: dataDir,
     DOCUMENT_ROOT: path.join(dataDir, "documents"),
+    // Canonical RAG paths — must match Python's resolve_rag_root / resolve_rag_lock_root
+    // (rag_common.py). Both Node and Python read these env vars so the two runtimes
+    // always operate on the same absolute workspace and lock directories. The lock
+    // root is deliberately outside the RAG workspace so a user-workspace reset
+    // cannot delete an active mutation lock.
+    RAG_ROOT: path.join(dataDir, "rag"),
+    RAG_LOCK_ROOT: path.join(dataDir, "locks", "rag"),
     PYTHON_PATH: pythonPath(),
     PYTHON_DAEMON_ENABLED: "true",
     // Local embedding model for the chunking pipeline (local_chunk.py / daemon).

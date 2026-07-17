@@ -13,6 +13,10 @@ if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 REM Point all storage at the bundled data dir (inside the install dir).
 set "DB_PATH=%DATA_DIR%"
 set "DOCUMENT_ROOT=%DATA_DIR%\documents"
+REM Canonical RAG paths — must match electron/main.ts and rag_common.py.
+REM Lock root is outside RAG_ROOT so workspace reset can't delete active locks.
+set "RAG_ROOT=%DATA_DIR%\rag"
+set "RAG_LOCK_ROOT=%DATA_DIR%\locks\rag"
 
 REM Use the bundled Python + keep the RAG daemon enabled.
 set "PYTHON_PATH=%APP_DIR%runtime\python\python.exe"

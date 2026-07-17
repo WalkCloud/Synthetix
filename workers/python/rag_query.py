@@ -35,7 +35,7 @@ import asyncio
 from win_atomic_patch import apply_patch
 apply_patch()
 
-from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim, resolve_user_rag_dir
 
 # Per-call timeout for the query-time LLM (keyword extraction etc.). The OpenAI
 # client default is 600s; without this cap a single slow/hanging call waited up
@@ -211,7 +211,7 @@ async def query_rag(
     Returns a dict (never prints). CLI main() prints it; daemon handle_query()
     returns it over the wire so the resident process can reuse cached state.
     """
-    working_dir = os.path.join("data", "rag", user_id)
+    working_dir = resolve_user_rag_dir(user_id)
 
     if not os.path.exists(working_dir):
         return {"chunks": [], "mode": mode}

@@ -9,6 +9,48 @@ import re
 import glob as glob_mod
 
 
+# ── Canonical RAG path resolution ────────────────────────────────────────────
+# All Python workers MUST use these helpers instead of hardcoding
+# os.path.join("data", "rag", user_id). Node (src/lib/rag/paths.ts) reads the
+# same RAG_ROOT / RAG_LOCK_ROOT env vars so both runtimes agree on the absolute
+# workspace location. Electron sets both vars to <userData>/rag and
+# <userData>/locks/rag respectively.
+
+
+def resolve_rag_root() -> str:
+    """Absolute root directory for all per-user RAG workspaces."""
+    root = os.environ.get("RAG_ROOT") or os.path.join("data", "rag")
+    return os.path.abspath(root)
+
+
+def resolve_rag_lock_root() -> str:
+    """Absolute root for per-user mutation locks (OUTSIDE the RAG workspace)."""
+    lock_root = os.environ.get("RAG_LOCK_ROOT")
+    if lock_root:
+        return os.path.abspath(lock_root)
+    # Default: sibling of RAG_ROOT, not inside it.
+    return os.path.abspath(os.path.join(resolve_rag_root(), "..", "locks", "rag"))
+
+
+def _validate_user_id(user_id: str) -> None:
+    if not user_id or not isinstance(user_id, str):
+        raise ValueError("user_id must be a non-empty string")
+    if "/" in user_id or "\\" in user_id or ".." in user_id or "\0" in user_id:
+        raise ValueError(f"user_id contains illegal path characters: {user_id!r}")
+
+
+def resolve_user_rag_dir(user_id: str) -> str:
+    """Absolute per-user RAG workspace directory."""
+    _validate_user_id(user_id)
+    return os.path.join(resolve_rag_root(), user_id)
+
+
+def resolve_user_rag_lock_dir(user_id: str) -> str:
+    """Absolute per-user lock directory path (mkdir target for acquisition)."""
+    _validate_user_id(user_id)
+    return os.path.join(resolve_rag_lock_root(), user_id)
+
+
 def normalize_api_base(url: str) -> str:
     """Normalize an API base URL to match Node's ``normalizeProviderBaseUrl``.
 

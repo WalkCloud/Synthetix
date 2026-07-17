@@ -1,6 +1,7 @@
 import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
+import { resolveUserRagDir } from "@/lib/rag/paths";
 
 export interface StorageAdapter {
   saveOriginal(docId: string, file: File, userId: string): Promise<string>;
@@ -81,7 +82,7 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async deleteUserRagData(userId: string): Promise<void> {
-    const dir = path.join(process.env.RAG_ROOT || "./data/rag", userId);
+    const dir = resolveUserRagDir(userId);
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
     await fsp.mkdir(dir, { recursive: true });
   }

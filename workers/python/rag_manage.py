@@ -23,7 +23,7 @@ import os
 import argparse
 import asyncio
 
-from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim, resolve_user_rag_dir
 
 
 def _get_llm_max_async() -> int:
@@ -750,7 +750,7 @@ def _index_busy_result(working_dir: str, doc_id: str) -> dict | None:
 
 
 async def main_async(args) -> None:
-    working_dir = os.path.join("data", "rag", args.user_id)
+    working_dir = resolve_user_rag_dir(args.user_id)
     os.makedirs(working_dir, exist_ok=True)
 
     if args.action == "delete-by-doc":

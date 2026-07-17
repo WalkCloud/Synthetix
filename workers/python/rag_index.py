@@ -33,7 +33,7 @@ apply_patch()
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
-from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim, resolve_user_rag_dir
 from adaptive_limiter import wrap_llm_func
 
 
@@ -344,7 +344,7 @@ async def index_document(
     When embeddings_file is provided, cached embeddings are used and no
     embedding API calls are made.
     """
-    working_dir = os.path.join("data", "rag", user_id)
+    working_dir = resolve_user_rag_dir(user_id)
     os.makedirs(working_dir, exist_ok=True)
     emit_progress("initializing", 10, "Preparing graph workspace" if index_mode == "graph" else "Preparing RAG workspace")
 

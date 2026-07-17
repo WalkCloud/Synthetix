@@ -1,8 +1,9 @@
 import fs from "fs";
 import path from "path";
+import { resolveRagRoot } from "@/lib/rag/paths";
 
 const DOCUMENT_ROOT = process.env.DOCUMENT_ROOT || "./data/documents";
-const RAG_ROOT = process.env.RAG_ROOT || "./data/rag";
+const RAG_ROOT = resolveRagRoot();
 
 export interface KnowledgeHealthInput {
   userId: string;

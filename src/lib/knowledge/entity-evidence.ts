@@ -23,8 +23,9 @@ import fs from "fs/promises";
 import path from "path";
 import { db } from "@/lib/db";
 import type { SearchResult } from "@/types/documents";
+import { resolveRagRoot } from "@/lib/rag/paths";
 
-const RAG_ROOT = process.env.RAG_ROOT || "./data/rag";
+const RAG_ROOT = resolveRagRoot();
 const ENTITY_CHUNKS_FILE = "kv_store_entity_chunks.json";
 const TEXT_CHUNKS_FILE = "kv_store_text_chunks.json";
 
