@@ -279,6 +279,14 @@ export class TaskQueue {
       },
     });
     console.warn(`[queue] marked ${failed.count} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
+    // Abort the underlying Python writer for each stalled task so it releases
+    // the per-user mutation lock and stops mutating the shared RAG workspace.
+    // Without this abort, a stalled-but-still-running daemon holds the lock
+    // (its PID is alive, so the lock is not reclaimable) and blocks every
+    // other writer for that user until its own op timeout fires.
+    for (const stalledId of stalled) {
+      this.abortControllers.get(stalledId)?.abort();
+    }
     // Re-kick the queue so a pending successor (or the doc's recovery path)
     // can pick up after the zombie is cleared.
     for (let i = 0; i < this.concurrency; i++) {
@@ -551,6 +559,7 @@ export class TaskQueue {
     };
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
       const startWorker = () => workerFn(payload, ctx);
       const resultPromise = docId
@@ -569,6 +578,16 @@ export class TaskQueue {
             resultPromise,
             new Promise<never>((_resolve, reject) => {
               timeoutId = setTimeout(() => {
+                // Mark this as a timeout (not a user cancel) so the catch
+                // block records `failed` with the timeout message, while still
+                // aborting the underlying Python writer (daemon tree / spawn
+                // tree) so the timed-out task releases the per-user mutation
+                // lock and stops mutating the shared RAG workspace. Without
+                // this abort, the timed-out Python process keeps running (up
+                // to 4h for a graph task) holding the lock, blocking every
+                // other writer for that user with RAG_MUTATION_BUSY.
+                timedOut = true;
+                controller.abort();
                 reject(new Error(`Task timed out after ${timeoutMs}ms`));
               }, timeoutMs);
             }),
@@ -577,7 +596,10 @@ export class TaskQueue {
       // If cancel was requested while the worker was running, the final
       // outcome is always `cancelled` regardless of what the worker returned.
       // A late success must not un-cancel a task the user asked to abort.
-      if (controller.signal.aborted) {
+      // (A TIMEOUT also aborts the controller, but is reported as `failed`
+      // via the timedOut flag in the catch block below — it is NOT a user
+      // cancellation.)
+      if (controller.signal.aborted && !timedOut) {
         await this.commitOutcome(taskId, {
           workerOutcome: true,
           status: "cancelled",
@@ -593,10 +615,13 @@ export class TaskQueue {
         );
       }
     } catch (error: unknown) {
-      const isAbort = controller.signal.aborted;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      // A timeout aborts the controller (to kill the writer) but is a FAILURE,
+      // not a user cancellation. A genuine user cancel (cancel() path) is the
+      // only case that records `cancelled` here.
+      const isUserCancel = controller.signal.aborted && !timedOut;
       try {
-        await this.commitOutcome(taskId, isAbort
+        await this.commitOutcome(taskId, isUserCancel
           ? { workerOutcome: true, status: "cancelled", error: "Cancelled by user" }
           : { workerOutcome: true, status: "failed", error: errorMessage },
           executionGeneration,
