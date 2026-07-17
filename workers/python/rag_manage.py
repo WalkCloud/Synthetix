@@ -119,84 +119,43 @@ async def action_entity_detail(rag, entity_name: str, max_depth: int = 2, max_no
 
 
 async def action_delete_by_doc(rag, doc_id: str) -> dict:
+    """Delete all LightRAG data for an application document using source-aware
+    aggregate purge.
+
+    This delegates to lightrag_adapter.purge_application_document, which:
+    - Discovers child documents (<docId>/chunk_NNN).
+    - Collects real internal chunk IDs from each child's chunks_list.
+    - Aggregates entity/relation metadata across all children.
+    - Calls LightRAG's _purge_doc_chunks_and_kg ONCE for source-aware cleanup.
+    - Preserves entities/relations shared with other application documents.
+
+    The caller (main_async) holds the per-user mutation lock during this call.
+    """
+    from lightrag_adapter import purge_application_document, PurgeError
     try:
-        deleted_ids = []
-        target_ids = {doc_id}
-
-        try:
-            from lightrag.base import DocStatus
-            all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
-        except Exception:
-            # Fallback if the storage backend lacks get_docs_by_statuses.
-            # NOTE: get_all() was removed in lightrag-hku 1.5.4; guard so this
-            # still degrades gracefully on older/newer versions alike.
-            getter = getattr(rag.doc_status, "get_all", None)
-            all_docs = await getter() if getter else {}
-
-        for key, value in (all_docs or {}).items():
-            if key == doc_id or key.startswith(doc_id + "/"):
-                target_ids.add(key)
-                continue
-
-            # LightRAG >=1.5.4 returns DocProcessingStatus dataclass objects
-            # (not dicts) from get_docs_by_statuses; support both shapes.
-            if isinstance(value, dict):
-                metadata = (value or {}).get("metadata", {}) or {}
-                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
-                file_path = (value or {}).get("file_path", "")
-            else:
-                metadata = getattr(value, "metadata", None) or {}
-                original_doc_id = metadata.get("original_doc_id", "") if isinstance(metadata, dict) else ""
-                file_path = getattr(value, "file_path", "")
-            if original_doc_id == doc_id or original_doc_id.startswith(doc_id + "/") or f"{doc_id}" in file_path:
-                target_ids.add(key)
-
-        soft_delete_failed = False
-        soft_delete_errors = []
-        for target_id in sorted(target_ids):
-            try:
-                await rag.adelete_by_doc_id(target_id)
-                deleted_ids.append(target_id)
-            except Exception as delete_err:
-                # adelete_by_doc_id triggers per-chunk LLM entity rebuilds, which
-                # are unstable on large graphs (3000+ nodes): a single rebuild
-                # failure aborts the whole call and leaves the graph half-deleted.
-                soft_delete_failed = True
-                soft_delete_errors.append(str(delete_err))
-                print(f"Warning deleting LightRAG doc {target_id}: {delete_err}", file=sys.stderr)
-
-        # NOTE: The previous code wiped the ENTIRE working directory when
-        # doc_status reported empty (shutil.rmtree + os.makedirs). That was
-        # dangerous: a stale/inconsistent is_empty() result, or concurrent
-        # writes by another document's indexer, could destroy data that should
-        # survive. The user-level reset action is the only path allowed to
-        # remove the whole workspace, and it must do so explicitly under the
-        # user mutation lock. Here we just report success — if the workspace
-        # is genuinely empty, an empty directory is a valid result.
-
-        if soft_delete_failed:
-            # Fail closed: do NOT automatically fall through to the direct
-            # JSON/VDB/GraphML hard-delete helper. That bypasses LightRAG's
-            # source-aware entity/relation rebuild semantics and can leave
-            # shared graph records inconsistent. The caller (lifecycle cleanup)
-            # treats this as a retryable failure and will attempt again on the
-            # next cleanup cycle. Batch 5 will replace this entire function
-            # with the source-aware aggregate purge adapter.
-            return {
-                "status": "failed",
-                "code": "SOFT_DELETE_INCOMPLETE",
-                "doc_id": doc_id,
-                "deleted_ids": deleted_ids,
-                "errors": soft_delete_errors,
-                "message": (
-                    "LightRAG soft delete did not complete for all targets. "
-                    "The cleanup task will retry. If it persists, use the "
-                    "knowledge-base reset action to rebuild."
-                ),
-            }
-
-        return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids}
+        result = await purge_application_document(rag, doc_id)
+        return {
+            "status": "deleted",
+            "doc_id": doc_id,
+            "deleted_ids": result.child_doc_ids,
+            "chunks_removed": len(result.chunk_ids),
+            "entities_affected": result.affected_entities,
+            "relations_affected": result.affected_relations,
+        }
+    except PurgeError as e:
+        return {
+            "status": "failed",
+            "code": e.code,
+            "doc_id": doc_id,
+            "requires_reset": True,
+            "error": e.message,
+            "message": (
+                f"Document deletion failed: {e.message} "
+                f"Use the knowledge-base reset action to rebuild."
+            ),
+        }
     except Exception as e:
+        return {"error": str(e), "doc_id": doc_id}
         return {"error": str(e), "doc_id": doc_id}
 
 

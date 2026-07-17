@@ -613,65 +613,53 @@ async def index_document(
         emit_progress("storage", 25, "Initialized graph storage")
 
         if index_mode == "graph":
-            from lightrag.base import DocStatus
-            # Clean ALL existing chunks for this document before graph extraction.
-            # The rag_embed_index worker runs a basic pass first (chunks stored,
-            # marked PROCESSED, but NO entities extracted). Graph mode MUST remove
-            # those chunks so LightRAG re-inserts them WITH entity extraction —
-            # otherwise ainsert() sees them as "already in storage" and skips,
-            # yielding zero entities.
+            # Source-aware purge of this document's previous LightRAG
+            # contributions. The old code did a manual batch delete of
+            # doc_status/full_docs/text_chunks/chunks_vdb using the WRONG ID
+            # level (LightRAG document IDs instead of internal chunk IDs),
+            # then called adelete_by_doc_id(parentId) which returned not_found
+            # because doc_status was already deleted. This left stale graph
+            # data and could corrupt shared entity/relation source tracking.
             #
-            # BATCH DELETE: instead of calling adelete_by_doc_id() per chunk
-            # (which reads/writes all JSON storage files N times = O(N) disk
-            # I/O), we directly access the storage backends and delete all
-            # chunk IDs in a single batch per storage. This reduces 597×
-            # serial JSON read-modify-write cycles to ~5 batch operations.
-            print(f"Cleaning existing RAG chunks for document {doc_id} to enable graph extraction...", file=sys.stderr)
+            # The adapter (lightrag_adapter.purge_application_document) does it
+            # right: collects real internal chunk IDs from each child's
+            # chunks_list, aggregates graph metadata, and calls LightRAG's
+            # private _purge_doc_chunks_and_kg ONCE for source-aware cleanup.
+            from lightrag_adapter import purge_application_document, PurgeError
+            print(f"Purging previous RAG contributions for document {doc_id}...", file=sys.stderr)
             emit_progress("cleanup", 28, "Cleaning previous document index")
             try:
-                all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
-                to_delete = [k for k in all_docs.keys() if k == doc_id or k.startswith(doc_id + "/")]
-                if to_delete:
-                    print(f"Batch-deleting {len(to_delete)} chunks for graph re-extraction...", file=sys.stderr)
-
-                    # 1. Batch delete from doc_status (JsonKVStorage.delete takes a list)
-                    await rag.doc_status.delete(to_delete)
-                    emit_progress("cleanup", 29, f"Cleaned doc_status ({len(to_delete)} entries)")
-
-                    # 2. Batch delete from full_docs
-                    await rag.full_docs.delete(to_delete)
-                    emit_progress("cleanup", 30, f"Cleaned full_docs ({len(to_delete)} entries)")
-
-                    # 3. Batch delete from text_chunks
-                    await rag.text_chunks.delete(to_delete)
-                    emit_progress("cleanup", 31, f"Cleaned text_chunks ({len(to_delete)} entries)")
-
-                    # 4. Batch delete chunk vectors from chunks_vdb
-                    await rag.chunks_vdb.delete(to_delete)
-                    emit_progress("cleanup", 32, f"Cleaned chunk vectors ({len(to_delete)} entries)")
-
-                    # 5. Remove entities/relations sourced from these chunks.
-                    # On the basic→graph path, entities don't exist yet (basic
-                    # mode skips extraction), so this is typically a no-op.
-                    # On a re-index (graph→graph), entities exist and must be
-                    # cleaned. We use adelete_by_doc_id on the DOC-LEVEL id
-                    # (not chunk-level) — LightRAG's doc-level delete handles
-                    # entity/relation cleanup internally via full_entities/
-                    # full_relations indexes. This is ONE call, not N.
-                    try:
-                        await rag.adelete_by_doc_id(doc_id)
-                    except Exception:
-                        # If doc-level delete fails (e.g. entities already
-                        # gone from basic mode), it's non-fatal — graph
-                        # extraction will proceed on clean chunk storage.
-                        pass
-
-                    print(f"Batch cleanup complete: {len(to_delete)} chunks removed.", file=sys.stderr)
-                    emit_progress("cleanup", 33, f"Cleaned previous document index ({len(to_delete)} chunks)")
+                purge_result = await purge_application_document(
+                    rag, doc_id, operation_id=task_id or "",
+                )
+                if purge_result.child_doc_ids:
+                    print(
+                        f"Purge complete: removed {len(purge_result.child_doc_ids)} child docs, "
+                        f"{len(purge_result.chunk_ids)} chunks, "
+                        f"{purge_result.affected_entities} entities, "
+                        f"{purge_result.affected_relations} relations.",
+                        file=sys.stderr,
+                    )
+                    emit_progress(
+                        "cleanup", 33,
+                        f"Cleaned previous document index ({len(purge_result.chunk_ids)} chunks)",
+                    )
                 else:
                     print("No existing chunks to clean (fresh document).", file=sys.stderr)
-            except Exception as cleanup_err:
-                print(f"Warning during pre-indexing cleanup: {cleanup_err}", file=sys.stderr)
+            except PurgeError as purge_err:
+                # Purge failure is FATAL — do NOT continue to reinsert. The
+                # workspace may be inconsistent; the user must reset/rebuild.
+                return {
+                    "status": "failed",
+                    "code": purge_err.code,
+                    "error": purge_err.message,
+                    "requires_reset": True,
+                    "doc_id": doc_id,
+                    "message": (
+                        f"Failed to purge previous document data: {purge_err.message} "
+                        f"Use the knowledge-base reset action to rebuild."
+                    ),
+                }
 
         chunk_files = sort_chunk_files(os.listdir(chunks_dir))
         if not chunk_files:

@@ -207,75 +207,59 @@ class StorageCorruptionIsFailClosed(unittest.TestCase):
 class DeleteByDocDoesNotWipeWorkspace(unittest.TestCase):
     """action_delete_by_doc must not rmtree the entire working directory."""
 
-    def test_empty_workspace_is_not_wiped(self):
-        """When doc_status reports empty after delete, the workspace must NOT
-        be recursively removed by the delete action itself."""
+    def test_delete_succeeds_without_wiping_workspace(self):
+        """action_delete_by_doc uses the adapter; it must return 'deleted'
+        and must NOT wipe the working directory."""
         from rag_manage import action_delete_by_doc
 
         with tempfile.TemporaryDirectory() as tmp:
             rag = MagicMock()
             rag.working_dir = tmp
 
-            # doc_status has the target doc, and adelete succeeds.
-            async def fake_get_docs(statuses):
-                return {"doc-A": {"status": "processed", "chunks_list": ["doc-A/chunk_000-chunk-000"]}}
+            # Mock the adapter to return a successful purge result.
+            from lightrag_adapter import PurgeResult
+            from contextlib import asynccontextmanager
 
-            rag.doc_status.get_docs_by_statuses = fake_get_docs
+            async def fake_purge(rag, doc_id, operation_id="", **kw):
+                return PurgeResult(
+                    parent_doc_id=doc_id,
+                    child_doc_ids=[f"{doc_id}/chunk_000"],
+                    chunk_ids=[f"{doc_id}/chunk_000-chunk-000"],
+                    affected_entities=0,
+                    affected_relations=0,
+                    purged=True,
+                )
 
-            deleted_results = []
+            with patch("lightrag_adapter.purge_application_document", fake_purge):
+                result = asyncio.run(action_delete_by_doc(rag, "doc-A"))
 
-            async def fake_adelete(doc_id):
-                from lightrag.base import DeletionResult
-                deleted_results.append(doc_id)
-                return DeletionResult(status="success", doc_id=doc_id, message="ok")
-
-            rag.adelete_by_doc_id = fake_adelete
-
-            # After deletion, doc_status reports empty.
-            async def fake_is_empty():
-                return True
-
-            rag.doc_status.is_empty = fake_is_empty
-
-            result = asyncio.run(action_delete_by_doc(rag, "doc-A"))
-
-            # Must NOT contain wiped_all: True
-            self.assertNotIn("wiped_all", result)
+            # Must return deleted status, not wipe.
             self.assertEqual(result["status"], "deleted")
-
-            # working_dir must still exist (not rmtree'd).
+            self.assertNotIn("wiped_all", result)
+            # working_dir must still exist.
             self.assertTrue(os.path.isdir(tmp))
 
 
 class SoftDeleteFailureIsFailClosed(unittest.TestCase):
-    """When soft delete fails, action_delete_by_doc must NOT automatically
-    hard-delete from storage. It must return a retryable failure."""
+    """When purge fails, action_delete_by_doc must return a failed status
+    with requires_reset, NOT silently succeed or hard-delete."""
 
-    def test_soft_delete_failure_returns_failed_not_hard_delete(self):
+    def test_purge_failure_returns_failed_not_hard_delete(self):
         from rag_manage import action_delete_by_doc
+        from lightrag_adapter import PurgeError
 
         rag = MagicMock()
         rag.working_dir = "/tmp/nonexistent-test-dir"
 
-        async def fake_get_docs(statuses):
-            return {"doc-A": {"status": "processed", "chunks_list": ["doc-A/chunk_000-chunk-000"]}}
+        async def fake_purge_fails(rag, doc_id, operation_id="", **kw):
+            raise PurgeError("CHUNKS_LIST_MISSING", "metadata broken")
 
-        rag.doc_status.get_docs_by_statuses = fake_get_docs
-
-        async def fake_adelete(doc_id):
-            raise RuntimeError("LLM rebuild failed on large graph")
-
-        rag.adelete_by_doc_id = fake_adelete
-
-        async def fake_is_empty():
-            return False
-
-        rag.doc_status.is_empty = fake_is_empty
-
-        result = asyncio.run(action_delete_by_doc(rag, "doc-A"))
+        with patch("lightrag_adapter.purge_application_document", fake_purge_fails):
+            result = asyncio.run(action_delete_by_doc(rag, "doc-A"))
 
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["code"], "SOFT_DELETE_INCOMPLETE")
+        self.assertEqual(result["code"], "CHUNKS_LIST_MISSING")
+        self.assertTrue(result.get("requires_reset"))
         # Must NOT claim hard_delete_used.
         self.assertNotIn("hard_delete_used", result)
 
