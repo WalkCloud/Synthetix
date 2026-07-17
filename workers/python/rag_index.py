@@ -602,21 +602,53 @@ async def index_document(
             # otherwise ainsert() sees them as "already in storage" and skips,
             # yielding zero entities.
             #
-            # The cascade-rebuild cost of adelete_by_doc_id only bites when
-            # entities/relations already exist (re-indexing a previously-graphed
-            # doc). On the normal basic→graph path there are no entities yet, so
-            # deletion is cheap. To keep re-index affordable, we delete in a
-            # single batch loop rather than interleaving delete+insert.
+            # BATCH DELETE: instead of calling adelete_by_doc_id() per chunk
+            # (which reads/writes all JSON storage files N times = O(N) disk
+            # I/O), we directly access the storage backends and delete all
+            # chunk IDs in a single batch per storage. This reduces 597×
+            # serial JSON read-modify-write cycles to ~5 batch operations.
             print(f"Cleaning existing RAG chunks for document {doc_id} to enable graph extraction...", file=sys.stderr)
             emit_progress("cleanup", 28, "Cleaning previous document index")
             try:
                 all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
                 to_delete = [k for k in all_docs.keys() if k == doc_id or k.startswith(doc_id + "/")]
                 if to_delete:
-                    for chunk_id in to_delete:
-                        await rag.adelete_by_doc_id(chunk_id)
-                    print(f"Cleaned {len(to_delete)} existing chunks for graph re-extraction.", file=sys.stderr)
-                    emit_progress("cleanup", 32, "Cleaned previous document index", total=len(to_delete))
+                    print(f"Batch-deleting {len(to_delete)} chunks for graph re-extraction...", file=sys.stderr)
+
+                    # 1. Batch delete from doc_status (JsonKVStorage.delete takes a list)
+                    await rag.doc_status.delete(to_delete)
+                    emit_progress("cleanup", 29, f"Cleaned doc_status ({len(to_delete)} entries)")
+
+                    # 2. Batch delete from full_docs
+                    await rag.full_docs.delete(to_delete)
+                    emit_progress("cleanup", 30, f"Cleaned full_docs ({len(to_delete)} entries)")
+
+                    # 3. Batch delete from text_chunks
+                    await rag.text_chunks.delete(to_delete)
+                    emit_progress("cleanup", 31, f"Cleaned text_chunks ({len(to_delete)} entries)")
+
+                    # 4. Batch delete chunk vectors from chunks_vdb
+                    await rag.chunks_vdb.delete(to_delete)
+                    emit_progress("cleanup", 32, f"Cleaned chunk vectors ({len(to_delete)} entries)")
+
+                    # 5. Remove entities/relations sourced from these chunks.
+                    # On the basic→graph path, entities don't exist yet (basic
+                    # mode skips extraction), so this is typically a no-op.
+                    # On a re-index (graph→graph), entities exist and must be
+                    # cleaned. We use adelete_by_doc_id on the DOC-LEVEL id
+                    # (not chunk-level) — LightRAG's doc-level delete handles
+                    # entity/relation cleanup internally via full_entities/
+                    # full_relations indexes. This is ONE call, not N.
+                    try:
+                        await rag.adelete_by_doc_id(doc_id)
+                    except Exception:
+                        # If doc-level delete fails (e.g. entities already
+                        # gone from basic mode), it's non-fatal — graph
+                        # extraction will proceed on clean chunk storage.
+                        pass
+
+                    print(f"Batch cleanup complete: {len(to_delete)} chunks removed.", file=sys.stderr)
+                    emit_progress("cleanup", 33, f"Cleaned previous document index ({len(to_delete)} chunks)")
                 else:
                     print("No existing chunks to clean (fresh document).", file=sys.stderr)
             except Exception as cleanup_err:
