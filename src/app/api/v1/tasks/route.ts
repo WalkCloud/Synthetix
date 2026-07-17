@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, successResponse } from "@/lib/api-helpers";
-import { parseTaskInput, parseTaskResult } from "@/lib/queue/task-json";
+import { parseTaskResult } from "@/lib/queue/task-json";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
@@ -31,6 +32,11 @@ export async function GET(request: Request) {
       status: true,
       progress: true,
       inputData: true,
+      documentId: true,
+      draftId: true,
+      sectionId: true,
+      sessionId: true,
+      attempt: true,
       resultData: includeResultData,
       errorMessage: true,
       createdAt: true,
@@ -40,7 +46,7 @@ export async function GET(request: Request) {
 
   return successResponse(
     tasks.map((t) => {
-      const input = parseTaskInput<Record<string, unknown> | null>(t.inputData, null);
+      const identity = compareTaskIdentitySources(t).authoritative;
       const result = includeResultData
         ? parseTaskResult<unknown>(t.resultData, null)
         : null;
@@ -50,9 +56,10 @@ export async function GET(request: Request) {
         type: t.type,
         status: t.status,
         progress: t.progress,
-        draftId: typeof input?.draftId === "string" ? input.draftId : null,
-        sessionId: typeof input?.sessionId === "string" ? input.sessionId : null,
-        docId: typeof input?.docId === "string" ? input.docId : null,
+        draftId: identity.draftId,
+        sessionId: identity.sessionId,
+        sectionId: identity.sectionId,
+        docId: identity.documentId,
         result,
         error: t.errorMessage,
         createdAt: t.createdAt.toISOString(),

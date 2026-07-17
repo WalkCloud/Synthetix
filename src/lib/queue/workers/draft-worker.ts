@@ -5,7 +5,7 @@ import { createAssetRequests } from "@/lib/writing/asset-pipeline";
 import { buildEffectiveConstraints } from "@/lib/writing/constraints";
 import { stripLeadingSectionTitle } from "@/lib/writing/strip-section-title";
 import { persistSectionReferences } from "@/lib/writing/persist-references";
-import type { TaskPayload, TaskResult } from "@/lib/queue/types";
+import type { TaskPayload, TaskResult, TaskExecutionContext } from "@/lib/queue/types";
 
 interface DraftGenerateAllPayload extends TaskPayload {
   taskId: string;
@@ -14,14 +14,6 @@ interface DraftGenerateAllPayload extends TaskPayload {
   overwrite?: boolean;
   stopOnError?: boolean;
   modelConfigId?: string;
-}
-
-async function isCancelled(taskId: string): Promise<boolean> {
-  const task = await db.asyncTask.findUnique({
-    where: { id: taskId },
-    select: { status: true },
-  });
-  return task?.status === "cancelled" || task?.status === "failed";
 }
 
 async function restoreSectionAfterCancel(sectionId: string): Promise<void> {
@@ -46,8 +38,8 @@ async function updateTaskDraftProgress(
     skipped?: number;
   },
 ): Promise<void> {
-  await db.asyncTask.update({
-    where: { id: taskId },
+  await db.asyncTask.updateMany({
+    where: { id: taskId, status: "running" },
     data: {
       resultData: JSON.stringify(data),
       updatedAt: new Date(),
@@ -112,7 +104,7 @@ async function finalizeGeneratedSection(
 
 export async function generateDraftAll(
   payload: DraftGenerateAllPayload,
-  onProgress: (progress: number) => void,
+  ctx: TaskExecutionContext,
 ): Promise<TaskResult> {
   const {
     taskId,
@@ -122,6 +114,11 @@ export async function generateDraftAll(
     stopOnError = true,
     modelConfigId,
   } = payload;
+  const onProgress = (progress: number) => { void ctx.reportProgress(progress); };
+
+  async function isCancelled(): Promise<boolean> {
+    return ctx.signal.aborted;
+  }
 
   const draft = await db.draft.findFirst({
     where: { id: draftId, userId },
@@ -159,7 +156,7 @@ export async function generateDraftAll(
   });
 
   for (let i = 0; i < targets.length; i++) {
-    if (await isCancelled(taskId)) {
+    if (await isCancelled()) {
       return { generated, cancelled: true, errors };
     }
 
@@ -188,7 +185,7 @@ export async function generateDraftAll(
           }
         }
 
-        if (await isCancelled(taskId)) {
+        if (await isCancelled()) {
           return { generated, cancelled: true, errors };
         }
 
@@ -223,7 +220,7 @@ export async function generateDraftAll(
         },
       });
 
-      if (await isCancelled(taskId)) {
+      if (await isCancelled()) {
         await restoreSectionAfterCancel(section.id);
         return { generated, cancelled: true, errors };
       }
@@ -249,7 +246,7 @@ export async function generateDraftAll(
         modelConfigId,
       );
 
-      if (await isCancelled(taskId)) {
+      if (await isCancelled()) {
         await restoreSectionAfterCancel(section.id);
         return { generated, cancelled: true, errors };
       }
@@ -261,7 +258,7 @@ export async function generateDraftAll(
         data: { status: "generating" },
       });
 
-      if (await isCancelled(taskId)) {
+      if (await isCancelled()) {
         await restoreSectionAfterCancel(section.id);
         return { generated, cancelled: true, errors };
       }
@@ -271,7 +268,7 @@ export async function generateDraftAll(
         section.title,
       );
 
-      if (await isCancelled(taskId)) {
+      if (await isCancelled()) {
         await restoreSectionAfterCancel(section.id);
         return { generated, cancelled: true, errors };
       }
@@ -285,7 +282,7 @@ export async function generateDraftAll(
         console.warn(`Summary generation failed for section ${section.id}:`, error);
       }
 
-      if (await isCancelled(taskId)) {
+      if (await isCancelled()) {
         await restoreSectionAfterCancel(section.id);
         return { generated, cancelled: true, errors };
       }
@@ -310,6 +307,13 @@ export async function generateDraftAll(
         skipped: sections.length - targets.length,
       });
     } catch (error) {
+      // If the user cancelled while this section was generating, treat it as
+      // a cancellation, not a failure. The abort signal is checked first to
+      // avoid incorrectly surfacing "生成失败" when the user clicked stop.
+      if (await isCancelled()) {
+        await restoreSectionAfterCancel(section.id);
+        return { generated, cancelled: true, errors };
+      }
       const message = error instanceof Error ? error.message : "Unknown error";
       errors.push({ sectionId: section.id, title: section.title, error: message });
       await db.section.update({

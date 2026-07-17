@@ -6,6 +6,7 @@ import {
   errorResponse,
   successResponse,
 } from "@/lib/api-helpers";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 interface GenerateAllBody {
   overwrite?: boolean;
@@ -14,16 +15,6 @@ interface GenerateAllBody {
 }
 
 const STALE_RUNNING_MS = 2 * 60 * 60 * 1000;
-
-function taskMatchesDraft(inputData: string | null, draftId: string): boolean {
-  if (!inputData) return false;
-  try {
-    const parsed = JSON.parse(inputData) as { draftId?: string };
-    return parsed.draftId === draftId;
-  } catch {
-    return false;
-  }
-}
 
 async function resetOrphanedDraftSections(draftId: string): Promise<void> {
   await db.section.updateMany({
@@ -71,29 +62,43 @@ export async function POST(
     return errorResponse({ code: "draftNotFound", message: "Draft not found" }, 404);
   }
 
-  const activeTasks = await db.asyncTask.findMany({
-    where: {
-      userId: user.id,
-      type: "draft_generate_all",
-      status: { in: ["pending", "running"] },
-    },
-    select: { id: true, status: true, progress: true, inputData: true, updatedAt: true },
-  });
+  const existing = (await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "draftId",
+    value: draftId,
+    types: ["draft_generate_all"],
+    statuses: ["pending", "running"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
 
   const now = Date.now();
-  const existing = activeTasks.find((task) => taskMatchesDraft(task.inputData, draftId));
   if (existing) {
     const elapsed = now - new Date(existing.updatedAt).getTime();
     if (existing.status === "running" && elapsed > STALE_RUNNING_MS) {
-      await db.asyncTask.update({
-        where: { id: existing.id },
+      const failed = await db.asyncTask.updateMany({
+        where: { id: existing.id, status: "running" },
         data: {
           status: "failed",
           errorMessage: "Generation task became stale. Start again to resume from unfinished sections.",
           updatedAt: new Date(),
         },
       });
-      await resetOrphanedDraftSections(draftId);
+      if (failed.count === 1) {
+        await resetOrphanedDraftSections(draftId);
+      } else {
+        const current = await db.asyncTask.findUnique({
+          where: { id: existing.id },
+          select: { status: true, progress: true },
+        });
+        if (current) {
+          return successResponse({
+            taskId: existing.id,
+            status: current.status,
+            progress: current.progress,
+          });
+        }
+      }
     } else {
       return successResponse({
         taskId: existing.id,

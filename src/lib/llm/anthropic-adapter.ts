@@ -7,7 +7,7 @@ import type {
   ModelInfo,
 } from "./types";
 import type { ChatMessage } from "./types";
-import { computeBackoffMs, delay, isBalanceExhausted } from "./retry-after";
+import { computeBackoffMs, delay, delayWithSignal, isBalanceExhausted } from "./retry-after";
 import { getLimiter, type AdaptiveLimiter } from "./adaptive-limiter";
 import { parseRateLimitHeaders, type RateLimitInfo } from "./rate-limit-headers";
 import { FETCH_TIMEOUT_MS, STREAM_READ_TIMEOUT_MS } from "./env";
@@ -27,9 +27,9 @@ type ChatResponseWithRateLimit = ChatResponse & { rateLimit?: RateLimitInfo };
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MAX_TOKENS = 4096;
 
-/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS. */
-function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
-  return fetchWithTimeoutRaw(url, init, timeoutMs);
+/** Adapter-local wrapper that defaults to FETCH_TIMEOUT_MS and threads caller signal. */
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS, callerSignal?: AbortSignal): Promise<Response> {
+  return fetchWithTimeoutRaw(url, init, timeoutMs, callerSignal);
 }
 
 function estimateMessagesTokens(messages: { content: string }[]): number {
@@ -158,12 +158,12 @@ export class AnthropicAdapter implements LLMProvider {
         method: "POST",
         headers: buildHeaders(this.apiKey),
         body: JSON.stringify(body),
-      });
+      }, FETCH_TIMEOUT_MS, params.signal);
     } catch (err) {
       // Network failure / DNS error / timeout — retryable. A transient blip
       // must not sink a long-running multi-step pipeline.
       if (remaining > 0) {
-        await delay(computeBackoffMs(null, remaining));
+        await delayWithSignal(computeBackoffMs(null, remaining), params.signal);
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (network): ${err instanceof Error ? err.message : String(err)}`);
@@ -182,7 +182,7 @@ export class AnthropicAdapter implements LLMProvider {
         );
       }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
+        await delayWithSignal(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }), params.signal);
         return this.chatWithRetry(params, remaining - 1);
       }
       throw new Error(`Chat request failed (${response.status}): ${errorText || response.statusText}`);
@@ -259,7 +259,7 @@ export class AnthropicAdapter implements LLMProvider {
       method: "POST",
       headers: buildHeaders(this.apiKey),
       body: JSON.stringify(body),
-    });
+    }, FETCH_TIMEOUT_MS, params.signal);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
@@ -274,7 +274,7 @@ export class AnthropicAdapter implements LLMProvider {
         );
       }
       if (retryable && remaining > 0) {
-        await delay(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }));
+        await delayWithSignal(computeBackoffMs(response.headers.get("retry-after"), remaining, Date.now(), { capacityMode: true }), params.signal);
         const retry = this.chatStreamWithRetry(params, remaining - 1);
         for await (const chunk of retry) {
           yield chunk;
@@ -296,8 +296,10 @@ export class AnthropicAdapter implements LLMProvider {
 
     try {
       while (true) {
-        // Race each read against a stall timeout, clearing the timer on the
-        // success path so a long stream doesn't leak one handle per chunk.
+        // Race each read against a stall timeout AND caller cancellation.
+        if (params.signal?.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
         let stallTimer: ReturnType<typeof setTimeout> | undefined;
         const readResult = await Promise.race([
           reader.read(),
@@ -307,6 +309,9 @@ export class AnthropicAdapter implements LLMProvider {
               STREAM_READ_TIMEOUT_MS,
             );
           }),
+          ...(params.signal ? [new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+            params.signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+          })] : []),
         ]).finally(() => {
           if (stallTimer) clearTimeout(stallTimer);
         });
@@ -393,7 +398,7 @@ export class AnthropicAdapter implements LLMProvider {
     }
   }
 
-  async embed(): Promise<EmbedResponse> {
+  async embed(_texts: string[], _model?: string, _dimensions?: number, _signal?: AbortSignal): Promise<EmbedResponse> {
     // Anthropic offers no embeddings endpoint, and the app routes embedding
     // strictly to embedding-capable models (never to a chat/Anthropic model),
     // so this method is never exercised in practice.

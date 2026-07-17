@@ -28,7 +28,7 @@ afterEach(() => {
  */
 describe("OpenAICompatibleAdapter retry-after honouring", () => {
   it("chat: waits the Retry-After value before retrying a 429", async () => {
-    const delaySpy = vi.spyOn(retryAfter, "delay").mockResolvedValue(undefined);
+    const delaySpy = vi.spyOn(retryAfter, "delayWithSignal").mockResolvedValue(undefined);
 
     // First call → 429 with Retry-After: 12; second call → success.
     mockFetch
@@ -52,7 +52,7 @@ describe("OpenAICompatibleAdapter retry-after honouring", () => {
   });
 
   it("chat: falls back to exponential when no Retry-After header", async () => {
-    const delaySpy = vi.spyOn(retryAfter, "delay").mockResolvedValue(undefined);
+    const delaySpy = vi.spyOn(retryAfter, "delayWithSignal").mockResolvedValue(undefined);
 
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ error: "rate limited" }, 429))
@@ -75,7 +75,7 @@ describe("OpenAICompatibleAdapter retry-after honouring", () => {
   });
 
   it("embed: honours Retry-After on 429 before retrying", async () => {
-    const delaySpy = vi.spyOn(retryAfter, "delay").mockResolvedValue(undefined);
+    const delaySpy = vi.spyOn(retryAfter, "delayWithSignal").mockResolvedValue(undefined);
 
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ error: "rate limited" }, 429, { "retry-after": "8" }))
@@ -91,7 +91,7 @@ describe("OpenAICompatibleAdapter retry-after honouring", () => {
   });
 
   it("chat: honours Retry-After on 5xx too (server-overload path)", async () => {
-    const delaySpy = vi.spyOn(retryAfter, "delay").mockResolvedValue(undefined);
+    const delaySpy = vi.spyOn(retryAfter, "delayWithSignal").mockResolvedValue(undefined);
 
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ error: "overloaded" }, 503, { "retry-after": "20" }))

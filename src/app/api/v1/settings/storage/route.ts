@@ -1,6 +1,12 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import {
+  InvalidSecretUpdateError,
+  maskSecret,
+  mergeSecretUpdates,
+  parseClearSecrets,
+} from "@/lib/settings/secrets";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 import { db } from "@/lib/db";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -54,6 +60,9 @@ export async function GET() {
   if (!user) return authErrorResponse();
 
   const settings = readSettings(user.id);
+  const s3AccessKey = maskSecret(settings.s3AccessKey);
+  const s3SecretKey = maskSecret(settings.s3SecretKey);
+  const minioAccessKey = maskSecret(settings.minioAccessKey);
   const dataRoot = settings.localPath || process.env.DOCUMENT_ROOT || "./data/documents";
   const dataRootAbs = path.isAbsolute(dataRoot) ? dataRoot : path.join(/* turbopackIgnore: true */ process.cwd(), dataRoot);
 
@@ -83,11 +92,14 @@ export async function GET() {
     s3Bucket: settings.s3Bucket ?? "",
     s3Region: settings.s3Region ?? "",
     s3Endpoint: settings.s3Endpoint ?? "",
-    s3AccessKey: settings.s3AccessKey ?? "",
-    s3SecretKey: settings.s3SecretKey ?? "",
+    s3AccessKey: s3AccessKey.masked,
+    s3AccessKeyConfigured: s3AccessKey.configured,
+    s3SecretKey: s3SecretKey.masked,
+    s3SecretKeyConfigured: s3SecretKey.configured,
     minioEndpoint: settings.minioEndpoint ?? "",
     minioBucket: settings.minioBucket ?? "",
-    minioAccessKey: settings.minioAccessKey ?? "",
+    minioAccessKey: minioAccessKey.masked,
+    minioAccessKeyConfigured: minioAccessKey.configured,
     quotaGB: settings.quotaGB ?? 100,
     usage: {
       documentsBytes,
@@ -106,7 +118,10 @@ export async function PUT(request: Request) {
   if (!user) return authErrorResponse();
 
   const body = await request.json();
-  writeSettings(user.id, {
+  const current = readSettings(user.id);
+  try {
+    const clearSecrets = parseClearSecrets(body.clearSecrets);
+    const updates = mergeSecretUpdates(current, {
     storageType: body.storageType,
     localPath: body.localPath,
     cachePath: body.cachePath,
@@ -118,8 +133,14 @@ export async function PUT(request: Request) {
     minioEndpoint: body.minioEndpoint,
     minioBucket: body.minioBucket,
     minioAccessKey: body.minioAccessKey,
-    quotaGB: body.quotaGB,
-  });
-
-  return successResponse({ saved: true });
+      quotaGB: body.quotaGB,
+    }, clearSecrets);
+    writeSettings(user.id, updates, clearSecrets);
+    return successResponse({ saved: true });
+  } catch (error) {
+    if (error instanceof InvalidSecretUpdateError) {
+      return errorResponse({ code: "validationError", message: error.message }, 422);
+    }
+    throw error;
+  }
 }

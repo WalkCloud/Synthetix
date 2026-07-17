@@ -385,6 +385,9 @@ export type TranslationSchema = {
       processingTime: string;
       enhancementTime: string;
       processingInProgress: string;
+      durationHoursMinutes: string;
+      durationMinutesSeconds: string;
+      durationSeconds: string;
       overview: string;
       format: string;
       size: string;
@@ -628,6 +631,9 @@ export type TranslationSchema = {
       stopTitle: string;
       stopping: string;
       stop: string;
+      resume: string;
+      resumeTitle: string;
+      resuming: string;
     };
   };
   brainstorm: {
@@ -1025,6 +1031,8 @@ export type TranslationSchema = {
       status: string;
       integrityVerified: string;
       integrityFailed: string;
+      unsupportedPostgresTitle: string;
+      unsupportedPostgresDescription: string;
     };
     storage: {
       title: string;

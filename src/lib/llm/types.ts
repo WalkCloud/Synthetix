@@ -11,6 +11,8 @@ export interface ChatParams {
   stream?: boolean;
   streamOptions?: Record<string, unknown>;
   response_format?: { type: "json_object" } | { type: "json_schema"; json_schema: { name: string; schema: Record<string, unknown> } };
+  /** Optional cancellation signal from the caller (e.g. task AbortSignal). */
+  signal?: AbortSignal;
 }
 
 export interface ChatChunk {
@@ -43,7 +45,7 @@ export interface ModelInfo {
 export interface LLMProvider {
   chat(params: ChatParams): Promise<ChatResponse>;
   chatStream(params: ChatParams): AsyncGenerator<ChatChunk>;
-  embed(texts: string[], model?: string, dimensions?: number): Promise<EmbedResponse>;
+  embed(texts: string[], model?: string, dimensions?: number, signal?: AbortSignal): Promise<EmbedResponse>;
   testConnection(): Promise<boolean>;
   getModels(): Promise<ModelInfo[]>;
 }

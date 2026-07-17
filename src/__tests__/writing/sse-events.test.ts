@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sseEvent, sseDone, sseError } from "@/lib/writing/sse-events";
+import { sseEvent, sseDone, sseError, parseSSEEvent, type SSEEventType } from "@/lib/writing/sse-events";
 
 describe("sseEvent", () => {
   it("serializes a chunk event with content", () => {
@@ -71,5 +71,35 @@ describe("sseError", () => {
     const parsed = JSON.parse(result.slice(6, -2));
     expect(parsed.error).toBe('quote " and backslash \\');
     expect(parsed.type).toBe("error");
+  });
+});
+
+describe("parseSSEEvent", () => {
+  it("parses a valid SSE data line back into a typed event", () => {
+    const event = parseSSEEvent(sseEvent("chunk", { content: "hello" }));
+    expect(event).toEqual({ type: "chunk", content: "hello" });
+  });
+
+  it("returns null for non-SSE lines", () => {
+    expect(parseSSEEvent("not a data line")).toBeNull();
+  });
+
+  it("returns null for malformed JSON", () => {
+    expect(parseSSEEvent("data: {bad json")).toBeNull();
+  });
+});
+
+describe("SSE event type schema", () => {
+  it("documents all event types the client reducer must handle", () => {
+    const knownTypes: SSEEventType[] = [
+      "references", "chunk", "reasoning", "contentA", "contentB",
+      "done", "error", "assets", "progress", "tokenUsage", "status",
+    ];
+    // Every known type must produce a valid SSE event
+    for (const type of knownTypes) {
+      const event = sseEvent(type, { test: true });
+      const parsed = parseSSEEvent(event);
+      expect(parsed?.type).toBe(type);
+    }
   });
 });

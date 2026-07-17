@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { Semaphore } from "@/lib/concurrency/limiter";
 import { parseTaskResult, parseTaskInput } from "@/lib/queue/task-json";
@@ -7,8 +8,14 @@ import type {
   TaskPayload,
   TaskResult,
   TaskInfo,
+  TaskExecutionContext,
   WorkerFn,
+  WorkerOutcome,
+  SubmitTaskOptions,
 } from "./types";
+import { isWorkerOutcome } from "./types";
+import { executionRegistry } from "./execution-registry";
+import { resolveTaskIdentity } from "./task-identity";
 
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -55,6 +62,7 @@ export class TaskQueue {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatScanIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -70,15 +78,35 @@ export class TaskQueue {
   }
 
   async drain(): Promise<void> {
-    // Only reset tasks that were running in the last hour — stale tasks
-    // from earlier sessions shouldn't be re-executed
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Lease-aware restart recovery: only recover tasks whose lease has expired
+    // (or was never set). Tasks with a valid unexpired lease are left alone —
+    // their worker is likely still running in a sibling process. Tasks with
+    // cancel_requested are transitioned to cancelled (the cancel intent
+    // survives restart).
+    const now = new Date();
+
+    // Cancel-intent tasks from a crashed process go straight to cancelled.
+    await db.asyncTask.updateMany({
+      where: { status: "cancel_requested" },
+      data: { status: "cancelled", finishedAt: now, updatedAt: now },
+    });
+
+    // Recover running tasks whose lease has expired or was never set. A task
+    // with a valid lease stays running — it may be owned by a concurrent process.
     await db.asyncTask.updateMany({
       where: {
         status: "running",
-        updatedAt: { gte: oneHourAgo },
+        OR: [
+          { leaseExpiresAt: null },
+          { leaseExpiresAt: { lt: now } },
+        ],
       },
-      data: { status: "pending", updatedAt: new Date() },
+      data: {
+        status: "pending",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        updatedAt: now,
+      },
     });
 
     for (let i = 0; i < this.concurrency; i++) {
@@ -90,12 +118,14 @@ export class TaskQueue {
     type: TaskType,
     payload: TaskPayload,
     userId: string,
+    options?: SubmitTaskOptions,
   ): Promise<string> {
     if (!this.workers.has(type)) {
       throw new Error(`No worker registered for task type: ${type}`);
     }
 
     const id = uuidv4();
+    const identity = await resolveTaskIdentity({ type, payload, userId, options });
 
     await db.asyncTask.create({
       data: {
@@ -105,6 +135,7 @@ export class TaskQueue {
         status: "pending",
         progress: 0,
         inputData: JSON.stringify(payload),
+        ...identity,
       },
     });
 
@@ -141,25 +172,37 @@ export class TaskQueue {
   }
 
   async cancel(taskId: string): Promise<boolean> {
-    const task = await db.asyncTask.findUnique({
-      where: { id: taskId },
+    // Pending tasks have no live worker — flip straight to terminal cancelled.
+    const pendingCancel = await db.asyncTask.updateMany({
+      where: { id: taskId, status: "pending" },
+      data: {
+        status: "cancelled",
+        cancelRequestedAt: new Date(),
+        finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        updatedAt: new Date(),
+      },
     });
+    if (pendingCancel.count === 1) return true;
 
-    if (!task) {
-      return false;
-    }
-
-    if (task.status === "pending" || task.status === "running") {
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: {
-          status: "cancelled",
-          updatedAt: new Date(),
-        },
-      });
+    // Running tasks have a live worker — request cancel non-terminally and
+    // trigger the abort. The terminal `cancelled` is written only when the
+    // real worker Promise settles in commitOutcome. This prevents a still-
+    // running worker from mutating side effects after the task already shows
+    // `cancelled`.
+    const runningCancel = await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
+      data: {
+        status: "cancel_requested",
+        cancelRequestedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    if (runningCancel.count === 1) {
+      this.abortControllers.get(taskId)?.abort();
       return true;
     }
-
     return false;
   }
 
@@ -205,22 +248,18 @@ export class TaskQueue {
     // Fetch running tasks. We can't filter on the JSON lastHeartbeatAt in SQL,
     // so we fetch and parse in JS. Limit to a sane batch to bound work.
     const running = await db.asyncTask.findMany({
-      where: { status: "running" },
-      select: { id: true, type: true, resultData: true, updatedAt: true },
+      where: { status: { in: ["running", "cancel_requested"] } },
+      select: { id: true, type: true, heartbeatAt: true, updatedAt: true },
       take: 200,
     });
     const stalled: string[] = [];
     for (const t of running) {
-      // Prefer lastHeartbeatAt from resultData; fall back to updatedAt (so a
-      // task that hasn't emitted its first progress event yet is judged by its
-      // claim time, not falsely considered stalled).
+      // Prefer the heartbeatAt column; fall back to updatedAt (so a task that
+      // hasn't emitted its first progress event yet is judged by its claim
+      // time, not falsely considered stalled).
       let lastBeat = t.updatedAt;
-      if (t.resultData) {
-        const parsed = parseTaskResult<{ lastHeartbeatAt?: string } | null>(t.resultData, null);
-        if (parsed?.lastHeartbeatAt) {
-          const parsedDate = new Date(parsed.lastHeartbeatAt);
-          if (Number.isFinite(parsedDate.getTime())) lastBeat = parsedDate;
-        }
+      if (t.heartbeatAt && t.heartbeatAt.getTime() > 0) {
+        lastBeat = t.heartbeatAt;
       }
       if (lastBeat.getTime() < cutoff) {
         stalled.push(t.id);
@@ -228,15 +267,18 @@ export class TaskQueue {
     }
     if (stalled.length === 0) return;
     const elapsed = Math.round(this.heartbeatTimeoutMs / 1000);
-    await db.asyncTask.updateMany({
-      where: { id: { in: stalled } },
+    const failed = await db.asyncTask.updateMany({
+      where: { id: { in: stalled }, status: { in: ["running", "cancel_requested"] } },
       data: {
         status: "failed",
         errorMessage: `Task heartbeat timeout — no activity for ${elapsed}s`,
+        finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
         updatedAt: new Date(),
       },
     });
-    console.warn(`[queue] marked ${stalled.length} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
+    console.warn(`[queue] marked ${failed.count} stalled task(s) as failed (no heartbeat for ${elapsed}s)`);
     // Re-kick the queue so a pending successor (or the doc's recovery path)
     // can pick up after the zombie is cleared.
     for (let i = 0; i < this.concurrency; i++) {
@@ -255,7 +297,16 @@ export class TaskQueue {
     // Scheduling section is serialised. claimedTask is the row we successfully
     // reserved (or null if none was eligible).
     const release = await this.schedulerLock.acquire();
-    let claimedTask: { id: string; type: TaskType; input_data: string | null } | null = null;
+    let claimedTask: {
+      id: string;
+      type: TaskType;
+      user_id: string;
+      input_data: string | null;
+      document_id: string | null;
+      operation_id: string | null;
+      attempt: number | null;
+      execution_generation: number | null;
+    } | null = null;
     try {
       if (this.activeCount >= this.concurrency) {
         return;
@@ -273,17 +324,33 @@ export class TaskQueue {
       // SQLite serialises the UPDATE so two concurrent processNext() calls cannot
       // claim the same row.
       const placeholders = eligibleTypes.map(() => "?").join(", ");
-      const claimed = await db.$queryRawUnsafe<{ id: string; type: string; input_data: string | null }[]>(
+      const leaseOwner = `${process.pid}-${crypto.randomUUID()}`;
+      const leaseExpiry = new Date(Date.now() + this.heartbeatTimeoutMs * 2);
+      const claimed = await db.$queryRawUnsafe<{
+        id: string;
+        type: string;
+        user_id: string;
+        input_data: string | null;
+        document_id: string | null;
+        operation_id: string | null;
+        attempt: number | null;
+        execution_generation: number | null;
+      }[]>(
         `UPDATE async_tasks
-         SET status = 'running', updated_at = ?
+         SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?,
+             lease_owner = ?, lease_expires_at = ?,
+             execution_generation = COALESCE(execution_generation, 0) + 1
          WHERE id = (
            SELECT id FROM async_tasks
            WHERE status = 'pending' AND type IN (${placeholders})
            ORDER BY created_at ASC
            LIMIT 1
          ) AND status = 'pending'
-         RETURNING id, type, input_data`,
+         RETURNING id, type, user_id, input_data, document_id, operation_id, attempt, execution_generation`,
         new Date(),
+        new Date(),
+        leaseOwner,
+        leaseExpiry,
         ...eligibleTypes,
       );
 
@@ -295,7 +362,16 @@ export class TaskQueue {
       const taskType = task.type as TaskType;
       this.activeCount += 1;
       this.activePerType.set(taskType, (this.activePerType.get(taskType) ?? 0) + 1);
-      claimedTask = { id: task.id, type: taskType, input_data: task.input_data };
+      claimedTask = {
+        id: task.id,
+        type: taskType,
+        user_id: task.user_id,
+        input_data: task.input_data,
+        document_id: task.document_id,
+        operation_id: task.operation_id,
+        attempt: task.attempt,
+        execution_generation: task.execution_generation,
+      };
     } finally {
       release();
     }
@@ -303,7 +379,16 @@ export class TaskQueue {
     if (!claimedTask) return;
 
     try {
-      await this.executeTask(claimedTask.id, claimedTask.type, claimedTask.input_data);
+      await this.executeTask(
+        claimedTask.id,
+        claimedTask.type,
+        claimedTask.user_id,
+        claimedTask.input_data,
+        claimedTask.document_id,
+        claimedTask.operation_id,
+        claimedTask.attempt ?? 0,
+        claimedTask.execution_generation ?? 1,
+      );
     } finally {
       const taskType = claimedTask.type;
       // Both decrements happen after executeTask returns; any other waiter
@@ -324,62 +409,160 @@ export class TaskQueue {
     return this.timeoutMs;
   }
 
+  private async commitOutcome(taskId: string, outcome: WorkerOutcome, executionGeneration?: number): Promise<void> {
+    const data = outcome.status === "completed"
+      ? {
+          status: "completed" as const,
+          progress: 100,
+          resultData: JSON.stringify(outcome.result),
+          errorMessage: null,
+          finishedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          updatedAt: new Date(),
+        }
+      : outcome.status === "failed"
+        ? {
+            status: "failed" as const,
+            progress: outcome.progress ?? 100,
+            resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
+            errorMessage: outcome.error,
+            finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            updatedAt: new Date(),
+          }
+        : {
+            status: "cancelled" as const,
+            progress: outcome.progress,
+            resultData: outcome.result ? JSON.stringify(outcome.result) : undefined,
+            errorMessage: outcome.error ?? null,
+            finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            updatedAt: new Date(),
+          };
+
+    // Match both `running` (nominal) and `cancel_requested` (the non-terminal
+    // state written by cancel() for a running task). When executionGeneration
+    // is provided, fence: a stale worker from an older generation must not
+    // overwrite a newer generation's terminal state.
+    const committed = await db.asyncTask.updateMany({
+      where: {
+        id: taskId,
+        status: { in: ["running", "cancel_requested"] },
+        ...(executionGeneration !== undefined ? { executionGeneration } : {}),
+      },
+      data,
+    });
+    if (committed.count === 0) {
+      console.warn(`[queue] task ${taskId} already reached a terminal state; ignored late ${outcome.status} outcome`);
+    }
+  }
+
   private async executeTask(
     taskId: string,
     taskType: TaskType,
+    userId: string,
     inputData: string | null,
+    documentId: string | null,
+    operationId: string | null,
+    attempt: number,
+    executionGeneration: number,
   ): Promise<void> {
     const workerFn = this.workers.get(taskType);
 
     if (!workerFn) {
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: {
           status: "failed",
           errorMessage: `No worker registered for task type: ${taskType}`,
+          finishedAt: new Date(),
           updatedAt: new Date(),
         },
       });
       return;
     }
 
+    const parsedPayload = parseTaskInput<Partial<TaskPayload>>(inputData, {});
     const payload: TaskPayload = {
-      ...parseTaskInput<Partial<TaskPayload>>(inputData, {}),
+      ...parsedPayload,
       taskId,
     } as TaskPayload;
+    const docId = documentId ?? (
+      typeof parsedPayload.docId === "string" && parsedPayload.docId.length > 0
+        ? parsedPayload.docId
+        : null
+    );
 
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "running",
-        updatedAt: new Date(),
-      },
-    });
-
-    // Check if task was cancelled before starting work
     const currentTask = await db.asyncTask.findUnique({
       where: { id: taskId },
+      select: { status: true },
     });
-    if (currentTask?.status === "cancelled") {
+    if (currentTask?.status !== "running") {
+      // Was cancelled (→ cancel_requested) between claim and execution start.
       return;
     }
 
-    const onProgress = async (progress: number): Promise<void> => {
+    // One AbortController per execution. cancel() triggers abort(); the worker
+    // Promise then settles and commitOutcome writes the terminal state.
+    const controller = new AbortController();
+    this.abortControllers.set(taskId, controller);
+
+    const reportProgress = async (progress: number): Promise<void> => {
       const clipped = Math.max(0, Math.min(100, progress));
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
         data: {
           progress: clipped,
+          heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + this.heartbeatTimeoutMs * 2),
           updatedAt: new Date(),
         },
       });
     };
 
-    try {
-      const resultPromise = workerFn(payload, onProgress);
-      const timeoutMs = this.getTimeoutMs(taskType);
+    const heartbeat = async (): Promise<void> => {
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
+        data: {
+          heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + this.heartbeatTimeoutMs * 2),
+          updatedAt: new Date(),
+        },
+      });
+    };
 
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const ctx: TaskExecutionContext = {
+      taskId,
+      taskType,
+      userId,
+      operationId: operationId ?? undefined,
+      attempt,
+      signal: controller.signal,
+      reportProgress,
+      heartbeat,
+      throwIfCancelled: () => {
+        if (controller.signal.aborted) {
+          throw new Error("Task was cancelled");
+        }
+      },
+    };
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const startWorker = () => workerFn(payload, ctx);
+      const resultPromise = docId
+        ? await executionRegistry.startDocumentExecution({
+            taskId,
+            taskType,
+            userId,
+            docId,
+            start: startWorker,
+          })
+        : startWorker();
+      const timeoutMs = this.getTimeoutMs(taskType);
       const result = timeoutMs === null
         ? await resultPromise
         : await Promise.race([
@@ -390,50 +573,40 @@ export class TaskQueue {
               }, timeoutMs);
             }),
           ]);
-      // Clear the timeout timer once the worker wins the race. Without this,
-      // the timeout's rejection callback keeps a reference to the resolver
-      // scope alive long after success, and on a long-running worker the
-      // pending timer can still fire and raise an unhandled rejection.
-      if (timeoutId) clearTimeout(timeoutId);
 
-      // Check cancellation after completion
-      const finalTask = await db.asyncTask.findUnique({
-        where: { id: taskId },
-      });
-      if (finalTask?.status === "cancelled") {
-        return;
+      // If cancel was requested while the worker was running, the final
+      // outcome is always `cancelled` regardless of what the worker returned.
+      // A late success must not un-cancel a task the user asked to abort.
+      if (controller.signal.aborted) {
+        await this.commitOutcome(taskId, {
+          workerOutcome: true,
+          status: "cancelled",
+          error: "Cancelled by user",
+        }, executionGeneration);
+      } else {
+        await this.commitOutcome(
+          taskId,
+          isWorkerOutcome(result)
+            ? result
+            : { workerOutcome: true, status: "completed", result },
+          executionGeneration,
+        );
       }
-
-      await db.asyncTask.update({
-        where: { id: taskId },
-        data: {
-          status: "completed",
-          progress: 100,
-          resultData: JSON.stringify(result),
-          updatedAt: new Date(),
-        },
-      });
     } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
+      const isAbort = controller.signal.aborted;
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       try {
-        const errorTask = await db.asyncTask.findUnique({
-          where: { id: taskId },
-        });
-        if (errorTask?.status !== "cancelled") {
-          await db.asyncTask.update({
-            where: { id: taskId },
-            data: {
-              status: "failed",
-              errorMessage,
-              updatedAt: new Date(),
-            },
-          });
-        }
+        await this.commitOutcome(taskId, isAbort
+          ? { workerOutcome: true, status: "cancelled", error: "Cancelled by user" }
+          : { workerOutcome: true, status: "failed", error: errorMessage },
+          executionGeneration,
+        );
       } catch {
         // Task record may have been deleted (e.g. test cleanup)
       }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      this.abortControllers.delete(taskId);
     }
   }
 }

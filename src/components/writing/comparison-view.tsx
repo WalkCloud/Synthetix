@@ -13,6 +13,7 @@ interface ComparisonViewProps {
   modelA: string | null;
   modelB: string | null;
   selectedModel: string | null;
+  selectedSource: "a" | "b" | null;
   onSelectA: () => void;
   onSelectB: () => void;
   onEdit: (content: string, source: "a" | "b") => void;
@@ -127,6 +128,7 @@ export function ComparisonView({
   modelA,
   modelB,
   selectedModel,
+  selectedSource,
   onSelectA,
   onSelectB,
   onEdit,
@@ -139,6 +141,12 @@ export function ComparisonView({
   const ce = t.writing.compareExtra;
   const displayContentA = contentA ? stripLeadingSectionTitle(contentA, sectionTitle) : null;
   const displayContentB = contentB ? stripLeadingSectionTitle(contentB, sectionTitle) : null;
+
+  // Determine which panel is selected. Prefer selectedSource (always correct),
+  // fall back to selectedModel comparison only when models are different.
+  const modelsDiffer = modelA !== modelB;
+  const isASelected = selectedSource === "a" || (selectedSource === null && modelsDiffer && selectedModel === modelA);
+  const isBSelected = selectedSource === "b" || (selectedSource === null && modelsDiffer && selectedModel === modelB);
 
   if (mode === "single") {
     return (
@@ -188,7 +196,7 @@ export function ComparisonView({
         label={modelAName}
         dotColor="green"
         content={displayContentA}
-        isSelected={selectedModel === modelA}
+        isSelected={isASelected}
         onSelect={onSelectA}
         onCopy={() => displayContentA && navigator.clipboard.writeText(displayContentA)}
         onEdit={() => displayContentA && onEdit(displayContentA, "a")}
@@ -200,7 +208,7 @@ export function ComparisonView({
         label={modelBName}
         dotColor="blue"
         content={displayContentB}
-        isSelected={selectedModel === modelB}
+        isSelected={isBSelected}
         onSelect={onSelectB}
         onCopy={() => displayContentB && navigator.clipboard.writeText(displayContentB)}
         onEdit={() => displayContentB && onEdit(displayContentB, "b")}

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 import { convertDocumentFile, type ConversionResult } from "@/lib/documents/converter";
 import { splitMarkdown, estimateTokens, type SplitChunk } from "@/lib/documents/splitter";
 import { resolveModel } from "@/lib/llm/resolve-model";
@@ -48,6 +49,8 @@ export interface ProcessingContext {
   contextWindow: number;
   splitThreshold: number;
   chunkMaxTokens: number;
+  /** Cancellation signal propagated from the task execution context. */
+  signal?: AbortSignal;
 }
 
 export interface SplitPlan {
@@ -105,12 +108,13 @@ export async function persistEmbeddingUpdates(
   }
 }
 
-export async function loadProcessingTask(taskId: string): Promise<ProcessingContext> {
+export async function loadProcessingTask(taskId: string, signal?: AbortSignal): Promise<ProcessingContext> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Task ${taskId} not found`);
 
   const input = JSON.parse(task.inputData || "{}");
-  const docId = input.docId;
+  const docId = compareTaskIdentitySources(task).authoritative.documentId
+    ?? (typeof input.docId === "string" ? input.docId : null);
   if (!docId) throw new Error("Missing docId in task input");
 
   const options: ProcessingOptions = (input.options as ProcessingOptions) || {};
@@ -141,6 +145,7 @@ export async function loadProcessingTask(taskId: string): Promise<ProcessingCont
     contextWindow: 4096,
     splitThreshold: 2048,
     chunkMaxTokens: 1536,
+    signal,
   };
 }
 
@@ -420,8 +425,8 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
   const reportProgress = (justEmbedded: number): void => {
     embeddedCount += justEmbedded;
     const embedProgress = 40 + Math.round((embeddedCount / Math.max(totalToEmbed, 1)) * 28);
-    void db.asyncTask.update({
-      where: { id: ctx.taskId },
+    void db.asyncTask.updateMany({
+      where: { id: ctx.taskId, status: "running" },
       data: { progress: embedProgress },
     }).catch(() => undefined);
   };
@@ -433,6 +438,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
         validTexts.slice(start, end),
         embedModel.modelId,
         embedModel.embeddingDim ?? undefined,
+        ctx.signal,
       );
       totalEmbedTokens += embedResult.inputTokens;
       const updates = embedResult.embeddings.map((emb, ei) => {

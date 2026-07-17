@@ -238,7 +238,7 @@ export default function WritingPage({
                       ? "bg-red-500"
                       : genAll.task.status === "completed"
                         ? "bg-emerald-500"
-                        : genAll.task.status === "cancelled"
+                        : genAll.task.status === "cancelled" || genAll.task.status === "cancel_requested"
                           ? "bg-amber-500"
                           : "bg-primary-500 animate-pulse"
                   }`} />
@@ -247,7 +247,7 @@ export default function WritingPage({
                       ? dd.fullDraftRunning
                       : genAll.task.status === "completed"
                         ? dd.fullDraftReady
-                        : genAll.task.status === "cancelled"
+                        : genAll.task.status === "cancelled" || genAll.task.status === "cancel_requested"
                           ? dd.fullDraftStopped
                           : dd.fullDraftFailed}
                   </span>
@@ -270,7 +270,7 @@ export default function WritingPage({
                       ? "bg-red-500"
                       : genAll.task.status === "completed"
                         ? "bg-emerald-500"
-                        : genAll.task.status === "cancelled"
+                        : genAll.task.status === "cancelled" || genAll.task.status === "cancel_requested"
                           ? "bg-amber-500"
                           : "bg-primary-600"
                   }`}
@@ -290,6 +290,20 @@ export default function WritingPage({
                   <rect x="6" y="6" width="12" height="12" rx="1.5" />
                 </svg>
                 {genAll.isCancelling ? dd.stopping : dd.stop}
+              </button>
+            )}
+
+            {genAll.isPaused && !allCompleted && (
+              <button
+                onClick={() => genAll.resume(selectedModelA && selectedModelA !== "auto" ? selectedModelA : undefined)}
+                disabled={genAll.isStarting}
+                className="flex shrink-0 items-center gap-1.5 rounded-xl border border-primary-200 bg-card px-4 py-2 text-xs font-semibold text-primary-600 shadow-sm transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title={dd.resumeTitle}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                {genAll.isStarting ? dd.resuming : dd.resume}
               </button>
             )}
           </div>

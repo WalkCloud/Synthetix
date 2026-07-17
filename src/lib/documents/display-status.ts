@@ -19,6 +19,7 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { computeDocumentPipeline, computeDisplayStatus } from "@/lib/documents/pipeline-stages";
 import { derivePipelineModes } from "@/lib/queue/workers/index-mode-flags";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 /** Minimal shape of a document row this helper needs to read. */
 export interface DisplayStatusDoc {
@@ -65,8 +66,17 @@ async function resolveQueuePositions(
 
   // Order: running first, then pending in created_at order — matches
   // queue.ts which claims pending tasks ORDER BY created_at ASC.
-  const tasks = await db.$queryRawUnsafe<{ input_data: string | null; status: string }[]>(
-    `SELECT input_data, status FROM async_tasks
+  const tasks = await db.$queryRawUnsafe<{
+    type: string;
+    input_data: string | null;
+    document_id: string | null;
+    draft_id: string | null;
+    section_id: string | null;
+    session_id: string | null;
+    attempt: number | null;
+    status: string;
+  }[]>(
+    `SELECT type, input_data, document_id, draft_id, section_id, session_id, attempt, status FROM async_tasks
      WHERE user_id = ?
        AND type = 'document_convert'
        AND status IN ('pending', 'running')
@@ -76,12 +86,17 @@ async function resolveQueuePositions(
 
   const orderedDocIds: string[] = [];
   for (const t of tasks) {
-    if (!t.input_data) continue;
-    try {
-      const parsed = JSON.parse(t.input_data) as { docId?: string };
-      if (parsed.docId) orderedDocIds.push(parsed.docId);
-    } catch {
-      /* ignore malformed */
+    const comparison = compareTaskIdentitySources({
+      type: t.type,
+      inputData: t.input_data,
+      documentId: t.document_id,
+      draftId: t.draft_id,
+      sectionId: t.section_id,
+      sessionId: t.session_id,
+      attempt: t.attempt,
+    });
+    if (comparison.authoritative.documentId) {
+      orderedDocIds.push(comparison.authoritative.documentId);
     }
   }
 
@@ -122,11 +137,25 @@ export async function annotateDocumentsWithDisplayStatus<T extends DisplayStatus
     ? await db.asyncTask.findMany({
         where: {
           userId,
-          inputData: { contains: `"docId":"` },
           type: { in: ["document_convert", "rag_embed_index", "rag_index", "wiki_synthesize"] },
+          OR: [
+            { documentId: { in: docIds } },
+            { documentId: null },
+          ],
         },
         orderBy: { createdAt: "desc" },
-        select: { id: true, type: true, status: true, progress: true, inputData: true },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          progress: true,
+          inputData: true,
+          documentId: true,
+          draftId: true,
+          sectionId: true,
+          sessionId: true,
+          attempt: true,
+        },
       })
     : [];
 
@@ -139,23 +168,19 @@ export async function annotateDocumentsWithDisplayStatus<T extends DisplayStatus
     { convertInputData?: string; tasks: Record<string, { status: string; progress: number }>; graphTaskId?: string }
   >();
   for (const t of branchTasks) {
-    try {
-      const parsed = JSON.parse(t.inputData ?? "{}") as { docId?: string };
-      const did = parsed.docId;
-      if (!did || !docIds.includes(did)) continue;
-      const entry = tasksByDoc.get(did) ?? { tasks: {} };
-      if (t.type === "document_convert" && !entry.convertInputData) {
-        entry.convertInputData = t.inputData ?? undefined;
-      }
-      if (!entry.tasks[t.type]) entry.tasks[t.type] = { status: t.status, progress: t.progress };
-      // Track the latest rag_index task id per doc so the list can offer Cancel.
-      if (t.type === "rag_index" && (t.status === "running" || t.status === "pending")) {
-        entry.graphTaskId = t.id;
-      }
-      tasksByDoc.set(did, entry);
-    } catch {
-      /* malformed input — skip */
+    const comparison = compareTaskIdentitySources(t);
+    const did = comparison.authoritative.documentId;
+    if (!did || !docIds.includes(did)) continue;
+    const entry = tasksByDoc.get(did) ?? { tasks: {} };
+    if (t.type === "document_convert" && !entry.convertInputData) {
+      entry.convertInputData = t.inputData ?? undefined;
     }
+    if (!entry.tasks[t.type]) entry.tasks[t.type] = { status: t.status, progress: t.progress };
+    // Track the latest rag_index task id per doc so the list can offer Cancel.
+    if (t.type === "rag_index" && (t.status === "running" || t.status === "pending")) {
+      entry.graphTaskId = t.id;
+    }
+    tasksByDoc.set(did, entry);
   }
 
   return documents.map((d) => {

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
+import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 export async function GET(
   _request: Request,
@@ -17,25 +18,23 @@ export async function GET(
     return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  // Use raw query for precise inputData match — Prisma's JSON contains
-  // can match old tasks whose inputData happens to contain a similar UUID
-  const task = await db.$queryRawUnsafe<{ id: string; status: string; progress: number; error_message: string | null }[]>(
-    `SELECT id, status, progress, error_message FROM async_tasks
-     WHERE user_id = ? AND type = 'document_convert'
-       AND input_data LIKE ?
-     ORDER BY created_at DESC LIMIT 1`,
-    user.id,
-    `%${doc.id}%`,
-  ).then((rows) => rows[0] || null);
+  const task = (await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "documentId",
+    value: doc.id,
+    types: ["document_convert"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
 
-  const graphTask = await db.asyncTask.findFirst({
-    where: {
-      userId: user.id,
-      type: "rag_index",
-      inputData: { contains: doc.id },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const graphTask = (await findTasksByResourceIdentity({
+    userId: user.id,
+    field: "documentId",
+    value: doc.id,
+    types: ["rag_index"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
 
   return successResponse({
     documentId: doc.id,
@@ -43,7 +42,7 @@ export async function GET(
     taskId: task?.id,
     taskStatus: task?.status,
     progress: task?.progress || 0,
-    error: task?.error_message,
+    error: task?.errorMessage,
     // Surface silent pipeline downgrades (e.g. graph→basic when the embedding
     // dim is below 1536) so the UI can warn the user instead of showing an
     // empty knowledge graph with no explanation.

@@ -32,6 +32,8 @@ import { spawnSync } from "child_process";
 import type { Applier } from "./updater";
 import { appRoot, userDataDir, bundledNodePath } from "./paths";
 import { computeRuntimeHash } from "./runtime-hash";
+// Pure Zip-Slip guard (unit-tested in src/__tests__/scripts/update-policy.test.ts).
+import { isUnsafeEntryName } from "./update-policy";
 
 export interface PatchApplierHooks {
   /** Stop the Next.js server child; resolve once it is dead. */
@@ -202,11 +204,51 @@ function rollbackWebLayer(backed: Array<{ src: string; backup: string }>): void 
 // ─── zip extraction (PowerShell, zero-dependency, Windows-only) ─────────────
 
 /**
+ * Read the central-directory entry names from a zip via PowerShell (no native
+ * zip dependency) and reject any entry that would escape `destDir`. Returns
+ * the list of entry names on success. The per-entry containment check is the
+ * pure `isUnsafeEntryName` from update-policy.ts (Zip-Slip guard).
+ */
+function assertZipEntriesContained(zipPath: string, destDir: string): string[] {
+  const psScript =
+    `Add-Type -AssemblyName System.IO.Compression.FileSystem;` +
+    `$z = [System.IO.Compression.ZipFile]::OpenRead('${zipPath.replace(/'/g, "''")}');` +
+    `try { $z.Entries | ForEach-Object { $_.FullName } } finally { $z.Dispose() }`;
+  const res = spawnSync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", psScript],
+    { encoding: "utf8", windowsHide: true }
+  );
+  if (res.status !== 0) {
+    throw new Error(
+      `zip entry enumeration exited ${res.status}: ${(res.stderr || "").trim().slice(0, 300)}`
+    );
+  }
+  const entries = (res.stdout || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const unsafe = entries.filter((e) => isUnsafeEntryName(e, destDir));
+  if (unsafe.length > 0) {
+    throw new Error(
+      `patch zip contains entries escaping the destination dir (possible Zip Slip): ${unsafe.slice(0, 5).join(", ")}${unsafe.length > 5 ? ` (+${unsafe.length - 5} more)` : ""}`
+    );
+  }
+  return entries;
+}
+
+/**
  * Extract a zip over a destination dir using PowerShell Expand-Archive. We use
  * `-Force` to overwrite existing files (this is an in-place patch). Windows-only
  * by design — the patch path is Windows-only per the cross-platform design.
+ *
+ * Before extraction, every entry name is validated to stay inside `destDir`
+ * (see `assertZipEntriesContained` + `isUnsafeEntryName`) so a crafted patch
+ * zip cannot write outside the app root via `..`, absolute, drive, or UNC
+ * paths.
  */
 function extractZip(zipPath: string, destDir: string): void {
+  assertZipEntriesContained(zipPath, destDir);
   const psScript = `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`;
   const res = spawnSync(
     "powershell.exe",

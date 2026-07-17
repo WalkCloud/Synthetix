@@ -7,7 +7,10 @@
  */
 
 /**
- * Fetch with an AbortController-based timeout.
+ * Fetch with an AbortController-based timeout, merged with an optional caller
+ * signal. If either the timeout fires OR the caller aborts, the fetch is
+ * aborted. This lets task cancellation propagate into in-flight HTTP requests
+ * without losing the existing timeout defence.
  *
  * The caller MUST pass the appropriate timeoutMs — production adapters use
  * FETCH_TIMEOUT_MS / EMBED_FETCH_TIMEOUT_MS, while the provider probe uses its
@@ -18,9 +21,21 @@ export function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
+  callerSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Bridge the caller's signal: if the caller aborts (e.g. task cancellation),
+  // abort our controller so the fetch rejects immediately.
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+
   return fetch(url, { ...init, signal: controller.signal }).finally(() =>
     clearTimeout(timeoutId),
   );

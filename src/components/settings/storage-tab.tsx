@@ -60,6 +60,8 @@ export function StorageTab() {
   const [s3Bucket, setS3Bucket] = useState("");
   const [s3AccessKey, setS3AccessKey] = useState("");
   const [s3SecretKey, setS3SecretKey] = useState("");
+  const [s3AccessKeyConfigured, setS3AccessKeyConfigured] = useState(false);
+  const [s3SecretKeyConfigured, setS3SecretKeyConfigured] = useState(false);
   const [savingStorage, setSavingStorage] = useState(false);
   const [storageConfigured, setStorageConfigured] = useState(true);
   const [storageMsg, setStorageMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -77,8 +79,10 @@ export function StorageTab() {
           setS3Endpoint(s.s3Endpoint || "");
           setS3Region(s.s3Region || "us-east-1");
           setS3Bucket(s.s3Bucket || "");
-          setS3AccessKey(s.s3AccessKey || "");
-          setS3SecretKey(s.s3SecretKey || "");
+          setS3AccessKey("");
+          setS3SecretKey("");
+          setS3AccessKeyConfigured(!!s.s3AccessKeyConfigured);
+          setS3SecretKeyConfigured(!!s.s3SecretKeyConfigured);
           setStorageConfigured(s.storageType !== "s3" || !!s.s3Bucket);
           if (s.usage) setUsage(s.usage);
         }
@@ -108,6 +112,12 @@ export function StorageTab() {
         body: JSON.stringify(body),
       });
       const d = await res.json();
+      if (d.success) {
+        if (s3AccessKey) setS3AccessKeyConfigured(true);
+        if (s3SecretKey) setS3SecretKeyConfigured(true);
+        setS3AccessKey("");
+        setS3SecretKey("");
+      }
       setStorageMsg(d.success ? { type: "success", text: t.settings.storage.saved } : { type: "error", text: d.error });
     } catch {
       setStorageMsg({ type: "error", text: t.settings.storage.saveFailed });
@@ -249,11 +259,11 @@ export function StorageTab() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.accessKeyId}</label>
-                <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="AKIAIOSFODNN7EXAMPLE" value={s3AccessKey} onChange={(e) => setS3AccessKey(e.target.value)} />
+                <input className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder={s3AccessKeyConfigured ? "•••• configured" : "AKIAIOSFODNN7EXAMPLE"} value={s3AccessKey} onChange={(e) => setS3AccessKey(e.target.value)} />
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-muted-foreground mb-1.5">{t.settings.storage.secretAccessKey}</label>
-                <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder={t.settings.storage.secretAccessKeyPlaceholder} value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)} />
+                <input type="password" className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder={s3SecretKeyConfigured ? "•••• configured" : t.settings.storage.secretAccessKeyPlaceholder} value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)} />
               </div>
             </div>
             <div>

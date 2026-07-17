@@ -1,30 +1,50 @@
 import { getAuthUser } from "@/lib/auth/session";
 import { readSettings, writeSettings } from "@/lib/settings/store";
-import { authErrorResponse, successResponse } from "@/lib/api-helpers";
+import {
+  InvalidSecretUpdateError,
+  maskSecret,
+  mergeSecretUpdates,
+  parseClearSecrets,
+} from "@/lib/settings/secrets";
+import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
 
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return authErrorResponse();
 
   const settings = readSettings(user.id);
+  const ragPgUrl = maskSecret(settings.ragPgUrl);
+  const ragPgPassword = maskSecret(settings.ragPgPassword);
+  const ragNeo4jPassword = maskSecret(settings.ragNeo4jPassword);
+  const ragMilvusToken = maskSecret(settings.ragMilvusToken);
+  const ragMilvusPassword = maskSecret(settings.ragMilvusPassword);
+  const ragQdrantApiKey = maskSecret(settings.ragQdrantApiKey);
+
   return successResponse({
     ragVectorDb: settings.ragVectorDb ?? "local",
-    ragPgUrl: settings.ragPgUrl ?? "",
+    // Connection URLs can contain embedded credentials, so never return even a partial URL.
+    ragPgUrl: "",
+    ragPgUrlConfigured: ragPgUrl.configured,
     ragPgHost: settings.ragPgHost ?? "",
     ragPgPort: settings.ragPgPort ?? 5432,
     ragPgDatabase: settings.ragPgDatabase ?? "",
     ragPgUser: settings.ragPgUser ?? "",
-    ragPgPassword: settings.ragPgPassword ?? "",
+    ragPgPassword: ragPgPassword.masked,
+    ragPgPasswordConfigured: ragPgPassword.configured,
     ragNeo4jUri: settings.ragNeo4jUri ?? "",
     ragNeo4jUser: settings.ragNeo4jUser ?? "",
-    ragNeo4jPassword: settings.ragNeo4jPassword ?? "",
+    ragNeo4jPassword: ragNeo4jPassword.masked,
+    ragNeo4jPasswordConfigured: ragNeo4jPassword.configured,
     ragMilvusUri: settings.ragMilvusUri ?? "",
-    ragMilvusToken: settings.ragMilvusToken ?? "",
+    ragMilvusToken: ragMilvusToken.masked,
+    ragMilvusTokenConfigured: ragMilvusToken.configured,
     ragMilvusUser: settings.ragMilvusUser ?? "",
-    ragMilvusPassword: settings.ragMilvusPassword ?? "",
+    ragMilvusPassword: ragMilvusPassword.masked,
+    ragMilvusPasswordConfigured: ragMilvusPassword.configured,
     ragMilvusDbName: settings.ragMilvusDbName ?? "",
     ragQdrantUrl: settings.ragQdrantUrl ?? "",
-    ragQdrantApiKey: settings.ragQdrantApiKey ?? "",
+    ragQdrantApiKey: ragQdrantApiKey.masked,
+    ragQdrantApiKeyConfigured: ragQdrantApiKey.configured,
   });
 }
 
@@ -33,7 +53,10 @@ export async function PUT(request: Request) {
   if (!user) return authErrorResponse();
 
   const body = await request.json();
-  writeSettings(user.id, {
+  const current = readSettings(user.id);
+  try {
+    const clearSecrets = parseClearSecrets(body.clearSecrets);
+    const updates = mergeSecretUpdates(current, {
     ragVectorDb: body.ragVectorDb,
     ragPgUrl: body.ragPgUrl,
     ragPgHost: body.ragPgHost,
@@ -50,8 +73,14 @@ export async function PUT(request: Request) {
     ragMilvusPassword: body.ragMilvusPassword,
     ragMilvusDbName: body.ragMilvusDbName,
     ragQdrantUrl: body.ragQdrantUrl,
-    ragQdrantApiKey: body.ragQdrantApiKey,
-  });
-
-  return successResponse({ saved: true });
+      ragQdrantApiKey: body.ragQdrantApiKey,
+    }, clearSecrets);
+    writeSettings(user.id, updates, clearSecrets);
+    return successResponse({ saved: true });
+  } catch (error) {
+    if (error instanceof InvalidSecretUpdateError) {
+      return errorResponse({ code: "validationError", message: error.message }, 422);
+    }
+    throw error;
+  }
 }

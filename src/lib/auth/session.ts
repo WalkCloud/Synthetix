@@ -1,12 +1,10 @@
 import { cookies } from "next/headers";
 import { verifyToken, signAccessToken, signRefreshToken } from "./jwt";
+import { ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "./token-core";
 import type { AuthUser, JWTPayload } from "@/types/auth";
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
-
-const ACCESS_MAX_AGE = 60 * 15; // 15 minutes
-const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 const isProduction = process.env.NODE_ENV === "production";
 export async function setAuthCookies(
@@ -47,19 +45,9 @@ async function getRefreshToken(): Promise<string | null> {
 
 export async function getAuthUser(): Promise<AuthUser | null> {
   const accessToken = await getAccessToken();
-  if (accessToken) {
-    try {
-      const payload = await verifyToken(accessToken);
-      return payloadToAuthUser(payload);
-    } catch {
-      // access token expired, try refresh below
-    }
-  }
-
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) return null;
+  if (!accessToken) return null;
   try {
-    const payload = await verifyToken(refreshToken);
+    const payload = await verifyToken(accessToken, "access");
     return payloadToAuthUser(payload);
   } catch {
     return null;
@@ -74,9 +62,9 @@ export async function refreshSession(): Promise<{
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return null;
   try {
-    const payload = await verifyToken(refreshToken);
+    const payload = await verifyToken(refreshToken, "refresh");
     const user = payloadToAuthUser(payload);
-    const jwtPayload: JWTPayload = {
+    const jwtPayload: Omit<JWTPayload, "kind"> = {
       userId: user.id,
       username: user.username,
       role: user.role,

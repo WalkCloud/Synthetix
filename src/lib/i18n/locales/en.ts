@@ -391,6 +391,9 @@ const en = {
       processingTime: "Processing Time",
       enhancementTime: "Enhancement Time",
       processingInProgress: "Processing",
+      durationHoursMinutes: "{hours}h {minutes}m",
+      durationMinutesSeconds: "{minutes}m {seconds}s",
+      durationSeconds: "{seconds}s",
       overview: "Overview",
       format: "Format",
       size: "Size",
@@ -634,6 +637,9 @@ const en = {
       stopTitle: "Stop after the current in-flight model call returns",
       stopping: "Stopping...",
       stop: "Stop",
+      resume: "Resume",
+      resumeTitle: "Continue generating remaining sections from current progress",
+      resuming: "Resuming...",
     },
   },
   brainstorm: {
@@ -1043,6 +1049,8 @@ const en = {
       status: "Status",
       integrityVerified: "Database integrity verified",
       integrityFailed: "Integrity check failed",
+      unsupportedPostgresTitle: "Unsupported legacy PostgreSQL configuration detected",
+      unsupportedPostgresDescription: "This configuration is preserved for rollback but cannot be edited or used by this build. Use SQLite for the main application database. LightRAG pgvector remains available independently.",
     },
     storage: {
       title: "Storage Settings",

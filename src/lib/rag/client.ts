@@ -25,17 +25,27 @@ export type RagManageOptions =
   | (RagBaseOptions & { action: "merge-entities"; sources: string; target: string })
   | (RagBaseOptions & { action: "delete-by-doc"; docId: string });
 
+export class RagIndexBusyError extends Error {
+  readonly code = "RAG_INDEX_BUSY";
+  readonly retryable = true;
+
+  constructor(readonly result: Record<string, unknown>) {
+    super("RAG index is busy; document cleanup can be retried after indexing settles");
+    this.name = "RagIndexBusyError";
+  }
+}
+
 export async function manageRag(
   options: RagManageOptions
 ): Promise<Record<string, unknown>> {
+  // Secrets (API keys) are passed via environment variables, NOT argv.
+  // argv is visible in process listings (ps/task manager) — env is not.
   const args = [
     "--user-id", options.userId,
     "--action", options.action,
     "--embed-api-base", options.embedConfig.apiBase,
-    "--embed-api-key", options.embedConfig.apiKey,
     "--embed-model", options.embedConfig.model,
     "--llm-api-base", options.llmConfig.apiBase,
-    "--llm-api-key", options.llmConfig.apiKey,
     "--llm-model", options.llmConfig.model,
   ];
 
@@ -44,7 +54,6 @@ export async function manageRag(
   if (options.rerankConfig) {
     args.push(
       "--rerank-api-base", options.rerankConfig.apiBase,
-      "--rerank-api-key", options.rerankConfig.apiKey,
       "--rerank-model", options.rerankConfig.model,
     );
   }
@@ -81,5 +90,15 @@ export async function manageRag(
       break;
   }
 
-  return spawnPythonJson(RAG_MANAGE_SCRIPT, args);
+  const result = await spawnPythonJson<Record<string, unknown>>(RAG_MANAGE_SCRIPT, args, {
+    env: {
+      RAG_EMBED_API_KEY: options.embedConfig.apiKey,
+      RAG_LLM_API_KEY: options.llmConfig.apiKey,
+      ...(options.rerankConfig ? { RAG_RERANK_API_KEY: options.rerankConfig.apiKey } : {}),
+    },
+  });
+  if (options.action === "delete-by-doc" && result.status === "busy") {
+    throw new RagIndexBusyError(result);
+  }
+  return result;
 }

@@ -10,8 +10,16 @@ import path from "path";
 import { execSync } from "child_process";
 import { resolveDataDir, resolveDbPath } from "@/lib/db-path";
 import { getQueue } from "@/lib/queue";
+import { readDbGlobalConfig } from "@/lib/settings/db-config";
+import { assertSupportedMainDatabase } from "@/lib/settings/main-db-capability";
 
 export async function startup(): Promise<void> {
+  const globalConfig = readDbGlobalConfig();
+  assertSupportedMainDatabase({
+    databaseUrl: process.env.DATABASE_URL,
+    globalDbType: globalConfig?.dbType,
+  });
+
   // Ensure the data directory exists (resolveDataDir creates it as a side effect).
   void resolveDataDir();
 

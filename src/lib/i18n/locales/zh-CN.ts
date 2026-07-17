@@ -387,6 +387,9 @@ const zhCN = {
       processingTime: "处理时间",
       enhancementTime: "增强时间",
       processingInProgress: "处理中",
+      durationHoursMinutes: "{hours}时{minutes}分",
+      durationMinutesSeconds: "{minutes}分{seconds}秒",
+      durationSeconds: "{seconds}秒",
       overview: "概览",
       format: "格式",
       size: "大小",
@@ -630,6 +633,9 @@ const zhCN = {
       stopTitle: "当前正在执行的模型调用返回后停止",
       stopping: "停止中...",
       stop: "停止",
+      resume: "继续",
+      resumeTitle: "从当前进度继续生成剩余章节",
+      resuming: "继续中...",
     },
   },
   brainstorm: {
@@ -1039,6 +1045,8 @@ const zhCN = {
       status: "状态",
       integrityVerified: "数据库完整性已验证",
       integrityFailed: "完整性检查失败",
+      unsupportedPostgresTitle: "检测到不受支持的旧版 PostgreSQL 配置",
+      unsupportedPostgresDescription: "该配置会保留以便旧版本回滚，但当前版本不能编辑或使用。主应用数据库请使用 SQLite；LightRAG pgvector 仍可独立使用。",
     },
     storage: {
       title: "存储设置",

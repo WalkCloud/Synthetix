@@ -4,7 +4,7 @@ import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
-import { waitForDocActiveTasksToSettle } from "@/lib/documents/processing-tasks";
+import { cancelTasksByResourceIdentity, findTaskIdsByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
 // chunk triggers an LLM call. We must let the in-flight Python subprocess exit
@@ -30,6 +30,8 @@ export interface DocumentLifecycleDeps {
   findDocument(userId: string, docId: string): Promise<{ id: string; userId: string } | null>;
   findDocuments(userId: string, docIds: string[]): Promise<{ id: string; userId: string }[]>;
   countDocuments(userId: string): Promise<number>;
+  withDocumentMutation<T>(userId: string, docIds: string[], mutate: () => Promise<T>): Promise<T>;
+  awaitDocumentExecutions(userId: string, docIds: string[], options?: { excludeTaskId?: string; timeoutMs?: number }): Promise<void>;
   cancelDocumentTasks(userId: string, docId: string): Promise<void>;
   cancelDocumentTasksBatch(userId: string, docIds: string[]): Promise<void>;
   enqueueDocumentCleanup(userId: string, docId: string): Promise<string | null>;
@@ -47,51 +49,56 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     const doc = await deps.findDocument(userId, docId);
     if (!doc) return { deleted: null, notFound: true };
 
-    const issues: string[] = [];
-    await deps.cancelDocumentTasks(userId, docId);
-    await deps.deleteDocumentRows(userId, docId);
+    return deps.withDocumentMutation(userId, [docId], async () => {
+      const issues: string[] = [];
+      await deps.cancelDocumentTasks(userId, docId);
+      await deps.awaitDocumentExecutions(userId, [docId]);
+      await deps.deleteDocumentRows(userId, docId);
 
-    let cleanupTaskId: string | null = null;
-    try {
-      cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
-    } catch (error) {
-      issues.push("Cleanup queued failed: " + (error instanceof Error ? error.message : String(error)));
-    }
+      let cleanupTaskId: string | null = null;
+      try {
+        cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
+      } catch (error) {
+        issues.push("Cleanup queued failed: " + (error instanceof Error ? error.message : String(error)));
+      }
 
-    return {
-      deleted: docId,
-      cleanup: {
-        database: "deleted",
-        files: "queued",
-        rag: "queued",
-        verification: "deferred",
-      },
-      issues,
-      cleanupTaskId: cleanupTaskId || undefined,
-    };
+      return {
+        deleted: docId,
+        cleanup: {
+          database: "deleted" as const,
+          files: "queued" as const,
+          rag: "queued" as const,
+          verification: "deferred" as const,
+        },
+        issues,
+        cleanupTaskId: cleanupTaskId || undefined,
+      };
+    });
   }
 
-  async function cleanupDeletedDocument(userId: string, docId: string): Promise<Exclude<DocumentDeleteResult, { notFound: true }>> {
-    const issues: string[] = [];
-    let ragStatus: "deleted" | "reset" | "failed" = "deleted";
+  async function cleanupDeletedDocument(
+    userId: string,
+    docId: string,
+    excludeTaskId?: string,
+  ): Promise<Exclude<DocumentDeleteResult, { notFound: true }>> {
+    return deps.withDocumentMutation(userId, [docId], async () => {
+      const issues: string[] = [];
+      let ragStatus: "deleted" | "reset" | "failed" = "deleted";
 
-    // Wait for any in-flight document_convert / rag_embed_index / rag_index task
-    // for this docId to actually exit before we touch the rag working directory.
-    // cancelDocumentTasks (called in deleteDocument) only marks DB rows
-    // cancelled — the running Python subprocess (especially graph extraction,
-    // which can run 10+ min per doc) keeps writing to the rag dir until it
-    // returns. Without this barrier, our resetUserRag below races the Python
-    // worker and the worker's final writes recreate orphan entities/relations.
-    await waitForDocActiveTasksToSettle(userId, docId, CLEANUP_TASK_SETTLE_TIMEOUT_MS);
+      await deps.cancelDocumentTasks(userId, docId);
+      await deps.awaitDocumentExecutions(userId, [docId], {
+        excludeTaskId,
+        timeoutMs: CLEANUP_TASK_SETTLE_TIMEOUT_MS,
+      });
 
-    try {
-      await deps.deleteRagDocument(userId, docId);
-    } catch (error) {
-      ragStatus = "failed";
-      issues.push(error instanceof Error ? error.message : String(error));
-    }
+      try {
+        await deps.deleteRagDocument(userId, docId);
+      } catch (error) {
+        ragStatus = "failed";
+        issues.push(error instanceof Error ? error.message : String(error));
+      }
 
-    await deps.deleteDocumentFiles(userId, docId);
+      await deps.deleteDocumentFiles(userId, docId);
 
     // NOTE: Wiki cleanup is intentionally NOT done here. It is handled in the
     // DELETE route handler, gated on the user's deleteWiki choice:
@@ -127,8 +134,9 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
         rag: ragStatus,
         verification: verification.ok && issues.length === 0 ? "passed" : "dirty",
       },
-      issues,
-    };
+        issues,
+      };
+    });
   }
 
   /**
@@ -146,43 +154,48 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
   async function deleteDocuments(userId: string, docIds: string[]) {
     if (docIds.length === 0) return { deleted: [] as string[], results: [] as DocumentDeleteResult[] };
 
-    const { deleted, notFound } = await deps.deleteDocumentRowsBatch(userId, docIds);
+    const owned = await deps.findDocuments(userId, docIds);
+    const ownedIds = owned.map((doc) => doc.id).sort();
+    const notFound = docIds.filter((docId) => !ownedIds.includes(docId));
 
-    // Cancel in-flight processing tasks for the docs we actually removed.
-    if (deleted.length > 0) {
-      await deps.cancelDocumentTasksBatch(userId, deleted).catch(() => undefined);
-    }
-
-    // Enqueue one cleanup task per deleted doc — the cleanup worker handles
-    // RAG deletion (vector store + graph) and on-disk file removal. We do not
-    // await these; they run in the background queue.
-    const results: DocumentDeleteResult[] = [];
-    for (const docId of deleted) {
-      const issues: string[] = [];
-      let cleanupTaskId: string | null = null;
-      try {
-        cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
-      } catch (error) {
-        issues.push("Cleanup queue failed: " + (error instanceof Error ? error.message : String(error)));
+    return deps.withDocumentMutation(userId, ownedIds, async () => {
+      if (ownedIds.length > 0) {
+        await deps.cancelDocumentTasksBatch(userId, ownedIds);
+        await deps.awaitDocumentExecutions(userId, ownedIds);
       }
-      results.push({
-        deleted: docId,
-        cleanup: {
-          database: "deleted",
-          files: "queued",
-          rag: "queued",
-          verification: "deferred",
-        },
-        issues,
-        cleanupTaskId: cleanupTaskId || undefined,
-      });
-    }
-    for (const docId of notFound) {
-      results.push({ deleted: null, notFound: true } as DocumentDeleteResult);
-      void docId;
-    }
+      const { deleted } = await deps.deleteDocumentRowsBatch(userId, ownedIds);
 
-    return { deleted, results };
+      // Enqueue one cleanup task per deleted doc — the cleanup worker handles
+      // RAG deletion (vector store + graph) and on-disk file removal. We do not
+      // await these; they run in the background queue.
+      const results: DocumentDeleteResult[] = [];
+      for (const docId of deleted) {
+        const issues: string[] = [];
+        let cleanupTaskId: string | null = null;
+        try {
+          cleanupTaskId = await deps.enqueueDocumentCleanup(userId, docId);
+        } catch (error) {
+          issues.push("Cleanup queue failed: " + (error instanceof Error ? error.message : String(error)));
+        }
+        results.push({
+          deleted: docId,
+          cleanup: {
+            database: "deleted",
+            files: "queued",
+            rag: "queued",
+            verification: "deferred",
+          },
+          issues,
+          cleanupTaskId: cleanupTaskId || undefined,
+        });
+      }
+      for (const docId of notFound) {
+        results.push({ deleted: null, notFound: true } as DocumentDeleteResult);
+        void docId;
+      }
+
+      return { deleted, results };
+    });
   }
 
   return { deleteDocument, cleanupDeletedDocument, deleteDocuments };
@@ -191,6 +204,14 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
 const storage = new LocalStorageAdapter();
 
 export const documentLifecycle = createDocumentLifecycleService({
+  async withDocumentMutation(userId, docIds, mutate) {
+    const { executionRegistry } = await import("@/lib/queue");
+    return executionRegistry.withDocumentMutation(userId, docIds, mutate);
+  },
+  async awaitDocumentExecutions(userId, docIds, options) {
+    const { executionRegistry } = await import("@/lib/queue");
+    return executionRegistry.awaitDocumentExecutions(userId, docIds, options);
+  },
   findDocument(userId, docId) {
     return db.document.findFirst({ where: { id: docId, userId }, select: { id: true, userId: true } });
   },
@@ -204,28 +225,30 @@ export const documentLifecycle = createDocumentLifecycleService({
     });
   },
   async cancelDocumentTasks(userId, docId) {
-    await db.asyncTask.updateMany({
-      where: {
-        userId,
-        status: { in: ["pending", "running"] },
-        inputData: { contains: docId },
-      },
-      data: { status: "cancelled", errorMessage: "Document deleted" },
+    await cancelTasksByResourceIdentity({
+      userId,
+      field: "documentId",
+      value: docId,
+      statuses: ["pending", "running"],
+      errorMessage: "Document deleted",
     }).catch(() => undefined);
   },
   async cancelDocumentTasksBatch(userId, docIds) {
     if (docIds.length === 0) return;
-    // One statement cancels all in-flight tasks whose payload mentions any of
-    // the deleted docs. `contains` is OR-implicit across docIds only via a
-    // loop here — SQLite Prisma's `contains` doesn't accept an array. We keep
-    // it simple: cancel any running/pending task whose inputData contains any
-    // of the docIds. This matches the single-doc behaviour.
-    await db.asyncTask.updateMany({
-      where: {
+    const taskIds = new Set<string>();
+    for (const docId of docIds) {
+      for (const taskId of await findTaskIdsByResourceIdentity({
         userId,
-        status: { in: ["pending", "running"] },
-        OR: docIds.map((docId) => ({ inputData: { contains: docId } })),
-      },
+        field: "documentId",
+        value: docId,
+        statuses: ["pending", "running"],
+      })) {
+        taskIds.add(taskId);
+      }
+    }
+    if (taskIds.size === 0) return;
+    await db.asyncTask.updateMany({
+      where: { id: { in: [...taskIds] }, status: { in: ["pending", "running"] } },
       data: { status: "cancelled", errorMessage: "Document deleted" },
     }).catch(() => undefined);
   },

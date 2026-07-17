@@ -50,6 +50,56 @@ describe("cancelActiveDocumentConvertTasks", () => {
     expect(byId.get(otherDoc.id)?.status).toBe("running");
   });
 
+  it("uses relational identity before conflicting legacy payloads", async () => {
+    const relationalMatch = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: "document_convert",
+        status: "running",
+        documentId: TEST_DOC_ID,
+        inputData: JSON.stringify({ docId: "other-doc" }),
+      },
+    });
+    const legacyConflict = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: "document_convert",
+        status: "running",
+        documentId: "other-doc",
+        inputData: JSON.stringify({ docId: TEST_DOC_ID }),
+      },
+    });
+
+    await cancelActiveDocumentConvertTasks(TEST_USER_ID, TEST_DOC_ID);
+
+    expect((await db.asyncTask.findUnique({ where: { id: relationalMatch.id } }))?.status).toBe("cancelled");
+    expect((await db.asyncTask.findUnique({ where: { id: legacyConflict.id } }))?.status).toBe("running");
+  });
+
+  it("does not match similar IDs or unrelated payload fields", async () => {
+    const similar = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: "document_convert",
+        status: "running",
+        inputData: JSON.stringify({ docId: `${TEST_DOC_ID}-longer` }),
+      },
+    });
+    const unrelated = await db.asyncTask.create({
+      data: {
+        userId: TEST_USER_ID,
+        type: "document_convert",
+        status: "running",
+        inputData: JSON.stringify({ note: TEST_DOC_ID, docId: "other-doc" }),
+      },
+    });
+
+    await cancelActiveDocumentConvertTasks(TEST_USER_ID, TEST_DOC_ID);
+
+    expect((await db.asyncTask.findUnique({ where: { id: similar.id } }))?.status).toBe("running");
+    expect((await db.asyncTask.findUnique({ where: { id: unrelated.id } }))?.status).toBe("running");
+  });
+
   it("identifies only the newest conversion task for a document as current", async () => {
     const oldTask = await db.asyncTask.create({
       data: {

@@ -284,6 +284,13 @@ export function EditorPanel({
           modelA={section.modelA}
           modelB={section.modelB}
           selectedModel={section.selectedModel}
+          selectedSource={
+            section.selectedModel === section.modelA && section.selectedModel !== section.modelB ? "a"
+            : section.selectedModel === section.modelB && section.selectedModel !== section.modelA ? "b"
+            : section.selectedModel === section.modelA && section.selectedModel === section.modelB
+              ? (section.content ? "a" : null)  // same model: prefer A since content defaults to A
+            : null
+          }
           onSelectA={() => onSelectModel("a")}
           onSelectB={() => onSelectModel("b")}
           onEdit={handleEdit}

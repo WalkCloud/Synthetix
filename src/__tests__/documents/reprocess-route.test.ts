@@ -9,6 +9,11 @@ vi.mock("@/lib/auth/session", () => ({
 // Mock the queue so reprocess never actually runs a convert pipeline.
 const submitted: { type: string; payload: Record<string, unknown> }[] = [];
 vi.mock("@/lib/queue", () => ({
+  DocumentMutationBusyError: class DocumentMutationBusyError extends Error {},
+  executionRegistry: {
+    withDocumentMutation: async (_userId: string, _docIds: string[], mutate: () => Promise<unknown>) => mutate(),
+    awaitDocumentExecutions: () => Promise.resolve(),
+  },
   getQueue: () => ({
     submit: (type: string, payload: Record<string, unknown>) => {
       submitted.push({ type, payload });
@@ -23,7 +28,6 @@ vi.mock("@/lib/documents/processing-tasks", () => ({
   cancelActiveDocumentConvertTasks: () => Promise.resolve(),
   cancelActiveRagEmbedIndexTasks: () => Promise.resolve(),
   cancelActiveFollowupTasks: () => Promise.resolve(),
-  waitForDocActiveTasksToSettle: () => Promise.resolve(),
 }));
 
 import { db } from "@/lib/db";

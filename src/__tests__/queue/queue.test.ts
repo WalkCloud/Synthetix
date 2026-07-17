@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TaskQueue } from "@/lib/queue/queue";
-import type { WorkerFn, TaskResult } from "@/lib/queue/types";
+import { cancelledOutcome, completedOutcome, failedOutcome, type WorkerFn, type TaskResult } from "@/lib/queue/types";
 import { db } from "@/lib/db";
+import { executionRegistry } from "@/lib/queue/execution-registry";
 
 const TEST_USER_ID = "test-queue-user";
 
@@ -66,6 +67,59 @@ describe("TaskQueue", () => {
     expect(info).not.toBeNull();
     expect(info!.type).toBe(TEST_TYPE_UPLOAD);
     expect(info!.status).toBeDefined();
+
+    const stored = await db.asyncTask.findUniqueOrThrow({ where: { id: taskId } });
+    expect(JSON.parse(stored.inputData || "{}")).toEqual({ filename: "test.pdf" });
+    expect(stored.operationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(stored.parentTaskId).toBeNull();
+    expect(stored.attempt).toBe(0);
+  });
+
+  it("dual-writes document identity without changing the legacy payload", async () => {
+    const taskType = "_test_dual_write";
+    queue.registerWorker(taskType, async () => ({ ok: true }));
+
+    const payload = { docId: "doc-dual-write", options: { indexMode: "graph" } };
+    const taskId = await queue.submit(taskType, payload, TEST_USER_ID);
+    const stored = await db.asyncTask.findUniqueOrThrow({ where: { id: taskId } });
+
+    expect(stored.documentId).toBe("doc-dual-write");
+    expect(stored.draftId).toBeNull();
+    expect(stored.sessionId).toBeNull();
+    expect(JSON.parse(stored.inputData || "{}")).toEqual(payload);
+  });
+
+  it("uses relational document identity before the legacy payload", async () => {
+    const taskType = "_test_relational_identity";
+    let releaseWorker: (() => void) | undefined;
+    queue.registerWorker(taskType, async () => {
+      await new Promise<void>((resolve) => { releaseWorker = resolve; });
+      return { ok: true };
+    });
+
+    const taskId = crypto.randomUUID();
+    await db.asyncTask.create({
+      data: {
+        id: taskId,
+        userId: TEST_USER_ID,
+        type: taskType,
+        inputData: JSON.stringify({ docId: "doc-legacy" }),
+        documentId: "doc-relational",
+        operationId: crypto.randomUUID(),
+        attempt: 0,
+      },
+    });
+
+    void queue.processNext();
+    await vi.waitFor(async () => {
+      expect(await executionRegistry.hasActiveExecution(TEST_USER_ID, "doc-relational")).toBe(true);
+    });
+    expect(await executionRegistry.hasActiveExecution(TEST_USER_ID, "doc-legacy")).toBe(false);
+
+    releaseWorker?.();
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("completed");
+    });
   });
 
   it("should execute a task and mark it completed", async () => {
@@ -97,10 +151,10 @@ describe("TaskQueue", () => {
 
   it("should track progress updates", async () => {
     const workerFn = vi.fn<WorkerFn>(
-      async (_payload, onProgress) => {
-        onProgress(25);
-        onProgress(50);
-        onProgress(75);
+      async (_payload, ctx) => {
+        ctx.reportProgress(25);
+        ctx.reportProgress(50);
+        ctx.reportProgress(75);
         return { done: true };
       },
     );
@@ -208,6 +262,107 @@ describe("TaskQueue", () => {
 
     // Clean up blocking worker
     resolveWorker!({ done: true });
+  });
+
+  it("writes cancel_requested for a running task, then cancelled when the worker resolves", async () => {
+    let resolveWorker: (value: TaskResult) => void = () => {};
+    const workerStarted = new Promise<void>((resolve) => {
+      queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
+        resolve();
+        return new Promise<TaskResult>((workerResolve) => {
+          resolveWorker = workerResolve;
+        });
+      });
+    });
+
+    const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await workerStarted;
+
+    // Running cancel transitions to non-terminal cancel_requested (not cancelled yet)
+    expect(await queue.cancel(taskId)).toBe(true);
+    let info = await queue.getStatus(taskId);
+    expect(info!.status).toBe("cancel_requested");
+
+    // Terminal cancelled is written only when the worker Promise settles
+    resolveWorker({ late: true });
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("cancelled");
+    });
+
+    info = await queue.getStatus(taskId);
+    expect(info?.result).toBeUndefined();
+  });
+
+  it("writes cancel_requested for a running task, then cancelled when the worker rejects", async () => {
+    let rejectWorker: (reason: Error) => void = () => {};
+    const workerStarted = new Promise<void>((resolve) => {
+      queue.registerWorker(TEST_TYPE_UPLOAD, async () => {
+        resolve();
+        return new Promise<TaskResult>((_workerResolve, workerReject) => {
+          rejectWorker = workerReject;
+        });
+      });
+    });
+
+    const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await workerStarted;
+    expect(await queue.cancel(taskId)).toBe(true);
+    expect((await queue.getStatus(taskId))?.status).toBe("cancel_requested");
+
+    rejectWorker(new Error("late failure"));
+    await vi.waitFor(async () => {
+      expect((await queue.getStatus(taskId))?.status).toBe("cancelled");
+    });
+
+    expect((await queue.getStatus(taskId))?.error).not.toBe("late failure");
+  });
+
+  it("ignores late worker progress after a hard timeout", async () => {
+    const timeoutQueue = new TaskQueue({ timeoutMs: 20 });
+    let reportLateProgress: (() => void) | undefined;
+    timeoutQueue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, ctx) => {
+      reportLateProgress = () => { void ctx.reportProgress(88); };
+      return new Promise<TaskResult>(() => {});
+    });
+
+    const taskId = await timeoutQueue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await vi.waitFor(async () => {
+      expect((await timeoutQueue.getStatus(taskId))?.status).toBe("failed");
+    }, { timeout: 1000 });
+
+    const before = await timeoutQueue.getStatus(taskId);
+    reportLateProgress?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const after = await timeoutQueue.getStatus(taskId);
+
+    expect(after?.status).toBe("failed");
+    expect(after?.progress).toBe(before?.progress);
+    expect(after?.error).toMatch(/timed out/i);
+  });
+
+  it("persists explicit worker outcomes without exposing the control envelope", async () => {
+    const outcomes = new TaskQueue({ concurrency: 1, timeoutMs: 2000 });
+    const completedType = "_test_outcome_completed";
+    const failedType = "_test_outcome_failed";
+    const cancelledType = "_test_outcome_cancelled";
+    outcomes.registerWorker(completedType, async () => completedOutcome({ value: "done" }));
+    outcomes.registerWorker(failedType, async () => failedOutcome("handled failure", { value: "partial" }));
+    outcomes.registerWorker(cancelledType, async () => cancelledOutcome("superseded", { value: "retry" }));
+
+    const completedId = await outcomes.submit(completedType, {}, TEST_USER_ID);
+    const failedId = await outcomes.submit(failedType, {}, TEST_USER_ID);
+    const cancelledId = await outcomes.submit(cancelledType, {}, TEST_USER_ID);
+
+    await vi.waitFor(async () => {
+      expect((await outcomes.getStatus(completedId))?.status).toBe("completed");
+      expect((await outcomes.getStatus(failedId))?.status).toBe("failed");
+      expect((await outcomes.getStatus(cancelledId))?.status).toBe("cancelled");
+    }, { timeout: 3000 });
+
+    expect((await outcomes.getStatus(completedId))?.result).toEqual({ value: "done" });
+    expect((await outcomes.getStatus(failedId))?.result).toEqual({ value: "partial" });
+    expect((await outcomes.getStatus(failedId))?.error).toBe("handled failure");
+    expect((await outcomes.getStatus(cancelledId))?.result).toEqual({ value: "retry" });
   });
 
   it("should return null for nonexistent task status", async () => {
@@ -443,7 +598,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
 
   it("marks a running task failed when its lastHeartbeatAt is stale", async () => {
     // Create a running task with a heartbeat from 10 minutes ago (well past the 60ms cutoff).
-    const staleHeartbeat = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const task = await db.asyncTask.create({
       data: {
         userId: TEST_USER_ID,
@@ -451,7 +605,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 40,
         inputData: "{}",
-        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: staleHeartbeat }),
+        heartbeatAt: new Date(Date.now() - 10 * 60 * 1000),
       },
     });
 
@@ -464,7 +618,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
   });
 
   it("does NOT fail a running task with a fresh heartbeat", async () => {
-    const freshHeartbeat = new Date().toISOString(); // now
     const task = await db.asyncTask.create({
       data: {
         userId: TEST_USER_ID,
@@ -472,7 +625,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 55,
         inputData: "{}",
-        resultData: JSON.stringify({ stage: "indexing", lastHeartbeatAt: freshHeartbeat }),
+        heartbeatAt: new Date(),
       },
     });
 
@@ -482,7 +635,7 @@ describe("TaskQueue — heartbeat stall detection", () => {
     expect(after?.status).toBe("running");
   });
 
-  it("falls back to updatedAt when resultData has no lastHeartbeatAt", async () => {
+  it("falls back to updatedAt when heartbeatAt is null", async () => {
     // A task that just started (no heartbeat yet) — updatedAt is recent, so it
     // must NOT be falsely marked stalled.
     const task = await db.asyncTask.create({
@@ -492,7 +645,6 @@ describe("TaskQueue — heartbeat stall detection", () => {
         status: "running",
         progress: 0,
         inputData: "{}",
-        resultData: null,
       },
     });
 

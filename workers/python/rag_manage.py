@@ -736,9 +736,34 @@ async def action_delete_entity(rag, entity_name: str) -> dict:
 
 
 
+def _index_busy_result(working_dir: str, doc_id: str) -> dict | None:
+    lock_path = os.path.join(working_dir, ".indexing.lock")
+    if not os.path.exists(lock_path):
+        return None
+    indexing_doc_id = ""
+    try:
+        with open(lock_path, "r", encoding="utf-8") as lock_file:
+            indexing_doc_id = lock_file.read().strip()
+    except OSError:
+        pass
+    return {
+        "status": "busy",
+        "code": "RAG_INDEX_BUSY",
+        "retryable": True,
+        "doc_id": doc_id,
+        "indexing_doc_id": indexing_doc_id,
+    }
+
+
 async def main_async(args) -> None:
     working_dir = os.path.join("data", "rag", args.user_id)
     os.makedirs(working_dir, exist_ok=True)
+
+    if args.action == "delete-by-doc":
+        busy = _index_busy_result(working_dir, args.doc_id)
+        if busy:
+            print(json.dumps(busy, ensure_ascii=False))
+            return
 
     from lightrag import LightRAG
     from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -886,7 +911,8 @@ async def main_async(args) -> None:
             entity = (all_entities.get("entities") or [None])[0] or ""
         result = await action_entity_detail(rag, entity, args.depth, args.max_nodes)
     elif action == "delete-by-doc":
-        result = await action_delete_by_doc(rag, args.doc_id)
+        busy = _index_busy_result(working_dir, args.doc_id)
+        result = busy if busy else await action_delete_by_doc(rag, args.doc_id)
     elif action == "create-entity":
         result = await action_create_entity(rag, args.entity_name, args.entity_type, args.description)
     elif action == "edit-entity":
@@ -922,15 +948,18 @@ def main() -> None:
     parser.add_argument("--min-degree", type=int, default=2)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--embed-api-base", default="")
-    parser.add_argument("--embed-api-key", default="")
+    parser.add_argument("--embed-api-key", default=os.environ.get("RAG_EMBED_API_KEY", ""),
+                        help="Embedding API key (prefer RAG_EMBED_API_KEY env var)")
     parser.add_argument("--embed-model", default="")
     parser.add_argument("--embed-dim", type=int, default=0,
                         help="Embedding vector dimension (0=auto-detect)")
     parser.add_argument("--llm-api-base", default="")
-    parser.add_argument("--llm-api-key", default="")
+    parser.add_argument("--llm-api-key", default=os.environ.get("RAG_LLM_API_KEY", ""),
+                        help="LLM API key (prefer RAG_LLM_API_KEY env var)")
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--rerank-api-base", default="")
-    parser.add_argument("--rerank-api-key", default="")
+    parser.add_argument("--rerank-api-key", default=os.environ.get("RAG_RERANK_API_KEY", ""),
+                        help="Rerank API key (prefer RAG_RERANK_API_KEY env var)")
     parser.add_argument("--rerank-model", default="")
     args = parser.parse_args()
 

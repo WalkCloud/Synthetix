@@ -8,7 +8,9 @@ import { processDocumentSegment } from "./workers/document-segment-worker";
 import { generateDraftAll } from "./workers/draft-worker";
 import { generateOutline } from "./workers/outline-worker";
 import { db } from "@/lib/db";
-import type { TaskPayload, TaskResult, ProcessingOptions } from "./types";
+import type { TaskPayload, TaskResult, ProcessingOptions, TaskExecutionContext } from "./types";
+import { findTasksByResourceIdentity } from "./task-identity-query";
+export { DocumentMutationBusyError, executionRegistry } from "./execution-registry";
 
 let queue: TaskQueue | null = null;
 
@@ -93,31 +95,26 @@ export async function resolveRecoveryOptions(
   // older than 1h is treated as stale (matching drain()'s window) so a
   // crashed worker doesn't permanently block recovery.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const active = await db.asyncTask.findFirst({
-    where: {
-      userId,
-      type: "document_convert",
-      inputData: { contains: `"docId":"${docId}"` },
-      OR: [
-        { status: "pending" },
-        { status: "running", updatedAt: { gte: oneHourAgo } },
-      ],
-    },
-    select: { id: true },
+  const active = await findTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    statuses: ["pending", "running"],
+    order: "desc",
   });
-  if (active) return null;
+  if (active.some((task) => task.status === "pending" || task.updatedAt >= oneHourAgo)) return null;
 
   // Genuinely stuck (e.g. server crashed mid-conversion and the task row is
   // gone/terminal): reuse the original options if a prior task recorded them.
-  const latest = await db.asyncTask.findFirst({
-    where: {
-      userId,
-      type: "document_convert",
-      inputData: { contains: `"docId":"${docId}"` },
-    },
-    orderBy: { createdAt: "desc" },
-    select: { inputData: true },
-  });
+  const latest = (await findTasksByResourceIdentity({
+    userId,
+    field: "documentId",
+    value: docId,
+    types: ["document_convert"],
+    order: "desc",
+    take: 1,
+  }))[0] ?? null;
   if (latest?.inputData) {
     try {
       const parsed = JSON.parse(latest.inputData) as { options?: ProcessingOptions };
@@ -187,79 +184,83 @@ export function getQueue(): TaskQueue {
 
     queue.registerWorker("document_convert", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      return processDocumentConvert(taskId);
+      return processDocumentConvert(taskId, ctx);
     });
 
     queue.registerWorker("rag_embed_index", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      const result = await processRagEmbedIndex(taskId);
+      const result = await processRagEmbedIndex(taskId, ctx);
       return result;
     });
 
     queue.registerWorker("document_cleanup", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      return cleanupDeletedDocument(taskId);
+      return cleanupDeletedDocument(taskId, ctx);
     });
 
     queue.registerWorker("rag_index", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      return processDocumentGraph(taskId);
+      return processDocumentGraph(taskId, ctx);
     });
 
     queue.registerWorker("wiki_synthesize", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      return processWikiSynthesize(taskId);
+      return processWikiSynthesize(taskId, ctx);
     });
 
     queue.registerWorker("document_segment", async (
       payload: TaskPayload,
+      ctx,
     ): Promise<TaskResult> => {
       const taskId = payload.taskId as string;
       if (!taskId) throw new Error("Missing taskId in payload");
-      return processDocumentSegment(taskId);
+      return processDocumentSegment(taskId, ctx);
     });
 
     queue.registerWorker("draft_generate_all", async (
       payload: TaskPayload,
-      onProgress: (progress: number) => void,
+      ctx,
     ): Promise<TaskResult> => {
-      const taskId = payload.taskId as string;
       const draftId = payload.draftId as string;
-      const userId = payload.userId as string;
-      if (!taskId || !draftId || !userId) {
+      if (!ctx.taskId || !draftId || !ctx.userId) {
         throw new Error("Missing required draft generation payload");
       }
       return generateDraftAll(
         {
           ...payload,
-          taskId,
+          taskId: ctx.taskId,
           draftId,
-          userId,
+          userId: ctx.userId,
         },
-        onProgress,
+        ctx,
       );
     });
 
     queue.registerWorker("outline_generate", async (
       payload: TaskPayload,
-      onProgress: (progress: number) => void,
+      ctx,
     ): Promise<TaskResult> => {
-      return generateOutline(payload, onProgress);
+      return generateOutline(payload, ctx);
     });
 
     if (!draining) {

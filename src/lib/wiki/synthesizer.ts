@@ -26,10 +26,6 @@ import { createLLMProvider } from "@/lib/llm/factory";
 import { recordTokenUsage } from "@/lib/llm/usage";
 import type { ChatParams, ChatResponse } from "@/lib/llm/types";
 import { resolveLLMClient } from "@/lib/llm/client";
-import fs from "fs";
-import { promises as fsp } from "fs";
-import path from "path";
-import os from "os";
 import { estimateTokens } from "@/lib/documents/splitter";
 import type { ProcessingContext } from "@/lib/documents/pipeline";
 import {
@@ -41,6 +37,20 @@ import { mergeChunkKnowledge, getExistingTitles } from "@/lib/wiki/merger";
 import { mergeEntry } from "@/lib/wiki/merger";
 import { regenerateIndexMd } from "@/lib/wiki/index-md";
 import { mapBounded } from "@/lib/concurrency/bounded";
+import {
+  WIKI_ALGORITHM_VERSION,
+  WIKI_CHECKPOINT_VERSION,
+  clearWikiCheckpoint,
+  computeCompletedPrefix,
+  computeWikiInputHash,
+  getWikiCheckpointPath,
+  orderWikiInputUnits,
+  readWikiCheckpoint,
+  writeWikiCheckpoint,
+  type CompletedWikiUnit,
+  type WikiCheckpointV2,
+  type WikiInputUnitType,
+} from "@/lib/wiki/checkpoint";
 import {
   type ChunkKnowledge,
   type WikiSourceRef,
@@ -90,8 +100,9 @@ export type SynthProgressFn = (processed: number, total: number, phase?: SynthPr
 export async function synthesizeDocument(
   ctx: ProcessingContext,
   chunks: SynthChunk[],
+  inputUnitType: WikiInputUnitType,
   onProgress?: SynthProgressFn,
-): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean; chunksFailed?: number; extractionMs?: number; mergeMs?: number; summaryMs?: number; fusionCalls?: number }> {
+): Promise<{ entriesCreated: number; entriesUpdated: number; docSummaryCreated: boolean; chunksProcessed: number; chunksTotal: number; completed: boolean; chunksFailed?: number; failedUnitIds?: string[]; extractionMs?: number; mergeMs?: number; summaryMs?: number; fusionCalls?: number }> {
   if (chunks.length === 0) {
     return { entriesCreated: 0, entriesUpdated: 0, docSummaryCreated: false, chunksProcessed: 0, chunksTotal: 0, completed: true };
   }
@@ -108,30 +119,38 @@ export async function synthesizeDocument(
   const inputMaxTokens = resolveWikiInputMaxTokens(ctx.contextWindow);
   console.log(`[wiki] Phase-A input cap = ${inputMaxTokens} tokens (contextWindow=${ctx.contextWindow})`);
 
-  // ---- Resume from checkpoint: skip already-processed chunks ----
-  // The progress file lives in the doc's wiki dir. On timeout/re-trigger,
-  // the worker reads this to continue from where it left off.
-  const progressFile = getWikiProgressPath(ctx.docId);
-  const checkpoint = readCheckpoint(progressFile);
-  const startIndex = checkpoint?.lastProcessedChunkIndex != null
-    ? checkpoint.lastProcessedChunkIndex + 1
-    : 0;
-
-  // Filter chunks to process (skip already-done ones)
-  const chunksToProcess = chunks.filter((c) => c.index >= startIndex);
-  if (startIndex > 0) {
-    console.log(`[wiki] Resuming from chunk ${startIndex} (${chunksToProcess.length}/${chunks.length} remaining)`);
+  const orderedChunks = orderWikiInputUnits(chunks);
+  const progressFile = getWikiCheckpointPath(ctx.docId);
+  const inputHash = computeWikiInputHash(inputUnitType, orderedChunks);
+  const checkpoint = await readWikiCheckpoint(progressFile, inputHash, orderedChunks);
+  const completedById = new Map<string, CompletedWikiUnit>(
+    checkpoint?.completedUnits.map((unit) => [unit.id, unit]) ?? [],
+  );
+  const failedUnitIds = new Set(checkpoint?.failedUnitIds ?? []);
+  const chunksToProcess = orderedChunks.filter((chunk) => !completedById.has(chunk.id));
+  if (completedById.size > 0) {
+    console.log(`[wiki] Resuming from checkpoint (${chunksToProcess.length}/${orderedChunks.length} units remaining)`);
   }
 
   const existingTitles = await getExistingTitles(ctx.doc.userId);
   let created = 0;
   let updated = 0;
-  const microSummaries: string[] = [];
 
-  // Load previously collected micro-summaries (for Phase B continuity)
-  if (checkpoint?.microSummaries) {
-    microSummaries.push(...checkpoint.microSummaries);
-  }
+  const persistCheckpoint = async (): Promise<void> => {
+    const completedUnits = orderedChunks
+      .map((chunk) => completedById.get(chunk.id))
+      .filter((unit): unit is CompletedWikiUnit => !!unit);
+    const nextCheckpoint: WikiCheckpointV2 = {
+      version: WIKI_CHECKPOINT_VERSION,
+      algorithmVersion: WIKI_ALGORITHM_VERSION,
+      inputHash,
+      completedUnits,
+      failedUnitIds: orderedChunks.filter((chunk) => failedUnitIds.has(chunk.id)).map((chunk) => chunk.id),
+      completedPrefix: computeCompletedPrefix(orderedChunks, completedUnits),
+      updatedAt: new Date().toISOString(),
+    };
+    await writeWikiCheckpoint(progressFile, nextCheckpoint);
+  };
 
   // ---- Phase A: per-chunk incremental extraction + merge ----
   //
@@ -179,7 +198,7 @@ export async function synthesizeDocument(
         extractResults[i] = { chunk, knowledge: null };
       }
       batchExtractDone++;
-      onProgress?.(startIndex + offset + batchExtractDone, chunks.length, "extract");
+      onProgress?.(completedById.size + offset + batchExtractDone, orderedChunks.length, "extract");
     });
     extractionMs = Date.now() - extractionStarted;
 
@@ -189,17 +208,10 @@ export async function synthesizeDocument(
     for (const { chunk, knowledge } of extractResults) {
       if (!knowledge) {
         failedCount++;
-        microSummaries.push(`Chunk ${chunk.index}: (extraction failed)`);
-        // Do NOT advance checkpoint past a failed chunk — re-trigger retries it.
-        writeCheckpoint(progressFile, {
-          lastProcessedChunkIndex: chunk.index - 1,
-          microSummaries,
-          totalChunks: chunks.length,
-        });
+        failedUnitIds.add(chunk.id);
+        await persistCheckpoint();
         continue;
       }
-
-      microSummaries.push(knowledge.microSummary);
 
       const stats = await mergeChunkKnowledge(
         ctx.doc.userId,
@@ -212,40 +224,44 @@ export async function synthesizeDocument(
       updated += stats.updated;
       fusionCalls += stats.fusionCalls;
 
-      writeCheckpoint(progressFile, {
-        lastProcessedChunkIndex: chunk.index,
-        microSummaries,
-        totalChunks: chunks.length,
+      completedById.set(chunk.id, {
+        id: chunk.id,
+        index: chunk.index,
+        microSummary: knowledge.microSummary,
       });
-      onProgress?.(chunk.index + 1, chunks.length, "merge");
+      failedUnitIds.delete(chunk.id);
+      await persistCheckpoint();
+      onProgress?.(completedById.size, orderedChunks.length, "merge");
     }
     mergeMs += Date.now() - mergeStarted;
   }
 
-  // If ALL chunks failed (e.g. network down, DNS unreachable), don't mark
-  // as completed — the user needs to know it failed and re-trigger.
-  if (chunksToProcess.length > 0 && failedCount === chunksToProcess.length) {
-    console.error(`[wiki] All ${failedCount} chunks failed for doc ${ctx.docId} — likely network/API issue`);
+  const allUnitsCompleted = completedById.size === orderedChunks.length && failedUnitIds.size === 0;
+  if (!allUnitsCompleted) {
+    console.error(`[wiki] ${failedUnitIds.size} unit(s) remain incomplete for doc ${ctx.docId}; preserving checkpoint for retry`);
     return {
-      entriesCreated: 0,
-      entriesUpdated: 0,
+      entriesCreated: created,
+      entriesUpdated: updated,
       docSummaryCreated: false,
-      chunksProcessed: chunks.length - failedCount,
-      chunksTotal: chunks.length,
+      chunksProcessed: completedById.size,
+      chunksTotal: orderedChunks.length,
       completed: false,
-      chunksFailed: failedCount,
+      chunksFailed: failedUnitIds.size,
+      failedUnitIds: [...failedUnitIds],
       extractionMs,
       mergeMs,
       fusionCalls,
     };
   }
 
+  const microSummaries = orderedChunks.map((chunk) => completedById.get(chunk.id)!.microSummary);
+
   // All chunks processed — Phase B can now run
   // ---- Phase B: layered document summary ----
   let docSummaryCreated = false;
   const summaryStarted = Date.now();
   try {
-    onProgress?.(chunks.length, chunks.length, "summary");
+    onProgress?.(orderedChunks.length, orderedChunks.length, "summary");
     docSummaryCreated = await generateDocSummary(ctx, microSummaries, client, existingTitles);
     if (docSummaryCreated) created += 1;
   } catch (err) {
@@ -253,8 +269,8 @@ export async function synthesizeDocument(
   }
   const summaryMs = Date.now() - summaryStarted;
 
-  // Clear checkpoint (all done)
-  clearCheckpoint(progressFile);
+  // Clear checkpoint only after every stable input ID completed.
+  await clearWikiCheckpoint(progressFile);
 
   // Refresh the on-disk index.md so the user can browse the new state
   await regenerateIndexMd(ctx.doc.userId).catch(() => {});
@@ -263,8 +279,8 @@ export async function synthesizeDocument(
     entriesCreated: created,
     entriesUpdated: updated,
     docSummaryCreated,
-    chunksProcessed: chunks.length,
-    chunksTotal: chunks.length,
+    chunksProcessed: orderedChunks.length,
+    chunksTotal: orderedChunks.length,
     completed: true,
     chunksFailed: failedCount,
     extractionMs,
@@ -459,48 +475,6 @@ async function linkDocSummaryToTopics(
       })
       .catch(() => {});
   }
-}
-
-// ---- checkpoint (resume-on-timeout) ----
-
-interface WikiCheckpoint {
-  lastProcessedChunkIndex: number;
-  microSummaries: string[];
-  totalChunks: number;
-}
-
-/** Resolve the per-document wiki progress file path. */
-function getWikiProgressPath(docId: string): string {
-  const root = process.env.DB_PATH || path.join(os.homedir(), "synthetix-data");
-  return path.join(root, "wiki-progress", `${docId}.json`);
-}
-
-/** Read the checkpoint (returns null if none — first run). */
-function readCheckpoint(filePath: string): WikiCheckpoint | null {
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as WikiCheckpoint;
-    if (typeof parsed.lastProcessedChunkIndex === "number") return parsed;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** Write the checkpoint after each chunk (atomic-ish: mkdir + write). */
-function writeCheckpoint(filePath: string, data: WikiCheckpoint): void {
-  try {
-    fsp.mkdir(path.dirname(filePath), { recursive: true }).then(() => {
-      fsp.writeFile(filePath, JSON.stringify(data), "utf-8").catch(() => {});
-    }).catch(() => {});
-  } catch {
-    // Non-blocking — checkpoint is best-effort
-  }
-}
-
-/** Clear the checkpoint when all chunks are done. */
-function clearCheckpoint(filePath: string): void {
-  try { fs.unlinkSync(filePath); } catch { /* already gone */ }
 }
 
 // ---- helpers ----

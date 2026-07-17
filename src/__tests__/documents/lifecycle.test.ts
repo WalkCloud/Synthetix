@@ -1,10 +1,23 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDocumentLifecycleService } from "@/lib/documents/lifecycle";
+import { createDocumentLifecycleService, type DocumentLifecycleDeps } from "@/lib/documents/lifecycle";
 
 function createDeps(options?: { remainingDocuments?: number }) {
   const events: string[] = [];
   const document = { id: "doc-1", userId: "user-1" };
   const deps = {
+    withDocumentMutation: (async <T>(
+      _userId: string,
+      _docIds: string[],
+      mutate: () => Promise<T>,
+    ): Promise<T> => {
+      events.push("acquire-gate");
+      try {
+        return await mutate();
+      } finally {
+        events.push("release-gate");
+      }
+    }) as DocumentLifecycleDeps["withDocumentMutation"],
+    awaitDocumentExecutions: vi.fn(async () => { events.push("await-executions"); }),
     findDocument: vi.fn(async () => document),
     findDocuments: vi.fn(async (userId: string, docIds: string[]) =>
       docIds.map((id) => ({ id, userId })),
@@ -46,9 +59,12 @@ describe("DocumentLifecycleService", () => {
       cleanupTaskId: "cleanup-task-1",
     });
     expect(events).toEqual([
+      "acquire-gate",
       "cancel-tasks",
+      "await-executions",
       "delete-db",
       "enqueue-cleanup",
+      "release-gate",
     ]);
     expect(deps.findDocument).toHaveBeenCalledWith("user-1", "doc-1");
     expect(deps.deleteRagDocument).not.toHaveBeenCalled();
@@ -65,10 +81,14 @@ describe("DocumentLifecycleService", () => {
     expect(result.cleanup.rag).toBe("reset");
     expect(result.cleanup.files).toBe("deleted");
     expect(events).toEqual([
+      "acquire-gate",
+      "cancel-tasks",
+      "await-executions",
       "delete-rag-doc",
       "delete-files",
       "reset-rag",
       "verify",
+      "release-gate",
     ]);
   });
 
@@ -108,6 +128,16 @@ describe("DocumentLifecycleService", () => {
     expect(deps.resetUserRag).not.toHaveBeenCalled();
   });
 
+  it("fails closed before deleting rows when an execution does not settle", async () => {
+    const { deps } = createDeps();
+    deps.awaitDocumentExecutions.mockRejectedValueOnce(new Error("document busy"));
+    const service = createDocumentLifecycleService(deps);
+
+    await expect(service.deleteDocument("user-1", "doc-1")).rejects.toThrow("document busy");
+    expect(deps.deleteDocumentRows).not.toHaveBeenCalled();
+    expect(deps.enqueueDocumentCleanup).not.toHaveBeenCalled();
+  });
+
   it("returns not found without deleting resources", async () => {
     const { deps } = createDeps();
     deps.findDocument.mockResolvedValueOnce(null as never);
@@ -139,10 +169,13 @@ describe("DocumentLifecycleService", () => {
     expect(deps.deleteDocumentRows).not.toHaveBeenCalled();
     expect(deps.enqueueDocumentCleanup).toHaveBeenCalledTimes(2);
     expect(events).toEqual([
-      "delete-db-batch",
+      "acquire-gate",
       "cancel-tasks-batch",
+      "await-executions",
+      "delete-db-batch",
       "enqueue-cleanup",
       "enqueue-cleanup",
+      "release-gate",
     ]);
   });
 });

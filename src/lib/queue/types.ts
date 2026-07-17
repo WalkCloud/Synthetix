@@ -12,6 +12,7 @@ export type TaskType =
 export type TaskStatus =
   | "pending"
   | "running"
+  | "cancel_requested"
   | "completed"
   | "failed"
   | "cancelled";
@@ -43,8 +44,50 @@ export interface TaskPayload {
   [key: string]: unknown;
 }
 
+export interface SubmitTaskOptions {
+  operationId?: string;
+  parentTaskId?: string;
+  attempt?: number;
+}
+
+export interface TaskResourceIdentity {
+  documentId: string | null;
+  draftId: string | null;
+  sectionId: string | null;
+  sessionId: string | null;
+}
+
+export interface TaskIdentity extends TaskResourceIdentity {
+  operationId: string;
+  parentTaskId: string | null;
+  attempt: number;
+}
+
 export interface TaskResult {
   [key: string]: unknown;
+}
+
+export type WorkerOutcome =
+  | { workerOutcome: true; status: "completed"; result: TaskResult }
+  | { workerOutcome: true; status: "failed"; error: string; result?: TaskResult; progress?: number }
+  | { workerOutcome: true; status: "cancelled"; error?: string; result?: TaskResult; progress?: number };
+
+export type WorkerResult = TaskResult | WorkerOutcome;
+
+export function completedOutcome(result: TaskResult): WorkerOutcome {
+  return { workerOutcome: true, status: "completed", result };
+}
+
+export function failedOutcome(error: string, result?: TaskResult): WorkerOutcome {
+  return { workerOutcome: true, status: "failed", error, result };
+}
+
+export function cancelledOutcome(error?: string, result?: TaskResult, progress?: number): WorkerOutcome {
+  return { workerOutcome: true, status: "cancelled", error, result, progress };
+}
+
+export function isWorkerOutcome(result: WorkerResult): result is WorkerOutcome {
+  return result.workerOutcome === true;
 }
 
 export interface TaskInfo {
@@ -56,7 +99,19 @@ export interface TaskInfo {
   error?: string;
 }
 
+export interface TaskExecutionContext {
+  taskId: string;
+  taskType: TaskType;
+  userId: string;
+  operationId?: string;
+  attempt: number;
+  signal: AbortSignal;
+  reportProgress: (progress: number) => void | Promise<void>;
+  heartbeat: () => void | Promise<void>;
+  throwIfCancelled: () => void;
+}
+
 export type WorkerFn = (
   payload: TaskPayload,
-  onProgress: (progress: number) => void,
-) => Promise<TaskResult>;
+  ctx: TaskExecutionContext,
+) => Promise<WorkerResult>;

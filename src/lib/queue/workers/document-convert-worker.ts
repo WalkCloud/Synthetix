@@ -4,7 +4,8 @@ import {
   assertLatestDocumentConvertTask,
   SupersededDocumentProcessingTaskError,
 } from "@/lib/documents/processing-tasks";
-import type { ProcessingOptions } from "@/lib/queue/types";
+import { cancelledOutcome, type ProcessingOptions, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
+import { compareTaskIdentitySources } from "@/lib/queue/task-identity-legacy";
 
 export function buildConvertTaskProgressUpdate(
   event: Record<string, unknown>,
@@ -26,26 +27,22 @@ export function buildConvertTaskProgressUpdate(
 
 export async function processDocumentConvert(
   taskId: string,
-): Promise<{ ok: boolean; docId?: string; superseded?: boolean }> {
+  ctx: TaskExecutionContext,
+): Promise<WorkerResult> {
   const task = await db.asyncTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Task ${taskId} not found`);
 
-  let docId: string | undefined;
+  let docId: string | undefined = compareTaskIdentitySources(task).authoritative.documentId ?? undefined;
   let userId = task.userId;
   let options: ProcessingOptions = {};
   try {
     const input = JSON.parse(task.inputData || "{}");
-    docId = input.docId as string | undefined;
+    if (!docId) docId = input.docId as string | undefined;
     options = (input.options as ProcessingOptions) ?? {};
   } catch {
     /* fall through to validation below */
   }
   if (!docId) throw new Error("Missing docId in document_convert task input");
-
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: { status: "running", progress: 5 },
-  });
 
   // Bail out cheaply if a newer document_convert task has already been
   // submitted for the same docId. The newer one will rebuild from scratch
@@ -55,15 +52,19 @@ export async function processDocumentConvert(
 
   try {
     await runPhaseOne(docId, options, async (event) => {
-      await db.asyncTask.update({
-        where: { id: taskId },
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: buildConvertTaskProgressUpdate(event),
       });
-    });
+      await ctx.heartbeat();
+    }, taskId);
     return { ok: true, docId };
   } catch (error) {
     if (error instanceof SupersededDocumentProcessingTaskError) {
-      return { ok: false, superseded: true };
+      return cancelledOutcome(
+        "Superseded by newer document processing task",
+        { ok: false, superseded: true },
+      );
     }
     if (docId) {
       await db.document.update({

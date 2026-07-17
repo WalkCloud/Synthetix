@@ -145,6 +145,27 @@ export function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Signal-aware delay: resolves after `ms` unless `signal` aborts first, in
+ * which case rejects immediately with an AbortError. Used by retry loops so a
+ * cancelled task doesn't wait out the full backoff window.
+ */
+export function delayWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return delay(ms);
+  if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
  * Detect a "balance exhausted / quota spent" response — i.e. the account is
  * OUT of money/quota (not temporarily rate-limited). Providers signal this via
  * HTTP 402 Payment Required, or 429/403 with a body containing markers like

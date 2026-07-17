@@ -280,15 +280,20 @@ function scheduleUpdateChecks(): void {
  */
 updater.onStatus((status) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("synthetix:update:progress", status);
+    mainWindow.webContents.send("synthetix:update:progress", updater.publicStatus(status));
   }
 });
 
 // IPC: renderer reads the current status (e.g. when the About dialog opens).
-ipcMain.handle("synthetix:update:get-status", () => updater.getStatus());
+// Strip the internal `verifiedAsset` before crossing the IPC boundary.
+ipcMain.handle("synthetix:update:get-status", () => updater.publicStatus(updater.getStatus()));
 
 // IPC: renderer triggers a manual check (About dialog "check now" / open).
-ipcMain.handle("synthetix:update:check-now", async () => updater.checkForUpdates());
+// `checkForUpdates` stores an internal verifiedAsset for the downloader; strip
+// it from the response exactly as the status push/get channels do.
+ipcMain.handle("synthetix:update:check-now", async () =>
+  updater.publicStatus(await updater.checkForUpdates())
+);
 
 // IPC: renderer triggers download + apply (the "立即更新" button).
 ipcMain.handle("synthetix:update:download-and-install", async () =>

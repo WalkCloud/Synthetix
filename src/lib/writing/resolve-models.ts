@@ -21,7 +21,10 @@ export async function resolveModelOrFallback(
       where: { id: modelConfigId },
       include: { provider: true },
     });
-    if (record?.provider) return record as ModelWithProvider;
+    if (!record?.provider || (userId && record.provider.userId !== userId)) {
+      throw new Error(`Model config ${modelConfigId} not found`);
+    }
+    return record as ModelWithProvider;
   }
   const record = await resolveModel(module, userId);
   if (!record?.provider) {

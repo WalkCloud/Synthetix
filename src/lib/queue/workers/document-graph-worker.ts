@@ -11,6 +11,7 @@ import {
   GRAPH_MAX_RETRIES,
   type GraphErrorType,
 } from "./graph-error";
+import { cancelledOutcome, completedOutcome, type WorkerResult, type TaskExecutionContext } from "@/lib/queue/types";
 
 /** Attempt count is carried in task inputData so a re-enqueued retry knows its index. */
 const ATTEMPT_KEY = "_graphAttempt";
@@ -32,41 +33,32 @@ export function buildGraphTaskProgressUpdate(
   };
 }
 
-export async function processDocumentGraph(taskId: string): Promise<{ ok: boolean; rag?: unknown; indexMode?: string }> {
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: { status: "running", progress: 5 },
-  });
-
-  const ctx = await loadProcessingTask(taskId);
-  await resolveProcessingModels(ctx);
+export async function processDocumentGraph(taskId: string, ctx: TaskExecutionContext): Promise<WorkerResult> {
+  const procCtx = await loadProcessingTask(taskId, ctx.signal);
+  await resolveProcessingModels(procCtx);
 
   // The attempt counter is stashed in inputData by retries (1st run has none → 0).
-  const attempt = typeof (ctx.options as Record<string, unknown> | undefined)?.[ATTEMPT_KEY] === "number"
-    ? Number((ctx.options as Record<string, unknown>)[ATTEMPT_KEY])
+  const attempt = typeof (procCtx.options as Record<string, unknown> | undefined)?.[ATTEMPT_KEY] === "number"
+    ? Number((procCtx.options as Record<string, unknown>)[ATTEMPT_KEY])
     : 0;
 
   // Check if document still exists before starting graph extraction
-  const currentDoc = await db.document.findUnique({ where: { id: ctx.docId } });
+  const currentDoc = await db.document.findUnique({ where: { id: procCtx.docId } });
   if (!currentDoc || currentDoc.status === "failed") {
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: { status: "cancelled", errorMessage: "Document no longer exists", progress: 0 },
-    });
-    return { ok: false };
+    return cancelledOutcome("Document no longer exists", { ok: false }, 0);
   }
 
-  ctx.options.indexMode = "graph";
+  procCtx.options.indexMode = "graph";
 
   try {
-    await db.asyncTask.update({
-      where: { id: taskId },
+    await db.asyncTask.updateMany({
+      where: { id: taskId, status: "running" },
       data: { progress: 20 },
     });
 
-    const indexResult = await indexDocument(ctx, async (event) => {
-      await db.asyncTask.update({
-        where: { id: taskId },
+    const indexResult = await indexDocument(procCtx, async (event) => {
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: "running" },
         data: buildGraphTaskProgressUpdate(event),
       });
     });
@@ -77,20 +69,8 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
     const ragResult = indexResult?.rag as { status?: string; timeoutOccurred?: boolean; error?: string } | undefined;
     const graphTimedOut = ragResult?.status === "failed" && !!ragResult?.timeoutOccurred;
     if (graphTimedOut) {
-      console.warn(`[graph] doc ${ctx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
+      console.warn(`[graph] doc ${procCtx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
     }
-
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "completed",
-        progress: 100,
-        resultData: JSON.stringify({
-          ...(indexResult || { indexMode: "graph" }),
-          timeoutOccurred: graphTimedOut || undefined,
-        }),
-      },
-    });
 
     // Graph extraction is the FINAL pipeline stage. The embed worker left the
     // document in "indexing_graph" awaiting us, so only here — once the
@@ -98,7 +78,7 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
     // (LightRAG soft-failures are non-blocking: basic indexing already
     // succeeded, so the doc is usable and "ready" is correct.)
     await db.document.update({
-      where: { id: ctx.docId },
+      where: { id: procCtx.docId },
       data: { status: "ready" },
     }).catch(() => {});
 
@@ -106,9 +86,14 @@ export async function processDocumentGraph(taskId: string): Promise<{ ok: boolea
     // after basic index completes (parallel with graph), NOT here. Wiki and
     // graph are independent — both only need chunks, neither needs the other.
 
-    return { ok: true, rag: indexResult?.rag, indexMode: indexResult?.indexMode };
+    return {
+      ok: true,
+      rag: indexResult?.rag,
+      indexMode: indexResult?.indexMode,
+      timeoutOccurred: graphTimedOut || undefined,
+    };
   } catch (error) {
-    return handleGraphFailure(taskId, ctx.docId, ctx.doc.userId, error, attempt);
+    return handleGraphFailure(taskId, procCtx.docId, procCtx.doc.userId, error, attempt);
   }
 }
 
@@ -129,34 +114,20 @@ async function handleGraphFailure(
   userId: string,
   error: unknown,
   attempt: number,
-): Promise<{ ok: false; rag?: unknown; indexMode?: string }> {
+): Promise<WorkerResult> {
   const classified = classifyGraphError(error);
 
   // Retry path: re-enqueue a fresh rag_index carrying the incremented attempt.
   // The current task is marked cancelled so it doesn't linger as "failed".
   if (classified.retryable && attempt < GRAPH_MAX_RETRIES) {
     const delay = graphRetryDelay(attempt);
-    await db.asyncTask.update({
-      where: { id: taskId },
-      data: {
-        status: "cancelled",
-        errorMessage: `Graph attempt ${attempt + 1} failed (${classified.type}), retrying in ${Math.round(delay / 1000)}s`,
-        resultData: JSON.stringify({
-          indexMode: "graph",
-          graphStatus: "retrying",
-          errorType: classified.type,
-          attempt: attempt + 1,
-          retryInMs: delay,
-        }),
-      },
-    }).catch(() => undefined);
-
     setTimeout(() => {
       void import("@/lib/queue").then(({ getQueue }) =>
         getQueue().submit(
           "rag_index",
           { docId, options: { indexMode: "graph", [ATTEMPT_KEY]: attempt + 1 } },
           userId,
+          { parentTaskId: taskId },
         ),
       ).catch((err) => console.warn(`[graph] failed to re-enqueue retry for doc ${docId}:`, err));
     }, delay);
@@ -165,7 +136,16 @@ async function handleGraphFailure(
       `[graph] doc ${docId} attempt ${attempt + 1} failed (${classified.type}); retry ${attempt + 2}/${GRAPH_MAX_RETRIES + 1} in ${Math.round(delay / 1000)}s`,
       error instanceof Error ? error.message : error,
     );
-    return { ok: false };
+    return cancelledOutcome(
+      `Graph attempt ${attempt + 1} failed (${classified.type}), retrying in ${Math.round(delay / 1000)}s`,
+      {
+        indexMode: "graph",
+        graphStatus: "retrying",
+        errorType: classified.type,
+        attempt: attempt + 1,
+        retryInMs: delay,
+      },
+    );
   }
 
   // Final failure — soft-land. The document stays usable via DB embedding + FTS.
@@ -182,29 +162,18 @@ async function handleGraphFailure(
     },
   }).catch(() => {});
 
-  await db.asyncTask.update({
-    where: { id: taskId },
-    data: {
-      status: "completed",
-      progress: 100,
-      resultData: JSON.stringify({
-        indexMode: "graph",
-        graphStatus: "failed",
-        errorType: classified.type as GraphErrorType,
-        retryable: classified.retryable,
-        attempts: attempt + 1,
-      } satisfies GraphFailureResult),
-    },
-  }).catch(() => undefined);
-
   console.warn(
     `[graph] doc ${docId} graph extraction failed permanently (${classified.type}); soft-landing as ready with warning`,
     error instanceof Error ? error.message : error,
   );
 
-  // NOTE: deliberately do NOT re-throw. The queue would mark the task
-  // "failed" and overwrite our "completed" soft-land. The document is usable.
-  return { ok: false };
+  return completedOutcome({
+    indexMode: "graph",
+    graphStatus: "failed",
+    errorType: classified.type as GraphErrorType,
+    retryable: classified.retryable,
+    attempts: attempt + 1,
+  } satisfies GraphFailureResult);
 }
 
 /** resultData shape persisted on final graph failure (consumed by the status API + UI). */
