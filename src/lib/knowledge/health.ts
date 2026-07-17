@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { resolveRagRoot } from "@/lib/rag/paths";
+import { withUserRagLock } from "@/lib/rag/mutation-lock";
 
 const DOCUMENT_ROOT = process.env.DOCUMENT_ROOT || "./data/documents";
 const RAG_ROOT = resolveRagRoot();
@@ -87,8 +88,15 @@ export async function scanKnowledgeHealth(input: KnowledgeHealthInput): Promise<
 export async function resetUserKnowledgeBase(input: { userId: string; documentRoot?: string; ragRoot?: string }): Promise<void> {
   const documentRoot = input.documentRoot || DOCUMENT_ROOT;
   const ragRoot = input.ragRoot || RAG_ROOT;
+  // The RAG workspace rm -rf MUST be gated behind the per-user mutation lock
+  // so it cannot race an in-flight Python writer (graph index / embed /
+  // delete-by-doc) holding the same lock. The document-root deletion is
+  // per-document and does not touch shared RAG storage, so it stays outside
+  // the lock to avoid needlessly serializing unrelated file ops.
   fs.rmSync(path.join(documentRoot, input.userId), { recursive: true, force: true });
-  const userRagDir = path.join(ragRoot, input.userId);
-  fs.rmSync(userRagDir, { recursive: true, force: true });
-  fs.mkdirSync(userRagDir, { recursive: true });
+  await withUserRagLock(input.userId, "node-reset-knowledge-base", async () => {
+    const userRagDir = path.join(ragRoot, input.userId);
+    fs.rmSync(userRagDir, { recursive: true, force: true });
+    fs.mkdirSync(userRagDir, { recursive: true });
+  });
 }

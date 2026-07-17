@@ -2,6 +2,7 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
 import { resolveUserRagDir } from "@/lib/rag/paths";
+import { withUserRagLock } from "@/lib/rag/mutation-lock";
 
 export interface StorageAdapter {
   saveOriginal(docId: string, file: File, userId: string): Promise<string>;
@@ -82,9 +83,17 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async deleteUserRagData(userId: string): Promise<void> {
-    const dir = resolveUserRagDir(userId);
-    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
-    await fsp.mkdir(dir, { recursive: true });
+    // This rm -rf's the ENTIRE per-user RAG workspace (all documents' shared
+    // JSON/vector/GraphML). It MUST be gated behind the per-user mutation lock
+    // so it cannot race an in-flight Python writer (graph index / embed /
+    // delete-by-doc) that holds the same lock. Without this gate, a Node reset
+    // during indexing destroys every document's RAG data — the exact
+    // cross-document data-loss bug this module's callers must avoid.
+    await withUserRagLock(userId, "node-reset-rag", async () => {
+      const dir = resolveUserRagDir(userId);
+      await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      await fsp.mkdir(dir, { recursive: true });
+    });
   }
 
   async deleteDocumentData(docId: string, userId: string): Promise<void> {
