@@ -55,6 +55,11 @@ export interface DaemonCallOptions {
   onProgressEvent?: (event: Record<string, unknown>) => void;
   onUsageEvent?: (event: Record<string, unknown>) => void;
   timeoutMs?: number;
+  /** AbortSignal for cooperative cancellation. When aborted, the daemon
+   * process is terminated (NOT a graceful cancel — the daemon may be deep
+   * inside a long LLM call with no checkpoint). The promise rejects only
+   * after the daemon's close event fires, ensuring no zombie writes. */
+  signal?: AbortSignal;
 }
 
 interface InFlight {
@@ -118,10 +123,28 @@ export class PythonDaemonClient {
     const busyFailFast = op === "query";
     return this.gate(async () => {
       this.lastActivity = Date.now();
+      // Abort handling: when the caller's signal fires during a long index op,
+      // kill the daemon process tree and wait for close. This is the only way
+      // to guarantee the Python writer stops modifying files — the daemon may
+      // be deep inside a multi-minute LLM call with no cooperative checkpoint.
+      const signal = opts.signal;
+      const onAbort = () => {
+        if (this.inFlight) {
+          // Kill the daemon tree; the dispatch promise will reject on close.
+          this.killDaemonTree();
+        }
+      };
+      if (signal) {
+        if (signal.aborted) {
+          throw new Error(`${op} was cancelled before dispatch`);
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
       try {
         await this.ensureReady();
         return await this.dispatch<T>(op, params, opts);
       } finally {
+        if (signal) signal.removeEventListener("abort", onAbort);
         // RSS-guard restart happens at a request boundary, never mid-request.
         if (this.pendingRestart) {
           this.pendingRestart = false;
@@ -129,6 +152,23 @@ export class PythonDaemonClient {
         }
       }
     });
+  }
+
+  /** Kill the daemon process tree (used for cancellation and restart). */
+  private killDaemonTree(): void {
+    if (!this.child || !this.child.pid) return;
+    const isWindows = process.platform === "win32";
+    try {
+      if (isWindows) {
+        spawn("taskkill", ["/PID", String(this.child.pid), "/T", "/F"], {
+          stdio: "ignore", windowsHide: true,
+        });
+      } else {
+        try { process.kill(-this.child.pid, "SIGTERM"); } catch {}
+      }
+    } catch {
+      // Best-effort; the child exit will be detected by isAlive()/close handlers.
+    }
   }
 
   private async ensureReady(): Promise<void> {

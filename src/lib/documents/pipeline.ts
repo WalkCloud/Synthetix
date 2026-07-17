@@ -604,6 +604,7 @@ export async function indexDocument(
       });
     },
     taskId,
+    ctx.signal,
   ).catch((err) => {
     console.warn("LightRAG indexing failed (non-blocking):", err);
     const timeoutOccurred = !!(err as Error & { timeoutOccurred?: boolean })?.timeoutOccurred;
@@ -626,6 +627,7 @@ async function indexWithLightRAG(
   onProgressEvent?: (event: Record<string, unknown>) => void,
   onUsageEvent?: (event: Record<string, unknown>) => void,
   taskId?: string,
+  signal?: AbortSignal,
 ): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string>; error?: string; timeoutOccurred?: boolean }> {
   // Build the kwargs dict for rag_index.index_document(**params). The daemon
   // takes this verbatim; the spawn fallback rebuilds argv from the same dict so
@@ -723,17 +725,26 @@ async function indexWithLightRAG(
       timeout: timeoutMs,
       onProgressEvent,
       onUsageEvent,
+      signal,
     }) as Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>,
   );
 
   if (isDaemonEnabled()) {
+    // Do NOT fall back to spawn if the caller cancelled — the daemon process
+    // tree was killed on abort, and spawning a fresh writer would race the
+    // cancellation. Let the abort error propagate.
+    if (signal?.aborted) {
+      throw new Error("index was cancelled before dispatch");
+    }
     try {
       return await tagTimeout(pythonDaemon.call<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string> }>(
         "index",
         params,
-        { onProgressEvent, onUsageEvent, timeoutMs },
+        { onProgressEvent, onUsageEvent, timeoutMs, signal },
       ));
     } catch (err) {
+      // If the caller cancelled, do NOT fall back to spawn.
+      if (signal?.aborted) throw err;
       console.warn("[daemon] index op failed, falling back to spawn:", err instanceof Error ? err.message : err);
     }
   }

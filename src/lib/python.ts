@@ -8,6 +8,10 @@ export interface PythonSpawnOptions {
   onUsageEvent?: (event: Record<string, unknown>) => void;
   /** Additional environment variables merged into the child's env (for secrets). */
   env?: Record<string, string>;
+  /** AbortSignal for cooperative cancellation. When aborted, the child process
+   * tree is terminated (taskkill /T /F on Windows, process-group kill on POSIX)
+   * and the promise rejects only after the child's close event fires. */
+  signal?: AbortSignal;
 }
 
 export const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === "win32" ? "python" : "python3");
@@ -76,24 +80,48 @@ export function spawnPython(
   args: string[],
   options: PythonSpawnOptions = {}
 ): Promise<string> {
-  const { timeout = 120_000, parseJson = true, onProgressEvent, onUsageEvent } = options;
+  const { timeout = 120_000, parseJson = true, onProgressEvent, onUsageEvent, signal } = options;
 
   const spawnEnv = buildPythonSpawnEnv();
   // Merge caller-provided env (for secrets that must not appear in argv).
   if (options.env) Object.assign(spawnEnv, options.env);
 
   return new Promise((resolve, reject) => {
+    // Use detached process group on POSIX so we can kill the entire tree.
+    // On Windows we use taskkill /T /F which doesn't need detached.
+    const isWindows = process.platform === "win32";
     const proc = spawn(PYTHON_PATH, [script, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
-      timeout,
       env: spawnEnv,
+      detached: !isWindows, // POSIX: create a new process group for tree kill
     });
 
     if (proc.pid) applyChildPriority(proc.pid);
 
     let stdout = "";
     let stderr = "";
-    let timedOut = false;
+    let settled = false;
+    let terminationReason: "timeout" | "abort" | null = null;
+
+    /** Terminate the entire process tree and wait for close. Called once. */
+    const terminateTree = (reason: "timeout" | "abort") => {
+      if (terminationReason !== null) return; // already terminating
+      terminationReason = reason;
+      if (!proc.pid) return;
+      try {
+        if (isWindows) {
+          // taskkill /T kills the entire process tree; /F forces.
+          spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
+            stdio: "ignore", windowsHide: true,
+          });
+        } else {
+          // Kill the entire process group (negative PID).
+          try { process.kill(-proc.pid, "SIGTERM"); } catch {}
+        }
+      } catch {
+        // Best-effort; the close handler will still fire.
+      }
+    };
 
     proc.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
     let stderrTail = "";
@@ -115,11 +143,39 @@ export function spawnPython(
       }
     });
 
-    // Node's spawn(timeout) sends SIGTERM; record it so the close handler can
-    // distinguish a genuine non-zero exit (real error) from a timeout kill.
+    // Timeout: self-managed (not relying on spawn's built-in timeout which
+    // only sends SIGTERM without tree kill on Windows).
+    const timeoutHandle = setTimeout(() => {
+      terminateTree("timeout");
+    }, timeout);
+
+    // Abort signal: terminate the tree when the caller cancels.
+    const onAbort = () => {
+      terminateTree("abort");
+    };
+    if (signal) {
+      if (signal.aborted) {
+        terminateTree("abort");
+      } else {
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
+
+    const cleanup = () => {
+      clearTimeout(timeoutHandle);
+      if (signal) signal.removeEventListener("abort", onAbort);
+    };
+
     proc.on("close", (code: number | null) => {
-      if (timedOut) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (terminationReason === "timeout") {
         reject(new Error(`${script} timed out after ${timeout}ms`));
+        return;
+      }
+      if (terminationReason === "abort") {
+        reject(new Error(`${script} was cancelled`));
         return;
       }
       if (code !== 0) {
@@ -141,8 +197,12 @@ export function spawnPython(
       }
     });
 
-    proc.on("timeout", () => { timedOut = true; });
-    proc.on("error", (err: Error) => reject(err));
+    proc.on("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    });
   });
 }
 
