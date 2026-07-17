@@ -20,6 +20,7 @@ interface GenerateAllTask {
 
 interface GenerateAllTaskFull extends GenerateAllTask {
   draftId?: string | null;
+  createdAt?: string;
 }
 
 export function useGenerateAll(
@@ -34,15 +35,22 @@ export function useGenerateAll(
 
   useEffect(() => {
     let stopped = false;
-    async function findRunning() {
+    async function findRecentTask() {
       try {
-        const res = await fetch("/api/v1/tasks?type=draft_generate_all&status=pending,running&limit=50");
+        // Fetch both running AND cancelled tasks so the status bar
+        // survives page refresh — the user needs to see the last known
+        // state (running, stopped, failed, completed) and be able to resume.
+        const res = await fetch("/api/v1/tasks?type=draft_generate_all&limit=50");
         const data = await res.json();
         if (!data.success || stopped) return;
-        const found = (data.data || []).find(
-          (item: GenerateAllTaskFull) =>
-            item.type === "draft_generate_all" && item.draftId === id,
-        );
+        const found = (data.data || [])
+          .filter(
+            (item: GenerateAllTaskFull) =>
+              item.type === "draft_generate_all" && item.draftId === id,
+          )
+          .sort((a: GenerateAllTaskFull, b: GenerateAllTaskFull) =>
+            (b.createdAt || "").localeCompare(a.createdAt || ""),
+          )[0];
         if (found) {
           setTaskId(found.id);
           setTask(found);
@@ -52,7 +60,7 @@ export function useGenerateAll(
         }
       } catch {}
     }
-    findRunning();
+    findRecentTask();
     return () => { stopped = true; };
   }, [id, setActiveSectionId]);
 
