@@ -23,7 +23,7 @@ import os
 import argparse
 import asyncio
 
-from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
 
 
 def _get_llm_max_async() -> int:
@@ -151,6 +151,7 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
                 target_ids.add(key)
 
         soft_delete_failed = False
+        soft_delete_errors = []
         for target_id in sorted(target_ids):
             try:
                 await rag.adelete_by_doc_id(target_id)
@@ -159,45 +160,38 @@ async def action_delete_by_doc(rag, doc_id: str) -> dict:
                 # adelete_by_doc_id triggers per-chunk LLM entity rebuilds, which
                 # are unstable on large graphs (3000+ nodes): a single rebuild
                 # failure aborts the whole call and leaves the graph half-deleted.
-                # Record the failure; we'll fall through to the hard-delete path
-                # below rather than returning a half-finished result that leaves
-                # orphan chunks/entities in the knowledge graph.
                 soft_delete_failed = True
+                soft_delete_errors.append(str(delete_err))
                 print(f"Warning deleting LightRAG doc {target_id}: {delete_err}", file=sys.stderr)
 
-        # Check if any documents are left. If not, wipe the graph entirely to remove orphaned entities.
-        # lightrag-hku 1.5.4 replaced get_all() with is_empty() / get_status_counts();
-        # fall back to get_all() on older versions that still expose it.
-        is_empty_fn = getattr(rag.doc_status, "is_empty", None)
-        if is_empty_fn:
-            remaining_empty = await is_empty_fn()
-        else:
-            getter = getattr(rag.doc_status, "get_all", None)
-            remaining_empty = not bool(await getter() if getter else False)
-        if remaining_empty:
-            import shutil
-            shutil.rmtree(rag.working_dir, ignore_errors=True)
-            os.makedirs(rag.working_dir, exist_ok=True)
-            return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids, "wiped_all": True}
+        # NOTE: The previous code wiped the ENTIRE working directory when
+        # doc_status reported empty (shutil.rmtree + os.makedirs). That was
+        # dangerous: a stale/inconsistent is_empty() result, or concurrent
+        # writes by another document's indexer, could destroy data that should
+        # survive. The user-level reset action is the only path allowed to
+        # remove the whole workspace, and it must do so explicitly under the
+        # user mutation lock. Here we just report success — if the workspace
+        # is genuinely empty, an empty directory is a valid result.
 
-        # HARD DELETE FALLBACK: when LightRAG's soft delete (adelete_by_doc_id,
-        # which rebuilds entities via LLM) failed mid-way on a large graph, the
-        # doc's chunks/entities/relations remain as orphans. Rather than leaving
-        # stale data in the knowledge graph (user sees deleted-doc entities in
-        # the graph view), directly purge every trace of doc_id from the JSON
-        # KV stores + vector DBs. This bypasses LightRAG's rebuild entirely —
-        # entities/relations owned SOLELY by this doc are removed; shared ones
-        # keep their other sources. No LLM calls, no rebuild, fully deterministic.
         if soft_delete_failed:
-            hard_result = _hard_delete_doc_from_storage(rag.working_dir, doc_id)
+            # Fail closed: do NOT automatically fall through to the direct
+            # JSON/VDB/GraphML hard-delete helper. That bypasses LightRAG's
+            # source-aware entity/relation rebuild semantics and can leave
+            # shared graph records inconsistent. The caller (lifecycle cleanup)
+            # treats this as a retryable failure and will attempt again on the
+            # next cleanup cycle. Batch 5 will replace this entire function
+            # with the source-aware aggregate purge adapter.
             return {
-                "status": "deleted",
+                "status": "failed",
+                "code": "SOFT_DELETE_INCOMPLETE",
                 "doc_id": doc_id,
                 "deleted_ids": deleted_ids,
-                "hard_delete_used": True,
-                "hard_deleted_chunks": hard_result["chunks_removed"],
-                "hard_deleted_entities": hard_result["entities_removed"],
-                "hard_deleted_relations": hard_result["relations_removed"],
+                "errors": soft_delete_errors,
+                "message": (
+                    "LightRAG soft delete did not complete for all targets. "
+                    "The cleanup task will retry. If it persists, use the "
+                    "knowledge-base reset action to rebuild."
+                ),
             }
 
         return {"status": "deleted", "doc_id": doc_id, "deleted_ids": deleted_ids}
@@ -831,23 +825,17 @@ async def main_async(args) -> None:
     # Resolve effective embedding dimension
     eff_dim = resolve_embed_dim(args.embed_model, args.embed_dim)
 
-    # Pre-check for corruption before initializing
-    fix_corrupted_json_files(working_dir)
-    import glob as _glob
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-        try:
-            with open(_fp, "r", encoding="utf-8") as _f:
-                json.load(_f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
-            
-    # Also check graphml for corruption
-    for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
-        try:
-            import xml.etree.ElementTree as ET
-            ET.parse(_fp)
-        except (ET.ParseError, UnicodeDecodeError, OSError):
-            os.remove(_fp)
+    # NOTE: The previous fix_corrupted_json_files + JSON/GraphML validation +
+    # os.remove() loop was REMOVED. It raced concurrent rag_embed_index workers
+    # writing to the same shared per-user storage files for OTHER documents. A
+    # file caught mid-write (partial flush) was incorrectly judged "corrupted"
+    # and deleted, destroying ALL documents' data — not just the one being
+    # managed. Even read-only graph/entity API actions triggered this scan,
+    # making GET endpoints mutate shared storage.
+    #
+    # Storage corruption is now fail-closed: LightRAG's initialize_storages()
+    # will throw a clear error if a file is genuinely unreadable, and the task
+    # returns RAG_STORAGE_CORRUPTED so the operator can explicitly reset.
 
     import time
     max_retries = 5
@@ -889,7 +877,24 @@ async def main_async(args) -> None:
     rerank_fn = build_rerank_func(args.rerank_api_base, args.rerank_api_key, args.rerank_model)
     if rerank_fn:
         rag.rerank_model_func = rerank_fn
-    await rag.initialize_storages()
+    try:
+        await rag.initialize_storages()
+    except Exception as init_err:
+        # Storage initialization fails when JSON/GraphML is genuinely unreadable
+        # (disk error, truncated file, hardware fault). Fail closed — do NOT
+        # attempt to repair/delete the corrupt file. The operator must use the
+        # explicit knowledge-base reset action to rebuild from source documents.
+        print(json.dumps({
+            "status": "failed",
+            "code": "RAG_STORAGE_CORRUPTED",
+            "requires_reset": True,
+            "error": str(init_err),
+            "message": (
+                "Knowledge storage is unreadable. Use the knowledge-base reset "
+                "action to clear and rebuild the knowledge base."
+            ),
+        }, ensure_ascii=False))
+        return
 
     action = args.action
 

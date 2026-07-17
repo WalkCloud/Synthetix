@@ -218,13 +218,15 @@ async def query_rag(
 
     # Quick health check — fail fast when data is clearly unusable
     def _quick_health_check(wd: str) -> tuple:
+        # NOTE: The previous code deleted .indexing.lock files older than 30
+        # minutes. That was unsafe: graph index tasks are allowed to run for
+        # hours, so a legitimate long-running writer's marker could be deleted
+        # mid-operation by a query, breaking the writer's concurrency contract.
+        # The read side must NEVER delete writer locks. When a marker exists,
+        # the query reuses a cached snapshot or returns "indexing in progress".
         lock_file = os.path.join(wd, ".indexing.lock")
         if os.path.exists(lock_file):
-            lock_age = time.time() - os.path.getmtime(lock_file)
-            if lock_age < 1800:
-                return False, "indexing in progress"
-            else:
-                os.remove(lock_file)
+            return False, "indexing in progress"
 
         kv_file = os.path.join(wd, "kv_store_full_docs.json")
         if not os.path.exists(kv_file):

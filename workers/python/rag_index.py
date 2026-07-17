@@ -33,7 +33,7 @@ apply_patch()
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
-from rag_common import fix_corrupted_json_files, load_storage_config, build_rerank_func, resolve_embed_dim
+from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim
 from adaptive_limiter import wrap_llm_func
 
 
@@ -559,14 +559,34 @@ async def index_document(
                 raise
     except Exception as e:
         err = str(e)
-        if "Embedding dim mismatch" in err or "expected:" in err:
-            import shutil
-            shutil.rmtree(working_dir, ignore_errors=True)
-            os.makedirs(working_dir, exist_ok=True)
+        # Embedding dimension mismatch is a configuration incompatibility, NOT
+        # permission to wipe the shared per-user RAG workspace. The old code
+        # did shutil.rmtree(working_dir) here, destroying ALL documents' data
+        # for this user — not just the one being indexed. A single document's
+        # embedding config error must never gain the power to reset the entire
+        # user workspace. Fail closed: surface a stable error so the operator
+        # can explicitly reset/rebuild via the knowledge-base reset flow.
+        #
+        # IMPORTANT: the old code matched the broad substring "expected:" which
+        # matched unrelated errors (e.g. "expected: 2 arguments but got 1").
+        # Now we only match explicit embedding/dimension mismatch phrases.
+        err_lower = err.lower()
+        is_embedding_mismatch = (
+            "embedding dim mismatch" in err_lower
+            or ("dimension" in err_lower and "mismatch" in err_lower)
+            or ("expected:" in err_lower and "dimension" in err_lower)
+        )
+        if is_embedding_mismatch:
             return {
                 "error": err,
                 "status": "failed",
-                "message": "Embedding dimension mismatch — index automatically reset. Please retry the upload."
+                "code": "EMBEDDING_DIMENSION_MISMATCH",
+                "requires_reset": True,
+                "message": (
+                    "Embedding dimension mismatch detected. The existing knowledge "
+                    "base was built with a different embedding dimension. Use the "
+                    "knowledge-base reset action to rebuild all documents, then retry."
+                ),
             }
         raise
 
