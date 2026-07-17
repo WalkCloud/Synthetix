@@ -61,7 +61,7 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
         where: { id: taskId, status: "running" },
         data: buildGraphTaskProgressUpdate(event),
       });
-    });
+    }, taskId);
 
     // Surface timeout explicitly at the top level of resultData so it's visible
     // in diagnostics without digging into the nested rag.error string. The graph

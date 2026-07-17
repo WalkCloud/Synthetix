@@ -24,6 +24,7 @@ import argparse
 import asyncio
 
 from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim, resolve_user_rag_dir
+from rag_mutation_lock import user_rag_mutation_lock, RagMutationBusyError
 
 
 def _get_llm_max_async() -> int:
@@ -753,11 +754,10 @@ async def main_async(args) -> None:
     working_dir = resolve_user_rag_dir(args.user_id)
     os.makedirs(working_dir, exist_ok=True)
 
-    if args.action == "delete-by-doc":
-        busy = _index_busy_result(working_dir, args.doc_id)
-        if busy:
-            print(json.dumps(busy, ensure_ascii=False))
-            return
+    # NOTE: The old _index_busy_result / .indexing.lock marker check was
+    # removed. The per-user cross-process mutation lock (user_rag_mutation_lock)
+    # now serializes all writers — it is acquired in the mutating-action branch
+    # below and is the authoritative concurrency gate.
 
     from lightrag import LightRAG
     from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -898,7 +898,47 @@ async def main_async(args) -> None:
 
     action = args.action
 
-    if action == "entities":
+    # Classify actions: read-only operations run without the mutation lock
+    # (they only load existing data). Mutating operations acquire the
+    # per-user cross-process lock so they never race another writer on the
+    # shared per-user LightRAG workspace.
+    MUTATING_ACTIONS = {
+        "delete-by-doc", "create-entity", "edit-entity",
+        "merge-entities", "delete-entity",
+    }
+
+    if action in MUTATING_ACTIONS:
+        # Acquire the user-level mutation lock for the duration of the
+        # mutation + storage flush. This serializes all writers (index,
+        # delete, entity CRUD) across Node and Python processes.
+        doc_id_for_lock = args.doc_id if action == "delete-by-doc" else ""
+        try:
+            async with user_rag_mutation_lock(
+                args.user_id,
+                operation=f"manage-{action}",
+                document_id=doc_id_for_lock,
+            ):
+                if action == "delete-by-doc":
+                    result = await action_delete_by_doc(rag, args.doc_id)
+                elif action == "create-entity":
+                    result = await action_create_entity(rag, args.entity_name, args.entity_type, args.description)
+                elif action == "edit-entity":
+                    result = await action_edit_entity(rag, args.entity_name, args.field, args.value)
+                elif action == "merge-entities":
+                    sources = [s.strip() for s in args.sources.split(",") if s.strip()]
+                    result = await action_merge_entities(rag, sources, args.target)
+                elif action == "delete-entity":
+                    result = await action_delete_entity(rag, args.entity_name)
+        except RagMutationBusyError as busy:
+            result = {
+                "status": "busy",
+                "code": "RAG_MUTATION_BUSY",
+                "retryable": True,
+                "user_id": args.user_id,
+                "owner": busy.owner,
+                "message": "Another RAG writer is active for this user. Retry after it completes.",
+            }
+    elif action == "entities":
         result = await action_list_entities(rag, args.keyword or "", args.limit)
     elif action == "graph-summary":
         result = await action_graph_summary(rag)
@@ -915,18 +955,6 @@ async def main_async(args) -> None:
             all_entities = await action_list_entities(rag, "", 1)
             entity = (all_entities.get("entities") or [None])[0] or ""
         result = await action_entity_detail(rag, entity, args.depth, args.max_nodes)
-    elif action == "delete-by-doc":
-        busy = _index_busy_result(working_dir, args.doc_id)
-        result = busy if busy else await action_delete_by_doc(rag, args.doc_id)
-    elif action == "create-entity":
-        result = await action_create_entity(rag, args.entity_name, args.entity_type, args.description)
-    elif action == "edit-entity":
-        result = await action_edit_entity(rag, args.entity_name, args.field, args.value)
-    elif action == "merge-entities":
-        sources = [s.strip() for s in args.sources.split(",") if s.strip()]
-        result = await action_merge_entities(rag, sources, args.target)
-    elif action == "delete-entity":
-        result = await action_delete_entity(rag, args.entity_name)
     else:
         result = {"error": f"Unknown action: {action}"}
 

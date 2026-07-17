@@ -5,7 +5,7 @@ const { spawnPythonJson } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/python", () => ({ spawnPythonJson }));
 
-import { manageRag, RagIndexBusyError } from "@/lib/rag/client";
+import { manageRag, RagMutationBusyError, RagIndexBusyError } from "@/lib/rag/client";
 
 const base = {
   userId: "user-1",
@@ -14,20 +14,25 @@ const base = {
   llmConfig: { apiBase: "", apiKey: "", model: "chat" },
 };
 
-describe("manageRag delete busy handling", () => {
+describe("manageRag mutation busy handling", () => {
   beforeEach(() => spawnPythonJson.mockReset());
 
-  it("maps indexing lock result to a retriable error", async () => {
+  it("maps busy result to RagMutationBusyError for any mutating action", async () => {
     spawnPythonJson.mockResolvedValue({
       status: "busy",
-      code: "RAG_INDEX_BUSY",
+      code: "RAG_MUTATION_BUSY",
       retryable: true,
-      doc_id: "doc-1",
+      user_id: "user-1",
     });
 
     const promise = manageRag({ ...base, action: "delete-by-doc", docId: "doc-1" });
-    await expect(promise).rejects.toBeInstanceOf(RagIndexBusyError);
-    await expect(promise).rejects.toMatchObject({ code: "RAG_INDEX_BUSY", retryable: true });
+    await expect(promise).rejects.toBeInstanceOf(RagMutationBusyError);
+    await expect(promise).rejects.toMatchObject({ code: "RAG_MUTATION_BUSY", retryable: true });
+  });
+
+  it("RagIndexBusyError is a backward-compatible alias for RagMutationBusyError", () => {
+    // Older code may still import RagIndexBusyError.
+    expect(RagIndexBusyError).toBe(RagMutationBusyError);
   });
 
   it("returns an ordinary delete result unchanged", async () => {

@@ -104,7 +104,7 @@ export async function processRagEmbedIndex(
     if (!willGraph) {
       const originalIndexMode = procCtx.options.indexMode;
       procCtx.options.indexMode = "basic";
-      indexResult = await indexDocument(procCtx);
+      indexResult = await indexDocument(procCtx, undefined, taskId);
       procCtx.options.indexMode = originalIndexMode;
     }
 

@@ -494,6 +494,7 @@ export async function embedDocumentChunks(ctx: ProcessingContext): Promise<void>
 export async function indexDocument(
   ctx: ProcessingContext,
   onProgressEvent?: (event: Record<string, unknown>) => void,
+  taskId?: string,
 ): Promise<{ rag?: { status: string; chunks: number; error?: string; graphEntities?: number; storage?: Record<string, string> }; indexMode?: string } | null> {
   const { docId, doc, outputDir, embedModel, writingModel, options } = ctx;
 
@@ -584,7 +585,7 @@ export async function indexDocument(
     hasCachedEmbeddings ? embeddingsPath : undefined,
     ragRerankConfig,
     onProgressEvent,
-    (event) => {
+    (event: Record<string, unknown>) => {
       // Python LightRAG emits one `usage` event per LLM round-trip during graph
       // extraction. Forward each one to recordTokenUsage so the Token Usage
       // Analytics page can attribute graph-mode spend back to the writing model.
@@ -602,6 +603,7 @@ export async function indexDocument(
         console.warn("Failed to record graph-mode token usage:", err);
       });
     },
+    taskId,
   ).catch((err) => {
     console.warn("LightRAG indexing failed (non-blocking):", err);
     const timeoutOccurred = !!(err as Error & { timeoutOccurred?: boolean })?.timeoutOccurred;
@@ -623,6 +625,7 @@ async function indexWithLightRAG(
   rerankConfig?: { apiBase: string; apiKey: string; model: string },
   onProgressEvent?: (event: Record<string, unknown>) => void,
   onUsageEvent?: (event: Record<string, unknown>) => void,
+  taskId?: string,
 ): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string>; error?: string; timeoutOccurred?: boolean }> {
   // Build the kwargs dict for rag_index.index_document(**params). The daemon
   // takes this verbatim; the spawn fallback rebuilds argv from the same dict so
@@ -634,6 +637,7 @@ async function indexWithLightRAG(
     index_mode: indexMode,
     embed_dim: embedDim,
   };
+  if (taskId) params.task_id = taskId;
   if (embeddingsFile) {
     params.embeddings_file = embeddingsFile;
   } else if (embedConfig) {

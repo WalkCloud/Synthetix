@@ -34,6 +34,7 @@ from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from rag_common import load_storage_config, build_rerank_func, resolve_embed_dim, resolve_user_rag_dir
+from rag_mutation_lock import user_rag_mutation_lock, RagMutationBusyError
 from adaptive_limiter import wrap_llm_func
 
 
@@ -335,6 +336,7 @@ async def index_document(
     rerank_api_base: str = "",
     rerank_api_key: str = "",
     rerank_model: str = "",
+    task_id: str = "",
 ) -> dict:
     """Index chunk files into LightRAG.
 
@@ -590,27 +592,22 @@ async def index_document(
             }
         raise
 
-    with indexing_lock(working_dir, doc_id):
+    # Acquire the per-user cross-process mutation lock. This serializes ALL
+    # writes to the shared LightRAG workspace (basic+graph index, delete,
+    # entity CRUD) so no two processes can race on the same JSON/VDB/GraphML
+    # files. The lock lives outside the user RAG directory and uses a real
+    # OS-level directory-creation primitive (not the old .indexing.lock marker).
+    operation_label = "graph-index" if index_mode == "graph" else "basic-index"
+    async with user_rag_mutation_lock(
+        user_id, operation=operation_label, task_id=task_id, document_id=doc_id,
+    ) as _lease:
         # NOTE: The previous fix_corrupted_json_files + manual JSON validation
         # loop was REMOVED because it raced concurrent rag_embed_index workers
         # writing to the same storage files for OTHER documents. A JSON file
         # caught mid-write (partial flush) was incorrectly judged "corrupted"
         # and reset to empty {}, destroying ALL documents' data — not just
-        # the one being indexed.
-        #
-        # LightRAG's JsonKVStorage already uses atomic writes (safe_json_dump
-        # in rag_common.py: tmp → fsync → rename). The storage layer is
-        # crash-safe at the file level. The only scenario where corruption
-        # could occur is a hard crash DURING the rename — which leaves the
-        # old file intact (rename is atomic on most filesystems). So the
-        # aggressive file-reset logic was solving a problem that doesn't exist
-        # in practice, while creating a real data-loss hazard.
-        #
-        # If a JSON file IS genuinely corrupted (e.g., disk full, hardware
-        # error), LightRAG's initialize_storages() will throw a clear error
-        # and the task will fail — which is the correct behavior (let the
-        # operator diagnose, don't silently wipe data).
-        pass
+        # the one being indexed. LightRAG's atomic writes (safe_json_dump)
+        # already provide crash-safety; no routine repair is needed.
 
         await rag.initialize_storages()
         emit_progress("storage", 25, "Initialized graph storage")
@@ -732,7 +729,7 @@ async def index_document(
                     await heartbeat_task
         emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
 
-    # The indexing_lock has been released (the `with` block just exited).
+    # The user mutation lock has been released (the async with block exited).
     # Invalidate the read-side cache so the next query rebuilds with the
     # freshly-written data. During indexing, queries reused the old cached
     # snapshot (fast, no rebuild); now that the write is committed, we want

@@ -25,15 +25,18 @@ export type RagManageOptions =
   | (RagBaseOptions & { action: "merge-entities"; sources: string; target: string })
   | (RagBaseOptions & { action: "delete-by-doc"; docId: string });
 
-export class RagIndexBusyError extends Error {
-  readonly code = "RAG_INDEX_BUSY";
+export class RagMutationBusyError extends Error {
+  readonly code = "RAG_MUTATION_BUSY";
   readonly retryable = true;
 
   constructor(readonly result: Record<string, unknown>) {
-    super("RAG index is busy; document cleanup can be retried after indexing settles");
-    this.name = "RagIndexBusyError";
+    super("Another RAG writer is active for this user; retry after it completes");
+    this.name = "RagMutationBusyError";
   }
 }
+
+// Backward-compatible alias — older code references RagIndexBusyError.
+export const RagIndexBusyError = RagMutationBusyError;
 
 export async function manageRag(
   options: RagManageOptions
@@ -97,8 +100,8 @@ export async function manageRag(
       ...(options.rerankConfig ? { RAG_RERANK_API_KEY: options.rerankConfig.apiKey } : {}),
     },
   });
-  if (options.action === "delete-by-doc" && result.status === "busy") {
-    throw new RagIndexBusyError(result);
+  if (result.status === "busy") {
+    throw new RagMutationBusyError(result);
   }
   return result;
 }
