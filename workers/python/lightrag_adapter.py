@@ -316,6 +316,7 @@ async def purge_application_document(
 
     # ---- 2. Collect real internal chunk IDs and graph metadata ----
     aggregate_chunk_ids: list[str] = []
+    aggregate_cache_ids: list[str] = []
     aggregate_entity_names: set[str] = set()
     aggregate_relation_pairs: set[tuple[str, str]] = set()
 
@@ -342,6 +343,11 @@ async def purge_application_document(
         for cid in chunks_list:
             if cid not in aggregate_chunk_ids:
                 aggregate_chunk_ids.append(cid)
+            chunk_record = await rag.text_chunks.get_by_id(cid)
+            if chunk_record and isinstance(chunk_record.get("llm_cache_list"), list):
+                for cache_id in chunk_record["llm_cache_list"]:
+                    if cache_id and cache_id not in aggregate_cache_ids:
+                        aggregate_cache_ids.append(cache_id)
 
         # Collect graph metadata from full_entities / full_relations.
         child_entities = await rag.full_entities.get_by_id(child_id)
@@ -395,6 +401,8 @@ async def purge_application_document(
         await rag.full_docs.delete(child_doc_ids)
         await rag.full_entities.delete(child_doc_ids)
         await rag.full_relations.delete(child_doc_ids)
+        if aggregate_cache_ids:
+            await rag.llm_response_cache.delete(aggregate_cache_ids)
 
         # ---- 6. Flush ----
         await rag._insert_done()

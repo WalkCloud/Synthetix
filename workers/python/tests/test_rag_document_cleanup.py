@@ -68,6 +68,8 @@ class FakeLightRAG:
         self.full_docs = FakeStorage()
         self.full_entities = FakeStorage()
         self.full_relations = FakeStorage()
+        self.text_chunks = FakeStorage()
+        self.llm_response_cache = FakeStorage()
         # entity_chunks: { entity_name: { "chunk_ids": [...] } }
         self._entity_chunks = {}
         # relation_chunks: { "src|tgt": { "chunk_ids": [...] } }

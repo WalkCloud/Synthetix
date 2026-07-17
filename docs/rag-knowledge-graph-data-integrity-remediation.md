@@ -1258,3 +1258,87 @@ fix: forward AbortSignal to rag_manage and rag_query
 ```
 
 完成上述补救后，再执行第 7 步清空测试数据并重新上传三份文档验证，否则 Node reset 仍可能清空正在重建的工作区，验证结果不可信。
+
+---
+
+## 20. 浏览器生命周期实测发现与最终补救（2026-07-18）
+
+### 20.1 LightRAG basename 去重导致跨文档假成功
+
+对三个隔离文档 A/B/C 进行浏览器重建时，任务均曾显示 `completed`，但共享 RAG 工作区内没有对应的 `<docId>/chunk_000`。根因是 LightRAG 1.5.4 会把 `file_paths` 规范化为 basename；不同文档的物理路径虽然不同，最终都变成 `chunk_000.md`，后续文档被记录为 `dup-*` filename duplicate，且 `ainsert()` 正常返回。
+
+已实施：
+
+- LightRAG logical source filename 改为 `<docId>__chunk_NNN.md`。
+- 插入后逐一验证 child status 为 `processed` 且 `chunks_list` 非空。
+- Python 返回 `submitted_chunks / committed_chunks / expected_chunks`。
+- Node graph worker 只接受 `status=indexed` 且 committed 等于 expected；其他结果进入显式 graph failure/重试流程。
+
+### 20.2 duplicate status 与 LLM extraction cache 清理
+
+`dup-*` 记录本身没有 chunk 或图谱贡献，但若保留在 `doc_status`，会继续参与 filename 查重，阻止后续重建。正常 purge 现在会：
+
+- 先确定真实 contributing child IDs；
+- 仅通过结构化 `metadata.is_duplicate=true` 和精确 `metadata.original_doc_id` 关联 duplicate；
+- source-aware purge 只使用真实 child 的 chunks/entities/relations；
+- `doc_status` 同时删除真实 child 与对应 duplicate；
+- 其他 KV stores 只删除真实 child。
+
+实测还发现 `kv_store_llm_response_cache.json` 会保留已删 chunk 的 extraction cache。它不进入图谱检索，但仍是文档内容残留。适配器现从删除前的 text chunk `llm_cache_list` 收集 cache IDs，并在同一 mutation lock/pipeline 提交中删除对应缓存，不扫描或删除其他文档缓存。
+
+### 20.3 删除任务和 Wiki 结果真实性
+
+已修复：
+
+- `document_cleanup` 取消其他任务时排除自己的 task ID；清理任务最终可真实进入 `completed`。
+- `manageRag()` 对 Python `status=failed` 或顶层 `error` 抛出结构化错误，不再误报删除成功。
+- Wiki fused-entry 更新和 FTS 删除失败不再静默吞掉。
+- batch Wiki 清理只使用实际已删除且属于当前用户的文档 ID。
+- Playwright 删除 helper 轮询精确的 `cleanupTaskId`，只接受 `completed`。
+- Wiki 验证使用 `documentId + idsOnly` API，不依赖列表接口已省略的 `sourceRefs`。
+
+### 20.4 A/B/C 顺序删除实测结果
+
+隔离文档：
+
+- A：`dff6fd02-bde9-40e8-8030-318492aa4da0`
+- B：`e64c9432-5699-4bf0-bb05-a919fec1cd0d`
+- C：`28e9d875-7482-4ecd-9eed-0b620b4921fd`
+
+删除前每份文档均有 1 个 processed LightRAG child 和 1 个内部 chunk：
+
+| 文档 | entity source records | relation source records | GraphML source occurrences | Wiki refs |
+|---|---:|---:|---:|---:|
+| A | 7 | 4 | 11 | 8 |
+| B | 7 | 6 | 13 | 7 |
+| C | 5 | 4 | 9 | 8 |
+
+按 `B → A → C`、均使用 `deleteWiki=true` 顺序删除：
+
+1. B cleanup task 为 `completed`，`rag=deleted`，`verification=passed`；B 的 child/text/entity/relation/GraphML 来源均为 0，B Wiki refs 为 0；A/C 来源计数完全不变。
+2. A cleanup task 为 `completed`；A 的全部 RAG/Wiki 来源为 0；C 仍保持 1 child、5 entity source records、4 relation source records、9 GraphML occurrences 和 8 Wiki refs。
+3. C cleanup task 为 `completed`；C Wiki refs 为 0，生命周期测试文档全部从 DB 和文件目录移除。
+
+删除完成后：
+
+- knowledge health：`healthy`
+- `staleDocumentDirs=[]`
+- `staleRagDocIds=[]`
+- `staleLocks=[]`
+- 原有真实文档仍保留：
+  - `精益创业实战.epub`：5 个 LightRAG child，GraphML 来源仍存在。
+  - `云原生平台功能说明.docx`：30 个 LightRAG child，GraphML 来源仍存在。
+
+PDF 在此前真实模型测试中未完成有效图谱基线，因此本轮没有把它作为“保留来源计数”证据；这属于测试环境/任务历史状态，不影响 A/B/C source isolation 结论。
+
+### 20.5 验证证据
+
+- Python：101 tests passed。
+- TypeScript/Vitest：145 files、981 tests passed。
+- Typecheck：通过。
+- Lint：0 errors，66 个既有 warnings。
+- Next production build：通过（仅既有 Turbopack broad-pattern warnings）。
+- Playwright collection：76 tests successfully listed。
+- `git diff --check`：通过。
+
+浏览器实测 JSON、日志、数据库和 RAG 工作区属于本地验证产物，不纳入发布提交。

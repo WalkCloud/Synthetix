@@ -34,6 +34,8 @@ class FakeRag:
         self.full_docs = MagicMock()
         self.full_entities = MagicMock()
         self.full_relations = MagicMock()
+        self.text_chunks = MagicMock()
+        self.llm_response_cache = MagicMock()
         self._purge_doc_chunks_and_kg = AsyncMock()
         self._insert_done = AsyncMock()
 
@@ -47,6 +49,8 @@ class FakeRag:
         self.doc_status.get_by_id = AsyncMock()
         self.full_entities.get_by_id = AsyncMock()
         self.full_relations.get_by_id = AsyncMock()
+        self.text_chunks.get_by_id = AsyncMock(return_value=None)
+        self.llm_response_cache.delete = AsyncMock()
 
 
 class GuardCheck(unittest.TestCase):
@@ -288,6 +292,35 @@ class MetadataCollection(unittest.TestCase):
             result = asyncio.run(purge_application_document(rag, "doc-A"))
         self.assertEqual(result.affected_entities, 3)  # EntityA, EntityB, Shared
         self.assertEqual(result.affected_relations, 2)  # (A,B), (Shared,B)
+
+
+class CacheCleanup(unittest.TestCase):
+    def test_deletes_only_cache_records_referenced_by_purged_chunks(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "doc-A/chunk_000": {"status": "processed"},
+        })
+        rag.doc_status.get_by_id = AsyncMock(return_value={
+            "chunks_list": ["doc-A/chunk_000-chunk-000"],
+        })
+        rag.text_chunks.get_by_id = AsyncMock(return_value={
+            "llm_cache_list": ["default:extract:a", "default:extract:b"],
+        })
+        rag.full_entities.get_by_id = AsyncMock(return_value=None)
+        rag.full_relations.get_by_id = AsyncMock(return_value=None)
+
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def fake_reservation(rag, job_name):
+            yield {"busy": False}, MagicMock()
+
+        with patch("lightrag_adapter._pipeline_reservation", fake_reservation):
+            asyncio.run(purge_application_document(rag, "doc-A"))
+
+        rag.llm_response_cache.delete.assert_awaited_once_with([
+            "default:extract:a", "default:extract:b",
+        ])
 
 
 class PurgeFailure(unittest.TestCase):
