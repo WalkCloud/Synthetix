@@ -571,24 +571,26 @@ async def index_document(
         raise
 
     with indexing_lock(working_dir, doc_id):
-        # File integrity repair — runs INSIDE the lock so it never races
-        # the read side. The read side (rag_query.py) no longer repairs
-        # files; it reuses a cached snapshot during indexing and only
-        # rebuilds (loading, not repairing) after the lock is released.
-        fix_corrupted_json_files(working_dir)
-        import glob as _glob
-        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.json"), recursive=True):
-            try:
-                with open(_fp, "r", encoding="utf-8") as _f:
-                    json.load(_f)
-            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-                os.remove(_fp)
-        for _fp in _glob.glob(os.path.join(working_dir, "**", "*.graphml"), recursive=True):
-            try:
-                import xml.etree.ElementTree as ET
-                ET.parse(_fp)
-            except (ET.ParseError, UnicodeDecodeError, OSError):
-                os.remove(_fp)
+        # NOTE: The previous fix_corrupted_json_files + manual JSON validation
+        # loop was REMOVED because it raced concurrent rag_embed_index workers
+        # writing to the same storage files for OTHER documents. A JSON file
+        # caught mid-write (partial flush) was incorrectly judged "corrupted"
+        # and reset to empty {}, destroying ALL documents' data — not just
+        # the one being indexed.
+        #
+        # LightRAG's JsonKVStorage already uses atomic writes (safe_json_dump
+        # in rag_common.py: tmp → fsync → rename). The storage layer is
+        # crash-safe at the file level. The only scenario where corruption
+        # could occur is a hard crash DURING the rename — which leaves the
+        # old file intact (rename is atomic on most filesystems). So the
+        # aggressive file-reset logic was solving a problem that doesn't exist
+        # in practice, while creating a real data-loss hazard.
+        #
+        # If a JSON file IS genuinely corrupted (e.g., disk full, hardware
+        # error), LightRAG's initialize_storages() will throw a clear error
+        # and the task will fail — which is the correct behavior (let the
+        # operator diagnose, don't silently wipe data).
+        pass
 
         await rag.initialize_storages()
         emit_progress("storage", 25, "Initialized graph storage")
