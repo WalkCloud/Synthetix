@@ -50,16 +50,19 @@ export async function DELETE(
     return errorResponse({ code: "notFound", message: "Not found" }, 404);
   }
 
-  // Default behaviour: deleteWiki is TRUE → wipe Wiki entries sourced from
-  // this doc. Only when the user explicitly opts to KEEP wiki do we leave it
-  // untouched. (See batch route for the full rationale.)
-  let wikiResult: { deleted: number; updated: number } | undefined;
+  // Wiki deletion is explicit. If it fails after the document row was removed,
+  // return a truthful partial-cleanup result instead of reporting zero changes.
+  let wikiResult: { deleted: number; updated: number; orphansPurged: number } | undefined;
+  let wikiCleanupError: string | undefined;
   if (deleteWiki) {
-    wikiResult = await deleteEntriesForDocuments(user.id, [id]).catch((err) => {
-      console.warn("Failed to delete Wiki entries for document:", err);
-      return { deleted: 0, updated: 0 };
-    });
+    try {
+      wikiResult = await deleteEntriesForDocuments(user.id, [id]);
+    } catch (error) {
+      wikiCleanupError = error instanceof Error ? error.message : String(error);
+      result.issues.push(`Wiki cleanup failed: ${wikiCleanupError}`);
+      console.warn("Failed to delete Wiki entries for document:", error);
+    }
   }
 
-  return successResponse({ ...result, wiki: wikiResult });
+  return successResponse({ ...result, wiki: wikiResult, wikiCleanupError });
 }

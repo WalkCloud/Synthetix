@@ -14,27 +14,31 @@ export async function DELETE(request: Request) {
 
   const result = await documentLifecycle.deleteDocuments(user.id, ids);
 
-  // Default behaviour: deleteWiki is TRUE → wipe Wiki entries sourced from
-  // these docs (full strip for sole-sourced entries, ref removal for fused).
-  // Only when the user explicitly opts to KEEP wiki (deleteWiki=false) do we
-  // leave wiki untouched — including source refs. This is the user's "I want
-  // to keep my distilled knowledge" escape hatch.
-  //
-  // One single full-table scan handles all docIds at once (vs the previous
-  // per-doc loop), and runs here in the route so the cleanup worker no longer
-  // touches wiki (it used to strip refs unconditionally, ignoring deleteWiki).
+  // One full-table scan handles every document that was actually deleted. Do
+  // not pass unowned/missing request IDs into Wiki mutation, and do not disguise
+  // a failed cleanup as a successful zero-count result.
   let wikiDeleted = 0;
+  let wikiUpdated = 0;
   let wikiOrphansPurged = 0;
-  if (deleteWiki) {
-    const r = await deleteEntriesForDocuments(user.id, ids).catch(() => ({ deleted: 0, updated: 0, orphansPurged: 0 }));
-    wikiDeleted = r.deleted;
-    wikiOrphansPurged = r.orphansPurged;
+  let wikiCleanupError: string | undefined;
+  if (deleteWiki && result.deleted.length > 0) {
+    try {
+      const r = await deleteEntriesForDocuments(user.id, result.deleted);
+      wikiDeleted = r.deleted;
+      wikiUpdated = r.updated;
+      wikiOrphansPurged = r.orphansPurged;
+    } catch (error) {
+      wikiCleanupError = error instanceof Error ? error.message : String(error);
+      console.warn("Failed to delete Wiki entries for document batch:", error);
+    }
   }
 
   return successResponse({
     deleted: result.deleted.length,
     results: result.results,
     wikiDeleted,
+    wikiUpdated,
     wikiOrphansPurged,
+    wikiCleanupError,
   });
 }

@@ -76,7 +76,7 @@ describe("DocumentLifecycleService", () => {
     const { deps, events } = createDeps({ remainingDocuments: 0 });
     const service = createDocumentLifecycleService(deps);
 
-    const result = await service.cleanupDeletedDocument("user-1", "doc-1");
+    const result = await service.cleanupDeletedDocument("user-1", "doc-1", "cleanup-task-1");
 
     expect(result.cleanup.rag).toBe("reset");
     expect(result.cleanup.files).toBe("deleted");
@@ -90,6 +90,13 @@ describe("DocumentLifecycleService", () => {
       "verify",
       "release-gate",
     ]);
+    expect(deps.cancelDocumentTasks).toHaveBeenCalledWith(
+      "user-1", "doc-1", "cleanup-task-1",
+    );
+    expect(deps.awaitDocumentExecutions).toHaveBeenCalledWith(
+      "user-1", ["doc-1"],
+      expect.objectContaining({ excludeTaskId: "cleanup-task-1" }),
+    );
   });
 
   it("does not fail the delete response when cleanup enqueue fails after DB deletion", async () => {

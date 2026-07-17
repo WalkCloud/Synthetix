@@ -14,7 +14,11 @@ export async function deleteDocument(
   request: APIRequestContext,
   docId: string,
   opts: { deleteWiki?: boolean } = {},
-): Promise<{ wiki?: { deleted: number; updated: number } }> {
+): Promise<{
+  cleanupTaskId?: string;
+  wiki?: { deleted: number; updated: number; orphansPurged?: number };
+  wikiCleanupError?: string;
+}> {
   const query = opts.deleteWiki ? "?deleteWiki=true" : "";
   return apiDelete(request, `/api/v1/documents/${docId}${query}`);
 }
@@ -28,26 +32,13 @@ export async function deleteAndAwaitCleanup(
   docId: string,
   opts: { deleteWiki?: boolean } = {},
 ): Promise<void> {
-  await deleteDocument(request, docId, opts);
-  // cleanup 任务在 deleteDocument 内部已 enqueue；轮询直到该文档无活跃任务
-  const deadline = Date.now() + TIMEOUTS.cleanupTask;
-  while (Date.now() < deadline) {
-    const tasks = await apiGet<{ tasks: { id: string; type: string; status: string; inputData?: string }[] } | unknown[]>(
-      request,
-      "/api/v1/tasks",
-    ).catch(() => null);
-    const list = Array.isArray(tasks) ? tasks : (tasks as { tasks: unknown[] })?.tasks ?? [];
-    const active = (list as { type: string; status: string; inputData?: string }[]).find(
-      (t) =>
-        t.type === "document_cleanup" &&
-        (t.status === "pending" || t.status === "running") &&
-        (t.inputData ?? "").includes(docId),
-    );
-    if (!active) break;
-    await new Promise((r) => setTimeout(r, 4_000));
+  const result = await deleteDocument(request, docId, opts);
+  if (!result.cleanupTaskId) {
+    throw new Error(`Document ${docId} deletion did not return cleanupTaskId`);
   }
+  await waitForTask(request, result.cleanupTaskId, TIMEOUTS.cleanupTask, 4_000);
   // 额外缓冲：让图谱缓存失效生效
-  await new Promise((r) => setTimeout(r, 5_000));
+  await new Promise((r) => setTimeout(r, 1_000));
 }
 
 // ---- 独立渠道残留验证 ----
@@ -58,22 +49,11 @@ export async function countWikiEntriesForDoc(
   request: APIRequestContext,
   docId: string,
 ): Promise<number> {
-  let mine = 0;
-  let page = 1;
-  // 翻页扫描（每页 100，最多扫 10 页避免无限）
-  for (page = 1; page <= 10; page++) {
-    const res = await request.get(`/api/v1/wiki/entries?page=${page}&limit=100`);
-    const body = await res.json();
-    const items = body.data?.items ?? [];
-    if (items.length === 0) break;
-    for (const it of items) {
-      let refs: { documentId?: string }[] = [];
-      try { refs = JSON.parse(it.sourceRefs || "[]"); } catch { /* ignore */ }
-      if (refs.some((ref) => ref.documentId === docId)) mine++;
-    }
-    if (items.length < 100) break; // 最后一页
-  }
-  return mine;
+  const ids = await apiGet<string[]>(
+    request,
+    `/api/v1/wiki/entries?documentId=${encodeURIComponent(docId)}&idsOnly=true`,
+  );
+  return ids.length;
 }
 export async function getKnowledgeEntities(request: APIRequestContext): Promise<
   { name: string; description?: string; source_id?: string }[]

@@ -359,20 +359,23 @@ export async function deleteEntriesForDocuments(
   // Bulk delete entries whose sources are all gone
   if (toDelete.length > 0) {
     await db.wikiEntry.deleteMany({ where: { id: { in: toDelete }, userId } });
-    void removeWikiFtsForEntries(toDelete).catch(() => {});
+    await removeWikiFtsForEntries(toDelete);
   }
 
   // Batch-update fused entries (one statement per entry; SQLite has no UPDATE
   // ... FROM json_each, so per-row is unavoidable here, but each is a single
-  // indexed PK update — fast even for thousands of rows)
+  // indexed PK update — fast even for thousands of rows). Failures are surfaced:
+  // the delete API must not report a clean Wiki cascade when refs remain stale.
+  let updated = 0;
   for (const upd of toUpdate) {
     await db.wikiEntry.update({
       where: { id: upd.id },
       data: { sourceRefs: upd.sourceRefs },
-    }).catch(() => {});
+    });
+    updated += 1;
   }
 
-  return { deleted: toDelete.length - orphansPurged, updated: toUpdate.length, orphansPurged };
+  return { deleted: toDelete.length - orphansPurged, updated, orphansPurged };
 }
 
 /**

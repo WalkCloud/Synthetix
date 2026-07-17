@@ -39,6 +39,20 @@ export class RagMutationBusyError extends Error {
   }
 }
 
+export class RagOperationError extends Error {
+  readonly code?: string;
+  readonly requiresReset: boolean;
+  readonly docId?: string;
+
+  constructor(readonly result: Record<string, unknown>) {
+    super(typeof result.error === "string" ? result.error : "RAG operation failed");
+    this.name = "RagOperationError";
+    this.code = typeof result.code === "string" ? result.code : undefined;
+    this.requiresReset = result.requires_reset === true;
+    this.docId = typeof result.doc_id === "string" ? result.doc_id : undefined;
+  }
+}
+
 // Backward-compatible alias — older code references RagIndexBusyError.
 export const RagIndexBusyError = RagMutationBusyError;
 
@@ -107,6 +121,9 @@ export async function manageRag(
   });
   if (result.status === "busy") {
     throw new RagMutationBusyError(result);
+  }
+  if (result.status === "failed" || typeof result.error === "string") {
+    throw new RagOperationError(result);
   }
   return result;
 }

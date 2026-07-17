@@ -4,6 +4,7 @@ import { createRagContext } from "@/lib/rag/context";
 import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
+import { invalidateEntityEvidenceCache } from "@/lib/knowledge/entity-evidence";
 import { cancelTasksByResourceIdentity, findTaskIdsByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
@@ -32,7 +33,7 @@ export interface DocumentLifecycleDeps {
   countDocuments(userId: string): Promise<number>;
   withDocumentMutation<T>(userId: string, docIds: string[], mutate: () => Promise<T>): Promise<T>;
   awaitDocumentExecutions(userId: string, docIds: string[], options?: { excludeTaskId?: string; timeoutMs?: number }): Promise<void>;
-  cancelDocumentTasks(userId: string, docId: string): Promise<void>;
+  cancelDocumentTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void>;
   cancelDocumentTasksBatch(userId: string, docIds: string[]): Promise<void>;
   enqueueDocumentCleanup(userId: string, docId: string): Promise<string | null>;
   deleteRagDocument(userId: string, docId: string): Promise<void>;
@@ -85,7 +86,7 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
       const issues: string[] = [];
       let ragStatus: "deleted" | "reset" | "failed" = "deleted";
 
-      await deps.cancelDocumentTasks(userId, docId);
+      await deps.cancelDocumentTasks(userId, docId, excludeTaskId);
       await deps.awaitDocumentExecutions(userId, [docId], {
         excludeTaskId,
         timeoutMs: CLEANUP_TASK_SETTLE_TIMEOUT_MS,
@@ -224,12 +225,13 @@ export const documentLifecycle = createDocumentLifecycleService({
       select: { id: true, userId: true },
     });
   },
-  async cancelDocumentTasks(userId, docId) {
+  async cancelDocumentTasks(userId, docId, exceptTaskId) {
     await cancelTasksByResourceIdentity({
       userId,
       field: "documentId",
       value: docId,
       statuses: ["pending", "running"],
+      exceptTaskId,
       errorMessage: "Document deleted",
     }).catch(() => undefined);
   },
@@ -270,6 +272,7 @@ export const documentLifecycle = createDocumentLifecycleService({
     // Removing a document's entities/relations reshapes the graph; drop cached
     // snapshots so the next read isn't stale.
     invalidateUserGraph(userId);
+    invalidateEntityEvidenceCache(userId);
   },
   async resetUserRag(userId) {
     await storage.deleteUserRagData(userId);

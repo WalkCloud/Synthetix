@@ -5,7 +5,12 @@ const { spawnPythonJson } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/python", () => ({ spawnPythonJson }));
 
-import { manageRag, RagMutationBusyError, RagIndexBusyError } from "@/lib/rag/client";
+import {
+  manageRag,
+  RagMutationBusyError,
+  RagIndexBusyError,
+  RagOperationError,
+} from "@/lib/rag/client";
 
 const base = {
   userId: "user-1",
@@ -39,5 +44,31 @@ describe("manageRag mutation busy handling", () => {
     spawnPythonJson.mockResolvedValue({ status: "deleted", doc_id: "doc-1" });
     await expect(manageRag({ ...base, action: "delete-by-doc", docId: "doc-1" }))
       .resolves.toEqual({ status: "deleted", doc_id: "doc-1" });
+  });
+
+  it("rejects a failed Python result with structured diagnostics", async () => {
+    spawnPythonJson.mockResolvedValue({
+      status: "failed",
+      code: "CHUNKS_LIST_MISSING",
+      requires_reset: true,
+      doc_id: "doc-1",
+      error: "missing chunk metadata",
+    });
+
+    const promise = manageRag({ ...base, action: "delete-by-doc", docId: "doc-1" });
+    await expect(promise).rejects.toBeInstanceOf(RagOperationError);
+    await expect(promise).rejects.toMatchObject({
+      code: "CHUNKS_LIST_MISSING",
+      requiresReset: true,
+      docId: "doc-1",
+      message: "missing chunk metadata",
+    });
+  });
+
+  it("rejects a top-level Python error even without failed status", async () => {
+    spawnPythonJson.mockResolvedValue({ error: "storage unavailable" });
+
+    await expect(manageRag({ ...base, action: "delete-by-doc", docId: "doc-1" }))
+      .rejects.toMatchObject({ message: "storage unavailable" });
   });
 });
