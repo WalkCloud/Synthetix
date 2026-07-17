@@ -183,3 +183,13 @@ server.log
 
 # Temporary test/export artifacts
 /tmp/
+
+# Internal architecture design document (not for distribution)
+ARCHITECTURE_OPTIMIZATION_GUIDE.md
+
+# Local test helper scripts (not for distribution)
+scripts/upload-test-docs.mjs
+scripts/brainstorm-and-write.mjs
+
+# AI-assisted analysis workspace
+.understand-anything/
