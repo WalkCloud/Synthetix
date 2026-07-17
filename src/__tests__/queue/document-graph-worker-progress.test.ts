@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildGraphTaskProgressUpdate } from "@/lib/queue/workers/document-graph-worker";
+import {
+  assertGraphIndexCommitted,
+  buildGraphTaskProgressUpdate,
+} from "@/lib/queue/workers/document-graph-worker";
 
 describe("buildGraphTaskProgressUpdate", () => {
   it("converts Python progress events into async task updates", () => {
@@ -16,5 +19,25 @@ describe("buildGraphTaskProgressUpdate", () => {
       total: 20,
       lastHeartbeatAt: "2026-06-08T00:00:00.000Z",
     });
+  });
+});
+
+describe("assertGraphIndexCommitted", () => {
+  it("accepts a fully committed index result", () => {
+    expect(() => assertGraphIndexCommitted({
+      status: "indexed",
+      chunks: 2,
+      committed_chunks: 2,
+      expected_chunks: 2,
+    })).not.toThrow();
+  });
+
+  it.each([
+    undefined,
+    { status: "failed", error: "duplicate" },
+    { status: "skipped" },
+    { status: "indexed", committed_chunks: 1, expected_chunks: 2 },
+  ])("rejects an uncommitted graph result", (result) => {
+    expect(() => assertGraphIndexCommitted(result)).toThrow();
   });
 });

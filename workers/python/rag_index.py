@@ -247,6 +247,17 @@ def sort_chunk_files(files: list[str]) -> list[str]:
     return sorted(chunk_files, key=lambda f: (chunk_index(f), f))
 
 
+def build_lightrag_source_name(doc_id: str, chunk_filename: str) -> str:
+    """Return a stable document-unique basename for LightRAG deduplication.
+
+    LightRAG 1.5.4 strips directories from ``file_paths`` before checking for
+    duplicates, so passing physical paths makes every document's ``chunk_000.md``
+    collide. The application document ID is already a validated UUID-like value;
+    keep the chunk filename for diagnostics while making the basename unique.
+    """
+    return f"{doc_id}__{os.path.basename(chunk_filename)}"
+
+
 # NOTE: the old `indexing_lock` context manager (a non-exclusive .indexing.lock
 # marker file) was REMOVED. It has been superseded by the per-user cross-process
 # mutation lock (workers/python/rag_mutation_lock.py), which uses real OS-level
@@ -670,7 +681,7 @@ async def index_document(
             chunk_records.append({
                 "content": content,
                 "id": f"{doc_id}/{f.replace('.md', '')}",
-                "path": chunk_path,
+                "path": build_lightrag_source_name(doc_id, f),
             })
 
         batch_size = get_insert_batch_size(index_mode)
@@ -705,13 +716,20 @@ async def index_document(
 
         try:
             force_serial = index_mode == "graph" and not should_bulk_insert_graph()
-            indexed = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
+            submitted = await insert_chunks(rag, chunk_records, batch_size=batch_size, force_serial=force_serial, on_progress=_report_index_progress)
         finally:
             if heartbeat_task is not None:
                 heartbeat_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await heartbeat_task
-        emit_progress("indexing", 90, "Finished chunk indexing", processed=indexed, total=len(chunk_records))
+
+        from lightrag_adapter import verify_application_document_insert
+        expected_child_ids = [record["id"] for record in chunk_records]
+        verification = await verify_application_document_insert(
+            rag, doc_id, expected_child_ids,
+        )
+        committed = len(verification.committed_child_ids)
+        emit_progress("indexing", 90, "Finished chunk indexing", processed=committed, total=len(chunk_records))
 
     # The user mutation lock has been released (the async with block exited).
     # Invalidate the read-side cache so the next query rebuilds with the
@@ -748,7 +766,10 @@ async def index_document(
     return {
         "status": "indexed",
         "doc_id": doc_id,
-        "chunks": indexed,
+        "chunks": committed,
+        "submitted_chunks": submitted,
+        "committed_chunks": committed,
+        "expected_chunks": len(chunk_records),
         "storage": {
             "kv": kv_storage,
             "vector": vector_storage,

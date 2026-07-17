@@ -17,7 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lightrag_adapter import purge_application_document, PurgeError, _check_guard
+from lightrag_adapter import (
+    purge_application_document,
+    verify_application_document_insert,
+    PurgeError,
+    _check_guard,
+)
 
 
 class FakeRag:
@@ -104,6 +109,150 @@ class ChildDiscovery(unittest.TestCase):
         })
         result = asyncio.run(purge_application_document(rag, "doc-A"))
         self.assertEqual(result.child_doc_ids, [])
+
+    def test_deletes_owned_duplicate_records_without_aggregating_them(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "doc-A/chunk_000": {"status": "processed"},
+            "doc-B/chunk_000": {"status": "processed"},
+            "dup-owned-1": {
+                "status": "failed",
+                "chunks_list": [],
+                "metadata": {
+                    "is_duplicate": True,
+                    "duplicate_kind": "filename",
+                    "original_doc_id": "doc-A/chunk_000",
+                },
+            },
+            "dup-owned-2": {
+                "status": "failed",
+                "chunks_list": [],
+                "metadata": {
+                    "is_duplicate": True,
+                    "duplicate_kind": "content_hash",
+                    "original_doc_id": "doc-A/chunk_000",
+                },
+            },
+            "dup-other": {
+                "status": "failed",
+                "chunks_list": [],
+                "metadata": {
+                    "is_duplicate": True,
+                    "duplicate_kind": "filename",
+                    "original_doc_id": "doc-B/chunk_000",
+                },
+            },
+        })
+        rag.doc_status.get_by_id = AsyncMock(return_value={
+            "chunks_list": ["doc-A/chunk_000-chunk-000"],
+        })
+        rag.full_entities.get_by_id = AsyncMock(return_value={
+            "entity_names": ["EntityA"],
+        })
+        rag.full_relations.get_by_id = AsyncMock(return_value={
+            "relation_pairs": [],
+        })
+
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def fake_reservation(rag, job_name):
+            yield {"busy": False}, MagicMock()
+
+        with patch("lightrag_adapter._pipeline_reservation", fake_reservation):
+            result = asyncio.run(purge_application_document(rag, "doc-A"))
+
+        self.assertEqual(result.child_doc_ids, ["doc-A/chunk_000"])
+        self.assertEqual(result.duplicate_record_ids, ["dup-owned-1", "dup-owned-2"])
+        rag.doc_status.get_by_id.assert_awaited_once_with("doc-A/chunk_000")
+        rag.full_entities.get_by_id.assert_awaited_once_with("doc-A/chunk_000")
+        rag.doc_status.delete.assert_awaited_once_with([
+            "doc-A/chunk_000", "dup-owned-1", "dup-owned-2",
+        ])
+        rag.full_docs.delete.assert_awaited_once_with(["doc-A/chunk_000"])
+        rag.full_entities.delete.assert_any_await(["doc-A/chunk_000"])
+        rag.full_relations.delete.assert_any_await(["doc-A/chunk_000"])
+
+    def test_ignores_unstructured_duplicate_metadata(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "doc-A/chunk_000": {"status": "processed"},
+            "dup-unmarked": {
+                "status": "failed",
+                "metadata": {"original_doc_id": "doc-A/chunk_000"},
+            },
+        })
+        rag.doc_status.get_by_id = AsyncMock(return_value={
+            "chunks_list": ["doc-A/chunk_000-chunk-000"],
+        })
+        rag.full_entities.get_by_id = AsyncMock(return_value=None)
+        rag.full_relations.get_by_id = AsyncMock(return_value=None)
+
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def fake_reservation(rag, job_name):
+            yield {"busy": False}, MagicMock()
+
+        with patch("lightrag_adapter._pipeline_reservation", fake_reservation):
+            result = asyncio.run(purge_application_document(rag, "doc-A"))
+
+        self.assertEqual(result.duplicate_record_ids, [])
+        rag.doc_status.delete.assert_awaited_once_with(["doc-A/chunk_000"])
+
+
+class InsertVerification(unittest.TestCase):
+    def test_accepts_processed_children_with_chunks(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "doc-A/chunk_000": {"status": "processed", "chunks_list": ["chunk-1"]},
+            "doc-A/chunk_001": {"status": "processed", "chunks_list": ["chunk-2"]},
+        })
+
+        result = asyncio.run(verify_application_document_insert(
+            rag, "doc-A", ["doc-A/chunk_000", "doc-A/chunk_001"],
+        ))
+
+        self.assertEqual(result.committed_child_ids, ["doc-A/chunk_000", "doc-A/chunk_001"])
+
+    def test_reports_missing_child_and_filename_duplicate(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "dup-owned": {
+                "status": "failed",
+                "file_path": "doc-A__chunk_000.md",
+                "chunks_list": [],
+                "metadata": {
+                    "is_duplicate": True,
+                    "duplicate_kind": "filename",
+                    "original_doc_id": "doc-B/chunk_000",
+                },
+            },
+        })
+
+        with self.assertRaises(PurgeError) as ctx:
+            asyncio.run(verify_application_document_insert(
+                rag, "doc-A", ["doc-A/chunk_000"],
+            ))
+
+        self.assertEqual(ctx.exception.code, "LIGHTRAG_INSERT_NOT_COMMITTED")
+        verification = ctx.exception.extra["verification"]
+        self.assertEqual(verification["missing_child_ids"], ["doc-A/chunk_000"])
+        self.assertEqual(verification["duplicate_records"][0]["duplicate_kind"], "filename")
+
+    def test_rejects_processed_child_without_chunks(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={
+            "doc-A/chunk_000": {"status": "processed", "chunks_list": []},
+        })
+
+        with self.assertRaises(PurgeError) as ctx:
+            asyncio.run(verify_application_document_insert(
+                rag, "doc-A", ["doc-A/chunk_000"],
+            ))
+
+        self.assertEqual(ctx.exception.code, "LIGHTRAG_INSERT_NOT_COMMITTED")
+        self.assertEqual(ctx.exception.extra["verification"]["failed_children"][0]["chunks_count"], 0)
 
 
 class MetadataCollection(unittest.TestCase):

@@ -33,6 +33,27 @@ export function buildGraphTaskProgressUpdate(
   };
 }
 
+interface GraphIndexResult {
+  status?: string;
+  chunks?: number;
+  committed_chunks?: number;
+  expected_chunks?: number;
+  timeoutOccurred?: boolean;
+  error?: string;
+}
+
+export function assertGraphIndexCommitted(result: GraphIndexResult | undefined): void {
+  if (!result || result.status !== "indexed") {
+    throw new Error(result?.error || `LightRAG graph index did not commit (status: ${result?.status || "missing"})`);
+  }
+
+  const committed = result.committed_chunks ?? result.chunks;
+  const expected = result.expected_chunks ?? result.chunks;
+  if (typeof committed !== "number" || typeof expected !== "number" || committed !== expected) {
+    throw new Error(`LightRAG graph index committed ${String(committed)}/${String(expected)} chunks`);
+  }
+}
+
 export async function processDocumentGraph(taskId: string, ctx: TaskExecutionContext): Promise<WorkerResult> {
   const procCtx = await loadProcessingTask(taskId, ctx.signal);
   await resolveProcessingModels(procCtx);
@@ -66,11 +87,12 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
     // Surface timeout explicitly at the top level of resultData so it's visible
     // in diagnostics without digging into the nested rag.error string. The graph
     // worker still soft-lands (doc ready, basic search usable) on any failure.
-    const ragResult = indexResult?.rag as { status?: string; timeoutOccurred?: boolean; error?: string } | undefined;
+    const ragResult = indexResult?.rag as GraphIndexResult | undefined;
     const graphTimedOut = ragResult?.status === "failed" && !!ragResult?.timeoutOccurred;
     if (graphTimedOut) {
       console.warn(`[graph] doc ${procCtx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
     }
+    assertGraphIndexCommitted(ragResult);
 
     // Graph extraction is the FINAL pipeline stage. The embed worker left the
     // document in "indexing_graph" awaiting us, so only here — once the
@@ -90,6 +112,7 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
       ok: true,
       rag: indexResult?.rag,
       indexMode: indexResult?.indexMode,
+      graphStatus: "indexed",
       timeoutOccurred: graphTimedOut || undefined,
     };
   } catch (error) {

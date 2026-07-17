@@ -91,10 +91,21 @@ def _check_guard() -> None:
 class PurgeResult:
     parent_doc_id: str
     child_doc_ids: list[str] = field(default_factory=list)
+    duplicate_record_ids: list[str] = field(default_factory=list)
     chunk_ids: list[str] = field(default_factory=list)
     affected_entities: int = 0
     affected_relations: int = 0
     purged: bool = False
+
+
+@dataclass
+class InsertVerificationResult:
+    parent_doc_id: str
+    expected_child_ids: list[str] = field(default_factory=list)
+    committed_child_ids: list[str] = field(default_factory=list)
+    missing_child_ids: list[str] = field(default_factory=list)
+    failed_children: list[dict[str, Any]] = field(default_factory=list)
+    duplicate_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 class PurgeError(Exception):
@@ -143,6 +154,99 @@ async def _pipeline_reservation(rag, job_name: str):
             pipeline_status["latest_message"] = f"Completed {job_name}"
 
 
+# ── Insert verification ──────────────────────────────────────────────────────
+
+
+def _status_value(record: dict[str, Any]) -> str:
+    status = record.get("status", "")
+    return str(getattr(status, "value", status)).lower()
+
+
+def _duplicate_details(record_id: str, record: dict[str, Any]) -> Optional[dict[str, Any]]:
+    metadata = record.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("is_duplicate") is not True:
+        return None
+    return {
+        "record_id": record_id,
+        "duplicate_kind": metadata.get("duplicate_kind"),
+        "original_doc_id": metadata.get("original_doc_id"),
+        "file_path": record.get("file_path"),
+        "error": record.get("error_msg") or record.get("content_summary"),
+    }
+
+
+async def verify_application_document_insert(
+    rag,
+    parent_doc_id: str,
+    expected_child_ids: list[str],
+) -> InsertVerificationResult:
+    """Verify that LightRAG committed every requested child document.
+
+    LightRAG records filename/content duplicates as failed ``dup-*`` status rows
+    and returns normally from ``ainsert``. Callers therefore cannot treat a
+    successful coroutine return as a committed insert.
+    """
+    from lightrag.base import DocStatus
+
+    expected = list(dict.fromkeys(expected_child_ids))
+    expected_set = set(expected)
+    all_docs = await rag.doc_status.get_docs_by_statuses(list(DocStatus))
+    result = InsertVerificationResult(
+        parent_doc_id=parent_doc_id,
+        expected_child_ids=expected,
+    )
+
+    for child_id in expected:
+        record = all_docs.get(child_id)
+        if not isinstance(record, dict):
+            result.missing_child_ids.append(child_id)
+            continue
+        if _status_value(record) != "processed" or not record.get("chunks_list"):
+            result.failed_children.append({
+                "child_id": child_id,
+                "status": _status_value(record),
+                "file_path": record.get("file_path"),
+                "error": record.get("error_msg"),
+                "chunks_count": len(record.get("chunks_list") or []),
+            })
+            continue
+        result.committed_child_ids.append(child_id)
+
+    for record_id, record in all_docs.items():
+        if not record_id.startswith("dup-") or not isinstance(record, dict):
+            continue
+        details = _duplicate_details(record_id, record)
+        if details and details.get("original_doc_id") not in expected_set:
+            # A missing requested child may have been redirected to an existing
+            # document. Match the document-specific logical filename as a second,
+            # structured signal so the diagnostic identifies that duplicate.
+            file_path = str(details.get("file_path") or "")
+            if not file_path.startswith(parent_doc_id + "__"):
+                continue
+        if details:
+            result.duplicate_records.append(details)
+
+    if (
+        len(result.committed_child_ids) != len(expected)
+        or result.missing_child_ids
+        or result.failed_children
+    ):
+        raise PurgeError(
+            "LIGHTRAG_INSERT_NOT_COMMITTED",
+            f"LightRAG committed {len(result.committed_child_ids)}/{len(expected)} "
+            f"children for document {parent_doc_id}.",
+            verification={
+                "expected_child_ids": result.expected_child_ids,
+                "committed_child_ids": result.committed_child_ids,
+                "missing_child_ids": result.missing_child_ids,
+                "failed_children": result.failed_children,
+                "duplicate_records": result.duplicate_records,
+            },
+        )
+
+    return result
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 
@@ -186,8 +290,21 @@ async def purge_application_document(
         key for key in all_docs
         if key == parent_doc_id or key.startswith(prefix)
     )
+    child_doc_id_set = set(child_doc_ids)
+    duplicate_record_ids = sorted(
+        key
+        for key, record in all_docs.items()
+        if key.startswith("dup-")
+        and isinstance(record, dict)
+        and (details := _duplicate_details(key, record)) is not None
+        and details.get("original_doc_id") in child_doc_id_set
+    )
 
-    result = PurgeResult(parent_doc_id=parent_doc_id, child_doc_ids=child_doc_ids)
+    result = PurgeResult(
+        parent_doc_id=parent_doc_id,
+        child_doc_ids=child_doc_ids,
+        duplicate_record_ids=duplicate_record_ids,
+    )
 
     if not child_doc_ids:
         # Fresh document — nothing to purge.
@@ -271,7 +388,10 @@ async def purge_application_document(
             assert_lock_owned()
 
         # ---- 5. Delete child metadata ----
-        await rag.doc_status.delete(child_doc_ids)
+        # Duplicate-attempt records contain no chunks or graph metadata, but they
+        # must be removed from doc_status or LightRAG's filename lookup can use a
+        # stale failed row to reject the immediate reinsert.
+        await rag.doc_status.delete(child_doc_ids + duplicate_record_ids)
         await rag.full_docs.delete(child_doc_ids)
         await rag.full_entities.delete(child_doc_ids)
         await rag.full_relations.delete(child_doc_ids)

@@ -628,7 +628,17 @@ async function indexWithLightRAG(
   onUsageEvent?: (event: Record<string, unknown>) => void,
   taskId?: string,
   signal?: AbortSignal,
-): Promise<{ status: string; chunks: number; graphEntities?: number; storage?: Record<string, string>; error?: string; timeoutOccurred?: boolean }> {
+): Promise<{
+  status: string;
+  chunks: number;
+  submitted_chunks?: number;
+  committed_chunks?: number;
+  expected_chunks?: number;
+  graphEntities?: number;
+  storage?: Record<string, string>;
+  error?: string;
+  timeoutOccurred?: boolean;
+}> {
   // Build the kwargs dict for rag_index.index_document(**params). The daemon
   // takes this verbatim; the spawn fallback rebuilds argv from the same dict so
   // the two paths can never diverge.

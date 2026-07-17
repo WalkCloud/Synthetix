@@ -12,6 +12,7 @@ from rag_index import (
     _call_graph_llm_with_connection_retry,
     _heartbeat_loop,
     _is_transient_llm_connection_error,
+    build_lightrag_source_name,
     emit_progress,
     get_insert_batch_size,
     insert_chunks,
@@ -64,6 +65,20 @@ class RagIndexHelperTests(unittest.TestCase):
         self.assertEqual(
             sort_chunk_files(files),
             ["chunk_010.md", "chunk_101.md", "chunk_999.md", "chunk_1000.md"],
+        )
+
+    def test_lightrag_source_name_is_stable_and_document_unique(self):
+        self.assertEqual(
+            build_lightrag_source_name("doc-A", "chunk_000.md"),
+            "doc-A__chunk_000.md",
+        )
+        self.assertEqual(
+            build_lightrag_source_name("doc-A", os.path.join("nested", "chunk_000.md")),
+            "doc-A__chunk_000.md",
+        )
+        self.assertNotEqual(
+            build_lightrag_source_name("doc-A", "chunk_000.md"),
+            build_lightrag_source_name("doc-B", "chunk_000.md"),
         )
 
     def test_insert_chunks_uses_bulk_batches_when_supported(self):
