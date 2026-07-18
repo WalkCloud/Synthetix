@@ -129,6 +129,52 @@ function main() {
   }
   run("npx", ["electron-builder", "--mac", "dmg", "--arm64", "--config", "electron-builder.yml"], { cwd: ROOT });
 
+  // 5b) Deep ad-hoc re-sign the .app.
+  // electron-builder with identity:null skips signing entirely, but the Electron
+  // main binary ships with a linker-signed ad-hoc signature (added by the macOS
+  // linker at compile time). That signature's resource manifest references files
+  // the bundle doesn't actually carry (no _CodeResources), so Gatekeeper sees a
+  // MISMATCH on double-click and shows the alarming "App is damaged, move to
+  // Trash" — even though the app runs fine when launched from the terminal.
+  // The fix: `codesign --force --deep --sign -` rebuilds the ad-hoc signature
+  // so its manifest fully covers the bundle. The result still isn't Developer-ID
+  // signed (Gatekeeper will still prompt on first launch — right-click → Open,
+  // or `xattr -dr com.apple.quarantine` for downloaded copies), but it no longer
+  // reports the app as "damaged". See spec §2.5 + implementation record §8.1.
+  const appBundleToSign = path.join(DIST, "electron", "mac-arm64", "Synthetix.app");
+  if (fs.existsSync(appBundleToSign)) {
+    log("deep ad-hoc re-signing Synthetix.app (fixes 'damaged' on double-click)…");
+    const signRes = spawnSync("codesign",
+      ["--force", "--deep", "--sign", "-", appBundleToSign],
+      { stdio: "inherit" });
+    if (signRes.status !== 0) {
+      warn(`codesign --deep failed (exit ${signRes.status}); the app may show as ` +
+           `"damaged" on double-click. Manual fix: codesign --force --deep --sign - ` +
+           `/Applications/Synthetix.app`);
+    } else {
+      // Verify the signature is now self-consistent.
+      const verifyRes = spawnSync("codesign",
+        ["--verify", "--deep", "--strict", "--verbose=2", appBundleToSign],
+        { encoding: "utf8" });
+      if (/satisfies its Designated Requirement/.test(verifyRes.stdout + verifyRes.stderr)) {
+        log("✓ deep ad-hoc signature valid (bundle manifest matches files)");
+      } else {
+        warn(`signature verification unexpected: ${(verifyRes.stdout + verifyRes.stderr).slice(0, 200)}`);
+      }
+    }
+    // Rebuild the DMG from the now-properly-signed .app, so the DMG itself
+    // carries the fixed app. (electron-builder already made a DMG from the
+    // pre-sign app; we overwrite it with one from the signed app.)
+    log("rebuilding DMG from the signed .app…");
+    const dmgPath = path.join(DIST, "electron", `Synthetix-${VERSION}-arm64.dmg`);
+    if (fs.existsSync(dmgPath)) fs.rmSync(dmgPath, { force: true });
+    run("npx", ["electron-builder", "--mac", "dmg", "--arm64",
+                "--prepackaged", path.join(DIST, "electron", "mac-arm64"),
+                "--config", "electron-builder.yml"], { cwd: ROOT });
+  } else {
+    warn(`mac-arm64/Synthetix.app not found at ${appBundleToSign} — skipping deep sign`);
+  }
+
   // 6) Report.
   const installerDir = path.join(DIST, "electron");
   const candidates = fs.existsSync(installerDir)
@@ -142,7 +188,7 @@ function main() {
     const mb = (fs.statSync(full).size / (1024 * 1024)).toFixed(1);
     log(`✓ built ${installer} (${mb} MB) in ${secs}s`);
     log(`  → ${full}`);
-    log(`  Gatekeeper: unsigned — users run \`xattr -dr com.apple.quarantine /Applications/Synthetix.app\` on first launch (see spec §2.5)`);
+    log(`  First launch: right-click → Open (or \`xattr -dr com.apple.quarantine /Applications/Synthetix.app\` for downloaded copies)`);
   } else {
     warn(`no .dmg found in ${path.relative(ROOT, installerDir)} (took ${secs}s)`);
   }
