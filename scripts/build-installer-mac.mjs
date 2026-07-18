@@ -244,22 +244,36 @@ function rebuildNativeModulesForBundledNode(appDir) {
       warn(`  ${pkg}: no binding.gyp in ${pkgDir} — skipping rebuild (may fail at runtime)`);
       continue;
     }
-    log(`  rebuilding ${pkg} for ${bundledVer}…`);
-    // node-gyp rebuild with the bundled node driving it, targeting the bundled
-    // node's version. --arch=arm64 --platform=darwin match our target.
+    // CRITICAL: rebuild in a STAGING COPY, not in the root node_modules.
+    // node-gyp rebuild overwrites build/Release/*.node in-place; doing it in
+    // the root node_modules would replace the dev machine's binary (compiled
+    // for the dev node's ABI, e.g. v24) with one for the bundled node (v20),
+    // breaking the dev environment (tests fail with NODE_MODULE_VERSION
+    // mismatch). We copy the package to a temp dir, rebuild there, lift out
+    // the .node, and discard the temp dir. The root node_modules is untouched.
+    const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), `native-rebuild-${pkg}-`));
+    const stagePkgDir = path.join(stageDir, pkg);
+    log(`  staging ${pkg} → ${path.basename(stageDir)} (rebuild for ${bundledVer}, keep dev env intact)…`);
+    copyDir(pkgDir, stagePkgDir);
     const res = spawnSync(bundledNode, [nodeGyp, "rebuild",
       `--target=${bundledVer}`, "--runtime=node",
       "--arch=arm64", "--platform=darwin",
-    ], { cwd: pkgDir, stdio: "inherit" });
-    if (res.status !== 0) fail(`${pkg} rebuild failed (exit ${res.status})`);
+    ], { cwd: stagePkgDir, stdio: "inherit" });
+    if (res.status !== 0) {
+      rmrf(stageDir, warn, ROOT);
+      fail(`${pkg} rebuild failed (exit ${res.status})`);
+    }
 
-    // The rebuilt .node is at node_modules/<pkg>/build/Release/<nodeGlob>.
-    // Copy it to EVERY location it appears in dist/app (standalone tracing
-    // may have placed copies under .next/node_modules/<pkg>-<hash>/ too).
-    const rebuiltNode = path.join(pkgDir, "build", "Release", nodeGlob);
-    if (!fs.existsSync(rebuiltNode)) fail(`rebuilt ${nodeGlob} not found at ${rebuiltNode}`);
+    // The rebuilt .node is in the staging dir's build/Release/<nodeGlob>.
+    const rebuiltNode = path.join(stagePkgDir, "build", "Release", nodeGlob);
+    if (!fs.existsSync(rebuiltNode)) {
+      rmrf(stageDir, warn, ROOT);
+      fail(`rebuilt ${nodeGlob} not found at ${rebuiltNode}`);
+    }
 
-    // Find all occurrences in the bundle and overwrite them.
+    // Find all occurrences in the bundle and overwrite them. (standalone
+    // tracing may have placed copies under both node_modules/<pkg>/ and
+    // .next/node_modules/<pkg>-<hash>/.)
     let replaced = 0;
     const findAndReplace = (dir) => {
       if (!fs.existsSync(dir)) return;
@@ -270,14 +284,15 @@ function rebuildNativeModulesForBundledNode(appDir) {
         if (e.isDirectory()) {
           if (e.name === ".pnpm" || e.name === ".cache") continue;
           findAndReplace(full);
-        } else if (e.name === nodeGlob && full !== rebuiltNode) {
+        } else if (e.name === nodeGlob) {
           fs.copyFileSync(rebuiltNode, full);
           replaced++;
         }
       }
     };
     findAndReplace(appDir);
-    log(`  ✓ ${pkg}: rebuilt for ${bundledVer}, replaced ${replaced} copy(ies) in bundle`);
+    rmrf(stageDir, warn, ROOT);
+    log(`  ✓ ${pkg}: rebuilt for ${bundledVer}, replaced ${replaced} copy(ies) in bundle (dev env untouched)`);
   }
 }
 
