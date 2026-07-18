@@ -155,6 +155,16 @@ export function Sidebar() {
   const { locale, t, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
   const [aboutOpen, setAboutOpen] = useState(false);
+  // Detect macOS at runtime (client-only) so we can pad the top bar to clear
+  // the native traffic-light buttons (close/minimize/zoom) which sit at the
+  // top-left on darwin and would overlap the logo. window.synthetix.platform
+  // is exposed by electron/preload.ts; in a plain browser it's undefined and
+  // we fall back to the user-agent check. Defaults to false during SSR.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    const platform = typeof window !== "undefined" ? window.synthetix?.platform : undefined;
+    setIsMac(platform === "darwin" || (/Mac/.test(navigator.userAgent) && !platform));
+  }, []);
 
   const displayName = useMemo(() => user?.displayName || user?.username || "User", [user]);
   const initials = useMemo(
@@ -167,8 +177,11 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-white dark:bg-sidebar border-r flex flex-col z-50">
       {/* Top brand block doubles as the window drag handle (titleBarStyle:hidden
-          overlay mode). The Image/h1 are non-interactive so the whole bar drags. */}
-      <div className="app-drag h-16 shrink-0 flex items-center gap-3 px-6 border-b border-border">
+          overlay mode). The Image/h1 are non-interactive so the whole bar drags.
+          On macOS, add left padding so the logo clears the traffic-light buttons
+          (~78px: 3 buttons × ~12px + margins). Windows keeps px-6 (buttons are
+          on the overlay at top-right, no conflict). */}
+      <div className={`app-drag h-16 shrink-0 flex items-center gap-3 border-b border-border ${isMac ? "pl-[78px] pr-6" : "px-6"}`}>
         <Image
           src="/logo.png"
           alt="Synthetix"
