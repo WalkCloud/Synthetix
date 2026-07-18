@@ -422,9 +422,10 @@ function createWindow(port: number): void {
       symbolColor: "#334155", // slate-700, readable on light bg
       height: 40,
     },
-    // Window icon: pass the path only if it exists (empty string would be
-    // ignored by BrowserWindow, but be explicit).
-    ...(trayIconPath() ? { icon: trayIconPath() } : {}),
+    // Window icon: pass a pre-loaded NativeImage (or undefined). On macOS,
+    // passing a raw .icns path string can fail; windowIcon() handles loading
+    // and fallback. See trayImage() doc for the .icns rationale.
+    ...(windowIcon() ? { icon: windowIcon() } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -522,11 +523,43 @@ function trayIconPath(): string {
  * path" and crashes the app, so when no icon file is found we fall back to an
  * empty native image (Electron renders a default tray slot) instead of an
  * empty string.
+ *
+ * On macOS, passing a raw .icns PATH STRING to Tray/BrowserWindow can fail
+ * ("Failed to load image from path ...icon.icns") because Electron's internal
+ * nativeImage.createFromPath doesn't reliably parse all .icns structures. We
+ * pre-load via nativeImage.createFromPath and pass the resulting NativeImage
+ * object instead of the path string; if that fails (isEmpty()), we fall back
+ * to an empty image rather than crashing. The .icns still works as the app
+ * bundle's dock icon (via Info.plist/CFBundleIconFile) regardless.
  */
 function trayImage() {
   const p = trayIconPath();
-  if (p) return p;
+  if (p) {
+    try {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) return img;
+    } catch {
+      // fall through to empty image
+    }
+  }
   return nativeImage.createEmpty();
+}
+
+/**
+ * Resolve the BrowserWindow icon as a NativeImage (or undefined). Same macOS
+ * .icns rationale as trayImage(): pre-load via nativeImage and fall back
+ * gracefully instead of passing a raw path string that may fail to parse.
+ */
+function windowIcon() {
+  const p = trayIconPath();
+  if (!p) return undefined;
+  try {
+    const img = nativeImage.createFromPath(p);
+    if (!img.isEmpty()) return img;
+  } catch {
+    // fall through
+  }
+  return undefined;
 }
 
 // ─── env file loader ────────────────────────────────────────────────────────
