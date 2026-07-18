@@ -71,6 +71,45 @@ export async function downloadAndInstallUpdate(): Promise<void> {
 }
 
 /**
+ * Download only (no install). Leaves the update staged at `ready` so the UI
+ * can prompt the user to confirm the install explicitly. No-op when unsupported.
+ */
+export async function startDownloadUpdate(): Promise<UpdateStatus> {
+  const api = window.synthetix?.update;
+  if (!api) return UNSUPPORTED;
+  try {
+    return await api.startDownload();
+  } catch (e) {
+    return { kind: "error", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Cancel an in-flight download. No-op when unsupported. */
+export async function cancelDownloadUpdate(): Promise<UpdateStatus> {
+  const api = window.synthetix?.update;
+  if (!api) return UNSUPPORTED;
+  try {
+    return await api.cancelDownload();
+  } catch (e) {
+    return { kind: "error", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Apply a staged update (requires status `ready`). No-op when unsupported or
+ * when no update is staged.
+ */
+export async function installStagedUpdate(): Promise<void> {
+  const api = window.synthetix?.update;
+  if (!api) return;
+  try {
+    await api.installStaged();
+  } catch (e) {
+    console.error("[update] installStaged failed:", e);
+  }
+}
+
+/**
  * React hook: subscribes to live status updates and also re-checks whenever the
  * caller asks (e.g. when the About dialog opens). Returns the latest status.
  *
@@ -85,6 +124,9 @@ export function useUpdateStatus(checkOnMount = true): {
   status: UpdateStatus;
   refresh: () => void;
   install: () => void;
+  startDownload: () => void;
+  cancelDownload: () => void;
+  installStaged: () => void;
 } {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });
 
@@ -121,6 +163,15 @@ export function useUpdateStatus(checkOnMount = true): {
     },
     install: () => {
       void downloadAndInstallUpdate();
+    },
+    startDownload: () => {
+      void startDownloadUpdate().then(setStatus);
+    },
+    cancelDownload: () => {
+      void cancelDownloadUpdate().then(setStatus);
+    },
+    installStaged: () => {
+      void installStagedUpdate();
     },
   };
 }

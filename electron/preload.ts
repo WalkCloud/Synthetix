@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld("synthetix", {
     getStatus: () => ipcRenderer.invoke("synthetix:update:get-status"),
     checkNow: () => ipcRenderer.invoke("synthetix:update:check-now"),
     downloadAndInstall: () => ipcRenderer.invoke("synthetix:update:download-and-install"),
+    // Granular download/install split (Stage 1.1 of the online-update design).
+    // The UI offers "download now" and, once ready, "install" as separate user
+    // actions; cancel lets a user abort an in-flight download.
+    startDownload: () => ipcRenderer.invoke("synthetix:update:start-download"),
+    cancelDownload: () => ipcRenderer.invoke("synthetix:update:cancel-download"),
+    installStaged: () => ipcRenderer.invoke("synthetix:update:install-staged"),
     // Subscribe to status pushes from the main process. Returns an unsubscribe.
     // `cb` receives the serialized UpdateStatus from updater.ts (kept loose here
     // as `unknown` to avoid a hard type dependency from the preload bundle).

@@ -23,65 +23,139 @@ feature/* ──PR──► main ──tag──► v1.0.x
 3. `main` always reflects the latest releasable state
 4. Cut a release by tagging a commit on `main`
 
+## Version sources (single source of truth)
+
+The version lives in `package.json` and is propagated to every other place that
+needs it. **Never hand-edit the derived files** — run `npm run generate:meta`
+and the build flow instead. The `verify:versions` script fails the build if any
+of these drift apart (this is what caught the v1.0.2/v1.0.3 regression where
+the installer was named 1.0.3 but the app reported 1.0.1):
+
+| Source | File | How it stays in sync |
+|---|---|---|
+| Canonical | `package.json` `version` | Hand-edit on bump |
+| About dialog | `src/generated/app-version.ts` | `npm run generate:meta` |
+| Build provenance | `public/build-info.json` | `npm run generate:meta` |
+| Electron `app.getVersion()` | `dist/electron-main/main.js` | `electron:build` (chains `generate:meta`) |
+| Packed app.asar | `dist/electron/win-unpacked/resources/app.asar` | `electron:build` (refuses to reuse a stale win-unpacked) |
+| Update manifest | `stable.json` on the GitHub Release | `npm run publish` |
+
+`build` and `electron:build` both chain `generate:meta` so a clean build can
+never again ship with a stale About-dialog version.
+
 ## Cutting a release
 
-Run these steps each time you ship a new version. Replace `1.0.1` with your target version.
-
 ### 1. Bump version
-
-Edit these files (search-and-replace the old version string):
-
-- `package.json` → `"version": "1.0.1"`
-- `packaging/Synthetix-Electron.iss` → `MyAppVersion` and `OutputBaseFilename`
-
-Then regenerate the app version metadata so the About dialog shows the new
-version (this rewrites the git-tracked `src/generated/app-version.ts`):
-
-```bash
-npm run generate:meta
-```
 
 ```bash
 git checkout main
 git pull origin main
-# edit the two files + run generate:meta, then:
-git add package.json packaging/Synthetix-Electron.iss src/generated/app-version.ts
-git commit -m "release: v1.0.1"
+# edit package.json: "version": "1.0.4"
+npm run generate:meta   # propagates to src/generated/app-version.ts
+git add package.json src/generated/app-version.ts
+git commit -m "release: v1.0.4"
 ```
 
 ### 2. Tag and push
 
 ```bash
-git tag -a v1.0.1 -m "v1.0.1 — <one-line summary>"
+git tag -a v1.0.4 -m "v1.0.4 — <one-line summary>"
 git push origin main
-git push origin v1.0.1
+git push origin v1.0.4
 ```
 
-### 3. Create GitHub Release
+### 3. Windows installer + update manifest (automatic)
 
-Write release notes to `.github/release-notes/v1.0.1.md`, then:
+Pushing a `v*` tag triggers `.github/workflows/release-windows.yml` on a
+Windows runner. The workflow:
+
+1. Builds the Next.js standalone bundle.
+2. Builds the Electron NSIS installer via `electron:build` (which refuses to
+   reuse a stale `win-unpacked`).
+3. Runs `verify:versions` to assert `package.json` == `app-version.ts` ==
+   `app.asar` version.
+4. Decodes the Authenticode certificate secret (if configured) and signs the
+   installer.
+5. Runs `npm run publish`, which:
+   - computes SHA-256 of the installer,
+   - signs the update manifest (`stable.json`) with the Ed25519 key
+     (`SYNTHETIX_SIGNING_KEY` secret),
+   - uploads the installer + manifest to the GitHub Release.
+
+Installed clients then discover the new version via
+`https://github.com/WalkCloud/Synthetix/releases/latest/download/stable.json`,
+verify the manifest signature against the public key baked into the app,
+download the installer, verify its SHA-256, and (after the user confirms) run
+the NSIS installer visibly.
+
+### 4. Release notes
+
+Write release notes when creating the tag, or attach them after:
 
 ```bash
-gh release create v1.0.1 \
-  --title "Synthetix v1.0.1" \
-  --notes-file .github/release-notes/v1.0.1.md
+gh release edit v1.0.4 --notes-file .github/release-notes/v1.0.4.md
 ```
 
-Or create it on the web: https://github.com/WalkCloud/Synthetix/releases/new?tag=v1.0.1
+## Update manifest format (`stable.json`)
 
-### 4. (Optional) Attach binaries
+The updater requires this schema (see `electron/updater.ts` `LatestManifest`):
 
-If shipping a Windows installer, upload the built `.exe` as a release asset:
+```json
+{
+  "version": "1.0.4",
+  "channel": "stable",
+  "publishedAt": "2026-07-18T09:00:00.000Z",
+  "minRequiredVersion": null,
+  "forceFull": false,
+  "platforms": {
+    "win-x64": {
+      "updateKind": "full",
+      "full": { "url": "...", "size": 625053950, "sha256": "..." }
+    }
+  },
+  "signature": "<Ed25519 signature>"
+}
+```
+
+`publish-release.mjs` generates and signs this automatically; do not hand-edit
+it. Older manifests that lack `platforms` / `signature` are rejected by current
+clients (this is what made the pre-fix `stable.json` unusable).
+
+## Windows code signing (Authenticode)
+
+The installer and EXE are signed when these repository secrets are set:
+
+- `WINDOWS_CERT_FILE` — the `.pfx` base64-encoded.
+- `WINDOWS_CERT_PASSWORD` — the `.pfx` password.
+
+When unset, the build skips signing and Windows SmartScreen will warn on first
+run. For a public release, configure an EV or OV certificate. The Ed25519
+manifest signature protects the *update channel* regardless, but Authenticode
+protects the *first manual download* and the publisher identity shown by
+Windows.
+
+The `.pfx` is decoded in CI to a temp file and passed via
+`--win.certificateFile`; it never lives in the repo or in
+`electron-builder.yml`.
+
+## Update signing key (Ed25519)
+
+Generate once:
 
 ```bash
-gh release upload v1.0.1 dist/installer/Synthetix-Setup-v1.0.1.exe
+npm run generate:signing-key
 ```
+
+Store the private key as the `SYNTHETIX_SIGNING_KEY` repository secret. The
+public key is baked into the app at `electron/generated/update-pubkey.ts` and
+committed; the updater verifies every manifest against it.
 
 ## Pre-release license compliance checklist
 
 Run through this before tagging a release. Full rationale in
 `docs/about-dialog-design-and-compliance-plan-2026-07-08.md` §12.
 
+- [ ] `npm run verify:versions` passes (version consistency).
 - [ ] About dialog version matches `package.json` (`npm run generate:meta`).
 - [ ] About copyright text no longer says "All rights reserved / 保留所有权利".
 - [ ] Root `LICENSE` exists and is Apache-2.0.
@@ -90,45 +164,56 @@ Run through this before tagging a release. Full rationale in
 - [ ] No `Unknown` license entries remain (review warnings emitted by the script).
 - [ ] No unreviewed GPL/LGPL/AGPL/MPL entries.
 - [ ] Windows installer (post-build) contains `resources/app/LICENSE` and `resources/app/THIRD-PARTY-NOTICES.txt`.
-- [ ] Strip step did not delete license/NOTICE material from next/react/react-dom/effect.
+- [ ] Update manifest (`stable.json`) on the Release is signed and matches the installer's SHA-256.
 
-To fail the build on uninspectable licenses (Unknown / copyleft), set
-`NOTICES_STRICT=1` when running the installer build:
-
-```bash
-NOTICES_STRICT=1 node scripts/build-installer.mjs --assemble-only
-```
-
-## Quick reference: the whole flow as a script
+## Quick reference: the whole flow
 
 ```bash
-# Set the version you're cutting
-VER=1.0.1
+VER=1.0.4
 
 git checkout main && git pull origin main
 
-# Bump version in both files (adjust paths as needed)
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VER\"/" package.json
-# For the .iss file, update MyAppVersion and OutputBaseFilename manually
-
-git add package.json packaging/Synthetix-Electron.iss
-# Regenerate app-version.ts with the new version, then stage it
+# Bump version (single edit — generate:meta + the build chain do the rest)
+# edit package.json: "version": "$VER"
 npm run generate:meta
-git add src/generated/app-version.ts
+git add package.json src/generated/app-version.ts
 git commit -m "release: v$VER"
-git tag -a v$VER -m "v$VER"
+git tag -a v$VER -m "v$VER — <summary>"
 git push origin main
 git push origin v$VER
 
-# Then create the Release via gh or the web UI
+# The release-windows.yml workflow builds, signs, and publishes the installer
+# + stable.json automatically. Verify on the Actions tab.
 ```
 
 ## Hotfixes to a released version
 
 If you need to fix something on an already-released version without pulling in newer main work:
 
-1. Branch off the tag: `git checkout -b hotfix/v1.0.2 v1.0.1`
-2. Fix, commit, tag `v1.0.2`, push
+1. Branch off the tag: `git checkout -b hotfix/v1.0.5 v1.0.4`
+2. Fix, commit, tag `v1.0.5`, push
 3. Merge the hotfix branch back to `main` via PR
 
 This is rare for a single-developer project — usually you just fix on main and cut the next version.
+
+## In-app update flow (what users see)
+
+1. The app checks for updates 30s after boot, then every 12h
+   (`electron/main.ts` `scheduleUpdateChecks`).
+2. When a newer signed manifest is found, the **sidebar** shows a reminder
+   button above the user avatar (amber for normal updates, orange for forced).
+3. Clicking it opens the **About dialog** with release notes, size, and a
+   "Download now" button.
+4. Download runs in the Electron main process with a progress bar; the user
+   can cancel.
+5. Once downloaded + SHA-256-verified, the dialog shows "Restart & install"
+   (full) or "Apply now" (patch).
+6. Full: the app quits and the **NSIS installer runs visibly** (the user sees
+   the install page); a helper relaunches the new app once it's ready. Patch:
+   the local Next service is restarted in place.
+7. Staged download artifacts are cleaned up after a successful apply and on
+   every boot.
+
+Plain browser / self-hosted-web deployments hide all of this — in-app updates
+are an Electron-desktop capability only (the browser cannot safely download
+and run a Windows installer).

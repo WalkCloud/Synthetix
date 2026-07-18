@@ -213,6 +213,15 @@ async function boot(): Promise<void> {
   // steals vertical space. Done once at boot.
   Menu.setApplicationMenu(null);
 
+  // Clear any leftover staged update artifacts from a previous run (aborted
+  // download, or a full-install EXE that wasn't cleaned up because the app
+  // quit before cleanup ran). Best-effort — never blocks boot.
+  try {
+    updater.cleanupStaging();
+  } catch (e) {
+    console.log(`[boot] staging cleanup failed (non-fatal): ${(e as Error).message}`);
+  }
+
   // 1) First-run setup: secrets + DB migration. Must precede server start so
   //    startup.ts finds an existing DB and skips its own npx prisma db push
   //    (which would fail in the packaged env — no npx available).
@@ -298,6 +307,22 @@ ipcMain.handle("synthetix:update:check-now", async () =>
 // IPC: renderer triggers download + apply (the "立即更新" button).
 ipcMain.handle("synthetix:update:download-and-install", async () =>
   updater.downloadAndInstall()
+);
+
+// IPC (Stage 1.1): granular download/install split so the UI can offer
+// "download now" then "install" as separate user actions, plus cancel.
+// `download-and-install` above remains as the combined convenience action.
+ipcMain.handle("synthetix:update:start-download", async () =>
+  updater.publicStatus(await updater.downloadUpdate())
+);
+
+ipcMain.handle("synthetix:update:cancel-download", async () => {
+  updater.cancelDownload();
+  return updater.publicStatus(updater.getStatus());
+});
+
+ipcMain.handle("synthetix:update:install-staged", async () =>
+  updater.applyStagedUpdate()
 );
 
 // ─── Next.js server child ───────────────────────────────────────────────────

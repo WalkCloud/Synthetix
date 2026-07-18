@@ -161,8 +161,13 @@ export const winPatchApplier: Applier = async (stagedPath, version, _pathKind) =
 
 // ─── web-layer backup / rollback ────────────────────────────────────────────
 
-/** The subtrees of resources/app a content zip is allowed to overwrite. */
-const PATCHABLE_DIRS = [".next", "public"];
+/**
+ * The subtrees of resources/app a content zip is allowed to overwrite.
+ * `prisma/migrations` ships SQL files so the inline migrator can apply NEW
+ * migrations during a patch upgrade (the prisma engine binary stays excluded
+ * — it's runtime-layer).
+ */
+const PATCHABLE_DIRS = [".next", "public", "prisma/migrations"];
 
 /**
  * Copy each patchable dir into `backupDir`. Returns the list of {src, backup}

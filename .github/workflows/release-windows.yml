@@ -1,0 +1,101 @@
+name: Release (Windows)
+
+# Produces a signed Synthetix Windows installer + Ed25519-signed update
+# manifest and publishes them to a GitHub Release. Triggered by a version tag.
+#
+# Verification boundary: this workflow's YAML is syntactically validated by
+# the workflow parser, but the actual build/sign/publish/upgrade can only be
+# exercised on a real Windows runner with the required secrets. The pure
+# version-consistency logic it depends on is unit-tested in
+# src/__tests__/scripts/verify-version-consistency.test.ts.
+#
+# TODO(upgrade-e2e): add a matrix job that installs the PREVIOUS stable
+# installer, runs the new updater against this Release's stable.json, and
+# asserts the upgraded app reports the new version. Requires a version matrix
+# and a cached previous-installer artifact; tracked as follow-up work.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.0.4)"
+        required: true
+
+permissions:
+  contents: write # needed by `gh release create/upload`
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags so verify:versions and publish can read the tag.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Generate app metadata
+        # Bake package.json version into src/generated/app-version.ts so the
+        # installer, About dialog, and update manifest all agree.
+        run: pnpm run generate:meta
+
+      - name: Build Next.js (standalone)
+        run: pnpm run build
+
+      - name: Build Electron Windows installer
+        # build-electron.mjs now refuses to reuse a stale win-unpacked (its
+        # baked app.asar version must match package.json), so this always
+        # produces an installer whose internal app matches the tag.
+        run: pnpm run electron:build
+
+      - name: Verify version consistency
+        # Asserts package.json == app-version.ts == app.asar version.
+        run: pnpm run verify:versions
+
+      - name: Decode code-signing certificate (if provided)
+        if: ${{ env.WINDOWS_CERT_FILE != '' }}
+        env:
+          WINDOWS_CERT_FILE: ${{ secrets.WINDOWS_CERT_FILE }}
+        run: |
+          # The secret is the base64-encoded .pfx. Decode it to a temp file
+          # that electron-builder reads via --config.win.certificateFile.
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT_FILE)
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\synthetix.pfx", $bytes)
+          echo "WINDOWS_CERT_PATH=$env:RUNNER_TEMP\synthetix.pfx" >> $env:GITHUB_ENV
+
+      - name: Publish release assets + signed manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNTHETIX_SIGNING_KEY: ${{ secrets.SYNTHETIX_SIGNING_KEY }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          # publish-release.mjs signs the manifest with the Ed25519 key and
+          # uploads installer + manifest to the GitHub Release for this tag.
+          # Pass the Authenticode cert path so the installer itself is signed.
+          if ($env:WINDOWS_CERT_PATH) {
+            pnpm run publish -- --win.certificateFile "$env:WINDOWS_CERT_PATH" --win.certificatePassword "$env:WINDOWS_CERT_PASSWORD"
+          } else {
+            echo "::warning::No Windows code-signing certificate provided — installer will be unsigned (SmartScreen will warn)."
+            pnpm run publish
+          }

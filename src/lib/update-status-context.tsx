@@ -46,6 +46,12 @@ interface UpdateStatusContextValue {
   refresh: () => void;
   /** Convenience: download + apply (legacy combined action). */
   install: () => void;
+  /** Download only; leave staged at `ready` for explicit install. */
+  startDownload: () => void;
+  /** Abort an in-flight download. */
+  cancelDownload: () => void;
+  /** Apply a staged update (status `ready`). */
+  installStaged: () => void;
 }
 
 const UpdateStatusContext = createContext<UpdateStatusContextValue>({
@@ -53,6 +59,9 @@ const UpdateStatusContext = createContext<UpdateStatusContextValue>({
   supported: false,
   refresh: () => {},
   install: () => {},
+  startDownload: () => {},
+  cancelDownload: () => {},
+  installStaged: () => {},
 });
 
 export function UpdateStatusProvider({ children }: { children: ReactNode }) {
@@ -60,7 +69,8 @@ export function UpdateStatusProvider({ children }: { children: ReactNode }) {
   const supported = isUpdateSupported();
   // Single subscription for the whole app. We DO check on mount so the sidebar
   // badge reflects the latest state without the user opening About.
-  const { status, refresh, install } = useUpdateStatus(true);
+  const { status, refresh, install, startDownload, cancelDownload, installStaged } =
+    useUpdateStatus(true);
 
   const prevStatusRef = useRef<UpdateStatus>({ kind: "idle" });
   const notifiedVersionsRef = useRef<Set<string>>(new Set());
@@ -90,7 +100,7 @@ export function UpdateStatusProvider({ children }: { children: ReactNode }) {
 
   return (
     <UpdateStatusContext.Provider
-      value={{ status, supported, refresh, install }}
+      value={{ status, supported, refresh, install, startDownload, cancelDownload, installStaged }}
     >
       {children}
     </UpdateStatusContext.Provider>

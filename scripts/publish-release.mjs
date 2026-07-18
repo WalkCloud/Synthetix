@@ -171,9 +171,15 @@ function collectFiles(dir, ext, out) {
 
 /**
  * Build the content zip (the patch payload) from the assembled app bundle.
- * Includes ONLY the Web/JS layer a patch is allowed to overwrite: .next/, public/.
- * Deliberately EXCLUDES runtime/, models/, workers/, prisma/, *.node, *.exe —
- * those are runtime-layer and require a full reinstall.
+ * Includes the Web/JS layer a patch is allowed to overwrite:
+ *   - .next/, public/      (JS + static assets)
+ *   - prisma/migrations/   (SQL migration files — needed so the client-side
+ *                            inline migrator can apply NEW migrations. Only
+ *                            the migrations subdir ships; the prisma engine
+ *                            binary is runtime-layer and stays excluded.)
+ *
+ * Deliberately EXCLUDES runtime/, models/, workers/, *.node, *.exe and the
+ * prisma engine — those are runtime-layer and require a full reinstall.
  *
  * Uses PowerShell Compress-Archive (Windows) or `zip` (fallback). Zero npm deps.
  */
@@ -181,6 +187,13 @@ function buildContentZip(appBundleDir, outZip) {
   const includeDirs = [".next", "public"].filter((d) =>
     fs.existsSync(path.join(appBundleDir, d))
   );
+  // Ship migrations as prisma/migrations/ so the client migrator finds them
+  // at <appRoot>/prisma/migrations (matches first-run.ts's expected path).
+  // Only the subdir — NOT prisma/*.node engine binaries.
+  const migrationsDir = path.join(appBundleDir, "prisma", "migrations");
+  if (fs.existsSync(migrationsDir)) {
+    includeDirs.push("prisma/migrations");
+  }
   if (includeDirs.length === 0) {
     fail(`no patchable dirs (.next/, public/) found in ${appBundleDir}`);
   }

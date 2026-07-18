@@ -41,7 +41,14 @@ export type UpdateStatus =
 export interface UpdateBridge {
   getStatus: () => Promise<UpdateStatus>;
   checkNow: () => Promise<UpdateStatus>;
+  /** Combined download + apply (legacy "立即更新"). */
   downloadAndInstall: () => Promise<void>;
+  /** Download only; leaves the update staged at `ready` for the user to install. */
+  startDownload: () => Promise<UpdateStatus>;
+  /** Abort an in-flight download (no-op if not downloading). */
+  cancelDownload: () => Promise<UpdateStatus>;
+  /** Apply a staged update (requires status `ready`). */
+  installStaged: () => Promise<void>;
   /** Subscribe to status pushes; returns an unsubscribe function. */
   onProgress: (cb: (status: UpdateStatus) => void) => () => void;
 }

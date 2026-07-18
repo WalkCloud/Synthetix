@@ -41,7 +41,8 @@ function pickReleaseNotes(
 
 export function UpdatePanel() {
   const { t, locale } = useLocale();
-  const { status, refresh, install } = useUpdateStatusContext();
+  const { status, refresh, startDownload, cancelDownload, installStaged } =
+    useUpdateStatusContext();
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-left">
@@ -50,7 +51,9 @@ export function UpdatePanel() {
         locale={locale}
         t={t}
         onRetry={refresh}
-        onInstall={install}
+        onStartDownload={startDownload}
+        onCancelDownload={cancelDownload}
+        onInstallStaged={installStaged}
       />
     </div>
   );
@@ -61,10 +64,23 @@ interface StatusViewProps {
   locale: string;
   t: ReturnType<typeof useLocale>["t"];
   onRetry: () => void;
-  onInstall: () => void;
+  /** Download only (Stage 3 split). */
+  onStartDownload: () => void;
+  /** Cancel an in-flight download. */
+  onCancelDownload: () => void;
+  /** Apply a staged update (Stage 3 split). */
+  onInstallStaged: () => void;
 }
 
-function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) {
+function StatusView({
+  status,
+  locale,
+  t,
+  onRetry,
+  onStartDownload,
+  onCancelDownload,
+  onInstallStaged,
+}: StatusViewProps) {
   switch (status.kind) {
     case "idle":
       return (
@@ -134,10 +150,10 @@ function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) 
           <div className="flex items-center justify-center gap-3 pt-1">
             <button
               type="button"
-              onClick={onInstall}
+              onClick={onStartDownload}
               className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
-              {t.layout.about.update.installNow}
+              {t.layout.about.update.downloadNow}
             </button>
             {/* Non-forced updates offer "Later" — the sidebar badge stays as a
                 persistent reminder so the user isn't permanently dismissing. */}
@@ -171,11 +187,28 @@ function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) 
                   status.totalBytes
                 )}`}
           </p>
+          <div className="flex items-center justify-center pt-1">
+            <button
+              type="button"
+              onClick={onCancelDownload}
+              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {t.layout.about.update.cancelDownload}
+            </button>
+          </div>
         </div>
       );
     }
 
-    case "ready":
+    case "ready": {
+      // Distinguish full (restart + reinstall) from patch (in-place apply):
+      // full exits the app and hands off to NSIS; patch restarts the local
+      // Next service without a full reinstall. Different CTA wording reflects
+      // the different impact on the user's running session.
+      const cta =
+        status.path === "patch"
+          ? t.layout.about.update.applyNow
+          : t.layout.about.update.installNow;
       return (
         <div className="space-y-2">
           <p className="text-center text-xs text-emerald-600 dark:text-emerald-500">
@@ -184,14 +217,15 @@ function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) 
           <div className="flex items-center justify-center">
             <button
               type="button"
-              onClick={onInstall}
+              onClick={onInstallStaged}
               className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
-              {t.layout.about.update.installNow}
+              {cta}
             </button>
           </div>
         </div>
       );
+    }
 
     case "installing":
       return (

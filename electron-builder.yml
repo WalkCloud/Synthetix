@@ -103,8 +103,17 @@ win:
       arch:
         - x64
   icon: build/icon.ico
-  # No signing config for the test build.
-  signtoolOptions: null
+  # Authenticode signing. Configured via GitHub Actions secrets so the cert
+  # never lives in the repo. Set these to enable signing:
+  #   WINDOWS_CERT_FILE  — base64-encoded .pfx (use `certutil -decode` in CI)
+  #   WINDOWS_CERT_PASSWORD — the .pfx password
+  # When unset, electron-builder skips signing (test builds / dev). SmartScreen
+  # will warn until a real EV/OV cert is configured — see
+  # docs/release-workflow.md §Windows code signing.
+  signingHashAlgorithms: ["sha256"]
+  # signtoolOptions / certificateFile / certificatePassword are wired in the
+  # release workflow via --config.win.certificateFile=... overrides, so this
+  # file stays secret-free.
 
 nsis:
   oneClick: false            # show a normal install wizard with path selection

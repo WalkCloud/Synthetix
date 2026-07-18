@@ -1,28 +1,25 @@
 /**
- * Windows "full" update applier — silent NSIS reinstall.
+ * Windows "full" update applier — NSIS reinstall.
  *
  * The Synthetix Windows installer is an electron-builder NSIS package configured
  * per-user (perMachine:false), so reinstalling does NOT require elevation.
- * NSIS supports these standard silent flags:
- *   /S             silent install (no wizard UI)
- *   /currentuser   install into the per-user dir even if a machine install dir
- *                  is remembered (matches our perMachine:false policy)
  *
- * Sequence (see docs/auto-update-design-2026-07-08.md §3.2 "Windows — full"):
+ * As of the online-update redesign (Stage 1.2), the installer is launched
+ * WITHOUT /S so the user SEES the install wizard — the product requirement is
+ * "下载完成后跳出安装页面". /currentuser keeps it per-user (no UAC). Omitting
+ * /D makes NSIS reuse the previously-chosen install dir.
+ *
+ * Sequence (see docs/online-update-capability-analysis-and-design.md §8.1):
  *   1. Stop the Next.js child so it releases the SQLite DB handle and any
  *      better_sqlite3.node file locks (otherwise the installer can hit EPERM).
  *   2. Spawn the installer detached, inheriting no stdio, so it survives our
- *      app quitting.
- *   3. Quit the app. The NSIS installer overwrites the install dir in place;
+ *      app quitting. Visible wizard, per-user.
+ *   3. Clean up the staging dir (the installer has already been launched).
+ *   4. Quit the app. The NSIS installer overwrites the install dir in place;
  *      user data under %APPDATA%\Synthetix is untouched (it lives outside the
- *      install dir). NSIS itself relaunches the app when it finishes IF the
- *      user opted into the "run after install" step; for a silent install we
- *      additionally ask NSIS to launch via a small wrapper is not needed here
- *      because Synthetix creates a Start Menu shortcut and the user can reopen
- *      it — but we DO spawn the new exe ourselves after a short delay so the
- *      experience is seamless.
+ *      install dir). A detached helper relaunches the new exe once it's ready.
  *
- * The shutdown (step 1) and quit (step 3) are delegated back to main.ts via the
+ * The shutdown (step 1) and quit (step 4) are delegated back to main.ts via the
  * `hooks` registered alongside this applier, because nextServer / isQuitting
  * live in main.ts's module scope.
  */
@@ -31,6 +28,11 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 import type { Applier } from "./updater";
+import { cleanupStaging } from "./updater";
+import { resolveInstalledExe } from "./lib/resolve-install-path";
+
+/** electron-builder appId from electron-builder.yml. Used for the registry lookup. */
+const APP_ID = "com.walkcloud.synthetix";
 
 export interface FullApplierHooks {
   /** Stop the Next.js server child and resolve once it is dead. */
@@ -63,24 +65,27 @@ export const winFullApplier: Applier = async (_stagedPath, _version, _pathKind) 
   await hooks.stopNextServer();
 
   // 2) Spawn the NSIS installer, detached, so it outlives our quit.
-  //    /S = silent; /currentuser = per-user (no UAC); /D would override the
-  //    install dir but we omit it so NSIS reuses the previously-chosen dir.
-  const child = spawn(installerPath, ["/S", "/currentuser"], {
+  //    No /S: show the wizard UI (product requirement "跳出安装页面").
+  //    /currentuser: per-user (no UAC), matches electron-builder perMachine:false.
+  //    No /D: NSIS reuses the previously-chosen install dir.
+  const child = spawn(installerPath, ["/currentuser"], {
     detached: true,
     stdio: "ignore",
-    windowsHide: true,
+    windowsHide: false,
   });
   child.unref();
 
-  // 3) After a short grace, relaunch the (now freshly installed) app and quit.
-  //    We use a detached helper process to wait briefly then open the new exe,
-  //    because we are about to quit and cannot run timers reliably ourselves.
-  const installedExe = path.resolve(
-    process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local"),
-    "Programs",
-    "Synthetix",
-    "Synthetix.exe"
-  );
+  // 3) Clean up the staging dir — the installer is now running detached and
+  //    has its own copy of the exe open, so deleting our staged download is
+  //    safe. Best-effort; cleanup errors are logged, not thrown.
+  cleanupStaging();
+
+  // 4) After a short grace, relaunch the (now freshly installed) app and quit.
+  //    Resolve the install path robustly: current process dir first (most
+  //    reliable after an in-place reinstall), then registry, then the default
+  //    per-user dir. This fixes the bug where a custom install dir broke the
+  //    hardcoded relaunch path.
+  const installedExe = resolveInstalledExe(APP_ID);
   scheduleRelaunch(installedExe, installerPath);
 
   hooks.quitApp();

@@ -122,6 +122,13 @@ interface LatestManifest {
   /** Force full even if a patch is available (e.g. emergency rollback). */
   forceFull?: boolean;
   platforms: Partial<Record<Platform, ManifestPlatform>>;
+  /**
+   * Ed25519 signature over the canonical security-critical subset of this
+   * manifest (produced by scripts/publish-release.mjs signManifest). Present
+   * on every published manifest; packaged builds reject unsigned manifests.
+   * The field is consumed by verifyManifest() before JSON.parse discards it.
+   */
+  signature?: string;
 }
 
 // ─── config ─────────────────────────────────────────────────────────────────
@@ -356,6 +363,34 @@ function stagingDir(): string {
   const dir = path.join(app.getPath("userData"), "update-staging");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/**
+ * Remove staged update artifacts (downloaded installers / patch zips) from
+ * the staging dir. Called:
+ *   - after a successful apply (full path: the installer has taken over),
+ *   - on SHA mismatch (already deleted inline, but this is the catch-all),
+ *   - on app boot (clears leftovers from a previous run/aborted update).
+ *
+ * Keeps the staging dir itself (it's recreated on demand by stagingDir()).
+ * Best-effort: logs failures rather than throwing, since a cleanup error
+ * during boot must never block the app.
+ */
+export function cleanupStaging(): void {
+  try {
+    const dir = stagingDir();
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      const full = path.join(dir, entry);
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+      } catch (e) {
+        console.log(`[updater] cleanup: could not remove ${entry}: ${(e as Error).message}`);
+      }
+    }
+  } catch (e) {
+    console.log(`[updater] cleanup: staging dir unreadable: ${(e as Error).message}`);
+  }
 }
 
 // ─── applier injection ──────────────────────────────────────────────────────
@@ -661,9 +696,21 @@ export async function applyStagedUpdate(): Promise<void> {
       // installing status already set; applier can call this as a hook if it
       // needs to do additional synchronous work before quitting.
     });
-    // For "patch" the app stays alive and the status will be reset by the
-    // caller after the next-server restarts. For "full", the applier quits
-    // the app and this line is never reached.
+    // For "full", the applier quits the app and this line is never reached.
+    // For "patch", the app stays alive — the patch applier has replaced the
+    // app content, run migrations, and restarted the local Next service in
+    // place. Converge the status so the UI doesn't stay stuck on "installing"
+    // (the prior behavior left it at `installing` indefinitely because no
+    // caller reset it). A fresh check confirms we're now up-to-date.
+    if (pathKind === "patch") {
+      try {
+        await checkForUpdates();
+      } catch {
+        // If the post-patch recheck fails, fall back to idle rather than
+        // leaving the UI stuck; the next periodic check will recover.
+        setStatus({ kind: "idle" });
+      }
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatus({ kind: "error", message: `install failed: ${message}` });
