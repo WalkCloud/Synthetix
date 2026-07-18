@@ -124,6 +124,28 @@ nsis:
   shortcutName: Synthetix
   uninstallDisplayName: Synthetix
 
+# ─── macOS target: DMG, arm64 only (Apple Silicon), unsigned ───────────────
+# Mirrors the Windows block's structure. identity: null explicitly skips
+# Developer ID signing; dmg.sign: false skips signing the DMG container itself
+# (per electron-builder#6094, the clean path for unsigned builds). Future signed
+# releases: remove these two nulls, add a Developer ID cert + afterSign notarize
+# hook. See docs/superpowers/specs/2026-07-18-macos-installer-packaging-design.md
+# §2.4/§2.5 for the unsigned-vs-signed trade-off and the Gatekeeper "damaged"
+# warning users must bypass with `xattr -dr com.apple.quarantine`.
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  identity: null              # unsigned build (user choice). ad-hoc signing skipped.
+  hardenedRuntime: false      # only needed for signed/notarized builds
+  gatekeeperAssess: false     # skip Gatekeeper assessment (no signature to assess)
+
+dmg:
+  sign: false                 # don't sign the DMG container (electron-builder#6094)
+
 # Compression: normal (not maximum). Maximum compresses slightly smaller but
 # significantly slows install extraction for large payloads. Normal is the
 # recommended default — install speed matters more than a few MB of size.
