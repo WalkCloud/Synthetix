@@ -193,3 +193,4 @@ scripts/brainstorm-and-write.mjs
 
 # AI-assisted analysis workspace
 .understand-anything/
+build/icon.iconset/
