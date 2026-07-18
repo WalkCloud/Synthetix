@@ -623,6 +623,33 @@ app.on("window-all-closed", () => {
   // (Override the default macOS-only behavior intentionally.)
 });
 
+// macOS: when the user clicks the Dock icon while no windows are open (the app
+// is running in the tray after the window was closed), re-create the window.
+// Without this, clicking the Dock icon after closing the window does nothing
+// (the app stays hidden in the tray, reachable only via the tray icon). This
+// mirrors the tray's "Open Synthetix" handler: show+focus if the window exists,
+// otherwise recreate it. bootedPort is the port the running Next.js server is
+// on (captured at boot); we pass it to createWindow so the new window loads the
+// right URL.
+app.on("activate", () => {
+  if (isQuitting) return; // don't reopen during shutdown
+  // Close-to-tray mode hides the window (doesn't destroy it), so mainWindow
+  // is non-null but not visible. macOS fires `activate` on dock-icon click
+  // when no windows are visible — show+focus the hidden window, or recreate
+  // it if it was destroyed (mainWindow === null). bootedPort holds the port
+  // the running Next.js server is on.
+  if (mainWindow) {
+    if (mainWindow.isVisible()) {
+      mainWindow.focus();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  } else if (bootedPort !== null) {
+    createWindow(bootedPort);
+  }
+});
+
 /** Kill a child, escalating from SIGTERM to SIGKILL after a grace period. */
 function gracefullyKill(child: ChildProcess, done: () => void): void {
   let finished = false;
