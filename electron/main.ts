@@ -139,10 +139,12 @@ ipcMain.handle("synthetix:set-titlebar-color", (_event, bg: string, symbol: stri
 
 // ─── port selection ─────────────────────────────────────────────────────────
 /**
- * Find the first free TCP port in [start, start+range). Binds to 0.0.0.0 (not
- * just 127.0.0.1) so the probe matches what `next start` will actually try to
- * bind — a probe on 127.0.0.1 alone can report a port free that 0.0.0.0 binding
- * then fails on (the classic Windows 0.0.0.0:3000 vs 127.0.0.1:3000 mismatch).
+ * Find the first free TCP port in [start, start+range). Probes on the SAME
+ * host the Next.js server will actually bind (HOST = 127.0.0.1), so the probe
+ * catches a port already taken on that interface. A previous version probed
+ * on 0.0.0.0, which on macOS can report 127.0.0.1:8765 as free (different
+ * bind) even when a stale next-server orphan is holding it — leading to
+ * EADDRINUSE when Next.js then tries to bind 127.0.0.1:8765.
  */
 function pickFreePort(start: number, range = 100): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -159,8 +161,8 @@ function pickFreePort(start: number, range = 100): Promise<number> {
         port += 1;
         tryPort();
       });
-      // Bind on "::" / false (all interfaces, both stacks) to mirror next start.
-      server.listen({ host: "0.0.0.0", port, exclusive: true }, () => {
+      // Probe on HOST (127.0.0.1) — the exact interface Next.js will bind.
+      server.listen({ host: HOST, port, exclusive: true }, () => {
         const bound = (server.address() as any).port;
         server.close(() => resolve(bound));
       });
