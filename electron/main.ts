@@ -493,14 +493,24 @@ function createTray(port: number): void {
 }
 
 function trayIconPath(): string {
-  // Resolve a real icon file for the tray/window. In a packaged build the
-  // branded icon ships as a resource (extraResources: build/icon.ico →
-  // resources/icon.ico). In dev it lives at build/icon.ico.
+  // Resolve a real icon file for the tray/window. Platform-specific:
+  //   - macOS: .icns (nativeImage on darwin cannot load .ico — it throws
+  //     "Failed to load image from path" and crashes the app). The .icns
+  //     ships as a resource at resources/icon.icns (electron-builder's mac
+  //     config copies build/icon.icns there), and in dev at build/icon.icns.
+  //   - Windows: .ico (the original Windows-only flow). Ships at
+  //     resources/icon.ico via extraResources; dev at build/icon.ico.
+  const isMac = process.platform === "darwin";
+  const iconName = isMac ? "icon.icns" : "icon.ico";
   const candidates = [
-    path.join(process.resourcesPath || "", "icon.ico"),
-    path.join(__dirname, "..", "build", "icon.ico"),
-    path.join(appRoot(), "icon.ico"),
+    path.join(process.resourcesPath || "", iconName),
+    path.join(__dirname, "..", "build", iconName),
+    path.join(appRoot(), iconName),
   ];
+  // macOS dev fallback: if .icns is missing (e.g. generate-icns.mjs wasn't
+  // run), the .ico is still present from the Windows build — but DO NOT use
+  // it on darwin (nativeImage rejects .ico). Better to return "" (Tray falls
+  // back to an empty native image) than to crash.
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
