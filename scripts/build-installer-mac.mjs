@@ -201,6 +201,86 @@ function acquirePython() {
   return cacheDir;
 }
 
+/**
+ * Rebuild native node modules in the bundle against the bundled node's ABI.
+ *
+ * Why: the .node files copied from the dev machine's node_modules were
+ * compiled for the dev node's NODE_MODULE_VERSION (e.g. 137 for node v24).
+ * The bundle ships node v20 (NODE_MODULE_VERSION 115), so loading them
+ * throws ERR_DLOPEN_FAILED. We rebuild only the version-specific (non-N-API)
+ * modules against the bundled node so they match.
+ *
+ * Approach: rebuild in the ROOT node_modules (which has full source +
+ * binding.gyp + build deps) using the bundled node + node-gyp, targeting
+ * the bundled node's version, then copy the resulting .node into EVERY
+ * location it appears in dist/app (standalone tracing can place it under
+ * both node_modules/<pkg>/ and .next/node_modules/<pkg>-<hash>/).
+ *
+ * N-API modules (sharp via @img/sharp-*, @node-rs/*) are ABI-stable across
+ * node versions and do NOT need rebuilding — verified at build time.
+ */
+function rebuildNativeModulesForBundledNode(appDir) {
+  log("Step 3b: rebuild native node modules for bundled node ABI");
+  const bundledNode = path.join(appDir, "runtime", "node");
+  if (!fs.existsSync(bundledNode)) fail(`bundled node not found at ${bundledNode}`);
+  const bundledVer = spawnSync(bundledNode, ["--version"], { encoding: "utf8" }).stdout?.trim();
+  log(`  bundled node: ${bundledVer}`);
+
+  // Modules that bind to a specific node ABI (NAN-based) and must be rebuilt.
+  // N-API modules are excluded (they're ABI-stable). Add to this list if a
+  // future dep introduces another NAN-based native module.
+  const MODULES_TO_REBUILD = [
+    { pkg: "better-sqlite3", nodeGlob: "better_sqlite3.node" },
+  ];
+
+  const nodeGyp = path.join(ROOT, "node_modules", ".bin", "node-gyp");
+  if (!fs.existsSync(nodeGyp)) {
+    fail(`node-gyp not found at ${nodeGyp}. Run \`npm install\` in the project root first.`);
+  }
+
+  for (const { pkg, nodeGlob } of MODULES_TO_REBUILD) {
+    const pkgDir = path.join(ROOT, "node_modules", pkg);
+    if (!fs.existsSync(path.join(pkgDir, "binding.gyp"))) {
+      warn(`  ${pkg}: no binding.gyp in ${pkgDir} — skipping rebuild (may fail at runtime)`);
+      continue;
+    }
+    log(`  rebuilding ${pkg} for ${bundledVer}…`);
+    // node-gyp rebuild with the bundled node driving it, targeting the bundled
+    // node's version. --arch=arm64 --platform=darwin match our target.
+    const res = spawnSync(bundledNode, [nodeGyp, "rebuild",
+      `--target=${bundledVer}`, "--runtime=node",
+      "--arch=arm64", "--platform=darwin",
+    ], { cwd: pkgDir, stdio: "inherit" });
+    if (res.status !== 0) fail(`${pkg} rebuild failed (exit ${res.status})`);
+
+    // The rebuilt .node is at node_modules/<pkg>/build/Release/<nodeGlob>.
+    // Copy it to EVERY location it appears in dist/app (standalone tracing
+    // may have placed copies under .next/node_modules/<pkg>-<hash>/ too).
+    const rebuiltNode = path.join(pkgDir, "build", "Release", nodeGlob);
+    if (!fs.existsSync(rebuiltNode)) fail(`rebuilt ${nodeGlob} not found at ${rebuiltNode}`);
+
+    // Find all occurrences in the bundle and overwrite them.
+    let replaced = 0;
+    const findAndReplace = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name === ".pnpm" || e.name === ".cache") continue;
+          findAndReplace(full);
+        } else if (e.name === nodeGlob && full !== rebuiltNode) {
+          fs.copyFileSync(rebuiltNode, full);
+          replaced++;
+        }
+      }
+    };
+    findAndReplace(appDir);
+    log(`  ✓ ${pkg}: rebuilt for ${bundledVer}, replaced ${replaced} copy(ies) in bundle`);
+  }
+}
+
 // ---------- main ----------
 async function main() {
   const t0 = Date.now();
@@ -249,6 +329,16 @@ async function main() {
   // Ensure python3 is executable after copy (copyDir may not preserve mode).
   const py3 = path.join(APP, "runtime", "python", "bin", "python3");
   if (fs.existsSync(py3)) fs.chmodSync(py3, 0o755);
+
+  // Step 3b: rebuild native node modules for the bundled node's ABI.
+  // The .node binaries under dist/app were compiled against the DEVELOPMENT
+  // machine's node (e.g. v24, NODE_MODULE_VERSION 137), but the bundle ships
+  // node v20 (NODE_MODULE_VERSION 115). electron-builder's npmRebuild:false
+  // skips rebuild (correctly — we don't want Electron's ABI), so we rebuild
+  // here against the BUNDLED node. Only modules that bind to a specific node
+  // ABI need this; N-API modules (sharp, @node-rs/*) are ABI-stable and don't.
+  // better-sqlite3 uses NAN (version-specific), so it must be rebuilt.
+  rebuildNativeModulesForBundledNode(APP);
 
   // Step 4: embedding model (operator-provided; fail clearly if absent)
   log("Step 4: copy embedding model");
