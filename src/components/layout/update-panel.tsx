@@ -8,9 +8,19 @@
  * The panel only mounts inside the Electron desktop app — the About dialog
  * gates it on isUpdateSupported(), so this component can assume the bridge
  * exists and skip the browser fallback.
+ *
+ * Stage 2.5: this now consumes the app-wide UpdateStatusProvider instead of
+ * opening its own useUpdateStatus subscription. The Provider already runs
+ * checkOnMount once at the root, so opening the About dialog no longer fires a
+ * duplicate check; `refresh` is still exposed for the manual "check for
+ * updates" affordance.
+ *
+ * Stage 2.6: the `available` branch now offers a "Later" button for non-forced
+ * updates (the sidebar badge remains as the persistent reminder), and forced
+ * updates suppress "Later" + render an alert role (Stage 1.4 behavior).
  */
 import { useLocale } from "@/lib/i18n";
-import { useUpdateStatus } from "@/lib/update-bridge";
+import { useUpdateStatusContext } from "@/lib/update-status-context";
 import type { UpdateStatus } from "@/types/electron";
 
 function formatBytes(n: number): string {
@@ -31,7 +41,7 @@ function pickReleaseNotes(
 
 export function UpdatePanel() {
   const { t, locale } = useLocale();
-  const { status, refresh, install } = useUpdateStatus(true);
+  const { status, refresh, install } = useUpdateStatusContext();
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-left">
@@ -90,14 +100,26 @@ function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) 
           ? t.layout.about.update.patchLabel.replace("{size}", sizeLabel)
           : t.layout.about.update.fullLabel.replace("{size}", sizeLabel);
       const notes = pickReleaseNotes(status.releaseNotes, locale);
+      const forced = status.forced === true;
       return (
-        <div className="space-y-2">
-          <p className="text-center text-xs font-medium text-amber-600 dark:text-amber-500">
+        <div className="space-y-2" role={forced ? "alert" : undefined}>
+          <p
+            className={`text-center text-xs font-medium ${
+              forced
+                ? "text-orange-600 dark:text-orange-500"
+                : "text-amber-600 dark:text-amber-500"
+            }`}
+          >
             {t.layout.about.update.newVersionAvailable.replace(
               "{version}",
               status.version
             )}
           </p>
+          {forced ? (
+            <p className="text-center text-[0.7rem] font-medium text-orange-600 dark:text-orange-500">
+              {t.layout.about.update.mustUpdate}
+            </p>
+          ) : null}
           <p className="text-center text-[0.7rem] text-muted-foreground">{pathLabel}</p>
           {notes ? (
             <details className="text-xs">
@@ -117,6 +139,13 @@ function StatusView({ status, locale, t, onRetry, onInstall }: StatusViewProps) 
             >
               {t.layout.about.update.installNow}
             </button>
+            {/* Non-forced updates offer "Later" — the sidebar badge stays as a
+                persistent reminder so the user isn't permanently dismissing. */}
+            {!forced ? (
+              <span className="text-xs text-muted-foreground">
+                {t.layout.about.update.later}
+              </span>
+            ) : null}
           </div>
         </div>
       );

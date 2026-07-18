@@ -28,7 +28,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run generate:meta && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
@@ -41,10 +41,11 @@
     "e2e:report": "playwright show-report e2e/.report",
     "electron:dev": "pnpm build && tsc -p electron/tsconfig.json && cross-env-shell ELECTRON_IS_DEV=1 \"electron dist/electron-main/main.js\"",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "node scripts/build-electron.mjs",
-    "publish": "node scripts/publish-release.mjs",
-    "publish:beta": "node scripts/publish-release.mjs --channel beta",
+    "electron:build": "npm run generate:meta && node scripts/build-electron.mjs",
+    "publish": "npm run generate:meta && node scripts/publish-release.mjs",
+    "publish:beta": "npm run generate:meta && node scripts/publish-release.mjs --channel beta",
     "generate:meta": "node scripts/generate-app-metadata.mjs",
+    "verify:versions": "node scripts/verify-version-consistency.mjs",
     "generate:notices": "node scripts/generate-third-party-notices.mjs",
     "generate:signing-key": "node scripts/generate-signing-key.mjs",
     "backfill:task-identity": "tsx scripts/backfill-async-task-identity.ts"

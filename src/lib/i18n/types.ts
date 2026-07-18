@@ -120,6 +120,30 @@ export type TranslationSchema = {
         /** Label for the patch/in-place path. {size} is a human-readable size. */
         patchLabel: string;
         error: string;
+        // ── Sidebar reminder button (Stage 2 of the online-update design) ──
+        /** Sidebar: non-forced "new version available". {version} is target. */
+        sidebarAvailable: string;
+        /** Sidebar: forced / must-update. {version} is target. */
+        sidebarMustUpdate: string;
+        /** Sidebar: download in progress. {percent} is 0–100. */
+        sidebarDownloading: string;
+        /** Sidebar: ready to install. {version} is target. */
+        sidebarInstall: string;
+        /** Sidebar: applying the update. */
+        sidebarInstalling: string;
+        /** Forced-update label shown in the About panel body. */
+        mustUpdate: string;
+        /** First-detection toast title. {version} is target. */
+        newVersionToast: string;
+        /** First-detection toast action button (opens About). */
+        viewUpdate: string;
+        // ── Stage 3: download/install split ──
+        /** Begin a background download (available state). */
+        downloadNow: string;
+        /** Cancel an in-progress download. */
+        cancelDownload: string;
+        /** Apply a patch update in place (vs. the full "restart & install"). */
+        applyNow: string;
       };
     };
   };

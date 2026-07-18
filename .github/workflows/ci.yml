@@ -31,11 +31,23 @@ jobs:
       - name: Generate Prisma client
         run: pnpm exec prisma generate
 
+      - name: Generate app metadata
+        # Bake package.json version into src/generated/app-version.ts so typecheck,
+        # build and tests all see the same version. Without this, a version bump
+        # in package.json silently ships a build whose About dialog still shows
+        # the old version (the v1.0.2 / v1.0.3 regression).
+        run: pnpm run generate:meta
+
       - name: Compile Electron
         run: pnpm run electron:compile
 
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Verify version consistency
+        # Asserts package.json == src/generated/app-version.ts (and app.asar
+        # when an Electron build is present). Fails the build on version drift.
+        run: pnpm run verify:versions
 
       - name: Lint
         run: pnpm run lint

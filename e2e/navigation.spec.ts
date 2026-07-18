@@ -5,7 +5,25 @@
  * 探查确认：侧边栏链接 href 准确，html class 含 light/dark 表示主题。
  */
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { userMenuTrigger } from "./helpers/selectors";
+
+/**
+ * Version shown in the About dialog is sourced from src/generated/app-version.ts
+ * (the same constant the UI imports via @/lib/app-metadata). Reading it here
+ * keeps the assertion in sync with whatever generate:meta last baked in,
+ * instead of drifting like the old hardcoded `1.0.1` did.
+ */
+function readExpectedVersion(): string {
+  const file = path.resolve(__dirname, "..", "src", "generated", "app-version.ts");
+  const src = fs.readFileSync(file, "utf8");
+  const m = /"version"\s*:\s*"([^"]+)"/.exec(src);
+  if (!m) throw new Error(`could not parse version from ${file}`);
+  return m[1];
+}
+
+const EXPECTED_VERSION = readExpectedVersion();
 
 const NAV_ENTRIES = [
   "/",
@@ -100,8 +118,10 @@ test.describe("全局导航 @smoke", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // 版本号应与 package.json 一致（不再硬编码 0.5.3.0）
-    await expect(dialog.locator("text=1.0.1")).toBeVisible({ timeout: 5_000 });
+    // 版本号应与 src/generated/app-version.ts 一致（动态读取，避免再次漂移）
+    await expect(
+      dialog.locator(`text=${EXPECTED_VERSION}`),
+    ).toBeVisible({ timeout: 5_000 });
 
     // 许可证入口（Apache-2.0 友好文案 + 第三方声明按钮）可见
     await expect(dialog.locator("a", { hasText: /License|许可证/i })).toBeVisible();
@@ -116,5 +136,57 @@ test.describe("全局导航 @smoke", () => {
     await expect(page.locator("h1")).toBeVisible({ timeout: 10_000 });
     const heading = await page.locator("h1").textContent();
     expect(heading).toMatch(/Third-party|第三方开源声明/);
+  });
+
+  test("NAV-07 升级提醒按钮：发现新版本时在侧边栏出现并打开关于弹窗", async ({ page }) => {
+    // 在普通浏览器中 isUpdateSupported() 为 false（无 window.synthetix.update），
+    // 按钮默认不渲染。这里通过 addInitScript 注入一个 mock bridge，模拟
+    // Electron 主进程推送 `available` 状态，验证：
+    //   1. 按钮在侧边栏底部出现（且不破坏 NAV-01 的 `aside a` 计数=10，因为
+    //      按钮是 <button> 而非 <a>）
+    //   2. 点击后打开关于弹窗
+    // 真实 Electron 行为（IPC、Toast 时机）由单元测试 + 手动验证覆盖。
+    await page.addInitScript(() => {
+      const listeners: Array<(s: unknown) => void> = [];
+      const status = {
+        kind: "available",
+        path: "full",
+        version: "9.9.9",
+        sizeBytes: 100,
+        forced: false,
+      };
+      (window as unknown as { synthetix: unknown }).synthetix = {
+        update: {
+          getStatus: async () => status,
+          checkNow: async () => status,
+          downloadAndInstall: async () => {},
+          onProgress: (cb: (s: unknown) => void) => {
+            listeners.push(cb);
+            // Immediately push the available status so the provider's useEffect fires.
+            setTimeout(() => cb(status), 50);
+            return () => {
+              const i = listeners.indexOf(cb);
+              if (i >= 0) listeners.splice(i, 1);
+            };
+          },
+        },
+      };
+    });
+
+    await page.goto("/");
+
+    // 按钮文案含目标版本 9.9.9（中文：发现新版本 v9.9.9）
+    const reminderBtn = page.locator("aside button", {
+      hasText: /9\.9\.9/,
+    });
+    await expect(reminderBtn).toBeVisible({ timeout: 10_000 });
+
+    // 按钮没有破坏侧边栏链接计数（仍然是 10 个 <a>）
+    await expect(page.locator("aside a")).toHaveCount(10);
+
+    // 点击按钮应打开关于弹窗
+    await reminderBtn.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
   });
 });

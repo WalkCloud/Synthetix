@@ -18,6 +18,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { asarVersionOrNull, isAsarReaderAvailable } from "./lib/asar-version.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
@@ -117,7 +118,45 @@ function main() {
   const unpackedDir = path.join(DIST, "electron", "win-unpacked");
   const hasUnpacked = fs.existsSync(path.join(unpackedDir, "Synthetix.exe"));
 
+  // Guard against the v1.0.3 regression: a version bump + source change that
+  // does NOT invalidate win-unpacked would silently get packaged with the old
+  // app.asar (e.g. installer named 1.0.3 but app reports 1.0.1). Before reusing
+  // the unpacked dir, verify the asar's baked version matches package.json; if
+  // not, delete it and fall through to the full rebuild. This is a no-op when
+  // the asar reader isn't installed (transitive dep missing in minimal trees).
+  let reusedUnpacked = hasUnpacked;
   if (hasUnpacked) {
+    if (!isAsarReaderAvailable()) {
+      warn(
+        "win-unpacked exists but @electron/asar not installed — cannot verify " +
+          "its version. Assuming fresh; delete dist/electron/win-unpacked if " +
+          "the build produces a wrong-version app."
+      );
+    } else {
+      const asarVer = asarVersionOrNull(unpackedDir);
+      if (asarVer !== null && asarVer !== VERSION) {
+        warn(
+          `win-unpacked is STALE (app.asar version ${asarVer} ≠ ${VERSION}); ` +
+            "deleting it and rebuilding from scratch."
+        );
+        try {
+          fs.rmSync(unpackedDir, { recursive: true, force: true });
+        } catch (e) {
+          fail(`could not delete stale win-unpacked: ${e.message}`);
+        }
+        reusedUnpacked = false;
+      } else if (asarVer === null) {
+        warn(
+          "win-unpacked exists but app.asar version unreadable — proceeding; " +
+            "delete dist/electron/win-unpacked if the build is wrong."
+        );
+      } else {
+        log(`win-unpacked asar version ${asarVer} matches ${VERSION} — safe to reuse.`);
+      }
+    }
+  }
+
+  if (reusedUnpacked) {
     // win-unpacked exists — only (re)build the installer from it. This is the
     // fast path for main-process-only changes after a first full build.
     log("win-unpacked exists — building installer via --prepackaged (fast)…");

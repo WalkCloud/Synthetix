@@ -11,7 +11,7 @@ import {
 import Image from "next/image";
 import { useLocale } from "@/lib/i18n";
 import { appVersion } from "@/lib/app-metadata";
-import { useUpdateStatus, isUpdateSupported } from "@/lib/update-bridge";
+import { isUpdateSupported } from "@/lib/update-bridge";
 import { UpdatePanel } from "@/components/layout/update-panel";
 
 interface AboutDialogProps {

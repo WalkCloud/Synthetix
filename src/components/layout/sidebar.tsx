@@ -10,6 +10,7 @@ import type { TranslationSchema } from "@/lib/i18n/types";
 import { useTheme } from "next-themes";
 import { logout } from "@/lib/auth/logout";
 import { AboutDialog } from "@/components/layout/about-dialog";
+import { UpdateReminderButton } from "@/components/layout/update-reminder-button";
 
 type SidebarKeys = keyof TranslationSchema["layout"]["sidebar"];
 
@@ -219,6 +220,10 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-border/[0.6] relative">
+        {/* Update reminder — hidden unless the Electron bridge reports an
+            actionable update state. Uses <button> (not <a>) so it does not
+            increment the `aside a` count asserted by e2e NAV-01. */}
+        <UpdateReminderButton onOpenAbout={() => setAboutOpen(true)} />
         <UserMenuTrigger
           displayName={displayName}
           initials={initials}
