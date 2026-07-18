@@ -27,6 +27,22 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PYTHON_EXCLUDED_PACKAGES, normalizePkgName } from "./python-excluded-packages.mjs";
+import {
+  rmrf as rmrfLib,
+  dirSize,
+  countFiles,
+  human,
+  resolvePnpmPkgPath,
+  resolveSymlink,
+  copyDir,
+  copyDirExcluding,
+  copyFile,
+  copyRootConfigs,
+  copyStandalone,
+  flattenPnpmStore,
+  copyStaticAssets,
+  generateLegalArtifacts,
+} from "./lib/bundle-assembly.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
@@ -48,6 +64,15 @@ const SKIP_TRIM = args.has("--no-trim");
 const ASSEMBLE_ONLY = args.has("--assemble-only");
 
 // ---------- helpers ----------
+// NOTE: the OS-agnostic helpers (rmrf, dirSize, countFiles, human,
+// resolvePnpmPkgPath, resolveSymlink, copyDir, copyDirExcluding, copyFile, and
+// the assembly functions copyRootConfigs/copyStandalone/flattenPnpmStore/
+// copyStaticAssets/generateLegalArtifacts) now live in ./lib/bundle-assembly.mjs
+// and are imported above. They are shared with build-installer-mac.mjs.
+// `rmrf` takes (target, warn, rootDir) in the lib; this thin adapter keeps the
+// call sites in this file unchanged (rmrf(target)) while delegating to the lib
+// with this module's warn + ROOT — behavior-identical to the previous inline
+// version. Verified by the byte-identical baseline check (plan Task 2).
 function log(...m) {
   console.log(`\n\x1b[36m[build-installer]\x1b[0m`, ...m);
 }
@@ -58,151 +83,9 @@ function fail(...m) {
   console.error(`\x1b[31m[build-installer:ERROR]\x1b[0m`, ...m);
   process.exit(1);
 }
-
-/** Recursively remove a path, tolerating missing files / locked files. */
+/** rmrf adapter: the lib's rmrf takes (target, warn, rootDir); supply our own. */
 function rmrf(target) {
-  if (!fs.existsSync(target)) return;
-  try {
-    fs.rmSync(target, { recursive: true, force: true, maxRetries: 3 });
-  } catch (e) {
-    warn(`could not fully remove ${path.relative(ROOT, target)}: ${e.message}`);
-  }
-}
-
-/** Total bytes of a directory tree (symlinks followed defensively). */
-function dirSize(dir) {
-  if (!fs.existsSync(dir)) return 0;
-  let total = 0;
-  let stack = [dir];
-  while (stack.length) {
-    const cur = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(cur, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      const full = path.join(cur, e.name);
-      try {
-        if (e.isDirectory()) stack.push(full);
-        else total += fs.statSync(full).size;
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  return total;
-}
-
-/** Count files in a directory tree (for trimming impact reporting). */
-function countFiles(dir) {
-  if (!fs.existsSync(dir)) return 0;
-  let count = 0;
-  let stack = [dir];
-  while (stack.length) {
-    const cur = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(cur, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      const full = path.join(cur, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else count++;
-    }
-  }
-  return count;
-}
-
-function human(bytes) {
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
-  return `${mb.toFixed(1)} MB`;
-}
-
-/** Find a package's real path in pnpm's .pnpm store. Returns null if not found. */
-function resolvePnpmPkgPath(root, pkgName) {
-  const pnpmKey = pkgName.replace("/", "+");
-  const pnpmDir = path.join(root, "node_modules", ".pnpm");
-  if (!fs.existsSync(pnpmDir)) return null;
-  const entry = fs.readdirSync(pnpmDir, { withFileTypes: true })
-    .find(e => e.isDirectory() && e.name.startsWith(pnpmKey + "@"));
-  if (!entry) return null;
-  const p = path.join(pnpmDir, entry.name, "node_modules", pkgName);
-  return fs.existsSync(path.join(p, "package.json")) ? p : null;
-}
-
-/** Resolve a pnpm symlink to its real target. pnpm uses a virtual store:
- *  node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> is the real location;
- *  top-level node_modules/<pkg> is a symlink to it. readlinkSync gets the
- *  relative target; if resolution fails (broken links in the standalone
- *  copy), skip the entry rather than crashing. */
-function resolveSymlink(s) {
-  // Try readlink first (fast, doesn't stat the target).
-  try {
-    const link = fs.readlinkSync(s);
-    const real = path.isAbsolute(link) ? link : path.resolve(path.dirname(s), link);
-    if (fs.existsSync(real)) {
-      const st = fs.statSync(real);
-      return { real, isDir: st.isDirectory() };
-    }
-  } catch { /* not a symlink or readlink failed */ }
-  // Fallback: realpathSync (resolves the full chain, but may EPERM/ENOENT).
-  try {
-    const real = fs.realpathSync(s);
-    const st = fs.statSync(real);
-    return { real, isDir: st.isDirectory() };
-  } catch {
-    // Broken symlink — skip. This happens in standalone output where some
-    // pnpm virtual-store links don't have their targets copied.
-    return null;
-  }
-}
-
-/** Copy a directory tree recursively (excluding nothing). */
-function copyDir(src, dst) {
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else if (entry.isSymbolicLink()) {
-      // Materialize symlinks (pnpm-style) as real files to survive packaging.
-      const resolved = resolveSymlink(s);
-      if (!resolved) continue; // skip broken links
-      if (resolved.isDir) copyDir(resolved.real, d);
-      else fs.copyFileSync(resolved.real, d);
-    } else fs.copyFileSync(s, d);
-  }
-}
-
-/** Copy a directory tree, skipping any top-level entry whose name is in
- *  `exclude`. Used to drop dev-only subdirs of .next (dev/, cache/, trace/). */
-function copyDirExcluding(src, dst, exclude) {
-  const skip = new Set(exclude);
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (skip.has(entry.name)) continue;
-    const s = path.join(src, entry.name);
-    const d = path.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else if (entry.isSymbolicLink()) {
-      const { real, isDir } = resolveSymlink(s);
-      if (isDir) copyDir(real, d);
-      else fs.copyFileSync(real, d);
-    } else fs.copyFileSync(s, d);
-  }
-}
-
-/** Copy a single file if it exists. */
-function copyFile(src, dst) {
-  if (!fs.existsSync(src)) return false;
-  fs.mkdirSync(path.dirname(dst), { recursive: true });
-  fs.copyFileSync(src, dst);
-  return true;
+  return rmrfLib(target, warn, ROOT);
 }
 
 function run(cmd, cmdline, opts = {}) {
@@ -244,8 +127,13 @@ async function main() {
   const VERSION = pkg.version;
   log(`Synthetix ${VERSION} — building Windows installer`);
 
-  const iscc = findIscc();
-  log(`iscc: ${iscc}`);
+  // Skip the Inno Setup lookup when only assembling dist/app (--assemble-only).
+  // This path is used by build-electron.mjs (which wraps dist/app in its own
+  // Electron installer) and by the byte-identical refactor check that runs on
+  // macOS (where iscc is unavailable). Previously findIscc() ran unconditionally
+  // and hard-failed on non-Windows, blocking --assemble-only entirely.
+  const iscc = ASSEMBLE_ONLY ? null : findIscc();
+  log(`iscc: ${ASSEMBLE_ONLY ? "(skipped, --assemble-only)" : iscc}`);
 
   // --- Step 1: build .next ---
   if (!SKIP_BUILD) {
