@@ -3,5 +3,6 @@ lightrag-hku==1.5.4
 markdown>=3.7
 Pillow>=10.0.0
 onnxruntime>=1.20.0
-transformers>=4.44.0
+# transformers 5 breaks the daemon remote-code protocol used by the sidecar.
+transformers>=4.44.0,<5
 pypdfium2>=4.30.0

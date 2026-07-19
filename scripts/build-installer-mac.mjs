@@ -32,19 +32,40 @@ import {
   copyStaticAssets,
   generateLegalArtifacts,
 } from "./lib/bundle-assembly.mjs";
+import {
+  rebuildNativeModulesForBundledNode,
+  smokeNativeModule,
+} from "./lib/native-rebuild.mjs";
+import {
+  assertFileSha256,
+  createMacRuntimeFingerprint,
+  validateOrInvalidateRuntimeCache,
+} from "./lib/runtime-integrity.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
 const DIST = path.join(ROOT, "dist");
 const APP = path.join(DIST, "app");
+const runtimeVersions = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "config/runtime-versions.json"), "utf8"),
+);
 
 // --- pinned versions (bump explicitly; never as a range) ---
-// Node major 20 matches engines.node (>=20) and the Windows CI node-version: 20.
-const NODE_VERSION = "v20.20.2";
+// Shared with development, CI, and the Windows sidecar via runtime-versions.json.
+const NODE_VERSION = `v${runtimeVersions.node}`;
+const NODE_ASSET = runtimeVersions.assets.nodeDarwinArm64.name;
+const NODE_SHA256 = runtimeVersions.assets.nodeDarwinArm64.sha256;
 // python-build-standalone: install_only variant (smaller, no test ext, ships
 // python/bin/python3). aarch64-apple-darwin = Apple Silicon.
-const PYTHON_BS_TAG = "20260623";
-const PYTHON_BS_ASSET = "cpython-3.12.13+20260623-aarch64-apple-darwin-install_only.tar.gz";
+const PYTHON_BS_TAG = runtimeVersions.python.standaloneTag;
+const PYTHON_BS_ASSET = runtimeVersions.python.assets.macArm64.name;
+const PYTHON_SHA256 = runtimeVersions.python.assets.macArm64.sha256;
+const PYTHON_VERSION = runtimeVersions.python.version;
+const REQUIREMENTS_PATH = path.join(ROOT, "workers", "python", "requirements.txt");
+const RUNTIME_FINGERPRINT = createMacRuntimeFingerprint({
+  runtimeVersions,
+  requirementsPath: REQUIREMENTS_PATH,
+});
 // Model: operator places it here (gitignored data/). Not downloaded by this script.
 const MODEL_SRC = path.join(ROOT, "data", "models", "gte-multilingual-base");
 
@@ -83,6 +104,23 @@ function download(url, destPath) {
   return res.status === 0;
 }
 
+function validateMacRuntimeCache() {
+  const cacheDir = path.join(DIST, ".runtime-cache-darwin");
+  if (!fs.existsSync(cacheDir)) return;
+  const valid = validateOrInvalidateRuntimeCache({
+    cacheDir,
+    nodePath: path.join(cacheDir, "node"),
+    pythonPath: path.join(cacheDir, "python", "bin", "python3"),
+    markerPath: path.join(cacheDir, "python", ".synthetix-deps-installed"),
+    expectedFingerprint: RUNTIME_FINGERPRINT,
+  });
+  if (valid) {
+    log(`runtime cache fingerprint and executable versions match; cache is reusable`);
+  } else {
+    warn(`runtime cache fingerprint or executable version mismatch; removed stale cache`);
+  }
+}
+
 /** Acquire darwin-arm64 node, cached at dist/.runtime-cache-darwin/node. */
 function acquireNode() {
   const cacheDir = path.join(DIST, ".runtime-cache-darwin");
@@ -91,14 +129,20 @@ function acquireNode() {
     log(`reusing cached node ${NODE_VERSION} (${path.relative(ROOT, cachedNode)})`);
     return cachedNode;
   }
-  const url = `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-arm64.tar.gz`;
-  const tgz = path.join(os.tmpdir(), `node-${NODE_VERSION}-darwin-arm64.tar.gz`);
+  const url = `https://nodejs.org/dist/${NODE_VERSION}/${NODE_ASSET}`;
+  const tgz = path.join(os.tmpdir(), NODE_ASSET);
   log(`downloading ${url}`);
   if (!download(url, tgz)) fail(`node download failed: ${url}`);
+  try {
+    assertFileSha256(tgz, NODE_SHA256, NODE_ASSET);
+  } catch (error) {
+    fs.rmSync(tgz, { force: true });
+    fail(error.message);
+  }
   // Extract into a temp dir, then lift bin/node into the cache.
   const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), "node-extract-"));
   run("tar", ["-xzf", tgz, "-C", extractDir]);
-  const extractedNode = path.join(extractDir, `node-${NODE_VERSION}-darwin-arm64`, "bin", "node");
+  const extractedNode = path.join(extractDir, NODE_ASSET.replace(/\.tar\.gz$/, ""), "bin", "node");
   if (!fs.existsSync(extractedNode)) fail(`extracted node binary not found at ${extractedNode}`);
   rmrf(cacheDir, warn, ROOT);
   fs.mkdirSync(cacheDir, { recursive: true });
@@ -134,6 +178,12 @@ function acquirePython() {
   if (!fs.existsSync(cachedPy3)) {
     log(`downloading ${url}`);
     if (!download(url, tgz)) fail(`python-build-standalone download failed: ${url}`);
+    try {
+      assertFileSha256(tgz, PYTHON_SHA256, PYTHON_BS_ASSET);
+    } catch (error) {
+      fs.rmSync(tgz, { force: true });
+      fail(error.message);
+    }
     // The install_only tarball extracts to a single "python/" directory.
     const extractParent = fs.mkdtempSync(path.join(os.tmpdir(), "pybs-extract-"));
     run("tar", ["-xzf", tgz, "-C", extractParent]);
@@ -148,7 +198,9 @@ function acquirePython() {
     rmrf(extractParent, warn, ROOT);
     fs.rmSync(tgz, { force: true });
     const ver = spawnSync(cachedPy3, ["--version"], { encoding: "utf8" }).stdout?.trim();
-    if (!/Python 3\.12/.test(ver || "")) fail(`python version unexpected: ${ver}`);
+    if (ver !== `Python ${PYTHON_VERSION}`) {
+      fail(`python version mismatch: got ${ver}, expected Python ${PYTHON_VERSION}`);
+    }
     log(`✓ python-build-standalone cached (${ver})`);
   } else {
     log(`python cached but deps marker missing — reinstalling deps…`);
@@ -157,7 +209,7 @@ function acquirePython() {
   // site-packages. The standalone python's pip is relocatable-aware (no
   // --target needed; it installs into its own lib/pythonX.Y/site-packages).
   // Pin to a known-good PyPI index; use the operator's pip config if set.
-  const reqFile = path.join(ROOT, "workers", "python", "requirements.txt");
+  const reqFile = REQUIREMENTS_PATH;
   if (!fs.existsSync(reqFile)) fail(`workers/python/requirements.txt not found at ${reqFile}`);
   log(`pip installing workers/python/requirements.txt into standalone python …`);
   // --proxy "" explicitly disables proxy detection. On macOS, pip otherwise
@@ -196,104 +248,9 @@ function acquirePython() {
     fail(`post-install verification failed: onnxruntime/transformers not importable.\n` +
          `stderr: ${(verifyRes.stderr || "").slice(0, 300)}`);
   }
-  fs.writeFileSync(depsMarker, new Date().toISOString(), "utf8");
+  fs.writeFileSync(depsMarker, `${JSON.stringify(RUNTIME_FINGERPRINT, null, 2)}\n`, "utf8");
   log(`✓ python deps installed + verified (onnxruntime, transformers)`);
   return cacheDir;
-}
-
-/**
- * Rebuild native node modules in the bundle against the bundled node's ABI.
- *
- * Why: the .node files copied from the dev machine's node_modules were
- * compiled for the dev node's NODE_MODULE_VERSION (e.g. 137 for node v24).
- * The bundle ships node v20 (NODE_MODULE_VERSION 115), so loading them
- * throws ERR_DLOPEN_FAILED. We rebuild only the version-specific (non-N-API)
- * modules against the bundled node so they match.
- *
- * Approach: rebuild in the ROOT node_modules (which has full source +
- * binding.gyp + build deps) using the bundled node + node-gyp, targeting
- * the bundled node's version, then copy the resulting .node into EVERY
- * location it appears in dist/app (standalone tracing can place it under
- * both node_modules/<pkg>/ and .next/node_modules/<pkg>-<hash>/).
- *
- * N-API modules (sharp via @img/sharp-*, @node-rs/*) are ABI-stable across
- * node versions and do NOT need rebuilding — verified at build time.
- */
-function rebuildNativeModulesForBundledNode(appDir) {
-  log("Step 3b: rebuild native node modules for bundled node ABI");
-  const bundledNode = path.join(appDir, "runtime", "node");
-  if (!fs.existsSync(bundledNode)) fail(`bundled node not found at ${bundledNode}`);
-  const bundledVer = spawnSync(bundledNode, ["--version"], { encoding: "utf8" }).stdout?.trim();
-  log(`  bundled node: ${bundledVer}`);
-
-  // Modules that bind to a specific node ABI (NAN-based) and must be rebuilt.
-  // N-API modules are excluded (they're ABI-stable). Add to this list if a
-  // future dep introduces another NAN-based native module.
-  const MODULES_TO_REBUILD = [
-    { pkg: "better-sqlite3", nodeGlob: "better_sqlite3.node" },
-  ];
-
-  const nodeGyp = path.join(ROOT, "node_modules", ".bin", "node-gyp");
-  if (!fs.existsSync(nodeGyp)) {
-    fail(`node-gyp not found at ${nodeGyp}. Run \`npm install\` in the project root first.`);
-  }
-
-  for (const { pkg, nodeGlob } of MODULES_TO_REBUILD) {
-    const pkgDir = path.join(ROOT, "node_modules", pkg);
-    if (!fs.existsSync(path.join(pkgDir, "binding.gyp"))) {
-      warn(`  ${pkg}: no binding.gyp in ${pkgDir} — skipping rebuild (may fail at runtime)`);
-      continue;
-    }
-    // CRITICAL: rebuild in a STAGING COPY, not in the root node_modules.
-    // node-gyp rebuild overwrites build/Release/*.node in-place; doing it in
-    // the root node_modules would replace the dev machine's binary (compiled
-    // for the dev node's ABI, e.g. v24) with one for the bundled node (v20),
-    // breaking the dev environment (tests fail with NODE_MODULE_VERSION
-    // mismatch). We copy the package to a temp dir, rebuild there, lift out
-    // the .node, and discard the temp dir. The root node_modules is untouched.
-    const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), `native-rebuild-${pkg}-`));
-    const stagePkgDir = path.join(stageDir, pkg);
-    log(`  staging ${pkg} → ${path.basename(stageDir)} (rebuild for ${bundledVer}, keep dev env intact)…`);
-    copyDir(pkgDir, stagePkgDir);
-    const res = spawnSync(bundledNode, [nodeGyp, "rebuild",
-      `--target=${bundledVer}`, "--runtime=node",
-      "--arch=arm64", "--platform=darwin",
-    ], { cwd: stagePkgDir, stdio: "inherit" });
-    if (res.status !== 0) {
-      rmrf(stageDir, warn, ROOT);
-      fail(`${pkg} rebuild failed (exit ${res.status})`);
-    }
-
-    // The rebuilt .node is in the staging dir's build/Release/<nodeGlob>.
-    const rebuiltNode = path.join(stagePkgDir, "build", "Release", nodeGlob);
-    if (!fs.existsSync(rebuiltNode)) {
-      rmrf(stageDir, warn, ROOT);
-      fail(`rebuilt ${nodeGlob} not found at ${rebuiltNode}`);
-    }
-
-    // Find all occurrences in the bundle and overwrite them. (standalone
-    // tracing may have placed copies under both node_modules/<pkg>/ and
-    // .next/node_modules/<pkg>-<hash>/.)
-    let replaced = 0;
-    const findAndReplace = (dir) => {
-      if (!fs.existsSync(dir)) return;
-      let entries;
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-      for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) {
-          if (e.name === ".pnpm" || e.name === ".cache") continue;
-          findAndReplace(full);
-        } else if (e.name === nodeGlob) {
-          fs.copyFileSync(rebuiltNode, full);
-          replaced++;
-        }
-      }
-    };
-    findAndReplace(appDir);
-    rmrf(stageDir, warn, ROOT);
-    log(`  ✓ ${pkg}: rebuilt for ${bundledVer}, replaced ${replaced} copy(ies) in bundle (dev env untouched)`);
-  }
 }
 
 // ---------- main ----------
@@ -332,6 +289,7 @@ async function main() {
 
   // Step 3: runtime (macOS-specific)
   log("Step 3: acquire runtime (darwin-arm64 node + python-build-standalone)");
+  validateMacRuntimeCache();
   fs.mkdirSync(path.join(APP, "runtime"), { recursive: true });
   const nodeSrc = acquireNode();
   copyFile(nodeSrc, path.join(APP, "runtime", "node"));
@@ -347,13 +305,27 @@ async function main() {
 
   // Step 3b: rebuild native node modules for the bundled node's ABI.
   // The .node binaries under dist/app were compiled against the DEVELOPMENT
-  // machine's node (e.g. v24, NODE_MODULE_VERSION 137), but the bundle ships
-  // node v20 (NODE_MODULE_VERSION 115). electron-builder's npmRebuild:false
-  // skips rebuild (correctly — we don't want Electron's ABI), so we rebuild
+  // machine's Node ABI. electron-builder's npmRebuild:false skips rebuild
+  // (correctly — we don't want Electron's ABI), so we rebuild
   // here against the BUNDLED node. Only modules that bind to a specific node
   // ABI need this; N-API modules (sharp, @node-rs/*) are ABI-stable and don't.
   // better-sqlite3 uses NAN (version-specific), so it must be rebuilt.
-  rebuildNativeModulesForBundledNode(APP);
+  try {
+    const bundledNodePath = path.join(APP, "runtime", "node");
+    rebuildNativeModulesForBundledNode({
+      rootDir: ROOT,
+      appDir: APP,
+      bundledNodePath,
+      platform: "darwin",
+      arch: "arm64",
+      log,
+      warn,
+    });
+    smokeNativeModule({ bundledNodePath, appDir: APP });
+    log("✓ better-sqlite3 SQL smoke passed (SELECT 42)");
+  } catch (error) {
+    fail(error.message);
+  }
 
   // Step 4: embedding model (operator-provided; fail clearly if absent)
   log("Step 4: copy embedding model");

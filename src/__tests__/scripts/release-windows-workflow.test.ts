@@ -12,19 +12,24 @@ describe("Release (Windows) workflow", () => {
     expect(workflow).toContain('description: "Release tag to publish (e.g. v1.0.5)"');
   });
 
-  it("uses a pnpm-compatible CI Node while packaging the pinned app runtime", () => {
+  it("loads the shared Node and pnpm pins for CI and the packaged runtime", () => {
     const workflow = fs.readFileSync(workflowPath, "utf8");
 
-    expect(workflow).toContain("node-version: 22.13.1");
-    expect(workflow).toContain('$nodeVersion = "v20.20.2"');
+    expect(workflow).toContain("config/runtime-versions.json");
+    expect(workflow).toContain("node-version: ${{ env.NODE_VERSION }}");
+    expect(workflow).toContain("version: ${{ env.PNPM_VERSION }}");
+    expect(workflow).toContain('$nodeVersion = "v$env:NODE_VERSION"');
   });
 
   it("prepares a complete Windows runtime on a clean runner", () => {
     const workflow = fs.readFileSync(workflowPath, "utf8");
 
-    expect(workflow).toContain('$nodeVersion = "v20.20.2"');
-    expect(workflow).toContain('$nodeArchive = "node-$nodeVersion-win-x64.zip"');
-    expect(workflow).toContain(
+    expect(workflow).toContain('$nodeVersion = "v$env:NODE_VERSION"');
+    expect(workflow).toContain("$versions.assets.nodeWindowsX64.name");
+    expect(workflow).toContain("$nodeArchive = $env:NODE_WINDOWS_X64_ASSET");
+    expect(workflow).toContain("$versions.python.standaloneTag");
+    expect(workflow).toContain("$versions.python.assets.windowsX64.name");
+    expect(workflow).not.toContain(
       "cpython-3.12.13+20260623-x86_64-pc-windows-msvc-install_only.tar.gz",
     );
     expect(workflow).toContain("workers/python/requirements.txt");
@@ -32,6 +37,37 @@ describe("Release (Windows) workflow", () => {
     expect(workflow).toContain("python/bin/python.exe");
     expect(workflow).toContain("python/python.exe");
     expect(workflow).not.toContain("actions/cache");
+  });
+
+  it("fails closed when either downloaded runtime SHA256 does not match", () => {
+    const workflow = fs.readFileSync(workflowPath, "utf8");
+    const prepareIndex = workflow.indexOf("name: Prepare bundled Windows runtime");
+    const assembleIndex = workflow.indexOf("name: Assemble app bundle");
+    const prepareStep = workflow.slice(prepareIndex, assembleIndex);
+
+    expect(workflow).toContain("$versions.assets.nodeWindowsX64.sha256");
+    expect(workflow).toContain("$versions.python.assets.windowsX64.sha256");
+    expect(prepareStep).toContain("Get-FileHash");
+    expect(prepareStep).toContain("-Algorithm SHA256");
+    expect(prepareStep).toMatch(/if \(\$actualNodeSha256 -ne \$env:NODE_WINDOWS_X64_SHA256\) \{\s*throw/);
+    expect(prepareStep).toMatch(/if \(\$actualPythonSha256 -ne \$env:PYTHON_WINDOWS_X64_SHA256\) \{\s*throw/);
+    expect(prepareStep.indexOf("Get-FileHash $nodeZip")).toBeLessThan(
+      prepareStep.indexOf("Expand-Archive $nodeZip"),
+    );
+    expect(prepareStep.indexOf("Get-FileHash $pythonTar")).toBeLessThan(
+      prepareStep.indexOf("tar -xzf $pythonTar"),
+    );
+  });
+
+  it("smoke-tests every Python worker dependency required by the sidecar", () => {
+    const workflow = fs.readFileSync(workflowPath, "utf8");
+    const prepareIndex = workflow.indexOf("name: Prepare bundled Windows runtime");
+    const assembleIndex = workflow.indexOf("name: Assemble app bundle");
+    const prepareStep = workflow.slice(prepareIndex, assembleIndex);
+
+    expect(prepareStep).toContain(
+      "import torch, docling, lightrag, onnxruntime, transformers",
+    );
   });
 
   it("assembles dist/app after Next build and before electron:build", () => {
@@ -47,6 +83,18 @@ describe("Release (Windows) workflow", () => {
     expect(electronBuildIndex).toBeGreaterThan(-1);
     expect(nextBuildIndex).toBeLessThan(assembleIndex);
     expect(assembleIndex).toBeLessThan(electronBuildIndex);
+  });
+
+  it("smoke-tests better-sqlite3 with the bundled Node before electron:build", () => {
+    const workflow = fs.readFileSync(workflowPath, "utf8");
+    const verifyIndex = workflow.indexOf("name: Verify assembled app bundle");
+    const electronBuildIndex = workflow.indexOf("run: pnpm run electron:build");
+    const verifyStep = workflow.slice(verifyIndex, electronBuildIndex);
+
+    expect(verifyStep).toContain('dist/app/runtime/node.exe');
+    expect(verifyStep).toContain('require("better-sqlite3")');
+    expect(verifyStep).toContain(':memory:');
+    expect(verifyStep).toContain('SELECT 1 AS value');
   });
 
   it("verifies assembled runtime and worker dependencies before electron:build", () => {

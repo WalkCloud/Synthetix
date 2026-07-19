@@ -43,6 +43,14 @@ import {
   copyStaticAssets,
   generateLegalArtifacts,
 } from "./lib/bundle-assembly.mjs";
+import {
+  rebuildNativeModulesForBundledNode,
+  smokeNativeModule,
+} from "./lib/native-rebuild.mjs";
+import {
+  createWindowsRuntimeFingerprint,
+  validateOrInvalidateRuntimeCache,
+} from "./lib/runtime-integrity.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
@@ -50,6 +58,15 @@ const DIST = path.join(ROOT, "dist");
 const APP = path.join(DIST, "app");
 const INSTALLER_DIR = path.join(DIST, "installer");
 const PACKAGING = path.join(ROOT, "packaging");
+const runtimeVersions = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "config/runtime-versions.json"), "utf8"),
+);
+const REQUIREMENTS_PATH = path.join(ROOT, "workers", "python", "requirements.txt");
+const RUNTIME_FINGERPRINT = createWindowsRuntimeFingerprint({
+  runtimeVersions,
+  requirementsPath: REQUIREMENTS_PATH,
+});
+const RUNTIME_MARKER = ".synthetix-runtime-fingerprint.json";
 
 const args = new Set(process.argv.slice(2));
 const SKIP_BUILD = args.has("--no-build");
@@ -157,14 +174,42 @@ async function main() {
   // otherwise we lift it from the current dist/app/runtime before wiping.
   const runtimeCache = path.join(DIST, ".runtime-cache");
   const appRuntime = path.join(APP, "runtime");
-  const cacheFresh = fs.existsSync(path.join(runtimeCache, "node.exe"));
-  const appRuntimeExists = fs.existsSync(appRuntime);
-  if (!cacheFresh && appRuntimeExists) {
-    log("  caching runtime/ (preserving node.exe + python across wipe) …");
+  const runtimeMarker = path.join(runtimeCache, RUNTIME_MARKER);
+  const pythonPathIn = (runtimeDir) => {
+    const candidates = [
+      path.join(runtimeDir, "python", "python.exe"),
+      path.join(runtimeDir, "python", "bin", "python.exe"),
+    ];
+    return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+  };
+  const validateCache = () => validateOrInvalidateRuntimeCache({
+    cacheDir: runtimeCache,
+    nodePath: path.join(runtimeCache, "node.exe"),
+    pythonPath: pythonPathIn(runtimeCache),
+    markerPath: runtimeMarker,
+    expectedFingerprint: RUNTIME_FINGERPRINT,
+  });
+  const seedCache = (sourceDir) => {
     rmrf(runtimeCache);
-    copyDir(appRuntime, runtimeCache);
+    copyDir(sourceDir, runtimeCache);
+    fs.writeFileSync(runtimeMarker, `${JSON.stringify(RUNTIME_FINGERPRINT, null, 2)}\n`, "utf8");
+    return validateCache();
+  };
+
+  let haveCache = validateCache();
+  if (!haveCache && fs.existsSync(appRuntime)) {
+    log("  validating and caching runtime/ before bundle wipe …");
+    haveCache = seedCache(appRuntime);
+    if (!haveCache) warn("  removed stale app runtime (expected Node 24.18.0 / Python 3.14.6)");
   }
-  const haveCache = fs.existsSync(path.join(runtimeCache, "node.exe"));
+  if (!haveCache) {
+    const staged = path.join(DIST, "runtime");
+    if (fs.existsSync(staged)) {
+      log(`  validating staged runtime/ from ${path.relative(ROOT, staged)} …`);
+      haveCache = seedCache(staged);
+      if (!haveCache) fail("staged runtime versions do not match config/runtime-versions.json");
+    }
+  }
 
   rmrf(APP);
   fs.mkdirSync(APP, { recursive: true });
@@ -291,19 +336,34 @@ async function main() {
   // reconstruct the CPython install here — that's a one-time prep step.
   fs.mkdirSync(path.join(APP, "runtime"), { recursive: true });
   if (haveCache) {
-    log("  restoring cached runtime/ …");
+    log("  restoring validated cached runtime/ …");
     copyDir(runtimeCache, path.join(APP, "runtime"));
   } else {
-    const staged = path.join(DIST, "runtime");
-    if (fs.existsSync(staged)) {
-      log(`  staging runtime/ from ${path.relative(ROOT, staged)} …`);
-      copyDir(staged, path.join(APP, "runtime"));
-    } else {
-      warn(
-        "runtime/ missing — start.bat expects runtime\\node.exe and runtime\\python.\n" +
-          "  Prepare dist/runtime/{node.exe,python/} (or run once to cache it)."
-      );
-    }
+    warn(
+      "runtime/ missing — start.bat expects runtime\\node.exe and runtime\\python.\n" +
+        "  Prepare dist/runtime/{node.exe,python/} matching config/runtime-versions.json."
+    );
+  }
+
+  const bundledNode = path.join(APP, "runtime", "node.exe");
+  if (!fs.existsSync(bundledNode)) {
+    fail(`bundled Node is required for native module rebuild: ${bundledNode}`);
+  }
+  log("Step 2a/5: rebuild native modules for bundled Node ABI");
+  try {
+    rebuildNativeModulesForBundledNode({
+      rootDir: ROOT,
+      appDir: APP,
+      bundledNodePath: bundledNode,
+      platform: "win32",
+      arch: "x64",
+      log,
+      warn,
+    });
+    smokeNativeModule({ bundledNodePath: bundledNode, appDir: APP });
+    log("better-sqlite3 SQL smoke passed (SELECT 42)");
+  } catch (error) {
+    fail(error.message);
   }
 
   const beforeTrim = dirSize(APP);

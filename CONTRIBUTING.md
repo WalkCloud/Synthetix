@@ -6,9 +6,10 @@ Thank you for your interest in contributing! Synthetix is a local-first AI writi
 
 ### Prerequisites
 
-- **Node.js** ≥ 20
-- **Python** ≥ 3.13 (for RAG/embedding workers)
-- **pnpm** (package manager)
+- **Node.js** 24.18.0 (supported range: `>=24.18.0 <25`)
+- **Python** 3.14.6 (shared by local development and packaged sidecars)
+- **pnpm** 11.15.0 (package manager)
+- **macOS** 12 Monterey or newer for macOS desktop development and packaging
 
 ### Setup
 
@@ -35,7 +36,7 @@ Open http://localhost:3000 in your browser.
 - **Frontend**: Next.js 16 (App Router) + React 19 + Tailwind v4 + shadcn/ui
 - **Backend**: Next.js API routes + Prisma ORM (SQLite default, PostgreSQL optional)
 - **AI workers**: Python sidecar (`workers/python/`) for document conversion, RAG indexing, and embedding
-- **Desktop**: Electron 33 shell wrapping the Next.js standalone server
+- **Desktop**: Electron 43 shell wrapping the Next.js standalone server
 - **i18n**: Custom bilingual (English / Simplified Chinese) — no external i18n library
 
 See `README.md` for the full architecture diagram.

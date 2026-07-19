@@ -14,7 +14,7 @@ English | [简体中文](#简体中文)
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-7c3aed">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.13%2B-3776ab">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.14.6-3776ab">
   <img alt="Offline-first" src="https://img.shields.io/badge/offline--first-cloud--ready-16a34a">
 </p>
 
@@ -256,8 +256,10 @@ Download the latest `.exe` installer from [GitHub Releases](https://github.com/W
 
 Prerequisites:
 
-- Node.js 20+
-- Python 3.13+
+- Node.js 24.18.0 (supported range: `>=24.18.0 <25`)
+- pnpm 11.15.0
+- Python 3.14.6 (the development interpreter and packaged sidecar use the same version)
+- macOS 12+ (Monterey or newer) when developing or running the macOS desktop build
 - An OpenAI-compatible, Anthropic, DeepSeek-compatible, or Ollama endpoint
 
 ```bash
@@ -426,7 +428,7 @@ Synthetix is licensed under the [Apache License 2.0](LICENSE). Third-party notic
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-1.0.2-7c3aed">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.13%2B-3776ab">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.14.6-3776ab">
   <img alt="Offline-first" src="https://img.shields.io/badge/offline--first-cloud--ready-16a34a">
 </p>
 
@@ -668,8 +670,10 @@ Synthetix 被设计为可搭配多种模型和检索后端使用。
 
 前置要求：
 
-- Node.js 20+
-- Python 3.13+
+- Node.js 24.18.0 (supported range: `>=24.18.0 <25`)
+- pnpm 11.15.0
+- Python 3.14.6（开发解释器与安装包内 sidecar 使用同一版本）
+- 开发或运行 macOS 桌面版需要 macOS 12+（Monterey 或更高版本）
 - OpenAI 兼容、Anthropic、DeepSeek 兼容或 Ollama 端点
 
 ```bash

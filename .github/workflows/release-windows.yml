@@ -40,17 +40,28 @@ jobs:
           # Full history + tags so verify:versions and publish can read the tag.
           fetch-depth: 0
 
+      - name: Load runtime versions
+        shell: pwsh
+        run: |
+          $versions = Get-Content config/runtime-versions.json -Raw | ConvertFrom-Json
+          "NODE_VERSION=$($versions.node)" >> $env:GITHUB_ENV
+          "PNPM_VERSION=$($versions.pnpm)" >> $env:GITHUB_ENV
+          "PYTHON_VERSION=$($versions.python.version)" >> $env:GITHUB_ENV
+          "NODE_WINDOWS_X64_ASSET=$($versions.assets.nodeWindowsX64.name)" >> $env:GITHUB_ENV
+          "NODE_WINDOWS_X64_SHA256=$($versions.assets.nodeWindowsX64.sha256)" >> $env:GITHUB_ENV
+          "PYTHON_STANDALONE_TAG=$($versions.python.standaloneTag)" >> $env:GITHUB_ENV
+          "PYTHON_WINDOWS_X64_ASSET=$($versions.python.assets.windowsX64.name)" >> $env:GITHUB_ENV
+          "PYTHON_WINDOWS_X64_SHA256=$($versions.python.assets.windowsX64.sha256)" >> $env:GITHUB_ENV
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.1
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          # pnpm 11 requires Node.js >= 22.13. This is the CI build runtime;
-          # the packaged desktop app still bundles Node.js 20.20.2 below.
-          node-version: 22.13.1
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
@@ -72,11 +83,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $runtimeDir = Join-Path $PWD "dist/runtime"
-          $nodeVersion = "v20.20.2"
-          $nodeArchive = "node-$nodeVersion-win-x64.zip"
+          $nodeVersion = "v$env:NODE_VERSION"
+          $nodeArchive = $env:NODE_WINDOWS_X64_ASSET
+          if ($nodeArchive -ne "node-$nodeVersion-win-x64.zip") {
+            throw "Configured Node asset $nodeArchive does not match version $nodeVersion"
+          }
           $nodeUrl = "https://nodejs.org/dist/$nodeVersion/$nodeArchive"
-          $pythonTag = "20260623"
-          $pythonArchive = "cpython-3.12.13+20260623-x86_64-pc-windows-msvc-install_only.tar.gz"
+          $pythonTag = $env:PYTHON_STANDALONE_TAG
+          $pythonArchive = $env:PYTHON_WINDOWS_X64_ASSET
           $pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonTag/$($pythonArchive.Replace('+', '%2B'))"
 
           Remove-Item $runtimeDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -84,6 +98,10 @@ jobs:
 
           $nodeZip = Join-Path $env:RUNNER_TEMP $nodeArchive
           Invoke-WebRequest $nodeUrl -OutFile $nodeZip
+          $actualNodeSha256 = (Get-FileHash $nodeZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualNodeSha256 -ne $env:NODE_WINDOWS_X64_SHA256) {
+            throw "Node archive SHA256 mismatch: got $actualNodeSha256, expected $env:NODE_WINDOWS_X64_SHA256"
+          }
           $nodeExtract = Join-Path $env:RUNNER_TEMP "synthetix-node"
           Remove-Item $nodeExtract -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive $nodeZip -DestinationPath $nodeExtract -Force
@@ -91,6 +109,10 @@ jobs:
 
           $pythonTar = Join-Path $env:RUNNER_TEMP $pythonArchive
           Invoke-WebRequest $pythonUrl -OutFile $pythonTar
+          $actualPythonSha256 = (Get-FileHash $pythonTar -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualPythonSha256 -ne $env:PYTHON_WINDOWS_X64_SHA256) {
+            throw "Python archive SHA256 mismatch: got $actualPythonSha256, expected $env:PYTHON_WINDOWS_X64_SHA256"
+          }
           tar -xzf $pythonTar -C $runtimeDir
           if ($LASTEXITCODE -ne 0) { throw "Failed to extract $pythonArchive" }
 
@@ -100,9 +122,14 @@ jobs:
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $pythonExe) { throw "Bundled Python executable was not extracted" }
 
+          $pythonVersion = (& $pythonExe --version 2>&1).Trim()
+          if ($pythonVersion -ne "Python $env:PYTHON_VERSION") {
+            throw "Bundled Python version mismatch: got $pythonVersion, expected Python $env:PYTHON_VERSION"
+          }
+
           & $pythonExe -m pip install --disable-pip-version-check --progress-bar off -r workers/python/requirements.txt
           if ($LASTEXITCODE -ne 0) { throw "Failed to install workers/python/requirements.txt" }
-          & $pythonExe -c "import docling, lightrag, onnxruntime, transformers; print('Windows runtime dependencies OK')"
+          & $pythonExe -c "import torch, docling, lightrag, onnxruntime, transformers; print('Windows runtime dependencies OK')"
           if ($LASTEXITCODE -ne 0) { throw "Bundled Python dependency verification failed" }
 
           if (-not (Test-Path "dist/runtime/node.exe")) { throw "dist/runtime/node.exe is missing" }
@@ -129,6 +156,22 @@ jobs:
           }
           if (-not $pythonExe) {
             throw "Assembled bundle is missing dist/app/runtime/python/bin/python.exe or dist/app/runtime/python/python.exe"
+          }
+
+          $sqliteSmoke = @'
+          const Database = require("better-sqlite3");
+          const db = new Database(":memory:");
+          const row = db.prepare("SELECT 1 AS value").get();
+          db.close();
+          if (row.value !== 1) throw new Error("better-sqlite3 SELECT smoke failed");
+          console.log("bundled Node better-sqlite3 smoke OK");
+          '@
+          Push-Location dist/app
+          try {
+            & runtime/node.exe -e $sqliteSmoke
+            if ($LASTEXITCODE -ne 0) { throw "Bundled Node better-sqlite3 smoke failed" }
+          } finally {
+            Pop-Location
           }
 
       - name: Decode code-signing certificate (if provided)

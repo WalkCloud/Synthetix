@@ -67,12 +67,14 @@ git push origin v1.0.5
 ### 3. Windows installer + update manifest (automatic)
 
 Pushing a `v*` tag triggers `.github/workflows/release-windows.yml` on a
-Windows runner. The workflow:
+Windows runner. Development and both packaged sidecars use Python 3.14.6. The
+macOS arm64 package requires macOS 12 Monterey or newer. The workflow:
 
 1. Installs pnpm dependencies, generates the Prisma client, and builds the
    Next.js standalone bundle.
-2. On the clean Windows runner, downloads pinned Node 20 x64 and
-   python-build-standalone 3.12 x64 runtimes, then installs
+2. On the clean Windows runner, reads `config/runtime-versions.json`, downloads
+   the pinned Node 24.18.0 x64 sidecar and Python 3.14.6 standalone x64 runtime,
+   then installs
    `workers/python/requirements.txt` into the bundled Python environment. This
    step deliberately does not depend on an Actions cache.
 3. Runs `node scripts/build-installer.mjs --assemble-only --no-build` after the

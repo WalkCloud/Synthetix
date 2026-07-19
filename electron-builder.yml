@@ -111,7 +111,8 @@ win:
   # When unset, electron-builder skips signing (test builds / dev). SmartScreen
   # will warn until a real EV/OV cert is configured — see
   # docs/release-workflow.md §Windows code signing.
-  signingHashAlgorithms: ["sha256"]
+  signtoolOptions:
+    signingHashAlgorithms: ["sha256"]
 
 nsis:
   oneClick: false            # show a normal install wizard with path selection
@@ -137,6 +138,7 @@ mac:
         - arm64
   icon: build/icon.icns
   category: public.app-category.productivity
+  minimumSystemVersion: 12.0  # Electron 43 supports macOS 12 Monterey and newer.
   identity: null              # unsigned build (user choice). ad-hoc signing skipped.
   hardenedRuntime: false      # only needed for signed/notarized builds
   gatekeeperAssess: false     # skip Gatekeeper assessment (no signature to assess)

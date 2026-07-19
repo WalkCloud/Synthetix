@@ -14,15 +14,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Load runtime versions
+        shell: bash
+        run: |
+          echo "NODE_VERSION=$(jq -r .node config/runtime-versions.json)" >> "$GITHUB_ENV"
+          echo "PNPM_VERSION=$(jq -r .pnpm config/runtime-versions.json)" >> "$GITHUB_ENV"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.1
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
