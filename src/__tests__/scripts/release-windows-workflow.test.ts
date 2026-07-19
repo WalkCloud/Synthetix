@@ -9,6 +9,7 @@ describe("Release (Windows) workflow", () => {
     const workflow = fs.readFileSync(workflowPath, "utf8");
 
     expect(workflow).toContain("ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}");
+    expect(workflow).toContain('description: "Release tag to publish (e.g. v1.0.5)"');
   });
 
   it("uses a pnpm-compatible CI Node while packaging the pinned app runtime", () => {

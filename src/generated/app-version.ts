@@ -2,6 +2,6 @@
 // Static identity fields sourced from package.json. Safe to commit.
 export const appVersion = {
   "name": "synthetix",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "license": "Apache-2.0"
 } as const;

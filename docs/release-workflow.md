@@ -50,18 +50,18 @@ never again ship with a stale About-dialog version.
 ```bash
 git checkout main
 git pull origin main
-# edit package.json: "version": "1.0.4"
+# edit package.json: "version": "1.0.5"
 npm run generate:meta   # propagates to src/generated/app-version.ts
 git add package.json src/generated/app-version.ts
-git commit -m "release: v1.0.4"
+git commit -m "release: v1.0.5"
 ```
 
 ### 2. Tag and push
 
 ```bash
-git tag -a v1.0.4 -m "v1.0.4 — <one-line summary>"
+git tag -a v1.0.5 -m "v1.0.5 — <one-line summary>"
 git push origin main
-git push origin v1.0.4
+git push origin v1.0.5
 ```
 
 ### 3. Windows installer + update manifest (automatic)
@@ -101,7 +101,7 @@ the NSIS installer visibly.
 Write release notes when creating the tag, or attach them after:
 
 ```bash
-gh release edit v1.0.4 --notes-file .github/release-notes/v1.0.4.md
+gh release edit v1.0.5 --notes-file .github/release-notes/v1.0.5.md
 ```
 
 ## Update manifest format (`stable.json`)
@@ -110,7 +110,7 @@ The updater requires this schema (see `electron/updater.ts` `LatestManifest`):
 
 ```json
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "channel": "stable",
   "publishedAt": "2026-07-18T09:00:00.000Z",
   "minRequiredVersion": null,
@@ -182,7 +182,7 @@ Run through this before tagging a release. Full rationale in
 ## Quick reference: the whole flow
 
 ```bash
-VER=1.0.4
+VER=1.0.5
 
 git checkout main && git pull origin main
 
@@ -203,8 +203,8 @@ git push origin v$VER
 
 If you need to fix something on an already-released version without pulling in newer main work:
 
-1. Branch off the tag: `git checkout -b hotfix/v1.0.5 v1.0.4`
-2. Fix, commit, tag `v1.0.5`, push
+1. Branch off the tag: `git checkout -b hotfix/v1.0.6 v1.0.5`
+2. Fix, commit, tag `v1.0.6`, push
 3. Merge the hotfix branch back to `main` via PR
 
 This is rare for a single-developer project — usually you just fix on main and cut the next version.
