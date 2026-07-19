@@ -11,6 +11,13 @@ describe("Release (Windows) workflow", () => {
     expect(workflow).toContain("ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}");
   });
 
+  it("uses a pnpm-compatible CI Node while packaging the pinned app runtime", () => {
+    const workflow = fs.readFileSync(workflowPath, "utf8");
+
+    expect(workflow).toContain("node-version: 22.13.1");
+    expect(workflow).toContain('$nodeVersion = "v20.20.2"');
+  });
+
   it("prepares a complete Windows runtime on a clean runner", () => {
     const workflow = fs.readFileSync(workflowPath, "utf8");
 

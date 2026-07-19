@@ -48,7 +48,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # pnpm 11 requires Node.js >= 22.13. This is the CI build runtime;
+          # the packaged desktop app still bundles Node.js 20.20.2 below.
+          node-version: 22.13.1
           cache: pnpm
 
       - name: Install dependencies
