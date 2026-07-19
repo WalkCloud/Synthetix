@@ -9,3 +9,10 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 ignoredBuiltDependencies: []
+# app-builder-lib 26.x accesses @electron/get's ElectronDownloadCacheMode enum
+# (introduced in v5), but its dependency declaration (^3.0.0) resolves to v3,
+# which does NOT export the enum — causing "Cannot read properties of
+# undefined (reading 'ReadWrite')" during DMG build. Force v5 everywhere.
+# Verified working: produces Synthetix-1.0.5-arm64.dmg on Electron 43.1.1.
+overrides:
+  '@electron/get': 5.0.0

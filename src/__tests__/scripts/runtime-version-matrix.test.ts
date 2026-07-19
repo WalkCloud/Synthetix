@@ -195,4 +195,39 @@ describe("Node ecosystem version matrix", () => {
     ).trim();
     expect(embeddedNode).toBe(versions.node);
   });
+
+  it("forces @electron/get v5 so app-builder-lib 26 can read ElectronDownloadCacheMode", () => {
+    // Regression guard for "Cannot read properties of undefined
+    // (reading 'ReadWrite')" during DMG build. app-builder-lib 26.x accesses
+    // @electron/get's ElectronDownloadCacheMode enum, which only exists from
+    // v5 onward, but its declared ^3.0.0 dependency resolves to v3.0.0 that
+    // does not export it. We pin @electron/get to 5.0.0 via pnpm overrides.
+    const workspace = read("pnpm-workspace.yaml");
+    expect(workspace).toMatch(/overrides:\s*\n\s*'@electron\/get':\s*5\.0\.0/);
+
+    const lock = read("pnpm-lock.yaml");
+    expect(lock).toContain("overrides:");
+    expect(lock).toContain("'@electron/get': 5.0.0");
+    expect(lock).not.toContain("'@electron/get@3.0.0':");
+    expect(lock).not.toContain("'@electron/get@2.0.3':");
+
+    // app-builder-lib's runtime resolution must point at v5. We can't read
+    // @electron/get/package.json through require.resolve because v5's
+    // "exports" field does not expose it; resolve the package main and walk
+    // up to its package.json.
+    const appBuilderLibEntry = require.resolve("app-builder-lib", { paths: [root] });
+    const electronGetMain = require.resolve("@electron/get", {
+      paths: [path.dirname(appBuilderLibEntry)],
+    });
+    let dir = path.dirname(electronGetMain);
+    while (dir !== path.dirname(dir)) {
+      const candidate = path.join(dir, "package.json");
+      if (fs.existsSync(candidate)) {
+        const resolvedVersion = JSON.parse(fs.readFileSync(candidate, "utf8")).version;
+        expect(resolvedVersion).toBe("5.0.0");
+        break;
+      }
+      dir = path.dirname(dir);
+    }
+  });
 });
