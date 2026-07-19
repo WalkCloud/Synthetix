@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/session";
 import { authErrorResponse, errorResponse, successResponse } from "@/lib/api-helpers";
-import { getQueue } from "@/lib/queue";
+import { executionRegistry, getQueue } from "@/lib/queue";
 import { getBrainstormMessages } from "@/lib/brainstorm/messages";
 import { findTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
@@ -48,6 +48,10 @@ export async function PATCH(
     for (const task of runningTasks) {
       await queue.cancel(task.id).catch(() => {});
     }
+    await executionRegistry.awaitTaskExecutions(
+      runningTasks.map((task) => task.id),
+      { timeoutMs: 30_000 },
+    );
 
     // Clean up stale system messages from previous generation (both locales)
     const enMsgs = getBrainstormMessages("en");

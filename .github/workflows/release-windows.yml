@@ -35,6 +35,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Manual releases must build the requested tag, not the default branch.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           # Full history + tags so verify:versions and publish can read the tag.
           fetch-depth: 0
 
@@ -63,39 +65,102 @@ jobs:
       - name: Build Next.js (standalone)
         run: pnpm run build
 
+      - name: Prepare bundled Windows runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runtimeDir = Join-Path $PWD "dist/runtime"
+          $nodeVersion = "v20.20.2"
+          $nodeArchive = "node-$nodeVersion-win-x64.zip"
+          $nodeUrl = "https://nodejs.org/dist/$nodeVersion/$nodeArchive"
+          $pythonTag = "20260623"
+          $pythonArchive = "cpython-3.12.13+20260623-x86_64-pc-windows-msvc-install_only.tar.gz"
+          $pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonTag/$($pythonArchive.Replace('+', '%2B'))"
+
+          Remove-Item $runtimeDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item $runtimeDir -ItemType Directory -Force | Out-Null
+
+          $nodeZip = Join-Path $env:RUNNER_TEMP $nodeArchive
+          Invoke-WebRequest $nodeUrl -OutFile $nodeZip
+          $nodeExtract = Join-Path $env:RUNNER_TEMP "synthetix-node"
+          Remove-Item $nodeExtract -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive $nodeZip -DestinationPath $nodeExtract -Force
+          Copy-Item (Join-Path $nodeExtract "node-$nodeVersion-win-x64/node.exe") (Join-Path $runtimeDir "node.exe")
+
+          $pythonTar = Join-Path $env:RUNNER_TEMP $pythonArchive
+          Invoke-WebRequest $pythonUrl -OutFile $pythonTar
+          tar -xzf $pythonTar -C $runtimeDir
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract $pythonArchive" }
+
+          $pythonExe = @(
+            (Join-Path $runtimeDir "python/bin/python.exe"),
+            (Join-Path $runtimeDir "python/python.exe")
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $pythonExe) { throw "Bundled Python executable was not extracted" }
+
+          & $pythonExe -m pip install --disable-pip-version-check --progress-bar off -r workers/python/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install workers/python/requirements.txt" }
+          & $pythonExe -c "import docling, lightrag, onnxruntime, transformers; print('Windows runtime dependencies OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Python dependency verification failed" }
+
+          if (-not (Test-Path "dist/runtime/node.exe")) { throw "dist/runtime/node.exe is missing" }
+
+      - name: Assemble app bundle
+        run: node scripts/build-installer.mjs --assemble-only --no-build
+
+      - name: Verify assembled app bundle
+        shell: pwsh
+        run: |
+          $pythonExe = @(
+            "dist/app/runtime/python/bin/python.exe",
+            "dist/app/runtime/python/python.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $required = @(
+            "dist/app/runtime/node.exe",
+            "dist/app/server.js",
+            "dist/app/workers/python/requirements.txt",
+            "dist/app/node_modules/prisma",
+            "dist/app/prisma/migrations"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "Assembled bundle is missing $path" }
+          }
+          if (-not $pythonExe) {
+            throw "Assembled bundle is missing dist/app/runtime/python/bin/python.exe or dist/app/runtime/python/python.exe"
+          }
+
+      - name: Decode code-signing certificate (if provided)
+        env:
+          WINDOWS_CERT_FILE: ${{ secrets.WINDOWS_CERT_FILE }}
+        run: |
+          if ($env:WINDOWS_CERT_FILE) {
+            # Decode the base64-encoded .pfx before electron:build. The build
+            # script maps this path to electron-builder's standard CSC_LINK.
+            $certPath = "$env:RUNNER_TEMP\synthetix.pfx"
+            $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT_FILE)
+            [IO.File]::WriteAllBytes($certPath, $bytes)
+            echo "WINDOWS_CERT_PATH=$certPath" >> $env:GITHUB_ENV
+          } else {
+            echo "::warning::No Windows code-signing certificate provided — installer will be unsigned (SmartScreen will warn)."
+          }
+
       - name: Build Electron Windows installer
-        # build-electron.mjs now refuses to reuse a stale win-unpacked (its
-        # baked app.asar version must match package.json), so this always
-        # produces an installer whose internal app matches the tag.
+        # build-electron.mjs refuses stale win-unpacked reuse and maps
+        # WINDOWS_CERT_PATH/PASSWORD to electron-builder's CSC_LINK and
+        # CSC_KEY_PASSWORD without putting the password in command arguments.
+        env:
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: pnpm run electron:build
 
       - name: Verify version consistency
         # Asserts package.json == app-version.ts == app.asar version.
         run: pnpm run verify:versions
 
-      - name: Decode code-signing certificate (if provided)
-        if: ${{ env.WINDOWS_CERT_FILE != '' }}
-        env:
-          WINDOWS_CERT_FILE: ${{ secrets.WINDOWS_CERT_FILE }}
-        run: |
-          # The secret is the base64-encoded .pfx. Decode it to a temp file
-          # that electron-builder reads via --config.win.certificateFile.
-          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT_FILE)
-          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\synthetix.pfx", $bytes)
-          echo "WINDOWS_CERT_PATH=$env:RUNNER_TEMP\synthetix.pfx" >> $env:GITHUB_ENV
-
       - name: Publish release assets + signed manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SYNTHETIX_SIGNING_KEY: ${{ secrets.SYNTHETIX_SIGNING_KEY }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          # publish-release.mjs signs the manifest with the Ed25519 key and
-          # uploads installer + manifest to the GitHub Release for this tag.
-          # Pass the Authenticode cert path so the installer itself is signed.
-          if ($env:WINDOWS_CERT_PATH) {
-            pnpm run publish -- --win.certificateFile "$env:WINDOWS_CERT_PATH" --win.certificatePassword "$env:WINDOWS_CERT_PASSWORD"
-          } else {
-            echo "::warning::No Windows code-signing certificate provided — installer will be unsigned (SmartScreen will warn)."
-            pnpm run publish
-          }
+          # publish-release.mjs only signs the Ed25519 update manifest and
+          # uploads the installer + manifest; Authenticode happens during build.
+          pnpm run publish

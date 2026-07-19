@@ -258,6 +258,21 @@ class InsertVerification(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "LIGHTRAG_INSERT_NOT_COMMITTED")
         self.assertEqual(ctx.exception.extra["verification"]["failed_children"][0]["chunks_count"], 0)
 
+    def test_falls_back_to_direct_status_read_after_insert(self):
+        rag = FakeRag()
+        rag.doc_status.get_docs_by_statuses = AsyncMock(return_value={})
+        rag.doc_status.get_by_id = AsyncMock(return_value={
+            "status": "processed",
+            "chunks_list": ["doc-A/chunk_000-chunk-000"],
+        })
+
+        result = asyncio.run(verify_application_document_insert(
+            rag, "doc-A", ["doc-A/chunk_000"],
+        ))
+
+        self.assertEqual(result.committed_child_ids, ["doc-A/chunk_000"])
+        rag.doc_status.get_by_id.assert_awaited_once_with("doc-A/chunk_000")
+
 
 class MetadataCollection(unittest.TestCase):
     def test_aggregates_entity_names_and_relation_pairs(self):

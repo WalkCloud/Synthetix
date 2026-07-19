@@ -11,8 +11,9 @@
 #    bundle (that would double-ship 1.4GB and break the resources/app layout).
 #  - perMachine: false → per-user install, no UAC (matches the prior Inno Setup
 #    policy). oneClick: false → user picks install path, like a normal app.
-#  - No code signing for this test build (friends click "Run anyway" past
-#    SmartScreen). Add a certificate block before public release.
+#  - Windows Authenticode signing is enabled at build time through
+#    electron-builder's standard CSC_LINK / CSC_KEY_PASSWORD environment.
+#    With no certificate configured, electron-builder produces an unsigned build.
 
 appId: com.walkcloud.synthetix
 productName: Synthetix
@@ -103,17 +104,14 @@ win:
       arch:
         - x64
   icon: build/icon.ico
-  # Authenticode signing. Configured via GitHub Actions secrets so the cert
-  # never lives in the repo. Set these to enable signing:
-  #   WINDOWS_CERT_FILE  — base64-encoded .pfx (use `certutil -decode` in CI)
-  #   WINDOWS_CERT_PASSWORD — the .pfx password
+  # Authenticode signing. The release workflow decodes WINDOWS_CERT_FILE before
+  # electron:build; scripts/build-electron.mjs maps WINDOWS_CERT_PATH and
+  # WINDOWS_CERT_PASSWORD to electron-builder's standard CSC_LINK and
+  # CSC_KEY_PASSWORD environment variables. This config stays secret-free.
   # When unset, electron-builder skips signing (test builds / dev). SmartScreen
   # will warn until a real EV/OV cert is configured — see
   # docs/release-workflow.md §Windows code signing.
   signingHashAlgorithms: ["sha256"]
-  # signtoolOptions / certificateFile / certificatePassword are wired in the
-  # release workflow via --config.win.certificateFile=... overrides, so this
-  # file stays secret-free.
 
 nsis:
   oneClick: false            # show a normal install wizard with path selection

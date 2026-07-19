@@ -47,6 +47,7 @@ export type TranslationSchema = {
       disabled: string;
       online: string;
       offline: string;
+      unknown: string;
     };
     messages: {
       savedSuccessfully: string;
@@ -328,6 +329,7 @@ export type TranslationSchema = {
       mediumTitle: string;
       slowTitle: string;
       heavyTitle: string;
+      queuedTitle: string;
       body: string;
       queuedBody: string;
       graphBodySuffix: string;
@@ -335,6 +337,11 @@ export type TranslationSchema = {
       minutes: string;
       mixed: string;
       estimatedTime: string;
+      estimateDisclaimer: string;
+      fileCount: {
+        one: string;
+        other: string;
+      };
       viewProgress: string;
     };
   };
@@ -407,7 +414,6 @@ export type TranslationSchema = {
       conversionMethod: string;
       uploadedAgo: string;
       processingTime: string;
-      enhancementTime: string;
       processingInProgress: string;
       durationHoursMinutes: string;
       durationMinutesSeconds: string;
@@ -515,10 +521,29 @@ export type TranslationSchema = {
     };
     status: {
       pending: string;
+      retrieving: string;
       generating: string;
       reviewing: string;
+      summarized: string;
       completed: string;
       failed: string;
+    };
+    outlinePanel: {
+      sectionTitlePlaceholder: string;
+      wordsPlaceholder: string;
+      editOutline: string;
+      addSubSection: string;
+      addSection: string;
+      sectionsCompleted: string;
+    };
+    diagram: {
+      request: string;
+      types: Record<string, string>;
+      nodes: string;
+      loadFailed: string;
+      alt: string;
+      regenerate: string;
+      clickToGenerate: string;
     };
     compare: {
       title: string;
@@ -750,6 +775,28 @@ export type TranslationSchema = {
     nodeTypes: {
       document: string;
       entity: string;
+    };
+    counts: {
+      entities: { one: string; other: string };
+      relations: { one: string; other: string };
+      references: { one: string; other: string };
+      documents: { one: string; other: string };
+      refs: { one: string; other: string };
+      sections: { one: string; other: string };
+      entityRelationSummary: string;
+      referenceDocumentSummary: string;
+      mostReferenced: string;
+    };
+    entityEvidence: {
+      title: string;
+      close: string;
+      description: string;
+      noDescription: string;
+      relatedChunks: string;
+      retrievingChunks: string;
+      noChunks: string;
+      relationEvidence: string;
+      noRelations: string;
     };
     detailPanel: {
       details: string;
@@ -1022,6 +1069,9 @@ export type TranslationSchema = {
       enterCurrentPassword: string;
       enterNewPassword: string;
       confirmNewPassword: string;
+      avatarAlt: string;
+      unlockEmail: string;
+      lockEmail: string;
     };
     database: {
       title: string;

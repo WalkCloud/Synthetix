@@ -1,4 +1,6 @@
+import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/db";
+import { resolveTaskIdentity } from "@/lib/queue/task-identity";
 import {
   indexDocument,
   loadProcessingTask,
@@ -31,6 +33,61 @@ export function buildGraphTaskProgressUpdate(
       lastHeartbeatAt: now.toISOString(),
     }),
   };
+}
+
+export function buildGraphRetryOutcome(
+  errorType: GraphErrorType,
+  attempt: number,
+  retryInMs: number,
+  retryTaskId: string,
+  retryNotBefore: Date,
+): WorkerResult {
+  return cancelledOutcome(
+    `Graph attempt ${attempt + 1} failed (${errorType}), retrying in ${Math.round(retryInMs / 1000)}s`,
+    {
+      indexMode: "graph",
+      graphStatus: "retrying",
+      errorType,
+      attempt: attempt + 1,
+      nextAttempt: attempt + 1,
+      retryInMs,
+      retryTaskId,
+      retryNotBefore: retryNotBefore.toISOString(),
+    },
+  );
+}
+
+export async function persistGraphRetry(input: {
+  taskId: string;
+  docId: string;
+  userId: string;
+  attempt: number;
+  retryNotBefore: Date;
+}): Promise<string> {
+  const payload = {
+    docId: input.docId,
+    retryNotBefore: input.retryNotBefore.toISOString(),
+    options: { indexMode: "graph" as const, [ATTEMPT_KEY]: input.attempt + 1 },
+  };
+  const identity = await resolveTaskIdentity({
+    type: "rag_index",
+    payload,
+    userId: input.userId,
+    options: { parentTaskId: input.taskId, attempt: input.attempt + 1 },
+  });
+  const retryTaskId = uuidv4();
+  await db.asyncTask.create({
+    data: {
+      id: retryTaskId,
+      userId: input.userId,
+      type: "rag_index",
+      status: "pending",
+      progress: 0,
+      inputData: JSON.stringify(payload),
+      ...identity,
+    },
+  });
+  return retryTaskId;
 }
 
 interface GraphIndexResult {
@@ -93,6 +150,7 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
       console.warn(`[graph] doc ${procCtx.docId} extraction TIMED OUT (soft-landing as ready):`, ragResult?.error);
     }
     assertGraphIndexCommitted(ragResult);
+    ctx.throwIfCancelled();
 
     // Graph extraction is the FINAL pipeline stage. The embed worker left the
     // document in "indexing_graph" awaiting us, so only here — once the
@@ -116,6 +174,7 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
       timeoutOccurred: graphTimedOut || undefined,
     };
   } catch (error) {
+    ctx.throwIfCancelled();
     return handleGraphFailure(taskId, procCtx.docId, procCtx.doc.userId, error, attempt);
   }
 }
@@ -124,7 +183,7 @@ export async function processDocumentGraph(taskId: string, ctx: TaskExecutionCon
  * Failure policy: a graph failure must NEVER brick the document. By this
  * stage DB embeddings + FTS already succeeded, so basic search is available.
  *
- *   retryable + attempts remain  → re-enqueue self after backoff
+ *   retryable + attempts remain  → persist pending successor with a due time
  *   otherwise                    → soft-land: doc ready + warning, task completed
  *
  * The task is marked "completed" (not "failed") on soft-land because the
@@ -140,35 +199,19 @@ async function handleGraphFailure(
 ): Promise<WorkerResult> {
   const classified = classifyGraphError(error);
 
-  // Retry path: re-enqueue a fresh rag_index carrying the incremented attempt.
-  // The current task is marked cancelled so it doesn't linger as "failed".
+  // Retry path: persist a fresh pending rag_index before this attempt ends.
+  // The queue derives eligibility from retryNotBefore, so restart loses only an
+  // optional wake timer, never the retry itself. The current task is cancelled.
   if (classified.retryable && attempt < GRAPH_MAX_RETRIES) {
     const delay = graphRetryDelay(attempt);
-    setTimeout(() => {
-      void import("@/lib/queue").then(({ getQueue }) =>
-        getQueue().submit(
-          "rag_index",
-          { docId, options: { indexMode: "graph", [ATTEMPT_KEY]: attempt + 1 } },
-          userId,
-          { parentTaskId: taskId },
-        ),
-      ).catch((err) => console.warn(`[graph] failed to re-enqueue retry for doc ${docId}:`, err));
-    }, delay);
+    const retryNotBefore = new Date(Date.now() + delay);
+    const retryTaskId = await persistGraphRetry({ taskId, docId, userId, attempt, retryNotBefore });
 
     console.warn(
       `[graph] doc ${docId} attempt ${attempt + 1} failed (${classified.type}); retry ${attempt + 2}/${GRAPH_MAX_RETRIES + 1} in ${Math.round(delay / 1000)}s`,
       error instanceof Error ? error.message : error,
     );
-    return cancelledOutcome(
-      `Graph attempt ${attempt + 1} failed (${classified.type}), retrying in ${Math.round(delay / 1000)}s`,
-      {
-        indexMode: "graph",
-        graphStatus: "retrying",
-        errorType: classified.type,
-        attempt: attempt + 1,
-        retryInMs: delay,
-      },
-    );
+    return buildGraphRetryOutcome(classified.type, attempt, delay, retryTaskId, retryNotBefore);
   }
 
   // Final failure — soft-land. The document stays usable via DB embedding + FTS.

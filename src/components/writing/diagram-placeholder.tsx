@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { diagramTypeLabel } from "@/lib/writing/diagram";
 import type { DiagramRequest } from "@/lib/writing/diagram";
+import { useLocale } from "@/lib/i18n";
 
 export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
+  const { t, format } = useLocale();
   return (
     <div className="my-4 border border-dashed border-border rounded-xl bg-muted/60 p-4">
       <div className="flex items-start gap-3">
@@ -18,9 +19,9 @@ export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-              {diagramTypeLabel(diagram.type)}
+              {t.writing.diagram.types[diagram.type] ?? diagram.type}
             </span>
-            <span className="text-[11px] text-muted-foreground">Diagram Request</span>
+            <span className="text-[11px] text-muted-foreground">{t.writing.diagram.request}</span>
           </div>
           <p className="text-sm font-medium text-foreground leading-snug">
             {diagram.title}
@@ -32,7 +33,7 @@ export function DiagramPlaceholder({ diagram }: { diagram: DiagramRequest }) {
           )}
           {diagram.nodes && (
             <p className="text-[11px] text-muted-foreground mt-1.5">
-              Nodes: {diagram.nodes}
+              {format.template(t.writing.diagram.nodes, { nodes: diagram.nodes })}
             </p>
           )}
         </div>
@@ -56,6 +57,7 @@ export function DiagramView({
 }) {
   const [error, setError] = useState(false);
   const [hovering, setHovering] = useState(false);
+  const { t } = useLocale();
 
   if (error) {
     return (
@@ -65,7 +67,7 @@ export function DiagramView({
             <circle cx="12" cy="12" r="10" />
             <path d="M15 9l-6 6M9 9l6 6" />
           </svg>
-          Diagram failed to load
+          {t.writing.diagram.loadFailed}
         </div>
       </figure>
     );
@@ -82,7 +84,7 @@ export function DiagramView({
       >
         <Image
           src={serveUrl}
-          alt={title || "Architecture diagram"}
+          alt={title || t.writing.diagram.alt}
           width={1200}
           height={675}
           className="h-auto w-full rounded-xl border border-border bg-card"
@@ -100,7 +102,7 @@ export function DiagramView({
                 <path d="M1 4v6h6M23 20v-6h-6" />
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
               </svg>
-              Regenerate
+              {t.writing.diagram.regenerate}
             </button>
           </div>
         )}

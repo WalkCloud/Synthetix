@@ -69,14 +69,22 @@ git push origin v1.0.4
 Pushing a `v*` tag triggers `.github/workflows/release-windows.yml` on a
 Windows runner. The workflow:
 
-1. Builds the Next.js standalone bundle.
-2. Builds the Electron NSIS installer via `electron:build` (which refuses to
-   reuse a stale `win-unpacked`).
-3. Runs `verify:versions` to assert `package.json` == `app-version.ts` ==
+1. Installs pnpm dependencies, generates the Prisma client, and builds the
+   Next.js standalone bundle.
+2. On the clean Windows runner, downloads pinned Node 20 x64 and
+   python-build-standalone 3.12 x64 runtimes, then installs
+   `workers/python/requirements.txt` into the bundled Python environment. This
+   step deliberately does not depend on an Actions cache.
+3. Runs `node scripts/build-installer.mjs --assemble-only --no-build` after the
+   Next build to assemble `dist/app`, then verifies the bundled Node, Python,
+   worker requirements, Prisma package, and migrations before packaging.
+4. Decodes the Authenticode certificate secret to a temporary `.pfx` before
+   `electron:build` (if signing is configured).
+5. Builds and signs the Electron NSIS installer via `electron:build` (which
+   refuses to reuse a stale `win-unpacked`).
+6. Runs `verify:versions` to assert `package.json` == `app-version.ts` ==
    `app.asar` version.
-4. Decodes the Authenticode certificate secret (if configured) and signs the
-   installer.
-5. Runs `npm run publish`, which:
+7. Runs `npm run publish`, which only handles release creation/upload and:
    - computes SHA-256 of the installer,
    - signs the update manifest (`stable.json`) with the Ed25519 key
      (`SYNTHETIX_SIGNING_KEY` secret),
@@ -134,8 +142,13 @@ manifest signature protects the *update channel* regardless, but Authenticode
 protects the *first manual download* and the publisher identity shown by
 Windows.
 
-The `.pfx` is decoded in CI to a temp file and passed via
-`--win.certificateFile`; it never lives in the repo or in
+The `.pfx` is decoded in CI to a temp file **before** `electron:build`.
+`scripts/build-electron.mjs` maps `WINDOWS_CERT_PATH` and
+`WINDOWS_CERT_PASSWORD` to electron-builder's standard `CSC_LINK` and
+`CSC_KEY_PASSWORD` environment variables for the electron-builder child
+process. The password is not placed in command-line arguments or logged, and
+`npm run publish` receives no Authenticode options because it only uploads the
+already-built installer. The certificate never lives in the repo or in
 `electron-builder.yml`.
 
 ## Update signing key (Ed25519)

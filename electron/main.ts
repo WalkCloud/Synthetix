@@ -15,7 +15,16 @@
  * which take precedence over cwd-relative defaults in the app's path resolution
  * (src/lib/db-path.ts reads DATABASE_URL/DB_PATH; storage routes read DATA_DIR).
  */
-import { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  dialog,
+  nativeImage,
+  ipcMain,
+  session,
+} from "electron";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
 import http from "http";
@@ -32,12 +41,20 @@ import { runFirstRun } from "./first-run";
 import * as updater from "./updater";
 import { winFullApplier, setFullApplierHooks } from "./win-full-applier";
 import { winPatchApplier, setPatchApplierHooks } from "./win-patch-applier";
+import {
+  nativeStrings,
+  resolveNativeLocale,
+  type NativeLocale,
+  type NativeStrings,
+} from "./locale";
 
 // ─── globals ────────────────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let nextServer: ChildProcess | null = null;
 let isQuitting = false;
+let nativeLocale: NativeLocale = "en";
+let strings: NativeStrings = nativeStrings(nativeLocale);
 // The port + dataDir the booted Next server used. Captured by boot() so the
 // patch applier can restart the server against a freshly-patched bundle without
 // re-running the full boot sequence (first-run, tray creation, etc.).
@@ -104,6 +121,8 @@ updater.registerApplier("full", winFullApplier);
 updater.registerApplier("patch", winPatchApplier);
 
 const HOST = "127.0.0.1";
+const LOCALE_COOKIE_NAME = "synthetix-locale";
+const LOCALE_COOKIE_ORIGIN = `http://${HOST}`;
 
 // ─── single instance ────────────────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -205,8 +224,20 @@ function waitForServer(port: number, timeoutMs = 60_000): Promise<void> {
   });
 }
 
+// ─── native locale ──────────────────────────────────────────────────────────
+async function readPersistedLocale(): Promise<string | undefined> {
+  const cookies = await session.defaultSession.cookies.get({
+    url: LOCALE_COOKIE_ORIGIN,
+    name: LOCALE_COOKIE_NAME,
+  });
+  return cookies[0]?.value;
+}
+
 // ─── boot sequence ──────────────────────────────────────────────────────────
 async function boot(): Promise<void> {
+  nativeLocale = await resolveNativeLocale(readPersistedLocale, () => app.getLocale());
+  strings = nativeStrings(nativeLocale);
+
   const dataDir = userDataDir();
   const dbUrl = `file:${path.join(dataDir, "dev.db").replace(/\\/g, "/")}`;
 
@@ -395,8 +426,8 @@ function startNextServer(port: number, dataDir: string): void {
     if (!isQuitting) {
       // Unexpected exit — surface to the user and quit.
       dialog.showErrorBox(
-        "Synthetix backend stopped",
-        `The local server exited unexpectedly (code ${code}). See ${logPath}.`
+        strings.backendStoppedTitle,
+        strings.backendStoppedMessage({ code, logPath })
       );
       app.quit();
     }
@@ -461,7 +492,7 @@ function createTray(port: number): void {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: "Open Synthetix",
+      label: strings.openSynthetix,
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -473,7 +504,7 @@ function createTray(port: number): void {
     },
     { type: "separator" },
     {
-      label: "Quit",
+      label: strings.quit,
       click: () => {
         isQuitting = true;
         app.quit();
@@ -593,11 +624,11 @@ function parseEnvFile(envPath: string): Record<string, string> {
 function fatalBootError(err: unknown): void {
   const msg = err instanceof Error ? err.message : String(err);
   dialog.showErrorBox(
-    "Synthetix failed to start",
-    `Synthetix could not start its local backend:\n\n${msg}\n\nCheck the server log in:\n${path.join(
-      userDataDir(),
-      "server.log"
-    )}`
+    strings.startFailedTitle,
+    strings.startFailedMessage({
+      error: msg,
+      logPath: path.join(userDataDir(), "server.log"),
+    })
   );
   app.quit();
 }

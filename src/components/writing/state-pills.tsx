@@ -1,17 +1,13 @@
 "use client";
 
 import type { SectionStatus } from "@/types/writing";
+import { useLocale } from "@/lib/i18n";
 
 interface StatePillsProps {
   status: SectionStatus;
 }
 
-const SECTION_STATES = [
-  { key: "retrieving", label: "Retrieving" },
-  { key: "generating", label: "Generating" },
-  { key: "reviewing", label: "Reviewing" },
-  { key: "summarized", label: "Summarized" },
-] as const;
+const SECTION_STATES = ["retrieving", "generating", "reviewing", "summarized"] as const;
 
 function getStateIndex(status: SectionStatus): number {
   const map: Record<string, number> = {
@@ -29,6 +25,7 @@ function getStateIndex(status: SectionStatus): number {
 }
 
 export function StatePills({ status }: StatePillsProps) {
+  const { t } = useLocale();
   const currentIndex = getStateIndex(status);
 
   return (
@@ -39,7 +36,7 @@ export function StatePills({ status }: StatePillsProps) {
 
         return (
           <div
-            key={state.key}
+            key={state}
             className={`text-[11px] py-1.5 px-2 rounded-lg text-center font-semibold ${
               isDone
                 ? "bg-emerald-100 text-emerald-600"
@@ -48,7 +45,7 @@ export function StatePills({ status }: StatePillsProps) {
                     : "bg-secondary text-muted-foreground"
             }`}
           >
-            {state.label}
+            {t.writing.status[state]}
           </div>
         );
       })}

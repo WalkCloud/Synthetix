@@ -24,22 +24,28 @@ import path from "path";
  * Deterministic: file paths are sorted and normalized to forward slashes before
  * hashing, so the same install produces the same hash regardless of cwd.
  */
-export function computeRuntimeHash(appRootDir: string): string {
+export function computeRuntimeHash(
+  appRootDir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const hash = crypto.createHash("sha256");
   const files: string[] = [];
+  const isWin = platform === "win32";
 
   // node + python binaries.
   const nodeExe = path.join(
     appRootDir,
     "runtime",
-    process.platform === "win32" ? "node.exe" : "node"
+    isWin ? "node.exe" : "node"
   );
-  const pyExe = path.join(
-    appRootDir,
-    "runtime",
-    "python",
-    process.platform === "win32" ? "python.exe" : "python3"
-  );
+  // python-build-standalone ships under runtime/python/bin/{python3,python.exe}.
+  // Resolve the bin/ location first and fall back to the flat layout so the
+  // hash always covers the real interpreter regardless of how it was laid out.
+  const pyExeName = isWin ? "python.exe" : "python3";
+  const pyRoot = path.join(appRootDir, "runtime", "python");
+  const pyBinned = path.join(pyRoot, "bin", pyExeName);
+  const pyFlat = path.join(pyRoot, pyExeName);
+  const pyExe = fs.existsSync(pyBinned) ? pyBinned : pyFlat;
   if (fs.existsSync(nodeExe)) files.push(nodeExe);
   if (fs.existsSync(pyExe)) files.push(pyExe);
 

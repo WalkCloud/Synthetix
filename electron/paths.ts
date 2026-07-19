@@ -26,6 +26,7 @@
  * server writes data to userData even though it runs from resources/app.
  */
 import { app } from "electron";
+import fs from "fs";
 import path from "path";
 
 /** The bundled Next.js app root. In production this is resources/app/. */
@@ -43,10 +44,28 @@ export function userDataDir(): string {
   return app.getPath("userData");
 }
 
-/** Path to the bundled CPython interpreter. */
+/**
+ * Path to the bundled CPython interpreter.
+ *
+ * python-build-standalone (used for both the macOS and Windows bundles) ships
+ * its interpreter under `runtime/python/bin/{python3,python.exe}`, NOT flat at
+ * `runtime/python/{python3,python.exe}`. The build scripts confirm this layout:
+ *   - scripts/build-installer-mac.mjs copies the whole python-build-standalone
+ *     tree, landing the binary at runtime/python/bin/python3.
+ *   - scripts/build-electron-mac.mjs asserts runtime/python/bin/python3 exists.
+ *
+ * Resolve the canonical `bin/` location first, and only fall back to the flat
+ * layout if a particular install happened to flatten it. This keeps the path
+ * correct on both macOS and Windows without changing the build output.
+ */
 export function pythonPath(): string {
   const exe = process.platform === "win32" ? "python.exe" : "python3";
-  return path.join(appRoot(), "runtime", "python", exe);
+  const pyRoot = path.join(appRoot(), "runtime", "python");
+  const binned = path.join(pyRoot, "bin", exe);
+  const flat = path.join(pyRoot, exe);
+  // Prefer the bin/ layout when it actually exists; fall back to flat for
+  // legacy/flattened installs so we never hard-fail on a working binary.
+  return fs.existsSync(binned) ? binned : flat;
 }
 
 /** Path to the Next.js CLI shipped in node_modules. */

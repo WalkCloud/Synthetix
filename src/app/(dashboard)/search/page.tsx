@@ -11,7 +11,7 @@ import { SemanticResults } from "@/components/library/semantic-results";
 import { KnowledgeGraphCanvas, type KnowledgeGraphCanvasHandle } from "@/components/knowledge/knowledge-graph-canvas";
 import { TopologyControls } from "@/components/topology/topology-controls";
 import { EntityEvidencePanel } from "@/components/topology/entity-evidence-panel";
-import { useLocale } from "@/lib/i18n";
+import { getLocalizedError, useLocale } from "@/lib/i18n";
 import { getVisibleSearchState, type SearchMode } from "@/lib/search/display-state";
 import { getGraphTaskDecision, type GraphTaskStatus } from "@/lib/knowledge/graph-task-status";
 import { getKGLoadingProgress } from "@/lib/knowledge/graph-loading-stages";
@@ -39,7 +39,7 @@ interface EntityEvidenceChunk {
 
 export default function SearchPage() {
   const router = useRouter();
-  const { locale, t, format } = useLocale();
+  const { t, format } = useLocale();
   const [activeTab, setActiveTab] = useState<TabId>("search");
 
   const tabItems: { id: TabId; label: string }[] = [
@@ -372,7 +372,7 @@ export default function SearchPage() {
         setSearchResults(data.data);
         setLastSearchMode(searchMode);
       }
-      else { toast.error(data.error || t.errors.generationFailed); }
+      else { toast.error(getLocalizedError(data, t.errors, t.errors.generationFailed)); }
     } catch {
       if (searchTimerRef.current) { clearInterval(searchTimerRef.current); searchTimerRef.current = null; }
       toast.error(t.errors.networkError);
@@ -561,7 +561,6 @@ export default function SearchPage() {
                   onClose={() => setKgSelectedNodeId(null)}
                   isLoading={kgEntityDetailLoading}
                   chunks={kgEvidenceChunks}
-                  isZh={locale === "zh-CN"}
                 />
               </>
             )}

@@ -7,6 +7,7 @@ import { ChunksPanel } from "@/components/library/chunks-panel";
 import { WikiPrecipField } from "@/components/library/wiki-precip-card";
 import type { DocumentMeta } from "@/types/documents";
 import { useLocale } from "@/lib/i18n";
+import { getDocumentStatusLabel } from "@/lib/i18n/document-status";
 import type { DocumentPipeline, PipelineStageKey, PipelineStageStatus } from "@/lib/documents/pipeline-stages";
 
 type Tab = "overview" | "chunks";
@@ -400,6 +401,29 @@ function stageColor(status: PipelineStageStatus): string {
   return "text-muted-foreground";
 }
 
+export function getProcessingTimeFields({
+  status,
+  processingDurationMs,
+  liveElapsedMs,
+}: {
+  status: string;
+  processingDurationMs: number | null | undefined;
+  basicDurationMs?: number | null;
+  liveElapsedMs: number | null;
+}): Array<{ durationMs: number | null; inProgress: boolean }> {
+  if (status === "ready" || status === "finished") {
+    return processingDurationMs != null
+      ? [{ durationMs: processingDurationMs, inProgress: false }]
+      : [];
+  }
+  if (status === "enhancing") {
+    return [{ durationMs: processingDurationMs ?? null, inProgress: processingDurationMs == null }];
+  }
+
+  if (status === "pending" || status === "failed") return [];
+  return [{ durationMs: liveElapsedMs, inProgress: true }];
+}
+
 function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitchTab }: OverviewTabProps) {
   const chunks = chunksRaw ?? [];
   const { t, format: localeFormat } = useLocale();
@@ -407,14 +431,7 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
   // graph/wiki branches still run from a true "ready"). Falls back to the raw
   // doc.status for legacy docs without a computed pipeline.
   const effectiveStatus = doc.displayStatus ?? doc.status;
-  const statusLabel = (status: string) =>
-    status === "ready" ? t.common.states.ready
-    : status === "failed" ? t.common.states.failed
-    : status === "enhancing" ? t.common.states.enhancing
-    : status === "processing" ? t.common.states.processing
-    : status === "indexing_graph" ? t.common.states.indexingGraph
-    : status === "pending" ? t.common.states.pending
-    : status;
+  const statusLabel = (status: string) => getDocumentStatusLabel(status, t.common.states);
 
   // Format processing duration (ms) → "10分30秒" / "1h 5m 20s". null/undefined
   // while still processing shows "处理中". Falls back to "—" when no data.
@@ -479,41 +496,18 @@ function OverviewTab({ doc, chunks: chunksRaw, totalTokens, td, format, onSwitch
           {totalTokens > 0 && <DetailField label={`Tokens (${td.chunks.toLowerCase()})`} value={format.number(totalTokens)} />}
           {doc.conversionMethod && <DetailField label={td.conversionMethod} value={doc.conversionMethod} />}
           {doc.originalHash && <DetailField label="SHA-256" value={doc.originalHash.slice(0, 16) + "..."} />}
-          {/* Processing Time = "time to usable" (convert → embed).
-              Graph/wiki enhancement time shown separately so users understand
-              the doc is already searchable while enhancement continues. */}
-          {(() : React.ReactNode => {
-            const isReady = effectiveStatus === "ready";
-            const isEnhancing = effectiveStatus === "enhancing";
-            const isProc = !isReady && !isEnhancing && effectiveStatus !== "pending" && effectiveStatus !== "failed";
-
-            if (isReady || isEnhancing) {
-              // Basic processing done — show basicDuration (time to usable).
-              const basicMs = doc.basicDurationMs ?? doc.processingDurationMs;
-              const enhMs = doc.enhancementDurationMs;
-              return (
-                <>
-                  {basicMs != null && (
-                    <DetailField label={td.processingTime} value={formatDuration(basicMs)} />
-                  )}
-                  {isEnhancing && enhMs == null && (
-                    <DetailField label={td.enhancementTime} value={td.processingInProgress} tone="warning" />
-                  )}
-                  {enhMs != null && isReady && (
-                    <DetailField label={td.enhancementTime} value={formatDuration(enhMs)} tone="success" />
-                  )}
-                </>
-              );
-            }
-            if (isProc) {
-              return liveElapsedMs != null ? (
-                <DetailField label={td.processingTime} value={formatDuration(liveElapsedMs)} tone="warning" />
-              ) : (
-                <DetailField label={td.processingTime} value={td.processingInProgress} tone="warning" />
-              );
-            }
-            return null;
-          })()}
+          {getProcessingTimeFields({
+            status: effectiveStatus,
+            processingDurationMs: doc.processingDurationMs,
+            liveElapsedMs,
+          }).map((field) => (
+            <DetailField
+              key="processing-time"
+              label={td.processingTime}
+              value={field.durationMs != null ? formatDuration(field.durationMs) : td.processingInProgress}
+              tone={field.inProgress ? "warning" : undefined}
+            />
+          ))}
 
           {/* Knowledge distillation - integrated as a document property */}
           {doc.status === "ready" && <WikiPrecipField documentId={doc.id} />}

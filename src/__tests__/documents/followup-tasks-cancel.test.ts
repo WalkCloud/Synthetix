@@ -38,7 +38,11 @@ describe("cancelActiveFollowupTasks", () => {
     const rows = await db.asyncTask.findMany({ where: { userId: TEST_USER_ID } });
     const byId = new Map(rows.map((r) => [r.id, r]));
     expect(byId.get(graphPending.id)?.status).toBe("cancelled");
+    expect(byId.get(graphPending.id)?.cancelRequestedAt).not.toBeNull();
+    expect(byId.get(graphPending.id)?.finishedAt).not.toBeNull();
     expect(byId.get(wikiRunning.id)?.status).toBe("cancelled");
+    expect(byId.get(wikiRunning.id)?.cancelRequestedAt).not.toBeNull();
+    expect(byId.get(wikiRunning.id)?.finishedAt).not.toBeNull();
   });
 
   it("leaves other documents' follow-up tasks untouched", async () => {

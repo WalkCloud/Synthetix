@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useLocale } from "@/lib/i18n";
+import { getLocalizedError, useLocale } from "@/lib/i18n";
 
 export function LoginForm() {
   const router = useRouter();
@@ -117,8 +117,11 @@ export function LoginForm() {
         router.push("/");
       } else {
         setError(
-          data.error ||
-            (initialized === false ? t.auth.login.creationFailed : t.auth.login.loginFailed)
+          getLocalizedError(
+            data,
+            t.errors,
+            initialized === false ? t.auth.login.creationFailed : t.auth.login.loginFailed,
+          )
         );
       }
     } catch {

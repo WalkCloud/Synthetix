@@ -41,30 +41,21 @@ export function getErrorMap(): TranslationSchema["errors"] {
  *
  * Resolution order:
  * 1. If `data.code` exists and matches a key in errorMap, use the localized string.
- * 2. If `data.error` is a string, return it as-is (server-side English fallback).
- * 3. Fall back to errorMap.unknown.
+ * 2. Use the caller-provided localized domain fallback when supplied.
+ * 3. Fall back to errorMap.unknown. Server-provided prose is never exposed.
  */
 export function getLocalizedError(
-  data: { code?: string; error?: string; message?: string } | undefined | null,
+  data: { code?: string; error?: unknown; message?: unknown } | undefined | null,
   errorMap?: TranslationSchema["errors"],
+  fallback?: string,
 ): string {
   const map = errorMap ?? getErrorMap();
 
-  if (!data) return map.unknown;
-
-  // 1. Try code-based lookup
-  if (data.code && data.code in map) {
+  if (data?.code && data.code in map) {
     return map[data.code as keyof typeof map];
   }
 
-  // 2. Fallback to server message
-  const msg = data.error || data.message;
-  if (typeof msg === "string" && msg.length > 0) {
-    return msg;
-  }
-
-  // 3. Final fallback
-  return map.unknown;
+  return fallback ?? map.unknown;
 }
 
 /**

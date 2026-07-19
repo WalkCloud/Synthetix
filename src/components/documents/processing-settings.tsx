@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocale } from "@/lib/i18n";
+import type { KnowledgeMode } from "@/lib/documents/knowledge-mode";
+
+export type { KnowledgeMode } from "@/lib/documents/knowledge-mode";
 
 interface ModelOption {
   id: string;
@@ -36,8 +39,6 @@ export type { ModelOption };
  *   wiki     → basic + wiki on    (retrieval + synthesized knowledge)
  *   full     → graph + wiki on    (everything — recommended)
  */
-export type KnowledgeMode = "standard" | "graph" | "wiki" | "full";
-
 /**
  * Map a user-facing KnowledgeMode to the backend ProcessingOptions fields it
  * controls. splitStrategy / indexTarget / autoSplit are locked to their best

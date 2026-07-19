@@ -120,6 +120,8 @@ export async function processRagEmbedIndex(
       await autoTagDocument(procCtx, mdForTags);
     }
 
+    ctx.throwIfCancelled();
+
     // ── 5. Status + graph enqueue ────────────────────────────────────────────
     // The document is now "ready" = basic retrieval available (embedding + FTS
     // are done). Graph/Wiki are ENHANCEMENT stages that run as parallel async
@@ -134,6 +136,7 @@ export async function processRagEmbedIndex(
     });
 
     if (willGraph) {
+      ctx.throwIfCancelled();
       // Skip the follow-up graph task if the document was deleted while
       // embed/index was running. Without this guard, a freshly-submitted
       // rag_index task would start a long graph extraction against a doc

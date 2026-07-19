@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { getLocalizedError } from "@/lib/i18n/client-errors";
 import en from "@/lib/i18n/locales/en";
@@ -15,12 +17,43 @@ describe("API error localization", () => {
       expect(getLocalizedError({ code: "passwordIncorrect" }, errorMap)).toBe(errorMap.passwordIncorrect);
     });
 
-    it("falls back to server error message for unknown codes", () => {
-      expect(getLocalizedError({ code: "some_future_code", error: "Something happened" }, errorMap)).toBe("Something happened");
+    it("does not expose server messages for unknown codes", () => {
+      expect(getLocalizedError({ code: "some_future_code", error: "Something happened" }, errorMap)).toBe(errorMap.unknown);
     });
 
-    it("falls back to server error message when no code", () => {
-      expect(getLocalizedError({ error: "Custom server error" }, errorMap)).toBe("Custom server error");
+    it("does not expose server messages when no stable code is present", () => {
+      expect(getLocalizedError({ error: "Custom server error" }, errorMap)).toBe(errorMap.unknown);
+    });
+
+    it("uses a caller-provided localized domain fallback", () => {
+      expect(
+        getLocalizedError(
+          { code: "some_future_code", error: "Internal provider stack trace" },
+          errorMap,
+          "Could not save provider",
+        ),
+      ).toBe("Could not save provider");
+    });
+
+    it("documents upload failures use a localized fallback instead of raw server English", () => {
+      const serverEnglish = "Virus scanner rejected this upload";
+      const localized = getLocalizedError(
+        { error: serverEnglish },
+        zhCN.errors,
+        zhCN.documents.upload.uploadFailed,
+      );
+
+      expect(localized).toBe(zhCN.documents.upload.uploadFailed);
+      expect(localized).not.toContain(serverEnglish);
+
+      const pageSource = fs.readFileSync(
+        path.resolve(process.cwd(), "src/app/(dashboard)/documents/page.tsx"),
+        "utf8",
+      );
+      expect(pageSource).toContain(
+        "getLocalizedError(data, t.errors, t.documents.upload.uploadFailed)",
+      );
+      expect(pageSource).not.toMatch(/error:\s*data\.error/);
     });
 
     it("falls back to unknown for null/undefined data", () => {

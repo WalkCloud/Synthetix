@@ -5,8 +5,8 @@ const DEFAULT_MUTATION_TIMEOUT_MS = 30_000;
 interface ActiveExecution {
   taskId: string;
   taskType: TaskType;
-  userId: string;
-  docId: string;
+  userId?: string;
+  docId?: string;
   settled: Promise<void>;
 }
 
@@ -60,18 +60,18 @@ export class ExecutionRegistry {
     return waiter;
   }
 
-  async startDocumentExecution(input: {
+  async startExecution(input: {
     taskId: string;
     taskType: TaskType;
-    userId: string;
-    docId: string;
+    userId?: string;
+    docId?: string;
     start: () => Promise<WorkerResult>;
-  }): Promise<Promise<WorkerResult>> {
-    const key = documentKey(input.userId, input.docId);
+  }): Promise<{ workerPromise: Promise<WorkerResult> }> {
+    const key = input.userId && input.docId ? documentKey(input.userId, input.docId) : null;
 
     while (true) {
       const started = await this.exclusive(() => {
-        if (this.mutationGates.has(key)) {
+        if (key && this.mutationGates.has(key)) {
           return { wait: this.waiterFor(key).promise } as const;
         }
 
@@ -88,17 +88,31 @@ export class ExecutionRegistry {
           settled,
         };
         this.activeByTask.set(input.taskId, execution);
-        const taskIds = this.taskIdsByDocument.get(key) ?? new Set<string>();
-        taskIds.add(input.taskId);
-        this.taskIdsByDocument.set(key, taskIds);
+        if (key) {
+          const taskIds = this.taskIdsByDocument.get(key) ?? new Set<string>();
+          taskIds.add(input.taskId);
+          this.taskIdsByDocument.set(key, taskIds);
+        }
 
         void settled.then(() => this.unregister(input.taskId));
         return { workerPromise } as const;
       });
 
-      if ("workerPromise" in started && started.workerPromise) return started.workerPromise;
+      if ("workerPromise" in started && started.workerPromise) {
+        return { workerPromise: started.workerPromise };
+      }
       if ("wait" in started) await started.wait;
     }
+  }
+
+  async startDocumentExecution(input: {
+    taskId: string;
+    taskType: TaskType;
+    userId: string;
+    docId: string;
+    start: () => Promise<WorkerResult>;
+  }): Promise<Promise<WorkerResult>> {
+    return (await this.startExecution(input)).workerPromise;
   }
 
   private async unregister(taskId: string): Promise<void> {
@@ -106,27 +120,23 @@ export class ExecutionRegistry {
       const execution = this.activeByTask.get(taskId);
       if (!execution) return;
       this.activeByTask.delete(taskId);
-      const key = documentKey(execution.userId, execution.docId);
-      const taskIds = this.taskIdsByDocument.get(key);
-      taskIds?.delete(taskId);
-      if (taskIds?.size === 0) this.taskIdsByDocument.delete(key);
+      if (execution.userId && execution.docId) {
+        const key = documentKey(execution.userId, execution.docId);
+        const taskIds = this.taskIdsByDocument.get(key);
+        taskIds?.delete(taskId);
+        if (taskIds?.size === 0) this.taskIdsByDocument.delete(key);
+      }
     });
   }
 
-  async awaitDocumentExecutions(
-    userId: string,
-    docIds: readonly string[],
-    options: { excludeTaskId?: string; timeoutMs?: number } = {},
+  async awaitTaskExecutions(
+    taskIds: readonly string[],
+    options: { timeoutMs?: number } = {},
   ): Promise<void> {
-    const normalized = [...new Set(docIds)].sort();
-    const executions = await this.exclusive(() => normalized.flatMap((docId) => {
-      const taskIds = this.taskIdsByDocument.get(documentKey(userId, docId));
-      if (!taskIds) return [];
-      return [...taskIds]
-        .filter((taskId) => taskId !== options.excludeTaskId)
-        .map((taskId) => this.activeByTask.get(taskId)?.settled)
-        .filter((settled): settled is Promise<void> => !!settled);
-    }));
+    const normalized = [...new Set(taskIds)].sort();
+    const executions = await this.exclusive(() => normalized
+      .map((taskId) => this.activeByTask.get(taskId)?.settled)
+      .filter((settled): settled is Promise<void> => !!settled));
     if (executions.length === 0) return;
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_MUTATION_TIMEOUT_MS;
@@ -135,11 +145,32 @@ export class ExecutionRegistry {
       await Promise.race([
         Promise.all(executions),
         new Promise<never>((_resolve, reject) => {
-          timeoutId = setTimeout(() => reject(new DocumentMutationBusyError(normalized)), timeoutMs);
+          timeoutId = setTimeout(
+            () => reject(new Error(`Task execution did not settle before timeout: ${normalized.join(", ")}`)),
+            timeoutMs,
+          );
         }),
       ]);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  async awaitDocumentExecutions(
+    userId: string,
+    docIds: readonly string[],
+    options: { excludeTaskId?: string; timeoutMs?: number } = {},
+  ): Promise<void> {
+    const normalized = [...new Set(docIds)].sort();
+    const taskIds = await this.exclusive(() => normalized.flatMap((docId) => {
+      const documentTaskIds = this.taskIdsByDocument.get(documentKey(userId, docId));
+      if (!documentTaskIds) return [];
+      return [...documentTaskIds].filter((taskId) => taskId !== options.excludeTaskId);
+    }));
+    try {
+      await this.awaitTaskExecutions(taskIds, options);
+    } catch {
+      throw new DocumentMutationBusyError(normalized);
     }
   }
 

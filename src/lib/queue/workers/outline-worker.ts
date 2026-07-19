@@ -40,6 +40,32 @@ async function isTaskCancelled(ctx: TaskExecutionContext): Promise<boolean> {
   return ctx.signal.aborted;
 }
 
+async function persistOutlineIfTaskRunning(input: {
+  taskId: string;
+  sessionId: string;
+  outline: ReturnType<typeof normalizeGeneratedOutline>;
+  title: string;
+  outlineReady: string;
+}): Promise<boolean> {
+  return db.$transaction(async (tx) => {
+    const now = new Date();
+    const claimed = await tx.asyncTask.updateMany({
+      where: { id: input.taskId, status: "running" },
+      data: { heartbeatAt: now, updatedAt: now },
+    });
+    if (claimed.count !== 1) return false;
+
+    await tx.brainstormSession.update({
+      where: { id: input.sessionId },
+      data: { outline: JSON.stringify(input.outline), title: input.title },
+    });
+    await tx.message.create({
+      data: { sessionId: input.sessionId, role: "system", content: input.outlineReady },
+    });
+    return true;
+  });
+}
+
 export async function resolveOutlineChatModel(
   userId: string,
   modelConfigId?: string,
@@ -59,6 +85,7 @@ async function summarizeConversation(
   model: string,
   locale: "en" | "zh-CN",
   conversation: string,
+  signal: AbortSignal,
 ): Promise<{ summary: ConversationSummary; inputTokens: number; outputTokens: number }> {
   const summaryPrompt = buildSummaryPrompt(locale);
   let lastResponseTokens = { inputTokens: 0, outputTokens: 0 };
@@ -71,6 +98,7 @@ async function summarizeConversation(
         { role: "user", content: conversation },
       ],
       response_format: { type: "json_object" },
+      signal,
     });
     lastResponseTokens = { inputTokens: response.inputTokens, outputTokens: response.outputTokens };
     try {
@@ -87,7 +115,7 @@ export async function generateOutline(
   payload: TaskPayload,
   ctx: TaskExecutionContext,
 ): Promise<TaskResult> {
-  const { taskId, sessionId, userId, locale: payloadLocale, modelConfigId } = payload as OutlineGeneratePayload;
+  const { sessionId, userId, locale: payloadLocale, modelConfigId } = payload as OutlineGeneratePayload;
   const onProgress = (progress: number) => { void ctx.reportProgress(progress); };
 
   onProgress(5);
@@ -121,7 +149,7 @@ export async function generateOutline(
   onProgress(15);
 
   // ── Phase A: Conversation Summary ──────────────────────────────
-  const summaryResult = await summarizeConversation(provider, modelId, docLocale, conversation);
+  const summaryResult = await summarizeConversation(provider, modelId, docLocale, conversation, ctx.signal);
   totalInputTokens += summaryResult.inputTokens;
   totalOutputTokens += summaryResult.outputTokens;
 
@@ -191,6 +219,7 @@ export async function generateOutline(
       ],
       response_format: { type: "json_object" },
       maxTokens: 2048,
+      signal: ctx.signal,
     })) {
       chunks.push(chunk.content || "");
       if (chunk.inputTokens) streamInputTokens = chunk.inputTokens;
@@ -271,6 +300,7 @@ export async function generateOutline(
         { role: "user", content: `Document requirements:\n${requirementsSummary}\n\nPart to expand:\n${partContext}\n\nOther parts (avoid duplicating these topics):\n${siblings}` },
       ],
       maxTokens: 8192,
+      signal: ctx.signal,
     })) {
       chunks.push(chunk.content || "");
       if (chunk.inputTokens) streamInputTokens = chunk.inputTokens;
@@ -289,10 +319,18 @@ export async function generateOutline(
   const expandedParts: OutlineSection[] = [];
   for (let i = 0; i < outline.sections.length; i += MAX_CONCURRENT) {
     const batch = outline.sections.slice(i, i + MAX_CONCURRENT);
-    const results = await Promise.all(batch.map((p) => expandPart(p).catch(() => p)));
+    const results = await Promise.all(batch.map(async (part) => {
+      try {
+        return await expandPart(part);
+      } catch (error) {
+        if (ctx.signal.aborted) throw error;
+        return part;
+      } finally {
+        partsDone += 1;
+        onProgress(45 + Math.floor((partsDone / totalParts) * 43));
+      }
+    }));
     expandedParts.push(...results);
-    partsDone += batch.length;
-    onProgress(45 + Math.floor((partsDone / totalParts) * 43));
   }
 
   outline.sections = renumberSections(expandedParts);
@@ -310,10 +348,14 @@ export async function generateOutline(
     return { cancelled: true };
   }
 
-  await db.brainstormSession.update({
-    where: { id: sessionId },
-    data: { outline: JSON.stringify(outline), title: outline.title || session.title },
+  const persisted = await persistOutlineIfTaskRunning({
+    taskId: ctx.taskId,
+    sessionId,
+    outline,
+    title: outline.title || session.title,
+    outlineReady: messages.outlineReady,
   });
+  if (!persisted) return { cancelled: true };
 
   onProgress(96);
 
@@ -325,10 +367,6 @@ export async function generateOutline(
   if (await isTaskCancelled(ctx)) {
     return { cancelled: true };
   }
-
-  await db.message.create({
-    data: { sessionId, role: "system", content: messages.outlineReady },
-  });
 
   onProgress(100);
 

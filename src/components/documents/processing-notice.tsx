@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n";
-import { formatFileSize } from "@/lib/text/format-file-size";
+import { formatCount } from "@/lib/i18n/format";
 import {
-  estimateProcessingRange,
+  estimateProcessingTime,
   formatDurationRange,
+  type KnowledgeMode,
   type ProcessingLevel,
 } from "@/lib/documents/estimate";
 
@@ -14,8 +15,8 @@ interface ProcessingNoticeProps {
   totalBytes: number;
   /** Number of completed uploads in the batch. */
   fileCount: number;
-  /** Current index mode — graph extraction roughly multiplies the time. */
-  indexMode: "basic" | "graph";
+  /** Current user-facing analysis depth. */
+  knowledgeMode: KnowledgeMode;
   /**
    * Where the notice is shown.
    * - "queued": files are uploaded but processing hasn't started yet — the user
@@ -95,15 +96,15 @@ function TierIcon({ level }: { level: ProcessingLevel }) {
 export function ProcessingNotice({
   totalBytes,
   fileCount,
-  indexMode,
+  knowledgeMode,
   variant = "submitted",
 }: ProcessingNoticeProps) {
   const { t, format } = useLocale();
   if (totalBytes <= 0 || fileCount <= 0) return null;
 
   const n = t.documents.processingNotice;
-  const graphMode = indexMode === "graph";
-  const estimate = estimateProcessingRange(totalBytes, graphMode);
+  const graphMode = knowledgeMode === "graph" || knowledgeMode === "full";
+  const estimate = estimateProcessingTime({ totalBytes, fileCount, knowledgeMode });
   const style = TIER_STYLES[estimate.level];
 
   // The "queued" variant (pre-Start-Processing) uses a dedicated body so the
@@ -111,8 +112,9 @@ export function ProcessingNotice({
   // upcoming run. The "submitted" variant keeps the original post-submit copy.
   const bodyText = variant === "queued" ? n.queuedBody : n.body;
 
-  const titleKey =
-    estimate.level === "fast" ? n.fastTitle
+  const titleKey = variant === "queued"
+    ? n.queuedTitle
+    : estimate.level === "fast" ? n.fastTitle
     : estimate.level === "medium" ? n.mediumTitle
     : estimate.level === "slow" ? n.slowTitle
     : n.heavyTitle;
@@ -137,9 +139,7 @@ export function ProcessingNotice({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
             <h3 className={`text-[15px] font-semibold leading-tight ${style.title}`}>{titleKey}</h3>
             <span className="text-[12px] text-muted-foreground">
-              {fileCount > 1
-                ? `${formatFileSize(totalBytes)} · ${fileCount} files`
-                : formatFileSize(totalBytes)}
+              {format.fileSize(totalBytes)} · {formatCount(fileCount, n.fileCount)}
             </span>
           </div>
 
@@ -166,6 +166,10 @@ export function ProcessingNotice({
               </svg>
             </Link>
           </div>
+
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            {n.estimateDisclaimer}
+          </p>
         </div>
       </div>
     </div>

@@ -73,6 +73,8 @@ prisma/*.db-journal
 
 # local dev artifacts
 dev.db
+/dev.db.old-*
+/package-lock.json
 dev-output.log
 qa-screenshots/
 scratch.js

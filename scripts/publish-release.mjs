@@ -3,7 +3,7 @@
  * Publish a Synthetix release to GitHub Releases, including the auto-update
  * manifest (latest.json) consumed by electron/updater.ts.
  *
- * What this does (Phase 1 — full path only):
+ * What this does (full and patch update paths):
  *   1. Read the version from package.json and assert a matching `v<x.y.z>` git
  *      tag exists (and is checked out) — prevents shipping a manifest that
  *      points at an untagged build.
@@ -17,12 +17,8 @@
  * Usage:
  *   node scripts/publish-release.mjs                    # stable, full only
  *   node scripts/publish-release.mjs --channel beta     # beta channel file
- *   node scripts/publish-release.mjs --kind patch --from 1.0.1   # Phase 3
+ *   node scripts/publish-release.mjs --kind patch --from 1.0.1   # patch update
  *   node scripts/publish-release.mjs --dry-run          # print plan, don't upload
- *
- * Phase 3 flags (--kind patch / --from / --auto) are accepted but not yet
- * implemented; they print a notice and fall back to full. This keeps the CLI
- * stable while the patch path is built out.
  *
  * Prereqs:
  *   - gh CLI authenticated, or GITHUB_TOKEN in env with `repo` scope.
@@ -110,6 +106,59 @@ function bytesToHuman(n) {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function buildReleaseCreateArgs(tag, repo, title, notes) {
+  return [
+    "release",
+    "create",
+    tag,
+    "--repo",
+    repo,
+    "--title",
+    title,
+    "--notes",
+    notes,
+    "--draft",
+    "--verify-tag",
+  ];
+}
+
+function buildReleaseInspectionArgs(tag, repo) {
+  return [
+    "release",
+    "view",
+    tag,
+    "--repo",
+    repo,
+    "--json",
+    "isDraft",
+    "--jq",
+    ".isDraft",
+  ];
+}
+
+function parseExistingReleaseDraftStatus(output) {
+  if (output.trim() !== "true") {
+    throw new Error(
+      `Existing GitHub Release is not confirmed as draft; refusing to upload (got ${JSON.stringify(output.trim())}).`
+    );
+  }
+  return true;
+}
+
+function classifyReleaseInspection(result) {
+  if (result.status === 0) {
+    parseExistingReleaseDraftStatus(result.stdout || "");
+    return "draft";
+  }
+  const stderr = result.stderr || "";
+  if (!result.error && /release not found/i.test(stderr)) {
+    return "missing";
+  }
+  throw new Error(
+    `Could not inspect existing GitHub Release; refusing to create or upload. ${stderr.trim()}`.trim()
+  );
+}
+
 /**
  * Compute the runtime-layer hash for the assembled app bundle at dist/app.
  * This MUST match electron/runtime-hash.ts::computeRuntimeHash() so the updater
@@ -118,15 +167,24 @@ function bytesToHuman(n) {
  * lives under electron/ (compiled to dist/electron-main, not importable from a
  * script). The two are kept in sync by a unit test (Phase 3 verify).
  *
- * Hashed files: runtime/node(.exe), runtime/python/python(.exe), all *.node
+ * Hashed files: runtime/node(.exe), the bundled CPython interpreter
+ * (runtime/python/bin/python(.exe), with a flat-layout fallback), all *.node
  * under node_modules, and all *.py under workers/python.
  */
-function computeRuntimeHash(appRootDir) {
+function computeRuntimeHash(appRootDir, platform = process.platform) {
   const hash = crypto.createHash("sha256");
   const files = [];
-  const isWin = process.platform === "win32";
+  const isWin = platform === "win32";
   const nodeExe = path.join(appRootDir, "runtime", isWin ? "node.exe" : "node");
-  const pyExe = path.join(appRootDir, "runtime", "python", isWin ? "python.exe" : "python3");
+  // python-build-standalone ships under runtime/python/bin/{python3,python.exe}.
+  // Resolve the bin/ location first and fall back to the flat layout so the
+  // hash covers the real interpreter regardless of how it was laid out. MUST
+  // stay in sync with electron/runtime-hash.ts computeRuntimeHash().
+  const pyExeName = isWin ? "python.exe" : "python3";
+  const pyRoot = path.join(appRootDir, "runtime", "python");
+  const pyBinned = path.join(pyRoot, "bin", pyExeName);
+  const pyFlat = path.join(pyRoot, pyExeName);
+  const pyExe = fs.existsSync(pyBinned) ? pyBinned : pyFlat;
   if (fs.existsSync(nodeExe)) files.push(nodeExe);
   if (fs.existsSync(pyExe)) files.push(pyExe);
   collectFiles(path.join(appRootDir, "node_modules"), ".node", files);
@@ -443,12 +501,18 @@ function main() {
   //    upload requires the Release to already exist (it only attaches assets),
   //    so create it first against the tag's commit. Use shell:false for every
   //    gh invocation because file paths contain spaces and must stay one argv.
-  const releaseExists = spawnSync(
+  const releaseInspection = spawnSync(
     "gh",
-    ["release", "view", TAG, "--repo", repo],
+    buildReleaseInspectionArgs(TAG, repo),
     { encoding: "utf8", shell: false }
   );
-  if (releaseExists.status !== 0) {
+  let releaseState;
+  try {
+    releaseState = classifyReleaseInspection(releaseInspection);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  if (releaseState === "missing") {
     log(`creating GitHub Release ${TAG}…`);
     const notesTitle = `Synthetix ${VERSION}`;
     const notesBody =
@@ -458,23 +522,12 @@ function main() {
       `See the changelog in the repository for details.`;
     run(
       "gh",
-      [
-        "release",
-        "create",
-        TAG,
-        "--repo",
-        repo,
-        "--title",
-        notesTitle,
-        "--notes",
-        notesBody,
-        "--verify-tag", // assert the tag exists remotely (it should — we pushed it)
-      ],
+      buildReleaseCreateArgs(TAG, repo, notesTitle, notesBody),
       { stdio: "inherit", shell: false }
     );
     log(`✓ created Release ${TAG}`);
   } else {
-    log(`Release ${TAG} already exists — attaching assets to it.`);
+    log(`Release ${TAG} already exists as a draft — attaching assets to it.`);
   }
 
   // Upload assets. assetsToUpload always includes the installer; patch builds
@@ -505,7 +558,15 @@ function main() {
 // manifest-signing.test.ts). The hash + canonical-string functions must stay
 // byte-identical to their twins in electron/ so a manifest produced here
 // verifies on the client.
-export { computeRuntimeHash, buildCanonicalString, signManifest };
+export {
+  computeRuntimeHash,
+  buildCanonicalString,
+  signManifest,
+  buildReleaseCreateArgs,
+  buildReleaseInspectionArgs,
+  parseExistingReleaseDraftStatus,
+  classifyReleaseInspection,
+};
 
 if (IS_MAIN) {
   main();

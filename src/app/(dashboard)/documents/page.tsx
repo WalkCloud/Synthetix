@@ -12,7 +12,7 @@ import type { UploadItem } from "@/components/documents/upload-queue-panel";
 import { ProcessingNotice } from "@/components/documents/processing-notice";
 import { ProcessingSettings, type ModelOption, type KnowledgeMode, knowledgeModeToOptions } from "@/components/documents/processing-settings";
 import { SUPPORTED_FORMATS } from "@/types/documents";
-import { useLocale } from "@/lib/i18n";
+import { getLocalizedError, useLocale } from "@/lib/i18n";
 
 export default function DocumentsPage() {
   const router = useRouter();
@@ -164,7 +164,8 @@ export default function DocumentsPage() {
           setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "duplicate", progress: 100 } : u));
           toast.info(t.documents.upload.duplicateSkipped.replace("{name}", file.name));
         } else {
-          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: data.error } : u));
+          const error = getLocalizedError(data, t.errors, t.documents.upload.uploadFailed);
+          setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error } : u));
         }
       } catch {
         setUploads((prev) => prev.map((u) => u.id === id ? { ...u, status: "failed", error: t.documents.upload.uploadFailed } : u));
@@ -239,7 +240,7 @@ export default function DocumentsPage() {
           <ProcessingNotice
             totalBytes={uploadedBatch.totalBytes}
             fileCount={uploadedBatch.fileCount}
-            indexMode={knowledgeModeToOptions(knowledgeMode).indexMode}
+            knowledgeMode={knowledgeMode}
             variant="queued"
           />
         )}

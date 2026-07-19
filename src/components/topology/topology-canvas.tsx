@@ -4,6 +4,7 @@ import { useRef, useState, useEffect, useMemo } from "react";
 import { useTheme } from "next-themes";
 import type { TopologyNode, TopologyEdge } from "@/types/topology";
 import { useLocale } from "@/lib/i18n";
+import { formatTopologyCount } from "@/lib/i18n/topology-count";
 import { TopologyDetailPanel } from "./topology-detail-panel";
 
 interface TopologyCanvasProps {
@@ -83,7 +84,7 @@ export function TopologyCanvas({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && resolvedTheme === "dark";
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -195,7 +196,7 @@ export function TopologyCanvas({
       const off = cardOffsets.current[refNodes[i].id] ?? { dx: 0, dy: 0 };
       result.push({
         id: refNodes[i].id,
-        label: refNodes[i].label || refNodes[i].entityType || "Entity",
+        label: refNodes[i].label || refNodes[i].entityType || t.topology.nodeTypes.entity,
         format: refNodes[i].format || "entity",
         weight: edge?.weight ?? 1,
         color: clr(refNodes[i].format || "entity"),
@@ -371,9 +372,9 @@ export function TopologyCanvas({
           </div>
           <span className="text-[13px] font-bold font-display leading-tight line-clamp-2 px-4" style={{ color: draftTitleColor }}>{draftNode.label}</span>
           <span className="text-[10px] mt-0.5" style={{ color: draftSubColor }}>
-            {draftNode.totalReferences ?? refNodes.length} refs
+            {formatTopologyCount(draftNode.totalReferences ?? refNodes.length, locale, t.topology.counts.refs)}
             {draftNode.sectionsWithReferences !== undefined && draftNode.totalSections !== undefined
-              ? ` · ${draftNode.sectionsWithReferences}/${draftNode.totalSections} sections`
+              ? ` · ${draftNode.sectionsWithReferences}/${formatTopologyCount(draftNode.totalSections, locale, t.topology.counts.sections)}`
               : ""}
           </span>
         </div>

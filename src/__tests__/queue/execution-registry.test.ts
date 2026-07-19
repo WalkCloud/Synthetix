@@ -2,6 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 import { DocumentMutationBusyError, ExecutionRegistry } from "@/lib/queue/execution-registry";
 
 describe("ExecutionRegistry", () => {
+  it("waits for a specific non-document task execution to settle", async () => {
+    const registry = new ExecutionRegistry();
+    let resolveWorker: (value: { ok: boolean }) => void = () => {};
+    const execution = await registry.startExecution({
+      taskId: "outline-1",
+      taskType: "outline_generate",
+      start: () => new Promise((resolve) => { resolveWorker = resolve; }),
+    });
+
+    let settled = false;
+    const wait = registry.awaitTaskExecutions(["outline-1"], { timeoutMs: 100 })
+      .then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+
+    resolveWorker({ ok: true });
+    await execution.workerPromise;
+    await wait;
+    expect(settled).toBe(true);
+  });
+
   it("tracks the real worker promise until it settles", async () => {
     const registry = new ExecutionRegistry();
     let resolveWorker: (value: { ok: boolean }) => void = () => {};

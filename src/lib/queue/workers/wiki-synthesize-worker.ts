@@ -112,6 +112,7 @@ export async function processWikiSynthesize(
     let retryCount = 0;
 
     while (!result.completed && retryCount < WIKI_MAX_RETRIES) {
+      taskCtx.throwIfCancelled();
       retryCount++;
       const failedCount = result.failedUnitIds?.length ?? result.chunksFailed ?? 0;
       console.log(
@@ -121,6 +122,7 @@ export async function processWikiSynthesize(
 
       // Brief pause before retry to allow transient API issues to recover.
       await new Promise((r) => setTimeout(r, 5000));
+      taskCtx.throwIfCancelled();
 
       result = await runSynthesizePass(procCtx, synthChunks, inputUnitType, taskId);
     }

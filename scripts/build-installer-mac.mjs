@@ -339,7 +339,7 @@ async function main() {
   const pySrc = acquirePython();
   // python-build-standalone ships python/bin/python3 + python/lib/...; copy the
   // whole dir to runtime/python/ so paths.ts pythonPath()
-  // (appRoot/runtime/python/python3) resolves.
+  // (appRoot/runtime/python/bin/python3) resolves.
   copyDir(pySrc, path.join(APP, "runtime", "python"));
   // Ensure python3 is executable after copy (copyDir may not preserve mode).
   const py3 = path.join(APP, "runtime", "python", "bin", "python3");

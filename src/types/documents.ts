@@ -50,15 +50,15 @@ export interface DocumentMeta {
   createdAt: string;
   updatedAt: string;
   /**
-   * Total processing duration in milliseconds, from the earliest processing
-   * task (convert) to the latest completed task. null while still processing
-   * or if no processing tasks exist. Only present on detail responses.
+   * Total processing duration in milliseconds for the latest processing round,
+   * from its convert start to the latest finished task required by its mode.
+   * null while any required task is non-terminal or absent.
    */
   processingDurationMs?: number | null;
   /**
-   * ISO timestamp of when the latest processing run started (earliest task
-   * createdAt). Used by the UI to show a live elapsed timer while processing.
-   * null when no processing tasks exist.
+   * ISO timestamp of the latest convert task's startedAt. Terminal legacy tasks
+   * without startedAt fall back to createdAt; an unstarted pending task stays
+   * null. Used by the UI for the live elapsed timer.
    */
   processingStartedAt?: string | null;
   /**

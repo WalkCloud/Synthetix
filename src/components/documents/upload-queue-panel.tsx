@@ -1,6 +1,5 @@
 "use client";
 
-import { formatFileSize } from "@/lib/text/format-file-size";
 import { getFileExt, getFileIconClass } from "@/lib/text/file-utils";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useLocale } from "@/lib/i18n";
@@ -21,7 +20,7 @@ interface UploadQueueProps {
 }
 
 export function UploadQueue({ items, onRemove }: UploadQueueProps) {
-  const { t } = useLocale();
+  const { t, format } = useLocale();
   if (items.length === 0) return null;
 
   return (
@@ -43,7 +42,7 @@ export function UploadQueue({ items, onRemove }: UploadQueueProps) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-semibold text-foreground mb-1">{item.name}</div>
-                <div className="text-[12px] text-muted-foreground">{formatFileSize(item.size)}</div>
+                <div className="text-[12px] text-muted-foreground">{format.fileSize(item.size)}</div>
                 {item.status === "converting" && (
                   <div className="mt-2 w-full h-1.5 bg-muted rounded-full overflow-hidden">
                     <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${item.progress}%` }} />

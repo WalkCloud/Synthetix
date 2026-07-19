@@ -72,3 +72,10 @@ export function interpolate(template: string, params: Record<string, string | nu
     key in params ? String(params[key]) : `{${key}}`
   );
 }
+
+export function formatCount(
+  count: number,
+  templates: { one: string; other: string },
+): string {
+  return interpolate(count === 1 ? templates.one : templates.other, { n: count });
+}

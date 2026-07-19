@@ -46,6 +46,7 @@ export async function processDocumentSegment(
     }
 
     const result = await segmentAndPersistDocument(procCtx);
+    taskCtx.throwIfCancelled();
 
     console.log(
       `[segment] doc ${procCtx.docId}: ${result.segmentCount} segments from ${result.atomCount} atoms ` +
@@ -69,6 +70,7 @@ export async function processDocumentSegment(
 
     return { ok: true, segment: result };
   } catch (error) {
+    taskCtx.throwIfCancelled();
     if (procCtx && shouldEnqueueWikiSynthesis(procCtx.options)) {
       try {
         const { getQueue } = await import("@/lib/queue");

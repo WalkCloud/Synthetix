@@ -5,7 +5,7 @@ import { manageRag } from "@/lib/rag/client";
 import { scanKnowledgeHealth } from "@/lib/knowledge/health";
 import { invalidateUserGraph } from "@/lib/knowledge/graph-cache";
 import { invalidateEntityEvidenceCache } from "@/lib/knowledge/entity-evidence";
-import { cancelTasksByResourceIdentity, findTaskIdsByResourceIdentity } from "@/lib/queue/task-identity-query";
+import { cancelTasksByResourceIdentity } from "@/lib/queue/task-identity-query";
 
 // Long timeout: graph extraction can take 10+ minutes per document because each
 // chunk triggers an LLM call. We must let the in-flight Python subprocess exit
@@ -226,33 +226,37 @@ export const documentLifecycle = createDocumentLifecycleService({
     });
   },
   async cancelDocumentTasks(userId, docId, exceptTaskId) {
-    await cancelTasksByResourceIdentity({
+    const result = await cancelTasksByResourceIdentity({
       userId,
       field: "documentId",
       value: docId,
       statuses: ["pending", "running"],
       exceptTaskId,
       errorMessage: "Document deleted",
-    }).catch(() => undefined);
+    }).catch(() => ({ pendingIds: [], runningIds: [] }));
+    if (result.runningIds.length === 0) return;
+    const { executionRegistry, getQueue } = await import("@/lib/queue");
+    await Promise.all(result.runningIds.map((taskId) => getQueue().cancel(taskId)));
+    await executionRegistry.awaitTaskExecutions(result.runningIds, { timeoutMs: CLEANUP_TASK_SETTLE_TIMEOUT_MS });
   },
   async cancelDocumentTasksBatch(userId, docIds) {
     if (docIds.length === 0) return;
-    const taskIds = new Set<string>();
+    const runningIds = new Set<string>();
     for (const docId of docIds) {
-      for (const taskId of await findTaskIdsByResourceIdentity({
+      const result = await cancelTasksByResourceIdentity({
         userId,
         field: "documentId",
         value: docId,
         statuses: ["pending", "running"],
-      })) {
-        taskIds.add(taskId);
-      }
+        errorMessage: "Document deleted",
+      }).catch(() => ({ pendingIds: [], runningIds: [] }));
+      for (const taskId of result.runningIds) runningIds.add(taskId);
     }
-    if (taskIds.size === 0) return;
-    await db.asyncTask.updateMany({
-      where: { id: { in: [...taskIds] }, status: { in: ["pending", "running"] } },
-      data: { status: "cancelled", errorMessage: "Document deleted" },
-    }).catch(() => undefined);
+    if (runningIds.size === 0) return;
+    const taskIds = [...runningIds];
+    const { executionRegistry, getQueue } = await import("@/lib/queue");
+    await Promise.all(taskIds.map((taskId) => getQueue().cancel(taskId)));
+    await executionRegistry.awaitTaskExecutions(taskIds, { timeoutMs: CLEANUP_TASK_SETTLE_TIMEOUT_MS });
   },
   async enqueueDocumentCleanup(userId, docId) {
     const { getQueue } = await import("@/lib/queue");

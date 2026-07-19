@@ -8,7 +8,16 @@
  * keep. Intentionally conservative: ranges, not point estimates.
  */
 
+import type { KnowledgeMode } from "@/lib/documents/knowledge-mode";
+
+export type { KnowledgeMode } from "@/lib/documents/knowledge-mode";
 export type ProcessingLevel = "fast" | "medium" | "slow" | "heavy";
+
+export interface ProcessingEstimateInput {
+  totalBytes: number;
+  fileCount: number;
+  knowledgeMode: KnowledgeMode;
+}
 
 export interface ProcessingEstimate {
   /** Qualitative bucket, drives icon + color + copy. */
@@ -30,9 +39,9 @@ interface Tier {
 }
 
 /**
- * Size → base time tiers (basic / chunk-only mode).
- * Tuned against typical convert+embed throughput; graph extraction adds more
- * via the `graphMode` multiplier in {@link estimateProcessingRange}.
+ * Size → base time tiers for the regular convert/split/embed/index pipeline.
+ * The ranges are deliberately conservative because local model throughput and
+ * document complexity vary significantly between installations.
  */
 const TIERS: readonly Tier[] = [
   { level: "fast", maxBytes: 5 * MB, minMin: 0.5, maxMin: 2 },
@@ -41,30 +50,89 @@ const TIERS: readonly Tier[] = [
   { level: "heavy", maxBytes: Infinity, minMin: 20, maxMin: 45 },
 ];
 
+const MODE_MULTIPLIERS: Record<KnowledgeMode, { min: number; max: number }> = {
+  standard: { min: 1, max: 1 },
+  graph: { min: 1.5, max: 2 },
+  wiki: { min: 2, max: 2.25 },
+  full: { min: 2.5, max: 3.25 },
+};
+
+const MAX_TOTAL_BYTES = Number.MAX_SAFE_INTEGER;
+const MAX_FILE_COUNT = 100;
+
+interface FileOverheadTier {
+  /** Number of additional files covered by this tier. */
+  count: number;
+  minMinutes: number;
+  maxMinutes: number;
+}
+
+const FILE_OVERHEAD_TIERS: readonly FileOverheadTier[] = [
+  { count: 9, minMinutes: 0.5, maxMinutes: 1 },
+  { count: 90, minMinutes: 0.1, maxMinutes: 0.25 },
+];
+
+function normalizeNonNegativeInteger(value: number, max: number): number {
+  if (Number.isNaN(value) || value <= 0) return 0;
+  if (!Number.isFinite(value)) return max;
+  return Math.min(Math.floor(value), max);
+}
+
+function calculateFileOverhead(fileCount: number): { min: number; max: number } {
+  let remaining = Math.max(0, fileCount - 1);
+  let min = 0;
+  let max = 0;
+
+  for (const tier of FILE_OVERHEAD_TIERS) {
+    const filesInTier = Math.min(remaining, tier.count);
+    min += filesInTier * tier.minMinutes;
+    max += filesInTier * tier.maxMinutes;
+    remaining -= filesInTier;
+    if (remaining === 0) break;
+  }
+
+  return { min, max };
+}
+
+/** Estimate a conservative processing-time range for an uploaded batch. */
+export function estimateProcessingTime({
+  totalBytes,
+  fileCount,
+  knowledgeMode,
+}: ProcessingEstimateInput): ProcessingEstimate {
+  const normalizedBytes = normalizeNonNegativeInteger(totalBytes, MAX_TOTAL_BYTES);
+  const normalizedFileCount = normalizeNonNegativeInteger(fileCount, MAX_FILE_COUNT);
+  const tier =
+    normalizedBytes === 0
+      ? TIERS[0]
+      : TIERS.find((candidate) => normalizedBytes < candidate.maxBytes) ?? TIERS[TIERS.length - 1];
+  const multiplier = MODE_MULTIPLIERS[knowledgeMode];
+  const fileOverhead = calculateFileOverhead(normalizedFileCount);
+
+  const minMin = Math.max(
+    1,
+    Math.round(tier.minMin * multiplier.min + fileOverhead.min),
+  );
+  const maxMin = Math.max(
+    minMin,
+    Math.round(tier.maxMin * multiplier.max + fileOverhead.max),
+  );
+
+  return { level: tier.level, minMin, maxMin };
+}
+
 /**
- * Estimate a processing-time range for a total payload size.
- *
- * @param totalBytes  Sum of uploaded file sizes in bytes.
- * @param graphMode   When true, LLM entity/relation extraction runs and roughly
- *                    multiplies the time (1.5× lower bound, 1.8× upper bound).
+ * @deprecated Use {@link estimateProcessingTime} for knowledge-mode and file-count estimates.
  */
 export function estimateProcessingRange(
   totalBytes: number,
   graphMode: boolean,
 ): ProcessingEstimate {
-  const tier =
-    totalBytes <= 0
-      ? TIERS[0]
-      : TIERS.find((t) => totalBytes < t.maxBytes) ?? TIERS[TIERS.length - 1];
-
-  const minMin = tier.minMin * (graphMode ? 1.5 : 1);
-  const maxMin = tier.maxMin * (graphMode ? 1.8 : 1);
-
-  return {
-    level: tier.level,
-    minMin: Math.max(1, Math.round(minMin)),
-    maxMin: Math.max(1, Math.round(maxMin)),
-  };
+  return estimateProcessingTime({
+    totalBytes,
+    fileCount: 1,
+    knowledgeMode: graphMode ? "graph" : "standard",
+  });
 }
 
 /** Smallest size (bytes) at which the upload-success toast fires. */
@@ -104,8 +172,11 @@ export function formatDurationRange(
   }
 
   // Spans an hour: render the upper bound in hours.
-  const maxHours = Math.round(maxMin / 60);
+  const maxHours = Math.ceil(maxMin / 60);
   return templates.mixed
     .replace("{min}", String(minMin))
     .replace("{max}", String(maxHours));
 }
+
+/** Backward-compatible name retained for existing consumers. */
+export const formatProcessingTimeRange = formatDurationRange;

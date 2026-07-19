@@ -4,8 +4,9 @@
  *
  * Produces a distributable Synthetix-Setup-v<ver>.exe by:
  *   1. Asserting .next is built (run `pnpm build` first if not).
- *   2. Asserting dist/app/ exists (run `node scripts/build-installer.mjs`
- *      once to assemble it — bundles node.exe + CPython + .next + node_modules).
+ *   2. Asserting dist/app/ exists (run `node scripts/build-installer.mjs
+ *      --assemble-only --no-build` after preparing dist/runtime — bundles
+ *      node.exe + CPython + .next + node_modules).
  *   3. Compiling electron/*.ts → dist/electron-main/*.js.
  *   4. Running electron-builder (--win nsis) → dist/electron/*.exe.
  *
@@ -28,6 +29,31 @@ const ELECTRON_OUT = path.join(DIST, "electron-main");
 
 const args = new Set(process.argv.slice(2));
 const SKIP_COMPILE = args.has("--no-compile");
+
+export function buildElectronBuilderEnv(env = process.env) {
+  const builderEnv = { ...env };
+  if (env.WINDOWS_CERT_PATH) {
+    builderEnv.CSC_LINK = env.WINDOWS_CERT_PATH;
+    if (env.WINDOWS_CERT_PASSWORD !== undefined) {
+      builderEnv.CSC_KEY_PASSWORD = env.WINDOWS_CERT_PASSWORD;
+    }
+  }
+  return builderEnv;
+}
+
+export function signingStatusMessage(env = process.env) {
+  return env.WINDOWS_CERT_PATH || env.CSC_LINK
+    ? "Authenticode signing enabled for this Windows build."
+    : "No Windows code-signing certificate provided — building unsigned (SmartScreen will warn).";
+}
+
+export function resolveBundledPythonPath(appBundle = APP_BUNDLE) {
+  const candidates = [
+    path.join(appBundle, "runtime", "python", "bin", "python.exe"),
+    path.join(appBundle, "runtime", "python", "python.exe"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
 
 // ---------- helpers ----------
 function log(...m) {
@@ -60,7 +86,13 @@ function readVersion() {
 function main() {
   const t0 = Date.now();
   const VERSION = readVersion();
+  const builderEnv = buildElectronBuilderEnv();
   log(`building Synthetix Electron installer v${VERSION}`);
+  if (builderEnv.CSC_LINK) {
+    log(signingStatusMessage(builderEnv));
+  } else {
+    warn(signingStatusMessage(builderEnv));
+  }
 
   // 1) Assert .next is built.
   const buildId = path.join(ROOT, ".next", "BUILD_ID");
@@ -79,18 +111,27 @@ function main() {
     APP_BUNDLE,
     path.join(APP_BUNDLE, ".next"),
     path.join(APP_BUNDLE, "server.js"),
-    path.join(APP_BUNDLE, "runtime", "python", "python.exe"),
+    path.join(APP_BUNDLE, "runtime", "node.exe"),
     path.join(APP_BUNDLE, "workers", "python", "daemon.py"),
+    path.join(APP_BUNDLE, "node_modules", "prisma"),
     path.join(APP_BUNDLE, "prisma", "migrations"),
   ];
   for (const c of checks) {
     if (!fs.existsSync(c)) {
       fail(
         `dist/app is not ready (missing ${path.relative(ROOT, c)}).\n` +
-          `Run \`node scripts/build-installer.mjs\` once first to assemble the bundle, ` +
+          `Run \`node scripts/build-installer.mjs --assemble-only --no-build\` after preparing dist/runtime, ` +
           `then re-run this script.`
       );
     }
+  }
+  const bundledPython = resolveBundledPythonPath();
+  if (!bundledPython) {
+    fail(
+      "dist/app is not ready (missing runtime/python/bin/python.exe or runtime/python/python.exe).\n" +
+        "Run `node scripts/build-installer.mjs --assemble-only --no-build` after preparing dist/runtime, " +
+        "then re-run this script."
+    );
   }
   log("✓ dist/app bundle is ready (node + python + .next + workers)");
 
@@ -171,19 +212,19 @@ function main() {
         "--config",
         "electron-builder.yml",
       ],
-      { cwd: ROOT }
+      { cwd: ROOT, env: builderEnv }
     );
   } else {
     // No win-unpacked yet — full pack + installer in one electron-builder run.
     log("no win-unpacked yet — full electron-builder run (--win)…");
     run("npx", ["electron-builder", "--win", "--config", "electron-builder.yml"], {
       cwd: ROOT,
+      env: builderEnv,
     });
   }
 
   // 5) Report.
   const installerDir = path.join(DIST, "electron");
-  const expected = `Synthetix Setup ${VERSION}.exe`;
   const candidates = fs.existsSync(installerDir)
     ? fs.readdirSync(installerDir).filter((f) => f.endsWith(".exe"))
     : [];
@@ -202,4 +243,6 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main();
+}

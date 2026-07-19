@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useLocale } from "@/lib/i18n";
+import { getLocalizedError, useLocale } from "@/lib/i18n";
 import { parseCapabilities } from "@/lib/llm/capabilities";
 import { getProviderTypeOptions, isLocalProviderType, type ModelProviderType } from "@/lib/models/provider-types";
 import type { Provider as ProviderType, ModelConfig as ApiModelConfig } from "./types";
@@ -267,10 +267,7 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
       if (data.success) {
         onClose();
       } else {
-        const msg = typeof data.error === "string"
-          ? data.error
-          : data.error?.formErrors?.[0] ?? t.models.form.saveFailed;
-        setError(msg);
+        setError(getLocalizedError(data, t.errors, t.models.form.saveFailed));
       }
     } catch {
       setError(t.common.messages.networkError);

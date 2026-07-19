@@ -199,6 +199,8 @@ async def verify_application_document_insert(
     for child_id in expected:
         record = all_docs.get(child_id)
         if not isinstance(record, dict):
+            record = await rag.doc_status.get_by_id(child_id)
+        if not isinstance(record, dict):
             result.missing_child_ids.append(child_id)
             continue
         if _status_value(record) != "processed" or not record.get("chunks_list"):

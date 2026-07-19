@@ -19,6 +19,7 @@ const TEST_TYPE_CHAPTER_SUM = "_test_chapter_sum";
 const TEST_TYPE_DRAIN = "_test_drain_convert";
 const TEST_TYPE_ORPHAN = "_test_orphan_convert";
 const TEST_TYPE_OUTLINE = "_test_outline_gen";
+const TEST_TYPE_HARD_TIMEOUT = "_test_hard_timeout";
 
 describe("TaskQueue", () => {
   let queue: TaskQueue;
@@ -293,6 +294,35 @@ describe("TaskQueue", () => {
     expect(info?.result).toBeUndefined();
   });
 
+  it("aborts a worker already marked cancel_requested by bulk cancellation and waits for settle", async () => {
+    let workerSettled = false;
+    const workerStarted = new Promise<void>((resolve) => {
+      queue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, ctx) => {
+        resolve();
+        await new Promise<void>((workerResolve) => {
+          ctx.signal.addEventListener("abort", () => workerResolve(), { once: true });
+        });
+        workerSettled = true;
+        return { late: true };
+      });
+    });
+
+    const taskId = await queue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    await workerStarted;
+    await db.asyncTask.update({
+      where: { id: taskId },
+      data: { status: "cancel_requested", cancelRequestedAt: new Date() },
+    });
+
+    expect(await queue.cancel(taskId)).toBe(true);
+    await executionRegistry.awaitTaskExecutions([taskId], { timeoutMs: 1_000 });
+
+    expect(workerSettled).toBe(true);
+    const task = await db.asyncTask.findUniqueOrThrow({ where: { id: taskId } });
+    expect(task.status).toBe("cancelled");
+    expect(task.finishedAt).not.toBeNull();
+  });
+
   it("writes cancel_requested for a running task, then cancelled when the worker rejects", async () => {
     let rejectWorker: (reason: Error) => void = () => {};
     const workerStarted = new Promise<void>((resolve) => {
@@ -319,24 +349,30 @@ describe("TaskQueue", () => {
 
   it("ignores late worker progress after a hard timeout", async () => {
     const timeoutQueue = new TaskQueue({ timeoutMs: 20 });
-    let reportLateProgress: (() => void) | undefined;
-    timeoutQueue.registerWorker(TEST_TYPE_UPLOAD, async (_payload, ctx) => {
-      reportLateProgress = () => { void ctx.reportProgress(88); };
-      return new Promise<TaskResult>(() => {});
+    let reportLateProgress: (() => void | Promise<void>) | undefined;
+    let resolveWorker: (result: TaskResult) => void = () => {};
+    timeoutQueue.registerWorker(TEST_TYPE_HARD_TIMEOUT, async (_payload, ctx) => {
+      reportLateProgress = () => ctx.reportProgress(88);
+      return new Promise<TaskResult>((resolve) => { resolveWorker = resolve; });
     });
 
-    const taskId = await timeoutQueue.submit(TEST_TYPE_UPLOAD, {}, TEST_USER_ID);
+    const taskId = await timeoutQueue.submit(TEST_TYPE_HARD_TIMEOUT, {}, TEST_USER_ID);
     await vi.waitFor(async () => {
       expect((await timeoutQueue.getStatus(taskId))?.status).toBe("failed");
     }, { timeout: 1000 });
 
     const before = await timeoutQueue.getStatus(taskId);
-    reportLateProgress?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(executionRegistry.awaitTaskExecutions([taskId], { timeoutMs: 0 }))
+      .rejects.toThrow(/did not settle/i);
+
+    await reportLateProgress?.();
+    resolveWorker({ late: true });
+    await executionRegistry.awaitTaskExecutions([taskId], { timeoutMs: 100 });
     const after = await timeoutQueue.getStatus(taskId);
 
     expect(after?.status).toBe("failed");
     expect(after?.progress).toBe(before?.progress);
+    expect(after?.result).toBeUndefined();
     expect(after?.error).toMatch(/timed out/i);
   });
 

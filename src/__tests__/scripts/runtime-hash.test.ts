@@ -16,6 +16,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { computeRuntimeHash as computeElectronRuntimeHash } from "../../../electron/runtime-hash";
 
 // The publish script is ESM and exports computeRuntimeHash at module scope.
 // We import it dynamically to match the existing script-test pattern.
@@ -34,13 +35,15 @@ beforeAll(async () => {
  *   runtime/node(.exe), runtime/python/python(.exe), native .node modules
  *   under node_modules, and .py files under workers/python.
  */
-function makeFakeAppRoot(): string {
+function makeFakeAppRoot(
+  layout: "macOS" | "windows-like" = process.platform === "win32" ? "windows-like" : "macOS",
+): string {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rt-hash-test-"));
-  const isWin = process.platform === "win32";
-  fs.mkdirSync(path.join(tmp, "runtime", "python"), { recursive: true });
+  const isWin = layout === "windows-like";
+  fs.mkdirSync(path.join(tmp, "runtime", "python", "bin"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "runtime", isWin ? "node.exe" : "node"), "NODE-BYTES");
   fs.writeFileSync(
-    path.join(tmp, "runtime", "python", isWin ? "python.exe" : "python3"),
+    path.join(tmp, "runtime", "python", "bin", isWin ? "python.exe" : "python3"),
     "PY-BYTES"
   );
   fs.mkdirSync(path.join(tmp, "node_modules", "better-sqlite3", "build", "Release"), {
@@ -55,6 +58,30 @@ function makeFakeAppRoot(): string {
   fs.writeFileSync(path.join(tmp, "workers", "python", "rag_index.py"), "# rag");
   return tmp;
 }
+
+describe("computeRuntimeHash implementation equivalence", () => {
+  for (const layout of ["macOS", "windows-like"] as const) {
+    it(`matches the Electron implementation on a synthetic ${layout} layout`, () => {
+      const root = makeFakeAppRoot(layout);
+      const platform = layout === "windows-like" ? "win32" : "darwin";
+      const pythonName = layout === "windows-like" ? "python.exe" : "python3";
+      const python = path.join(root, "runtime", "python", "bin", pythonName);
+      try {
+        const publishBefore = hashMod.computeRuntimeHash(root, platform);
+        const electronBefore = computeElectronRuntimeHash(root, platform);
+        expect(publishBefore).toBe(electronBefore);
+
+        fs.writeFileSync(python, "PY-CHANGED");
+        const publishAfter = hashMod.computeRuntimeHash(root, platform);
+        const electronAfter = computeElectronRuntimeHash(root, platform);
+        expect(publishAfter).toBe(electronAfter);
+        expect(publishAfter).not.toBe(publishBefore);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
 
 describe("computeRuntimeHash (publish-side)", () => {
   it("is deterministic for identical content", () => {
@@ -126,6 +153,38 @@ describe("computeRuntimeHash (publish-side)", () => {
       fs.writeFileSync(path.join(root, "public", "build-info.json"), "{}");
       const after = hashMod.computeRuntimeHash(root);
       expect(after).toBe(before);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("hashes the python-build-standalone bin/ layout (the real bundle shape)", () => {
+    // python-build-standalone ships python/bin/python3 + python/lib/...; the
+    // build scripts copy that tree verbatim under runtime/python/, so the real
+    // interpreter lives at runtime/python/bin/python3 (NOT flat). The hash must
+    // find it there and reflect content changes — otherwise the patch-update
+    // safety guard silently ignored the python binary, defeating its purpose.
+    const isWin = process.platform === "win32";
+    const pyName = isWin ? "python.exe" : "python3";
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rt-hash-bin-"));
+    try {
+      fs.mkdirSync(path.join(root, "runtime", "python", "bin"), { recursive: true });
+      fs.mkdirSync(path.join(root, "node_modules", "x", "build", "Release"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, "node_modules", "x", "build", "Release", "x.node"),
+        "N"
+      );
+      fs.mkdirSync(path.join(root, "workers", "python"), { recursive: true });
+      fs.writeFileSync(path.join(root, "workers", "python", "daemon.py"), "# d");
+      fs.writeFileSync(path.join(root, "runtime", isWin ? "node.exe" : "node"), "NODE");
+      const binPy = path.join(root, "runtime", "python", "bin", pyName);
+      fs.writeFileSync(binPy, "PY-V1");
+
+      const before = hashMod.computeRuntimeHash(root);
+      // Change the bin/-located interpreter — hash MUST change.
+      fs.writeFileSync(binPy, "PY-V2");
+      const after = hashMod.computeRuntimeHash(root);
+      expect(after).not.toBe(before);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

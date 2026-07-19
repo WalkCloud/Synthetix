@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { useLocale } from "@/lib/i18n";
+import { getLocalizedError, useLocale } from "@/lib/i18n";
 import { useUser } from "@/lib/user-context";
 
 type Tab = "profile" | "auth" | "storage" | "database" | "rag";
@@ -57,7 +57,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
         ? t.settings.profile.emailAlreadyUsed
         : data.code === "invalidInput" && data.error === "emailInvalid"
           ? t.settings.profile.emailInvalid
-          : data.error || t.settings.profile.updateFailed;
+          : getLocalizedError(data, t.errors, t.settings.profile.updateFailed);
       setMessage({ type: "error", text: errorText });
     }
   }
@@ -81,7 +81,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       setConfirmPassword("");
       setMessage({ type: "success", text: t.settings.profile.passwordUpdated });
     } else {
-      setMessage({ type: "error", text: data.error || t.settings.profile.updateFailed });
+      setMessage({ type: "error", text: getLocalizedError(data, t.errors, t.settings.profile.updateFailed) });
     }
   }
 
@@ -118,7 +118,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
         setMessage({ type: "success", text: t.settings.profile.avatarUpdated });
         refreshUser();
       } else {
-        setMessage({ type: "error", text: data.error || t.settings.profile.avatarFailed });
+        setMessage({ type: "error", text: getLocalizedError(data, t.errors, t.settings.profile.avatarFailed) });
       }
     } catch {
       setMessage({ type: "error", text: t.settings.profile.avatarFailed });
@@ -158,7 +158,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             <div className="p-6 text-center">
               <div className="relative w-[120px] h-[120px] mx-auto mb-5 group">
                 {avatarUrl ? (
-                  <Image src={avatarUrl} alt="Avatar" fill sizes="80px" className="rounded-full object-cover" unoptimized />
+                  <Image src={avatarUrl} alt={t.settings.profile.avatarAlt} fill sizes="80px" className="rounded-full object-cover" unoptimized />
                 ) : (
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-bold text-[36px] tracking-tight">
                     {initials}
@@ -228,7 +228,7 @@ export function ProfileTab({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
                     <button type="button" onClick={() => setEmailLocked(!emailLocked)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                       tabIndex={-1}
-                      title={emailLocked ? "Click to unlock" : "Click to lock"}>
+                      title={emailLocked ? t.settings.profile.unlockEmail : t.settings.profile.lockEmail}>
                       {emailLocked ? (
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />

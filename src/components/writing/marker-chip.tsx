@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale } from "@/lib/i18n";
+
 interface MarkerChipProps {
   kind: "image" | "diagram";
   title: string;
@@ -8,6 +10,7 @@ interface MarkerChipProps {
 }
 
 export function MarkerChip({ kind, title, markerId, onClick }: MarkerChipProps) {
+  const { t } = useLocale();
   const icon = kind === "image" ? "🖼️" : "📊";
   const borderClass = kind === "image"
     ? "border-blue-300 bg-blue-50/50 hover:bg-blue-100/60"
@@ -22,7 +25,7 @@ export function MarkerChip({ kind, title, markerId, onClick }: MarkerChipProps) 
       <span className="text-lg">{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{title}</p>
-        <p className="text-xs text-muted-foreground">Click to generate</p>
+        <p className="text-xs text-muted-foreground">{t.writing.diagram.clickToGenerate}</p>
       </div>
     </button>
   );

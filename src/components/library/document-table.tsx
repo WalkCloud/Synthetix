@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatFileSize } from "@/lib/text/format-file-size";
 import { getFileIconClass } from "@/lib/text/file-utils";
 import { LoadingState } from "@/components/shared/loading-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -343,7 +342,7 @@ export function DocumentTable({
                           <span className="text-xs text-muted-foreground tabular-nums">{chunkCount}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-foreground whitespace-nowrap">{formatFileSize(doc.originalSize)}</td>
+                      <td className="px-4 py-3.5 text-sm text-foreground whitespace-nowrap">{format.fileSize(doc.originalSize)}</td>
                       <td className="px-4 py-3.5">
                         {ready ? (
                           <div className="flex items-center gap-1.5">

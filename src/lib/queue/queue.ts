@@ -63,6 +63,8 @@ export class TaskQueue {
   private readonly heartbeatScanIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
   private readonly abortControllers = new Map<string, AbortController>();
+  private dueTaskTimer: ReturnType<typeof setTimeout> | null = null;
+  private dueTaskTimerAt: number | null = null;
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -75,6 +77,29 @@ export class TaskQueue {
 
   registerWorker(type: TaskType, workerFn: WorkerFn): void {
     this.workers.set(type, workerFn);
+  }
+
+  private retryNotBefore(inputData: string | null): number | null {
+    const value = parseTaskInput<{ retryNotBefore?: unknown }>(inputData, {}).retryNotBefore;
+    if (typeof value !== "string") return null;
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  private scheduleDueTaskWake(at: number): void {
+    if (at <= Date.now()) {
+      void this.processNext();
+      return;
+    }
+    if (this.dueTaskTimer && this.dueTaskTimerAt !== null && this.dueTaskTimerAt <= at) return;
+    if (this.dueTaskTimer) clearTimeout(this.dueTaskTimer);
+    this.dueTaskTimerAt = at;
+    this.dueTaskTimer = setTimeout(() => {
+      this.dueTaskTimer = null;
+      this.dueTaskTimerAt = null;
+      void this.processNext();
+    }, Math.max(0, at - Date.now()));
+    if (typeof this.dueTaskTimer.unref === "function") this.dueTaskTimer.unref();
   }
 
   async drain(): Promise<void> {
@@ -203,6 +228,18 @@ export class TaskQueue {
       this.abortControllers.get(taskId)?.abort();
       return true;
     }
+
+    // Bulk cancellation marks running rows cancel_requested before delegating
+    // here. Treat that state as an actionable request so the live controller is
+    // still aborted; commitOutcome owns the terminal cancelled transition.
+    const cancelRequested = await db.asyncTask.findUnique({
+      where: { id: taskId },
+      select: { status: true },
+    });
+    if (cancelRequested?.status === "cancel_requested") {
+      this.abortControllers.get(taskId)?.abort();
+      return true;
+    }
     return false;
   }
 
@@ -328,10 +365,30 @@ export class TaskQueue {
         return;
       }
 
-      // Atomic claim: try to update a pending task to "running" in a single query.
+      const pending = await db.asyncTask.findMany({
+        where: { status: "pending", type: { in: eligibleTypes } },
+        select: { id: true, inputData: true },
+        orderBy: { createdAt: "asc" },
+      });
+      const nowMs = Date.now();
+      const eligibleTaskIds: string[] = [];
+      let nextDueAt: number | null = null;
+      for (const task of pending) {
+        const notBefore = this.retryNotBefore(task.inputData);
+        if (notBefore !== null && notBefore > nowMs) {
+          nextDueAt = nextDueAt === null ? notBefore : Math.min(nextDueAt, notBefore);
+          continue;
+        }
+        eligibleTaskIds.push(task.id);
+      }
+      if (nextDueAt !== null) this.scheduleDueTaskWake(nextDueAt);
+      if (eligibleTaskIds.length === 0) return;
+
+      // Atomic claim: try to update a due pending task to "running" in a single query.
       // SQLite serialises the UPDATE so two concurrent processNext() calls cannot
-      // claim the same row.
-      const placeholders = eligibleTypes.map(() => "?").join(", ");
+      // claim the same row. Due filtering is derived from persisted inputData above;
+      // the wake timer is only an optimisation and drain() reconstructs it.
+      const placeholders = eligibleTaskIds.map(() => "?").join(", ");
       const leaseOwner = `${process.pid}-${crypto.randomUUID()}`;
       const leaseExpiry = new Date(Date.now() + this.heartbeatTimeoutMs * 2);
       const claimed = await db.$queryRawUnsafe<{
@@ -350,7 +407,7 @@ export class TaskQueue {
              execution_generation = COALESCE(execution_generation, 0) + 1
          WHERE id = (
            SELECT id FROM async_tasks
-           WHERE status = 'pending' AND type IN (${placeholders})
+           WHERE status = 'pending' AND id IN (${placeholders})
            ORDER BY created_at ASC
            LIMIT 1
          ) AND status = 'pending'
@@ -359,7 +416,7 @@ export class TaskQueue {
         new Date(),
         leaseOwner,
         leaseExpiry,
-        ...eligibleTypes,
+        ...eligibleTaskIds,
       );
 
       if (!claimed || claimed.length === 0) {
@@ -510,6 +567,14 @@ export class TaskQueue {
     });
     if (currentTask?.status !== "running") {
       // Was cancelled (→ cancel_requested) between claim and execution start.
+      // No worker Promise exists to settle, so finalize the cancellation here.
+      if (currentTask?.status === "cancel_requested") {
+        await this.commitOutcome(taskId, {
+          workerOutcome: true,
+          status: "cancelled",
+          error: "Cancelled by user",
+        }, executionGeneration);
+      }
       return;
     }
 
@@ -562,15 +627,13 @@ export class TaskQueue {
     let timedOut = false;
     try {
       const startWorker = () => workerFn(payload, ctx);
-      const resultPromise = docId
-        ? await executionRegistry.startDocumentExecution({
-            taskId,
-            taskType,
-            userId,
-            docId,
-            start: startWorker,
-          })
-        : startWorker();
+      const { workerPromise: resultPromise } = await executionRegistry.startExecution({
+        taskId,
+        taskType,
+        userId: docId ? userId : undefined,
+        docId: docId ?? undefined,
+        start: startWorker,
+      });
       const timeoutMs = this.getTimeoutMs(taskType);
       const result = timeoutMs === null
         ? await resultPromise
