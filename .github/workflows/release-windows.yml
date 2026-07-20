@@ -204,6 +204,12 @@ jobs:
         # build-electron.mjs refuses stale win-unpacked reuse and maps
         # WINDOWS_CERT_PATH/PASSWORD to electron-builder's CSC_LINK and
         # CSC_KEY_PASSWORD without putting the password in command arguments.
+        # It also passes --publish never to electron-builder so the installer
+        # is NOT auto-uploaded here (electron-builder.yml declares a
+        # `publish: github` block so latest.yml is emitted alongside the
+        # installer, but the actual upload is done by the dedicated
+        # "Publish release assets" step below via publish-release.mjs, which
+        # also signs stable.json as one atomic unit).
         env:
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: pnpm run electron:build

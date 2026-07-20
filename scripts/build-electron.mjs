@@ -211,16 +211,35 @@ function main() {
         unpackedDir,
         "--config",
         "electron-builder.yml",
+        // --publish never: electron-builder.yml declares `publish: github` so
+        // electron-builder emits latest.yml alongside the installer, but we do
+        // NOT want it to auto-upload. The actual release upload is handled by
+        // publish-release.mjs (which also signs stable.json). Without this
+        // flag, electron-builder sees CI=true + the publish config and tries
+        // to upload, crashing with "GitHub Personal Access Token is not set"
+        // (GH_TOKEN isn't injected here intentionally) and racing with
+        // publish-release.mjs.
+        "--publish",
+        "never",
       ],
       { cwd: ROOT, env: builderEnv }
     );
   } else {
     // No win-unpacked yet — full pack + installer in one electron-builder run.
     log("no win-unpacked yet — full electron-builder run (--win)…");
-    run("npx", ["electron-builder", "--win", "--config", "electron-builder.yml"], {
-      cwd: ROOT,
-      env: builderEnv,
-    });
+    run(
+      "npx",
+      [
+        "electron-builder",
+        "--win",
+        "--config",
+        "electron-builder.yml",
+        // See the --publish never rationale in the --prepackaged branch above.
+        "--publish",
+        "never",
+      ],
+      { cwd: ROOT, env: builderEnv }
+    );
   }
 
   // 5) Report.
