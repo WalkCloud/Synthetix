@@ -6,6 +6,106 @@ Synthetix 的所有重要变更均记录在此文件中。
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.5] — 2026-07-20
+
+### RAG Cross-Document Integrity · 跨文档知识图谱完整性
+
+This is the headline fix of v1.0.5. Previously, deleting one document could corrupt the knowledge graph and Wiki data of *other* documents sharing the same RAG workspace, and cleanup tasks sometimes timed out or silently failed on large documents.
+
+- **Per-user RAG mutation lock**
+  EN: All RAG workspace writes (insert, delete, re-index) are now serialized through a per-user mutation lock held outside the RAG workspace itself, preventing concurrent writers from corrupting each other's data. The lock is fail-closed: if it cannot be acquired, the operation returns an error instead of proceeding unsafely.
+  CN: 所有 RAG 工作区的写操作（插入、删除、重建索引）现在通过按用户的互斥锁串行化，锁目录位于 RAG 工作区之外，防止并发写入互相破坏数据。锁采用 fail-closed 策略：获取失败时返回错误而非不安全地继续。
+
+- **Document deletion now reliably purges graph + Wiki data**
+  EN: Deleting a document with `deleteWiki=true` now correctly purges: LightRAG entity/relation sources, GraphML sources, chunk files, document-scoped caches, and Wiki references — all scoped to the deleted document only. Other documents' graph data is preserved intact.
+  CN: 使用 `deleteWiki=true` 删除文档时，现在会正确清理：LightRAG 实体/关系源、GraphML 源、chunk 文件、文档级缓存和 Wiki 引用 —— 全部仅限被删除文档的范围，其他文档的图谱数据完整保留。
+
+- **Removed destructive implicit recovery**
+  EN: The old "wipe and rebuild" recovery path (which could destroy other documents' LightRAG data on embedding mismatches) has been removed. RAG failures now return errors instead of attempting workspace-wide destructive recovery.
+  CN: 移除了旧的"擦除并重建"恢复路径（该路径在嵌入维度不匹配时可能破坏其他文档的 LightRAG 数据）。RAG 失败现在返回错误而非尝试工作区范围的破坏性恢复。
+
+- **Canonical writable RAG root**
+  EN: A single canonical writable RAG root is enforced for all operations, eliminating the race between multiple roots that previously allowed cross-document data leakage.
+  CN: 所有操作强制使用单一规范的可写 RAG 根目录，消除了之前多根目录导致的跨文档数据泄漏竞态。
+
+- **Batch chunk deletion for large documents**
+  EN: Graph index cleanup now deletes chunks in batches, preventing heartbeat timeouts that previously caused cleanup tasks to stall on large documents (>100 chunks).
+  CN: 图谱索引清理现在批量删除 chunk，防止大文档（>100 chunk）上心跳超时导致清理任务卡住。
+
+- **Document-scoped LightRAG graph insert verification**
+  EN: After inserting graph data, the system verifies that child documents have corresponding chunks, preventing silent data loss during indexing.
+  CN: 插入图谱数据后，系统验证子文档是否有对应的 chunk，防止索引过程中静默数据丢失。
+
+- **Comprehensive cross-document test coverage**
+  EN: New test suites verify that purging document A preserves B and C (symmetric), that embedding mismatches don't destroy the workspace, that query operations don't delete writer locks, and that storage corruption is fail-closed.
+  CN: 新增测试套件验证：删除文档 A 时 B/C 完好（对称验证）、嵌入维度不匹配不破坏工作区、查询操作不删除写入锁、存储损坏时 fail-closed。
+
+### Stability & Cancellation · 稳定性与取消机制
+
+- **AbortSignal forwarded to Python RAG workers**
+  EN: HTTP request cancellation now propagates through to `rag_manage` Python subprocesses via AbortSignal, so canceling a document reprocess actually stops the Python writer instead of letting it run orphaned.
+  CN: HTTP 请求取消现在通过 AbortSignal 传播到 `rag_manage` Python 子进程，取消文档重新处理时实际停止 Python 写入器而非让其成为孤儿进程。
+
+- **Python writer abort on timeout/stall**
+  EN: Queue timeout and heartbeat stall now abort Python writers before completing cancellation, preventing zombie processes from holding RAG locks.
+  CN: 队列超时和心跳停滞现在在完成取消前中止 Python 写入器，防止僵尸进程持有 RAG 锁。
+
+### Knowledge Graph UI · 知识图谱交互优化
+
+- **Entity evidence panel improvements**
+  EN: The entity evidence panel now shows cleaner source attribution and handles document-scoped evidence more clearly.
+  CN: 实体证据面板现在显示更清晰的来源归因，更好地处理文档级证据。
+
+- **Topology stats refinement**
+  EN: Statistics display streamlined; counts now use localized number formatting and update more reliably.
+  CN: 统计显示精简优化；计数现在使用本地化数字格式并更可靠地更新。
+
+- **Search page performance**
+  EN: Knowledge graph indexing progress indicator no longer causes unnecessary re-renders.
+  CN: 知识图谱索引进度指示器不再导致不必要的重渲染。
+
+### Online Update System · 在线更新系统
+
+- **Sidebar upgrade reminder**
+  EN: When a new version is detected, a badge appears in the sidebar with a one-click "update now" flow. Version consistency gate ensures the installer, About dialog, and update manifest all report the same version.
+  CN: 检测到新版本时，侧边栏出现徽章提示，支持一键更新。版本一致性门控确保安装器、关于对话框和更新清单报告相同版本。
+
+- **Full / patch upgrade pipeline**
+  EN: The updater now supports both full installer replacement and patch-based differential updates, with Ed25519-signed manifests and SHA-256 verified downloads.
+  CN: 更新器现在支持完整安装器替换和基于补丁的差分更新，使用 Ed25519 签名清单和 SHA-256 验证下载。
+
+### macOS Support · macOS 支持
+
+- **macOS arm64 DMG packaging** (new platform)
+  EN: Synthetix now builds and runs on Apple Silicon Macs (macOS 12.0+). Includes `.icns` icon, traffic-light-aware sidebar padding, Dock activation handling, and ad-hoc re-signing to fix "damaged" Gatekeeper warnings.
+  CN: Synthetix 现在可在 Apple Silicon Mac（macOS 12.0+）上构建和运行。包含 `.icns` 图标、适配交通灯按钮的侧边栏内边距、Dock 激活处理，以及修复"已损坏"Gatekeeper 警告的 ad-hoc 重签名。
+
+### Packaging & CI · 打包与持续集成
+
+- **Windows installer runtime crash fixes**
+  EN: Resolved 8 root causes that prevented the v1.0.5 Windows installer from launching: Next.js standalone dependency tracing (Prisma/better-sqlite3), electron-builder stripping node_modules from extraResources, torchgen trim breaking Python runtime, missing node-gyp in CI, build-time JWT_SECRET requirement, and publish workflow race conditions.
+  CN: 修复了阻止 v1.0.5 Windows 安装器启动的 8 个根因：Next.js standalone 依赖追踪（Prisma/better-sqlite3）、electron-builder 从 extraResources 中剥离 node_modules、torchgen 裁剪破坏 Python 运行时、CI 缺少 node-gyp、构建时 JWT_SECRET 要求、以及发布工作流竞态条件。
+
+- **Unified runtime version matrix**
+  EN: Node.js, pnpm, Python, and Electron versions are now pinned in a single `config/runtime-versions.json`, with SHA-256 verification for all downloaded runtime assets. CI and both platform sidecars read from this one source.
+  CN: Node.js、pnpm、Python 和 Electron 版本现在统一锁定在 `config/runtime-versions.json`，所有下载的运行时资产均有 SHA-256 校验。CI 和两个平台的构建脚本都从此单一来源读取。
+
+---
+
+## [1.0.4] — 2026-07-19 (tag exists, no public release — superseded by 1.0.5)
+
+v1.0.4 was tagged but never publicly released due to CI failures (Node/pnpm version incompatibility on the Windows runner). All v1.0.4 work is included in v1.0.5. This entry documents the changes for historical reference.
+
+- **Cross-platform release preparation**
+  EN: Unified the Windows and macOS build pipelines, added macOS bundle assembler, and established the two-machine release workflow documented in the release guide.
+  CN: 统一 Windows 和 macOS 构建流水线，添加 macOS bundle 组装器，建立发布指南中记录的双机发布工作流。
+
+- **Windows regression checklist**
+  EN: Added a comprehensive Windows regression verification checklist covering clean install, first-run, document processing, knowledge graph, and uninstall scenarios.
+  CN: 添加了全面的 Windows 回归验证清单，覆盖全新安装、首次运行、文档处理、知识图谱和卸载场景。
+
+---
+
 ## [1.0.3] — 2026-07-17
 
 ### Security · 安全
