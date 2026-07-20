@@ -71,9 +71,15 @@ files:
   - "!**/.*"
 
 # The full Next.js app bundle (node runtime + CPython + .next + deps + workers +
-# prisma) goes into resources/app/. Exclude the legacy .bat launchers and the
-# standalone node.exe is NOT needed from extraResources (Electron brings node),
-# but we keep it since next start may resolve it; harmless.
+# prisma) goes into resources/app/. Exclude the legacy .bat launchers.
+#
+# CRITICAL: the `files` section above has global excludes for node_modules/ and
+# .next/ (to keep app.asar tiny). electron-builder applies those global excludes
+# to extraResources too, which would silently strip the bundle's runtime deps.
+# We MUST explicitly re-include them here via positive filter entries that
+# override the global negatives. Without this, the packaged app crashes at
+# startup with "Cannot find module 'better-sqlite3'" / 'bindings' / etc.
+# because resources/app/node_modules/ is empty.
 extraResources:
   - from: dist/app
     to: app
@@ -81,6 +87,22 @@ extraResources:
       - "**/*"
       - "!start.bat"
       - "!stop.bat"
+  # node_modules and .next re-included as SEPARATE extraResources entries.
+  # electron-builder applies the `files` section's global excludes
+  # (!**/node_modules/**, !**/.next/**) to extraResources filter matching,
+  # which strips them from the dist/app copy above even though the filter
+  # says "**/*". Splitting them into their own entries with explicit positive
+  # filters overrides the inherited negatives. Without this, the packaged
+  # app has empty resources/app/node_modules/ and crashes at startup with
+  # "Cannot find module 'better-sqlite3'".
+  - from: dist/app/node_modules
+    to: app/node_modules
+    filter:
+      - "**/*"
+  - from: dist/app/.next
+    to: app/.next
+    filter:
+      - "**/*"
   # The local embedding model (GTE-multilingual-base, int8 ONNX, ~340MB) used by
   # the chunking pipeline. data/ is otherwise runtime-only (excluded from the
   # app bundle above), so ship the model as a dedicated resource under app/models

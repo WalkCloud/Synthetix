@@ -76,6 +76,17 @@ jobs:
         run: pnpm run generate:meta
 
       - name: Build Next.js (standalone)
+        # Next.js page-data collection evaluates route modules at build time,
+        # which imports src/lib/auth/token-core.ts. That module throws at
+        # import time if JWT_SECRET is unset (intentional fail-fast for the
+        # runtime server). On a clean CI runner there is no .env, so the build
+        # crashes with "FATAL: JWT_SECRET environment variable is required"
+        # before it can finish. These are BUILD-ONLY placeholder values — the
+        # packaged Electron app generates real per-install secrets in
+        # electron/first-run.ts at first launch; they never ship in the bundle.
+        env:
+          JWT_SECRET: ci-build-only-not-a-production-secret
+          ENCRYPTION_KEY: ci-build-only-encryption-key
         run: pnpm run build
 
       - name: Prepare bundled Windows runtime

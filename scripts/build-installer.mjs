@@ -311,15 +311,70 @@ async function main() {
     log(`  removed .pnpm/ store (saved ${human(freed)}, ${files} files) …`);
   }
 
+  // --- Mirror flattened node_modules into .next/node_modules/ ---
+  // Next.js standalone copies a subset of deps under
+  // .next/node_modules/<pkg>-<hash>/ for its own chunk resolution. Those
+  // hash-suffixed copies (e.g. @prisma/client-254bee..., better-sqlite3-a9b104...)
+  // use dynamic require() for their own transitive deps, and Node's resolver
+  // walks UP from the requiring file — so a require('@prisma/client-runtime-utils')
+  // inside .next/node_modules/@prisma/client-*/runtime/client.js looks in
+  // .next/node_modules/@prisma/client-runtime-utils first, then top-level
+  // node_modules/. The top-level flatten above makes the latter work, but
+  // mirroring into .next/node_modules/ is belt-and-suspenders: it guarantees
+  // resolution regardless of which hash directory issues the require.
+  // This is the fix for the v1.0.5 runtime crashes:
+  //   "Cannot find module '@prisma/client-runtime-utils'"
+  //   "Cannot find module 'bindings'"
+  //   "Cannot find module 'file-uri-to-path'"
+  const appNextNm = path.join(APP, ".next", "node_modules");
+  if (fs.existsSync(appNextNm)) {
+    log("  mirroring flattened node_modules into .next/node_modules/ …");
+    let mirrored = 0;
+    const mirrorEntries = fs.readdirSync(path.join(APP, "node_modules"), { withFileTypes: true });
+    for (const entry of mirrorEntries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      if (entry.name === ".pnpm" || entry.name === ".bin") continue;
+      const src = path.join(APP, "node_modules", entry.name);
+      if (entry.name.startsWith("@")) {
+        // Scope dir: mirror each scoped package
+        const scopeDst = path.join(appNextNm, entry.name);
+        fs.mkdirSync(scopeDst, { recursive: true });
+        for (const scopedPkg of fs.readdirSync(src, { withFileTypes: true })) {
+          if (!scopedPkg.isDirectory() && !scopedPkg.isSymbolicLink()) continue;
+          const spDst = path.join(scopeDst, scopedPkg.name);
+          if (fs.existsSync(spDst)) continue; // don't overwrite standalone's own copies
+          copyDir(path.join(src, scopedPkg.name), spDst);
+          mirrored++;
+        }
+      } else {
+        const dst = path.join(appNextNm, entry.name);
+        if (fs.existsSync(dst)) continue; // don't overwrite standalone's own copies
+        copyDir(src, dst);
+        mirrored++;
+      }
+    }
+    log(`  mirrored ${mirrored} package(s) into .next/node_modules/`);
+  }
+
   // .next/static — standalone does NOT include static assets; copy separately.
   log("  copying .next/static …");
   copyDir(path.join(ROOT, ".next", "static"), path.join(APP, ".next", "static"));
 
   // prisma schema + migrations + workers (python scripts).
-  // NOTE: prisma CLI is NOT included — first-run.ts uses better-sqlite3 to
-  // execute migration.sql files directly, avoiding prisma's heavy dep tree.
+  // ALSO copy the prisma CLI package (node_modules/prisma). first-run.ts uses
+  // better-sqlite3 to apply migrations (so prisma CLI is not used at runtime),
+  // BUT build-electron.mjs asserts dist/app/node_modules/prisma exists as a
+  // packaging readiness check. Without this copy, `pnpm run electron:build`
+  // fails with "dist/app is not ready (missing dist\app\node_modules\prisma)".
   log("  copying prisma/ …");
   copyDir(path.join(ROOT, "prisma"), path.join(APP, "prisma"));
+  const rootPrismaCli = path.join(ROOT, "node_modules", "prisma");
+  if (fs.existsSync(rootPrismaCli)) {
+    log("  copying node_modules/prisma (CLI, required by build-electron.mjs check) …");
+    copyDir(rootPrismaCli, path.join(APP, "node_modules", "prisma"));
+  } else {
+    warn("  node_modules/prisma missing in source tree — build-electron.mjs will fail");
+  }
   log("  copying workers/ …");
   copyDir(path.join(ROOT, "workers"), path.join(APP, "workers"));
 
@@ -505,11 +560,16 @@ function trimPython(pyRoot) {
   // extensions; docling just does `import torch`, never compiles anything.
   // torch/lib/*.lib (import libraries, ~45MB) — link-time artifacts; at runtime
   // only the .dll files are loaded. torch/bin/protoc.exe — build tool.
-  // torchgen (2.4MB) — code generation for torch internals, not needed at runtime.
+  //
+  // NOTE: torchgen is intentionally NOT trimmed. torch 2.13's
+  // `torch/utils/_python_dispatch.py` does `import torchgen` at import time
+  // (when `import torch` runs), so removing it crashes the Python daemon on
+  // startup with `ModuleNotFoundError: No module named 'torchgen'`. The
+  // earlier comment ("code-gen, not needed at runtime") was true for older
+  // torch versions but is wrong for 2.13+. Keep torchgen in the bundle.
   const deepTrim = [
     [path.join(sp, "torch", "include"), "torch/include (C++ headers)"],
     [path.join(sp, "torch", "bin"), "torch/bin (build tools)"],
-    [path.join(sp, "torchgen"), "torchgen (code-gen)"],
   ];
   for (const [p, label] of deepTrim) {
     if (fs.existsSync(p)) {
