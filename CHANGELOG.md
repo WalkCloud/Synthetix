@@ -14,7 +14,7 @@ EN: If the app is restarted (or `npm run dev` hot-reloads) while a document is m
 
 CN: 若在文档处理过程中（`queued` / `converting` / `splitting` 状态）重启程序（或 `npm run dev` 热重载），崩溃恢复路径（`recoverOrphanedPhaseOne`）会用空 `{}` 选项重新提交文档，而非用户原本选择的"完整分析"（`indexMode: "graph"`）。文档仍会变为 `ready`，但知识图谱的实体/关系抽取任务从未排队——于是知识图谱页显示"暂无拓扑数据"，且无任何错误或警告。基础检索与 Wiki 提炼不受影响。根因分析与修复建议见 [`docs/known-issue-restart-drops-graph-mode.md`](docs/known-issue-restart-drops-graph-mode.md)。**规避方法**：处理过程中避免重启；若已发生，删除文档重新上传或以"完整分析"重新处理即可。
 
-## [1.0.6] — 2026-07-22
+## [1.0.6] — 2026-07-23
 
 ### Docling Upgrade · 文档转换引擎升级
 
@@ -39,6 +39,36 @@ Helps users pick graph-compatible embedding models and warns when a model is too
 - **README: recommended embedding models table**
   EN: A new "Recommended embedding models for the knowledge graph" section lists 22 cloud embedding models (OpenAI, Google, Amazon, Alibaba, ByteDance, Zhipu, Tencent, etc.) with their dimensions and notes, so users know which services to choose for graph-enhanced retrieval. Available in both English and Chinese.
   CN: README 新增"知识图谱推荐嵌入模型"章节，汇总 22 个云端嵌入模型（OpenAI、Google、Amazon、阿里云、字节跳动、智谱、腾讯等）的维度和备注，方便用户选择支持图谱增强检索的服务。中英文版本同步。
+
+### Knowledge Graph Reliability · 知识图谱可靠性
+
+Systemic fixes to prevent heartbeat timeouts from killing long-running graph extraction, cleanup, and indexing tasks.
+
+- **Queue auto-heartbeat (architectural safety net)**
+  EN: Every running task now gets an automatic heartbeat update every 60 seconds, regardless of whether the worker remembers to emit progress events. This prevents the 5-minute heartbeat scanner from falsely killing long-running tasks (graph extraction on large documents, RAG cleanup with 3000+ entities, etc.). Workers that DO emit progress still work normally — the auto-heartbeat is additive.
+  CN: 每个 running 任务现在自动每 60 秒更新心跳，无论 worker 是否主动发送进度事件。这防止了 5 分钟心跳扫描器误杀长时间运行的任务（大文档图谱抽取、3000+ 实体的 RAG 清理等）。主动发送进度的 worker 仍然正常工作——自动心跳是叠加的。
+
+- **Graph/cleanup heartbeat fixes**
+  EN: `buildGraphTaskProgressUpdate` now writes the `heartbeatAt` DB column (previously only wrote `resultData.lastHeartbeatAt` JSON). `manageRag` delete-by-doc passes progress events to the cleanup worker so RAG purge operations stay alive past the 5-min threshold. `manageRag` timeout raised from 120s to 10min for large-graph deletion.
+  CN: `buildGraphTaskProgressUpdate` 现在写入 `heartbeatAt` 数据库列（之前只写 `resultData.lastHeartbeatAt` JSON）。`manageRag` 的 delete-by-doc 操作将进度事件传递给清理 worker，使 RAG purge 操作能安全度过 5 分钟门槛。`manageRag` 超时从 120s 提升到 10 分钟。
+
+- **RAG mutation lock timeout 5min → 4h**
+  EN: The per-user RAG mutation lock wait timeout was raised from 5 minutes to 4 hours (aligned with the graph-index task budget). Lock-wait now emits heartbeat events so waiting tasks are not falsely stalled. This fixes the root cause of large-document graph extraction failing after 3 retry attempts.
+  CN: 按用户的 RAG 互斥锁等待超时从 5 分钟提升到 4 小时（与图谱索引任务预算对齐）。锁等待期间现在发送心跳事件，避免等待中的任务被误判为停滞。这修复了大文档图谱抽取在 3 次重试后失败的根因。
+
+- **Document cleanup retry mechanism**
+  EN: `document_cleanup` tasks now retry up to 2 times (3 total attempts) on transient failures (timeout, lock contention), with a 60s delay. Previously cleanup had NO retry — a single failure left orphan graph entities permanently visible until the next unrelated delete triggered a cleanup pass.
+  CN: `document_cleanup` 任务现在在瞬时失败（超时、锁竞争）时最多重试 2 次（共 3 次尝试），间隔 60 秒。之前清理完全没有重试——单次失败会导致孤儿图谱实体永久可见，直到下一次无关的删除触发清理。
+
+- **Knowledge graph neighbor labels**
+  EN: Clicking a node in the knowledge graph now shows labels for all connected neighbor nodes immediately, without needing to zoom in. Previously, low-degree edge nodes were hidden until the user manually enlarged the view.
+  CN: 点击知识图谱节点后，所有关联邻居节点的标签立即显示，无需放大。之前低度数边缘节点的标签被隐藏，直到用户手动放大视图。
+
+### Elastic LLM Concurrency · 弹性 LLM 并发
+
+- **Adaptive concurrency for graph extraction**
+  EN: LightRAG's internal Semaphore is now set to 4× the AIMD limiter cap (64 vs 16), making the adaptive limiter the sole concurrency bottleneck. The AIMD budget starts at 64000 tokens (concurrency 16) instead of crawling up from the floor. Slow-start threshold reduced from 8 to 4 successes for faster recovery after 429 rate-limiting. Stale-low persisted ceilings no longer cripple startup — `get_limiter` overrides them with the optimistic initial value.
+  CN: LightRAG 内部 Semaphore 设为 AIMD 限流器上限的 4 倍（64 vs 16），使自适应限流器成为唯一的并发瓶颈。AIMD 预算从 64000 tokens（并发 16）启动，不再从地板值缓慢爬升。慢启动阈值从 8 次成功降低到 4 次，加速 429 限流后的恢复。过低的持久化 ceiling 不再拖累启动——`get_limiter` 用乐观初始值覆盖它。
 
 ## [1.0.5] — 2026-07-20
 
