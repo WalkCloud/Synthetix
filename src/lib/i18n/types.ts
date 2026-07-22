@@ -936,6 +936,7 @@ export type TranslationSchema = {
       embeddingDimDetected: string;
       embeddingBatchSize: string;
       embeddingBatchSizeDesc: string;
+      embeddingDimTooSmallWarn: string;
       capabilities: string;
       setDefault: string;
       removeDefault: string;

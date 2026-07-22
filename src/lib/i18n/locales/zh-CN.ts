@@ -935,6 +935,7 @@ const zhCN = {
       embeddingDimDetected: "维度检测",
       embeddingBatchSize: "Embedding 批量大小",
       embeddingBatchSizeDesc: "每次 API 调用最多处理的文本数量，默认 10",
+      embeddingDimTooSmallWarn: "维度低于 1536 — 该模型无法用于知识图谱模式。如需图谱增强检索，请使用 \u22651536 维的嵌入模型。",
       capabilities: "能力",
       setDefault: "设为默认模型",
       removeDefault: "取消默认",

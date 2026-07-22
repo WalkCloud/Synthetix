@@ -404,8 +404,11 @@ export function KnowledgeGraphCanvas({
       ctx.font = `500 ${fontSize / t.k}px ui-sans-serif, system-ui, sans-serif`;
       for (const n of gNodesRef.current) {
         if (n.x == null || n.y == null) continue;
-        // Always show labels for selected, hovered, and high-degree nodes.
-        const show = n.id === sel || n.id === hoverRef.current || n.degree >= dynThreshold;
+        // Always show labels for selected, hovered, high-degree nodes, and all
+        // neighbors of the selected node — so clicking a node reveals every
+        // connected entity's name without needing to zoom in.
+        const isNeighborOfSelected = !!sel && !!neighbors?.has(n.id);
+        const show = n.id === sel || n.id === hoverRef.current || isNeighborOfSelected || n.degree >= dynThreshold;
         if (!show) continue;
         const dimmed = sel && n.id !== sel && !neighbors?.has(n.id);
         ctx.globalAlpha = dimmed ? 0.4 : 1;

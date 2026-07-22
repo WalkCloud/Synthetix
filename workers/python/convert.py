@@ -97,7 +97,14 @@ class ProgressHeartbeat:
 
 def _apply_docx_performance_patches():
     """Monkeypatch MsWordDocumentBackend to skip the slow style-inheritance
-    climb and all image handling. Idempotent — safe to call repeatedly."""
+    climb and all image handling. Idempotent — safe to call repeatedly.
+
+    Each target method is checked with hasattr before assignment. Docling is
+    a fast-moving project; if an upstream refactor renames an internal method,
+    the monkeypatch would silently no-op (assigning a new attribute that the
+    code path no longer calls). The hasattr guard surfaces this via a WARNING
+    log so a silent performance regression is observable instead of invisible.
+    """
     global _docx_patches_applied
     if _docx_patches_applied:
         return
@@ -125,18 +132,38 @@ def _apply_docx_performance_patches():
                 script=script,
             )
 
-        MsWordDocumentBackend._get_format_from_run = _fast_get_format_from_run
+        # Guard each patch so an upstream rename produces a visible WARNING
+        # rather than a silent performance regression.
+        if hasattr(MsWordDocumentBackend, "_get_format_from_run"):
+            MsWordDocumentBackend._get_format_from_run = _fast_get_format_from_run
+        else:
+            print("[convert] WARNING: MsWordDocumentBackend._get_format_from_run not found; "
+                  "docling may have refactored this method (expect slow docx conversion)", flush=True)
 
         # Skip all image extraction/rendering — pictures have no RAG value and
         # the extraction (PIL re-encoding + LibreOffice fallback) is costly.
-        MsWordDocumentBackend._handle_pictures = lambda self, drawing_blip, doc: []
-        MsWordDocumentBackend._handle_vml_pictures = lambda self, vml_images, doc: []
-        MsWordDocumentBackend._handle_drawingml = lambda self, doc, drawingml_els: None
+        for method, fn in (
+            ("_handle_pictures", lambda self, drawing_blip, doc: []),
+            ("_handle_vml_pictures", lambda self, vml_images, doc: []),
+        ):
+            if hasattr(MsWordDocumentBackend, method):
+                setattr(MsWordDocumentBackend, method, fn)
+            else:
+                print(f"[convert] WARNING: MsWordDocumentBackend.{method} not found; "
+                      f"docling may have refactored this method", flush=True)
+
+        if hasattr(MsWordDocumentBackend, "_handle_drawingml"):
+            MsWordDocumentBackend._handle_drawingml = lambda self, doc, drawingml_els: None
+        else:
+            print("[convert] WARNING: MsWordDocumentBackend._handle_drawingml not found; "
+                  "docling may have refactored this method", flush=True)
 
         # Apply the same image-skip to PowerPoint if the methods exist there.
         for m in ("_handle_pictures", "_handle_vml_pictures"):
             if hasattr(MsPowerpointDocumentBackend, m):
                 setattr(MsPowerpointDocumentBackend, m, lambda self, *a, **k: [])
+            # No warning for PPTX — image extraction there is a minor cost and
+            # these methods are known to be absent on some docling versions.
         if hasattr(MsPowerpointDocumentBackend, "_handle_drawingml"):
             MsPowerpointDocumentBackend._handle_drawingml = lambda self, doc, els: None
     except Exception as e:

@@ -939,6 +939,7 @@ const en = {
       embeddingDimDetected: "Dimension detected",
       embeddingBatchSize: "Embedding Batch Size",
       embeddingBatchSizeDesc: "max texts per API call, default 10",
+      embeddingDimTooSmallWarn: "Dimension below 1536 — this model cannot be used for Knowledge Graph mode. Use a model with \u22651536 dimensions for graph-based retrieval.",
       capabilities: "Capabilities",
       setDefault: "Set as default model",
       removeDefault: "Remove default",

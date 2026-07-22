@@ -321,7 +321,17 @@ export class TaskQueue {
     // Without this abort, a stalled-but-still-running daemon holds the lock
     // (its PID is alive, so the lock is not reclaimable) and blocks every
     // other writer for that user until its own op timeout fires.
+    //
+    // NOTE: With the auto-heartbeat timer in executeTask, reaching this point
+    // means the task's Node process itself stalled (not just the Python worker)
+    // — a genuine crash or event-loop freeze. The auto-heartbeat (60s interval)
+    // prevents the common case where a worker simply forgot to emit progress.
     for (const stalledId of stalled) {
+      const stalledTask = running.find((t) => t.id === stalledId);
+      console.warn(
+        `[queue] stalled task ${stalledId.substring(0, 8)} (type=${stalledTask?.type ?? "?"}, ` +
+        `userId=${stalledTask ? "present" : "?"}) — aborting controller`,
+      );
       this.abortControllers.get(stalledId)?.abort();
     }
     // Re-kick the queue so a pending successor (or the doc's recovery path)
@@ -625,6 +635,26 @@ export class TaskQueue {
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
+
+    // Auto-heartbeat: periodically refresh heartbeatAt for ANY running task,
+    // regardless of whether the worker remembers to call ctx.heartbeat().
+    // This is the architectural safety net that prevents the 5-minute heartbeat
+    // scanner (scanHeartbeats) from falsely killing long-running tasks whose
+    // workers don't emit progress events (e.g. embed batches stuck on a slow
+    // provider, or a purge iterating 3000+ entities). 60s << 5min threshold.
+    // Workers that DO call ctx.heartbeat/reportProgress simply write more
+    // often — the auto-heartbeat is additive, never conflicting.
+    const autoHeartbeat = setInterval(async () => {
+      await db.asyncTask.updateMany({
+        where: { id: taskId, status: { in: ["running", "cancel_requested"] } },
+        data: {
+          heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + this.heartbeatTimeoutMs * 2),
+        },
+      }).catch(() => {});
+    }, 60_000);
+    if (typeof autoHeartbeat.unref === "function") autoHeartbeat.unref();
+
     try {
       const startWorker = () => workerFn(payload, ctx);
       const { workerPromise: resultPromise } = await executionRegistry.startExecution({
@@ -694,6 +724,7 @@ export class TaskQueue {
       }
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      clearInterval(autoHeartbeat);
       this.abortControllers.delete(taskId);
     }
   }

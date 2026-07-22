@@ -21,7 +21,9 @@ const CONVERT_TIMEOUT_MS = Number(process.env.CONVERTER_TIMEOUT_MS || 60 * 60 * 
 // docling's std::bad_alloc crash via pypdfium2 for mid-size PDFs, and adds a
 // post-conversion coverage check). Old cached results for affected PDFs are
 // truncated and must be regenerated, so we invalidate all prior caches.
-const CONVERSION_CACHE_VERSION = 3;
+// Bumped to 4: Docling upgraded to 2.114.0 — legacy binary office backend and
+// VideoPipeline additions; invalidate caches to pick up any rendering refinements.
+const CONVERSION_CACHE_VERSION = 4;
 const CACHE_FILENAME = ".convert-cache.json";
 
 export interface ConversionResult {

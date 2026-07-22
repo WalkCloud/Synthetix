@@ -18,6 +18,11 @@ interface RagBaseOptions {
    * spawned rag_manage.py process tree is killed so a long delete/merge can be
    * cancelled instead of running to completion holding the mutation lock. */
   signal?: AbortSignal;
+  /** Progress callback forwarded from spawnPythonJson. Essential for
+   * long-running operations (e.g. delete-by-doc on a large graph) so the
+   * caller can update the task's heartbeatAt column — without this, the
+   * queue's heartbeat scanner kills the task after 5 minutes of no activity. */
+  onProgressEvent?: (event: Record<string, unknown>) => void;
 }
 
 export type RagManageOptions =
@@ -113,6 +118,11 @@ export async function manageRag(
 
   const result = await spawnPythonJson<Record<string, unknown>>(RAG_MANAGE_SCRIPT, args, {
     signal: options.signal,
+    onProgressEvent: options.onProgressEvent,
+    // delete-by-doc iterates all entities/relations in the shared graph to do
+    // source-aware cleanup. On large workspaces (3000+ entities) this can take
+    // 5-10 minutes — the spawnPythonJson default of 120s would kill it mid-purge.
+    timeout: options.action === "delete-by-doc" ? 10 * 60 * 1000 : 120_000,
     env: {
       RAG_EMBED_API_KEY: options.embedConfig.apiKey,
       RAG_LLM_API_KEY: options.llmConfig.apiKey,

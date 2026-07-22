@@ -428,6 +428,11 @@ export function ProviderForm({ provider, tab, onClose }: ProviderFormProps) {
                     <input type="text" inputMode="numeric" className="w-full px-3.5 py-2.5 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-card shadow-sm transition-all"
                       value={m.embeddingDim ?? ""} onChange={(e) => updateModel(i, "embeddingDim", parseInt(e.target.value, 10) || null)} placeholder={t.models.models.embeddingDimPlaceholder} />
                   </div>
+                  {m.embeddingDim !== null && m.embeddingDim > 0 && m.embeddingDim < 1536 && (
+                    <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
+                      <p className="text-xs text-amber-700">{"\u26a0"} {t.models.models.embeddingDimTooSmallWarn}</p>
+                    </div>
+                  )}
                 </>
                )}
               {models.length > 1 && (

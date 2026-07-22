@@ -36,9 +36,9 @@ export interface DocumentLifecycleDeps {
   cancelDocumentTasks(userId: string, docId: string, exceptTaskId?: string): Promise<void>;
   cancelDocumentTasksBatch(userId: string, docIds: string[]): Promise<void>;
   enqueueDocumentCleanup(userId: string, docId: string): Promise<string | null>;
-  deleteRagDocument(userId: string, docId: string): Promise<void>;
+  deleteRagDocument(userId: string, docId: string, onProgress?: (event: Record<string, unknown>) => void): Promise<void>;
   resetUserRag(userId: string): Promise<void>;
-  cleanupRagOrphans(userId: string, activeDocIds: string[]): Promise<void>;
+  cleanupRagOrphans(userId: string, activeDocIds: string[], onProgress?: (event: Record<string, unknown>) => void): Promise<void>;
   deleteDocumentFiles(userId: string, docId: string): Promise<void>;
   deleteDocumentRows(userId: string, docId: string): Promise<void>;
   deleteDocumentRowsBatch(userId: string, docIds: string[]): Promise<{ deleted: string[]; notFound: string[] }>;
@@ -93,7 +93,20 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
       });
 
       try {
-        await deps.deleteRagDocument(userId, docId);
+        // Forward Python progress events to the task's heartbeatAt column so
+        // the queue's heartbeat scanner doesn't kill a long-running purge
+        // (large graphs with 3000+ entities can take >5 min to clean up).
+        await deps.deleteRagDocument(userId, docId, excludeTaskId ? async (event) => {
+          await db.asyncTask.updateMany({
+            where: { id: excludeTaskId, status: { in: ["running", "cancel_requested"] } },
+            data: {
+              progress: typeof event.progress === "number" ? Math.max(0, Math.min(99, event.progress)) : 25,
+              heartbeatAt: new Date(),
+              leaseExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+              updatedAt: new Date(),
+            },
+          }).catch(() => {});
+        } : undefined);
       } catch (error) {
         ragStatus = "failed";
         issues.push(error instanceof Error ? error.message : String(error));
@@ -118,7 +131,21 @@ export function createDocumentLifecycleService(deps: DocumentLifecycleDeps) {
     } else {
       try {
         const docs = await db.document.findMany({ where: { userId }, select: { id: true } });
-        await deps.cleanupRagOrphans(userId, docs.map((d) => d.id));
+        // Build the same heartbeat-forwarding callback used by deleteRagDocument
+        // above, so orphan sweeps (which also call manageRag delete-by-doc)
+        // keep the task alive past the 5-min heartbeat threshold.
+        const orphanProgress = excludeTaskId ? async (event: Record<string, unknown>) => {
+          await db.asyncTask.updateMany({
+            where: { id: excludeTaskId, status: { in: ["running", "cancel_requested"] } },
+            data: {
+              progress: typeof event.progress === "number" ? Math.max(0, Math.min(99, event.progress)) : 50,
+              heartbeatAt: new Date(),
+              leaseExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+              updatedAt: new Date(),
+            },
+          }).catch(() => {});
+        } : undefined;
+        await deps.cleanupRagOrphans(userId, docs.map((d) => d.id), orphanProgress);
       } catch (error) {
         issues.push("RAG orphan cleanup skipped: " + (error instanceof Error ? error.message : String(error)));
       }
@@ -262,7 +289,7 @@ export const documentLifecycle = createDocumentLifecycleService({
     const { getQueue } = await import("@/lib/queue");
     return getQueue().submit("document_cleanup", { docId }, userId);
   },
-  async deleteRagDocument(userId, docId) {
+  async deleteRagDocument(userId, docId, onProgress) {
     const ctx = await createRagContext(userId);
     await manageRag({
       userId,
@@ -272,6 +299,7 @@ export const documentLifecycle = createDocumentLifecycleService({
       rerankConfig: ctx.rerankConfig,
       embedDim: ctx.embedDim,
       docId,
+      onProgressEvent: onProgress,
     });
     // Removing a document's entities/relations reshapes the graph; drop cached
     // snapshots so the next read isn't stale.
@@ -281,7 +309,7 @@ export const documentLifecycle = createDocumentLifecycleService({
   async resetUserRag(userId) {
     await storage.deleteUserRagData(userId);
   },
-  async cleanupRagOrphans(userId, activeDocIds) {
+  async cleanupRagOrphans(userId, activeDocIds, onProgress) {
     const health = await scanKnowledgeHealth({ userId, activeDocumentIds: activeDocIds });
     if (health.status === "healthy") return;
 
@@ -303,6 +331,7 @@ export const documentLifecycle = createDocumentLifecycleService({
             rerankConfig: ctx.rerankConfig,
             embedDim: ctx.embedDim,
             docId,
+            onProgressEvent: onProgress,
           });
         } catch (error) {
           // Reaching this catch means BOTH the LightRAG soft delete AND the

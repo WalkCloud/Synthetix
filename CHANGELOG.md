@@ -6,6 +6,40 @@ Synthetix 的所有重要变更均记录在此文件中。
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## Known Issues · 已知待修复问题
+
+### Restart during processing silently drops "Full Analysis" graph mode · 处理中途重启会静默丢失"完整分析"图谱模式
+
+EN: If the app is restarted (or `npm run dev` hot-reloads) while a document is mid-processing (`queued` / `converting` / `splitting`), the crash-recovery path (`recoverOrphanedPhaseOne`) resubmits the document with empty `{}` options instead of the user's original "Full Analysis" (`indexMode: "graph"`) choice. The document still reaches `ready`, but the knowledge-graph entity/relation extraction never enqueues — so the Knowledge Graph page shows "暂无拓扑数据" with no error or warning. Basic search and Wiki remain functional. Tracked in [`docs/known-issue-restart-drops-graph-mode.md`](docs/known-issue-restart-drops-graph-mode.md) with root-cause analysis and proposed fixes. **Workaround**: avoid restarting during processing; if already affected, re-upload the document or reprocess with Full Analysis.
+
+CN: 若在文档处理过程中（`queued` / `converting` / `splitting` 状态）重启程序（或 `npm run dev` 热重载），崩溃恢复路径（`recoverOrphanedPhaseOne`）会用空 `{}` 选项重新提交文档，而非用户原本选择的"完整分析"（`indexMode: "graph"`）。文档仍会变为 `ready`，但知识图谱的实体/关系抽取任务从未排队——于是知识图谱页显示"暂无拓扑数据"，且无任何错误或警告。基础检索与 Wiki 提炼不受影响。根因分析与修复建议见 [`docs/known-issue-restart-drops-graph-mode.md`](docs/known-issue-restart-drops-graph-mode.md)。**规避方法**：处理过程中避免重启；若已发生，删除文档重新上传或以"完整分析"重新处理即可。
+
+## [1.0.6] — 2026-07-22
+
+### Docling Upgrade · 文档转换引擎升级
+
+Upgrades the Python document-conversion engine and adds dimension guidance for embedding models.
+
+- **Docling upgraded from 2.107.0 to 2.114.0**
+  EN: The `docling` version constraint in `workers/python/requirements.txt` is raised to `>=2.114.0`. The new release adds legacy binary Office format (97–2004) support and a VideoPipeline, and includes upstream rendering refinements. The conversion cache version is bumped from 3 to 4 so existing caches are invalidated and documents are re-converted with the new engine.
+  CN: `workers/python/requirements.txt` 中的 `docling` 版本约束提升至 `>=2.114.0`。新版本增加了旧版二进制 Office 格式（97–2004）支持和 VideoPipeline，并包含上游渲染改进。转换缓存版本号从 3 提升至 4，使现有缓存失效，文档将以新引擎重新转换。
+
+- **Hardened docx/pptx performance patches**
+  EN: The monkeypatched backend methods in `convert.py` (`_get_format_from_run`, `_handle_pictures`, `_handle_vml_pictures`, `_handle_drawingml`) now check `hasattr` before assignment. If an upstream Docling refactor renames an internal method, a WARNING is logged instead of silently no-op'ing — making a potential performance regression observable after the upgrade.
+  CN: `convert.py` 中 monkeypatch 的后端方法（`_get_format_from_run`、`_handle_pictures`、`_handle_vml_pictures`、`_handle_drawingml`）现在在赋值前进行 `hasattr` 检查。如果上游 Docling 重构重命名了内部方法，会打印 WARNING 而非静默失效——使升级后潜在的性能回退可被观察。
+
+### Embedding Model Dimension Guidance · 嵌入模型维度指引
+
+Helps users pick graph-compatible embedding models and warns when a model is too small.
+
+- **Inline warning when embedding dimension < 1536**
+  EN: When adding or editing an embedding model in Model Management, if the entered or auto-detected dimension is below 1536 (the LightRAG minimum for knowledge-graph entity extraction), an amber warning is shown immediately below the dimension field explaining that the model cannot be used for Knowledge Graph mode.
+  CN: 在模型管理中添加或编辑嵌入模型时，如果填入或自动检测到的维度低于 1536（LightRAG 知识图谱实体抽取的最低要求），维度字段下方会立即显示琥珀色警告，说明该模型无法用于知识图谱模式。
+
+- **README: recommended embedding models table**
+  EN: A new "Recommended embedding models for the knowledge graph" section lists 22 cloud embedding models (OpenAI, Google, Amazon, Alibaba, ByteDance, Zhipu, Tencent, etc.) with their dimensions and notes, so users know which services to choose for graph-enhanced retrieval. Available in both English and Chinese.
+  CN: README 新增"知识图谱推荐嵌入模型"章节，汇总 22 个云端嵌入模型（OpenAI、Google、Amazon、阿里云、字节跳动、智谱、腾讯等）的维度和备注，方便用户选择支持图谱增强检索的服务。中英文版本同步。
+
 ## [1.0.5] — 2026-07-20
 
 ### RAG Cross-Document Integrity · 跨文档知识图谱完整性

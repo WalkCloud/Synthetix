@@ -21,10 +21,20 @@ const ATTEMPT_KEY = "_graphAttempt";
 export function buildGraphTaskProgressUpdate(
   event: Record<string, unknown>,
   now = new Date(),
-): { progress: number; resultData: string } {
+): { progress: number; resultData: string; heartbeatAt: Date; leaseExpiresAt: Date } {
   const progress = typeof event.progress === "number" ? event.progress : 20;
+  // The heartbeat scan (queue.ts scanHeartbeats) checks the `heartbeatAt`
+  // column — NOT the `lastHeartbeatAt` field inside resultData JSON. Without
+  // updating heartbeatAt here, a graph task that runs longer than 5 minutes
+  // (QUEUE_HEARTBEAT_TIMEOUT_MS) is falsely marked stalled even though the
+  // Python worker is actively emitting progress events. This was the root
+  // cause of large-document graph extraction (e.g. 597 chunks) silently
+  // timing out after 3 retry attempts.
+  const heartbeatTimeoutMs = Number(process.env.QUEUE_HEARTBEAT_TIMEOUT_MS) || 5 * 60 * 1000;
   return {
     progress: Math.max(0, Math.min(99, progress)),
+    heartbeatAt: now,
+    leaseExpiresAt: new Date(now.getTime() + heartbeatTimeoutMs * 2),
     resultData: JSON.stringify({
       stage: typeof event.stage === "string" ? event.stage : "indexing",
       message: typeof event.message === "string" ? event.message : "Indexing knowledge graph",

@@ -31,7 +31,11 @@ import { resolveUserRagLockDir } from "./paths";
 const SCHEMA_VERSION = 1;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_STALE_THRESHOLD_S = 60;
-const DEFAULT_WAIT_TIMEOUT_S = 300; // 5 min — reset is not latency-sensitive
+// Graph-mode extraction on large documents (500+ chunks) can hold the lock for
+// 30+ minutes. The old 5-minute wait timeout caused queued graph tasks to fail
+// with RagMutationBusyError before they could start. Aligned with the graph-
+// index task budget (4h) so queued tasks patiently wait their turn.
+const DEFAULT_WAIT_TIMEOUT_S = Number(process.env.RAG_LOCK_WAIT_TIMEOUT_S) || 14400;
 const DEFAULT_WAIT_POLL_MIN_MS = 100;
 const DEFAULT_WAIT_POLL_MAX_MS = 500;
 

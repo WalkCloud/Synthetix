@@ -29,18 +29,18 @@ from rag_mutation_lock import user_rag_mutation_lock, RagMutationBusyError
 
 def _get_llm_max_async() -> int:
     """LightRAG's internal LLM concurrency for entity/relation rebuild during
-    delete-by-doc. AUTO-ALIGNED to the adaptive limiter's hard cap
-    (LLM_LIMITER_MAX_REQUESTS_GRAPH, default 8) so soft-delete rebuilds run at
-    the same throughput as the original indexing AND the limiter stays the
-    binding bottleneck. MAX_ASYNC_LLM is a deprecated escape hatch — see
-    rag_index._get_llm_max_async for the full rationale.
+    delete-by-doc. Set to 4× the limiter cap (LLM_LIMITER_MAX_REQUESTS_GRAPH,
+    default 16) so the Semaphore is never the bottleneck — the adaptive limiter
+    (AIMD, dynamic 2..16) controls real concurrency. MAX_ASYNC_LLM is a
+    deprecated escape hatch — see rag_index._get_llm_max_async for the full
+    rationale.
     """
     try:
-        cap = int(os.environ.get("LLM_LIMITER_MAX_REQUESTS_GRAPH", "8"))
+        cap = int(os.environ.get("LLM_LIMITER_MAX_REQUESTS_GRAPH", "16"))
         if cap <= 0:
-            cap = 8
+            cap = 16
     except (TypeError, ValueError):
-        cap = 8
+        cap = 16
     legacy = os.environ.get("MAX_ASYNC_LLM")
     if legacy:
         try:
@@ -49,7 +49,7 @@ def _get_llm_max_async() -> int:
                 return legacy_val
         except (TypeError, ValueError):
             pass
-    return cap
+    return cap * 4
 
 
 async def action_list_entities(rag, keyword: str = "", limit: int = 50) -> dict:

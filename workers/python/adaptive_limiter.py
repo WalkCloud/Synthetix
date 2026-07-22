@@ -31,7 +31,7 @@ from typing import Any, Optional
 # ── Tunables (mirror the TS defaults; overridable via env) ───────────────────
 
 FLOOR_TOKENS = int(os.environ.get("LLM_LIMITER_FLOOR_TOKENS", "4000"))
-SLOW_START_SUCCESSES = int(os.environ.get("LLM_LIMITER_SLOW_START_K", "8"))
+SLOW_START_SUCCESSES = int(os.environ.get("LLM_LIMITER_SLOW_START_K", "4"))
 AI_SUCCESSES = int(os.environ.get("LLM_LIMITER_AI_K", "20"))
 MD_FACTOR = float(os.environ.get("LLM_LIMITER_MD_FACTOR", "0.75"))
 # Latency-gradient signal (mirrors src/lib/llm/adaptive-limiter.ts:68,70).
@@ -44,16 +44,14 @@ LATENCY_THRESHOLD = float(os.environ.get("LLM_LIMITER_LATENCY_THRESHOLD", "1.5")
 HEADROOM = float(os.environ.get("LLM_LIMITER_HEADROOM", "0.8"))
 AI_STEP_TOKENS = int(os.environ.get("LLM_LIMITER_AI_STEP_TOKENS", "4000"))
 CEILING_CAP_TOKENS = int(os.environ.get("LLM_LIMITER_CEILING_CAP_TOKENS", "500000"))
-# Optimistic starting budget for a provider with NO persisted capacity record.
-# Previously this was FLOOR_TOKENS (4000), forcing every new provider through a
-# 4-16 min slow-start climb (24 consecutive successes) before reaching full
-# concurrency — so switching from Volcengine to DeepSeek/Qwen/Claude/ChatGPT
-# always paid a multi-minute "cold start tax". Most mainstream providers
-# tolerate ≥8 concurrent extraction calls, so we start optimistic (32000 ≈
-# dynamic_max 8) and let AIMD multiplicative-decrease rein it in IF a real 429
-# happens. This is provider-agnostic: no per-vendor config, just "trust first,
-# converge on evidence".
-INITIAL_BUDGET_TOKENS = int(os.environ.get("LLM_LIMITER_INITIAL_BUDGET_TOKENS", "32000"))
+# Optimistic starting budget for a provider with NO persisted capacity record,
+# AND the floor for get_limiter bootstrap (overrides persisted ceilings that are
+# too low — see get_limiter). 64000 ≈ dynamic_max 16 (the cap), so both new
+# providers and providers with a stale-low discoveredCeiling start at full
+# concurrency immediately. AIMD multiplicative-decrease reins it in IF a real
+# 429 happens. This is provider-agnostic: no per-vendor config, just "trust
+# first, converge on evidence".
+INITIAL_BUDGET_TOKENS = int(os.environ.get("LLM_LIMITER_INITIAL_BUDGET_TOKENS", "64000"))
 ACQUIRE_TIMEOUT_S = 300  # fail-open after 5 min rather than deadlock
 PERSIST_INTERVAL_S = 30
 
@@ -403,14 +401,15 @@ def get_limiter(provider_key: str) -> "AdaptiveLimiter":
     persisted record (paid-once tuition).
 
     Bootstrap budget (highest priority first):
-      1. Persisted discoveredCeiling × HEADROOM — we've probed this provider
-         before, start near the known ceiling (skip slow-start).
-      2. INITIAL_BUDGET_TOKENS (default 32000) — a fresh provider with no
-         history. Start OPTIMISTIC (≈ dynamic_max 8) instead of crawling up from
-         FLOOR_TOKENS over 4-16 min. AIMD multiplicative-decrease will rein it
-         in if a real 429 happens. This makes cold start provider-agnostic: no
-         per-vendor config, switching DeepSeek/Qwen/Claude/ChatGPT never pays a
-         multi-minute slow-start tax.
+      1. max(INITIAL_BUDGET_TOKENS, persisted discoveredCeiling × HEADROOM) —
+         we start OPTIMISTIC. Even if the persisted ceiling is low (e.g. a
+         prior run was hammered by 429s and never recovered), we refuse to
+         start below INITIAL_BUDGET_TOKENS (default 64000 ≈ dynamic_max 16).
+         AIMD multiplicative-decrease will rein it in IF a real 429 happens.
+         This eliminates the "stale-low ceiling trap" where a provider that
+         had a bad day permanently cripples every future run to concurrency=2.
+      2. INITIAL_BUDGET_TOKENS (default 64000) — a fresh provider with no
+         history. Starts at full concurrency immediately.
     """
     if provider_key in AdaptiveLimiter._registry:
         return AdaptiveLimiter._registry[provider_key]
@@ -421,8 +420,10 @@ def get_limiter(provider_key: str) -> "AdaptiveLimiter":
     if rec:
         ceiling = int(rec.get("discoveredCeiling", 0) or 0)
         if ceiling > FLOOR_TOKENS:
-            initial_ceiling = ceiling
-            initial_budget = max(FLOOR_TOKENS, round(ceiling * HEADROOM))
+            initial_ceiling = max(ceiling, INITIAL_BUDGET_TOKENS)
+            # Never start below the optimistic floor — a stale-low ceiling from
+            # a past bad run must not cripple the current run's startup speed.
+            initial_budget = max(INITIAL_BUDGET_TOKENS, round(ceiling * HEADROOM))
 
     lim = AdaptiveLimiter(
         provider_key,

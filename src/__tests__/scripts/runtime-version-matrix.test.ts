@@ -19,7 +19,7 @@ describe("Node ecosystem version matrix", () => {
   it("keeps package metadata and version manager files aligned", () => {
     const versions = JSON.parse(read("config/runtime-versions.json"));
 
-    expect(packageJson.version).toBe("1.0.5");
+    expect(packageJson.version).toBe("1.0.6");
     expect(packageJson.engines.node).toBe(`>=${versions.node} <25`);
     expect(packageJson.packageManager).toBe(`pnpm@${versions.pnpm}`);
     expect(packageJson.dependencies["better-sqlite3"]).toBe(versions.betterSqlite3);

@@ -146,7 +146,12 @@ OWNER_FILE = "owner.json"
 SCHEMA_VERSION = 1
 DEFAULT_HEARTBEAT_INTERVAL_S = 10.0
 DEFAULT_STALE_THRESHOLD_S = 60.0
-DEFAULT_WAIT_TIMEOUT_S = 300.0
+# Graph-mode extraction on large documents (500+ chunks) can hold the lock for
+# 30+ minutes. A 5-minute wait timeout caused every queued graph task to fail
+# with RagMutationBusyError before it could even start. The default is now
+# aligned with the graph-index task budget (4h) so a queued task patiently
+# waits its turn instead of timing out. Override via RAG_LOCK_WAIT_TIMEOUT_S.
+DEFAULT_WAIT_TIMEOUT_S = float(os.environ.get("RAG_LOCK_WAIT_TIMEOUT_S", "14400") or "14400")
 DEFAULT_WAIT_POLL_MIN_MS = 100
 DEFAULT_WAIT_POLL_MAX_MS = 500
 
@@ -367,6 +372,24 @@ async def acquire_user_rag_lock(
         # Wait with jittered backoff before retrying.
         delay_s = random.uniform(poll_min_ms, poll_max_ms) / 1000.0
         await asyncio.sleep(delay_s)
+
+        # Emit a heartbeat-style progress event while waiting for the lock, so
+        # the Node-side heartbeat scanner (queue.ts scanHeartbeats, 5-min default)
+        # doesn't falsely mark this task as stalled. Without this, a large graph
+        # task that waits >5 min for another writer to finish is killed before
+        # it even starts real work. The event is emitted to stderr (same channel
+        # as rag_index.emit_progress), parsed by python-daemon.ts onStderrData.
+        elapsed = int(time.monotonic() - (deadline - wait_timeout_s))
+        try:
+            sys.stderr.write(json.dumps({
+                "type": "progress",
+                "stage": "waiting_for_lock",
+                "progress": 10,
+                "message": f"Waiting for RAG workspace lock ({elapsed}s elapsed)",
+            }) + "\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
 
 
 async def _heartbeat_loop(lease: RagMutationLease) -> None:
