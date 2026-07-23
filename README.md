@@ -51,6 +51,7 @@ Synthetix is built around these problems. It combines a three-layer knowledge ar
 - [Screenshots](#screenshots)
 - [Core workflows](#core-workflows)
 - [What makes it different?](#what-makes-it-different)
+- [MCP integration (drive Synthetix from AI agents) · MCP 集成(用 AI 智能体驱动)](#mcp-integration-drive-synthetix-from-ai-agents--mcp-集成用-ai-智能体驱动)
 - [Supported formats](#supported-formats)
 - [Model and backend flexibility](#model-and-backend-flexibility)
 - [Recommended embedding models for the knowledge graph](#recommended-embedding-models-for-the-knowledge-graph)
@@ -216,6 +217,20 @@ The result is a knowledge base that can become more useful as you write against 
 Synthetix treats long-form writing as a workflow, not a single chat message.
 
 It keeps state across brainstorm sessions, outlines, draft sections, model comparisons, references, section versions, topology analysis, and exports. Each section can be generated with its own targeted context while still respecting the surrounding outline and previously completed sections.
+
+## MCP integration (drive Synthetix from AI agents) · MCP 集成(用 AI 智能体驱动)
+
+EN: A companion MCP server bridges AI agents (Claude Code, Codex, OpenCode) to Synthetix over its REST API, so you can ingest documents, brainstorm, write with dual-model compare, and export — all by natural language, without opening the browser. Create an API key in **Settings → API Keys**, then connect the MCP server:
+
+CN: 配套的 MCP server 通过 REST API 把 AI 智能体(Claude Code、Codex、OpenCode)接入 Synthetix,你可以用自然语言摄入文档、头脑风暴、双模型写作、导出——全程不用打开浏览器。在「设置 → API 密钥」创建一个 key,然后连接 MCP server:
+
+```bash
+claude mcp add --scope user synthetix \
+  -e SYNTHETIX_API_KEY=sk-synt-你的密钥 \
+  -- npx -y @walkcloud/synthetix-mcp
+```
+
+→ MCP server 仓库:[WalkCloud/synthetix-mcp-tools](https://github.com/WalkCloud/synthetix-mcp-tools)(含完整工具清单、工作流 prompt、各客户端配置)
 
 ## Supported formats
 

@@ -14,6 +14,20 @@ EN: If the app is restarted (or `npm run dev` hot-reloads) while a document is m
 
 CN: 若在文档处理过程中（`queued` / `converting` / `splitting` 状态）重启程序（或 `npm run dev` 热重载），崩溃恢复路径（`recoverOrphanedPhaseOne`）会用空 `{}` 选项重新提交文档，而非用户原本选择的"完整分析"（`indexMode: "graph"`）。文档仍会变为 `ready`，但知识图谱的实体/关系抽取任务从未排队——于是知识图谱页显示"暂无拓扑数据"，且无任何错误或警告。基础检索与 Wiki 提炼不受影响。根因分析与修复建议见 [`docs/known-issue-restart-drops-graph-mode.md`](docs/known-issue-restart-drops-graph-mode.md)。**规避方法**：处理过程中避免重启；若已发生，删除文档重新上传或以"完整分析"重新处理即可。
 
+## [1.1.0] — 2026-07-23
+
+### API Access Keys & MCP Integration · API 访问密钥与 MCP 集成
+
+Adds a programmatic authentication channel so external AI agents can drive the app without a browser session, and a companion MCP server to bridge them.
+
+- **API access keys**
+  EN: A new authentication path alongside cookie/JWT login. Users create keys in Settings → API Keys (plaintext shown once, stored as SHA-256 hash, soft-revoke). All existing `/api/v1/*` routes accept `Authorization: Bearer <key>` with zero route-handler changes — `getAuthUser()` falls back to Bearer after cookie auth fails, and `proxy.ts` lets Bearer-carrying `/api/*` requests through.
+  CN: 在 cookie/JWT 登录之外新增程序化鉴权通道。用户在「设置 → API 密钥」创建 key(明文仅显示一次,SHA-256 哈希存储,支持软吊销)。所有现有 `/api/v1/*` 路由零改动即支持 `Authorization: Bearer <key>`——`getAuthUser()` 在 cookie 鉴权失败后回退到 Bearer,`proxy.ts` 放行带 Bearer 的 `/api/*` 请求。
+
+- **Companion MCP server (`@walkcloud/synthetix-mcp`)**
+  EN: A separate repository ([synthetix-mcp-tools](https://github.com/WalkCloud/synthetix-mcp-tools)) exposes 33 tools (documents, knowledge, brainstorm, writing with dual-model compare, export, models, token usage) and 6 workflow prompts to Claude Code / Codex / OpenCode via the Model Context Protocol. Install with one line: `npx -y @walkcloud/synthetix-mcp`. See the MCP repo's README for configuration.
+  CN: 配套 MCP server(独立仓库 [synthetix-mcp-tools](https://github.com/WalkCloud/synthetix-mcp-tools))通过 Model Context Protocol 向 Claude Code / Codex / OpenCode 暴露 33 个工具(文档、知识库、头脑风暴、写作含双模型对比、导出、模型管理、token 用量)和 6 个工作流 prompt。一行安装:`npx -y @walkcloud/synthetix-mcp`,配置见 MCP 仓库 README。
+
 ## [1.0.6] — 2026-07-23
 
 ### Docling Upgrade · 文档转换引擎升级
