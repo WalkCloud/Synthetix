@@ -251,30 +251,30 @@ Whether the system is fully offline depends on the model providers you configure
 
 The Knowledge Graph and Full Analysis modes use LightRAG for entity/relation extraction, which requires an embedding model with **at least 1536 dimensions**. Models with fewer dimensions (e.g. 768, 1024) silently disable graph mode and fall back to basic retrieval. The table below lists cloud embedding models that meet or exceed this threshold, so you know which services to choose when you want graph-enhanced retrieval.
 
-| Model | Provider | Dimension | Notes |
-| --- | --- | --- | --- |
-| text-embedding-3-large | OpenAI | 3072 | supports dimension reduction |
-| text-embedding-3-small | OpenAI | 1536 | cost-effective option |
-| text-embedding-ada-002 | OpenAI | 1536 | early classic model |
-| Gemini Embedding 2 | Google | 3072 | multimodal, supports dimension reduction |
-| Nova Multimodal Embeddings | Amazon | 3072 | multimodal |
-| solar-embedding-1-large | Upstage | 4096 | |
-| text-embedding-v4 | Alibaba Cloud | up to 2048 | selectable 1536/1024 etc. |
-| qwen3-vl-embedding | Alibaba Cloud | up to 2560 | multimodal |
-| Qwen3-Embedding-8B | Alibaba Cloud (open-source) | up to 4096 | customizable |
-| gte-Qwen2-7B-instruct | Alibaba Cloud (open-source) | 3584 | |
-| Doubao-embedding-large | ByteDance | 2048 | supports dimension reduction |
-| Seed1.6-Embedding | ByteDance | 2048 | |
-| Embedding-3 | Zhipu AI | up to 2048 | customizable |
-| kinfra-text-embedding-4b | Tencent Cloud | 2560 | fixed dimension |
-| KaLM-Embedding | Tencent (open-source) | 3840/2048 | multi-tier support |
-| Piccolo2 | SenseTime | 1792 | |
-| jina-embeddings-v4 | Jina AI | 2048 | multimodal |
-| voyage-4 series | Voyage AI | up to 2048 | supports dimension reduction |
-| pplx-embed-v1-4b | Perplexity | 2560 | |
-| zembed-1 | ZeroEntropy | 2560 | |
-| embed-v4 | Cohere | 1536 | meets the threshold exactly |
-| voyage-large-2 | Voyage AI | 1536 | meets the threshold exactly |
+| Model | Provider | Dimension | URL | Notes |
+| --- | --- | --- | --- | --- |
+| text-embedding-3-large | OpenAI | 3072 | [openai.com](https://openai.com) | supports dimension reduction |
+| text-embedding-3-small | OpenAI | 1536 | [openai.com](https://openai.com) | cost-effective option |
+| text-embedding-ada-002 | OpenAI | 1536 | [openai.com](https://openai.com) | early classic model |
+| Gemini Embedding 2 | Google | 3072 | [ai.google.dev](https://ai.google.dev) | multimodal, supports dimension reduction |
+| Nova Multimodal Embeddings | Amazon | 3072 | [aws.amazon.com/bedrock](https://aws.amazon.com/bedrock) | multimodal |
+| solar-embedding-1-large | Upstage | 4096 | [upstage.ai](https://upstage.ai) | |
+| text-embedding-v4 | Alibaba Cloud | up to 2048 | [aliyun.com](https://aliyun.com) | selectable 1536/1024 etc. |
+| qwen3-vl-embedding | Alibaba Cloud | up to 2560 | [aliyun.com](https://aliyun.com) | multimodal |
+| Qwen3-Embedding-8B | Alibaba Cloud (open-source) | up to 4096 | [aliyun.com](https://aliyun.com) | customizable |
+| gte-Qwen2-7B-instruct | Alibaba Cloud (open-source) | 3584 | [aliyun.com](https://aliyun.com) | |
+| Doubao-embedding-large | ByteDance | 2048 | [volcengine.com](https://volcengine.com) | supports dimension reduction |
+| Seed1.6-Embedding | ByteDance | 2048 | [volcengine.com](https://volcengine.com) | |
+| Embedding-3 | Zhipu AI | up to 2048 | [open.bigmodel.cn](https://open.bigmodel.cn) | customizable |
+| kinfra-text-embedding-4b | Tencent Cloud | 2560 | [cloud.tencent.com](https://cloud.tencent.com) | fixed dimension |
+| KaLM-Embedding | Tencent (open-source) | 3840/2048 | [cloud.tencent.com](https://cloud.tencent.com) | multi-tier support |
+| Piccolo2 | SenseTime | 1792 | [sensetime.com](https://sensetime.com) | |
+| jina-embeddings-v4 | Jina AI | 2048 | [jina.ai](https://jina.ai) | multimodal |
+| voyage-4 series | Voyage AI | up to 2048 | [voyageai.com](https://voyageai.com) | supports dimension reduction |
+| pplx-embed-v1-4b | Perplexity | 2560 | [docs.perplexity.ai](https://docs.perplexity.ai) | |
+| zembed-1 | ZeroEntropy | 2560 | [zeroentropy.dev](https://zeroentropy.dev) | |
+| embed-v4 | Cohere | 1536 | [cohere.com](https://cohere.com) | meets the threshold exactly |
+| voyage-large-2 | Voyage AI | 1536 | [voyageai.com](https://voyageai.com) | meets the threshold exactly |
 
 > **Note**: When adding an embedding model in Model Management, if the detected dimension is below 1536 a warning is shown. The document processing page also disables the Knowledge Graph / Full Analysis options for low-dimension models. Configure any model from the list above to enable graph-enhanced retrieval.
 
@@ -697,30 +697,30 @@ Synthetix 被设计为可搭配多种模型和检索后端使用。
 
 知识图谱和完整分析模式使用 LightRAG 进行实体/关系抽取，要求嵌入模型**至少 1536 维**。维度不足的模型（如 768、1024 维）会静默禁用图谱模式并回退到基础检索。下表汇总了满足或超过该阈值的云端嵌入模型，方便你在需要图谱增强检索时选择合适的服务。
 
-| 模型 | 提供商 | 维度 | 备注 |
-| --- | --- | --- | --- |
-| text-embedding-3-large | OpenAI | 3072 | 支持降维 |
-| text-embedding-3-small | OpenAI | 1536 | 性价比款 |
-| text-embedding-ada-002 | OpenAI | 1536 | 早期经典款 |
-| Gemini Embedding 2 | Google | 3072 | 多模态，支持降维 |
-| Nova Multimodal Embeddings | Amazon | 3072 | 多模态 |
-| solar-embedding-1-large | Upstage | 4096 | |
-| text-embedding-v4 | 阿里云 | 最高 2048 | 可选 1536/1024 等 |
-| qwen3-vl-embedding | 阿里云 | 最高 2560 | 多模态 |
-| Qwen3-Embedding-8B | 阿里云（开源） | 最高 4096 | 支持自定义 |
-| gte-Qwen2-7B-instruct | 阿里云（开源） | 3584 | |
-| Doubao-embedding-large | 字节跳动 | 2048 | 可降维 |
-| Seed1.6-Embedding | 字节跳动 | 2048 | |
-| Embedding-3 | 智谱 AI | 最高 2048 | 支持自定义 |
-| kinfra-text-embedding-4b | 腾讯云 | 2560 | 固定维度 |
-| KaLM-Embedding | 腾讯（开源） | 3840/2048 | 支持多层级 |
-| Piccolo2 | 商汤科技 | 1792 | |
-| jina-embeddings-v4 | Jina AI | 2048 | 多模态 |
-| voyage-4 系列 | Voyage AI | 最高 2048 | 支持降维 |
-| pplx-embed-v1-4b | Perplexity | 2560 | |
-| zembed-1 | ZeroEntropy | 2560 | |
-| embed-v4 | Cohere | 1536 | 刚好"踩线" |
-| voyage-large-2 | Voyage AI | 1536 | 刚好"踩线" |
+| 模型 | 提供商 | 维度 | 访问地址 | 备注 |
+| --- | --- | --- | --- | --- |
+| text-embedding-3-large | OpenAI | 3072 | [openai.com](https://openai.com) | 支持降维 |
+| text-embedding-3-small | OpenAI | 1536 | [openai.com](https://openai.com) | 性价比款 |
+| text-embedding-ada-002 | OpenAI | 1536 | [openai.com](https://openai.com) | 早期经典款 |
+| Gemini Embedding 2 | Google | 3072 | [ai.google.dev](https://ai.google.dev) | 多模态，支持降维 |
+| Nova Multimodal Embeddings | Amazon | 3072 | [aws.amazon.com/bedrock](https://aws.amazon.com/bedrock) | 多模态 |
+| solar-embedding-1-large | Upstage | 4096 | [upstage.ai](https://upstage.ai) | |
+| text-embedding-v4 | 阿里云 | 最高 2048 | [aliyun.com](https://aliyun.com) | 可选 1536/1024 等 |
+| qwen3-vl-embedding | 阿里云 | 最高 2560 | [aliyun.com](https://aliyun.com) | 多模态 |
+| Qwen3-Embedding-8B | 阿里云（开源） | 最高 4096 | [aliyun.com](https://aliyun.com) | 支持自定义 |
+| gte-Qwen2-7B-instruct | 阿里云（开源） | 3584 | [aliyun.com](https://aliyun.com) | |
+| Doubao-embedding-large | 字节跳动 | 2048 | [volcengine.com](https://volcengine.com) | 可降维 |
+| Seed1.6-Embedding | 字节跳动 | 2048 | [volcengine.com](https://volcengine.com) | |
+| Embedding-3 | 智谱 AI | 最高 2048 | [open.bigmodel.cn](https://open.bigmodel.cn) | 支持自定义 |
+| kinfra-text-embedding-4b | 腾讯云 | 2560 | [cloud.tencent.com](https://cloud.tencent.com) | 固定维度 |
+| KaLM-Embedding | 腾讯（开源） | 3840/2048 | [cloud.tencent.com](https://cloud.tencent.com) | 支持多层级 |
+| Piccolo2 | 商汤科技 | 1792 | [sensetime.com](https://sensetime.com) | |
+| jina-embeddings-v4 | Jina AI | 2048 | [jina.ai](https://jina.ai) | 多模态 |
+| voyage-4 系列 | Voyage AI | 最高 2048 | [voyageai.com](https://voyageai.com) | 支持降维 |
+| pplx-embed-v1-4b | Perplexity | 2560 | [docs.perplexity.ai](https://docs.perplexity.ai) | |
+| zembed-1 | ZeroEntropy | 2560 | [zeroentropy.dev](https://zeroentropy.dev) | |
+| embed-v4 | Cohere | 1536 | [cohere.com](https://cohere.com) | 刚好"踩线" |
+| voyage-large-2 | Voyage AI | 1536 | [voyageai.com](https://voyageai.com) | 刚好"踩线" |
 
 > **提示**：在模型管理中添加嵌入模型时，如果检测到的维度低于 1536 会显示警告。文档处理页面也会对低维模型禁用知识图谱/完整分析选项。配置上表中的任意模型即可启用图谱增强检索。
 
