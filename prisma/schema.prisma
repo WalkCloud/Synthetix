@@ -26,7 +26,29 @@ model User {
   sessions    BrainstormSession[]
   drafts      Draft[]
   wikiEntries WikiEntry[]
+  apiKeys     ApiKey[]
   @@map("users")
+}
+
+/// API 访问密钥,供外部程序化客户端(如 MCP server)通过 Bearer token 鉴权。
+/// 明文密钥仅在创建时一次性返回;数据库只存 SHA-256 哈希与展示用前缀/后4位。
+/// 吊销是软删除(设置 revokedAt),保留审计记录。
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  name       String
+  hashedKey  String    @map("hashed_key")
+  keyPrefix  String    @map("key_prefix")
+  keyLast4   String    @map("key_last_4")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([hashedKey])
+  @@map("api_keys")
 }
 
 model ModelProvider {

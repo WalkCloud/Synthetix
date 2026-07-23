@@ -24,7 +24,10 @@ export type ErrorCode =
   | "passwordIncorrect"
   | "batchDeleteFailed"
   | "invalidInput"
-  | "conflict";
+  | "conflict"
+  | "apiKeyNotFound"
+  | "apiKeyNameRequired"
+  | "apiKeyAlreadyRevoked";
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;

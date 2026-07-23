@@ -85,6 +85,7 @@ export type TranslationSchema = {
     };
     userMenu: {
       userSettings: string;
+      apiKeys: string;
       darkMode: string;
       lightMode: string;
       language: string;
@@ -1074,6 +1075,40 @@ export type TranslationSchema = {
       unlockEmail: string;
       lockEmail: string;
     };
+    apiKeys: {
+      title: string;
+      description: string;
+      emptyHint: string;
+      createNew: string;
+      createTitle: string;
+      createDesc: string;
+      create: string;
+      createWarning: string;
+      keyName: string;
+      keyNamePlaceholder: string;
+      createdTitle: string;
+      copy: string;
+      copied: string;
+      copiedToast: string;
+      createdOnceWarning: string;
+      savedClose: string;
+      revoke: string;
+      revokeButton: string;
+      revokeConfirmTitle: string;
+      revokeConfirmDesc: string;
+      revokedToast: string;
+      statusActive: string;
+      statusRevoked: string;
+      lastUsed: string;
+      neverUsed: string;
+      copyMasked: string;
+      errors: {
+        createFailed: string;
+        revokeFailed: string;
+        nameRequired: string;
+        loadFailed: string;
+      };
+    };
     database: {
       title: string;
       type: string;
@@ -1210,6 +1245,9 @@ export type TranslationSchema = {
     invalidInput: string;
     conflict: string;
     batchDeleteFailed: string;
+    apiKeyNotFound: string;
+    apiKeyNameRequired: string;
+    apiKeyAlreadyRevoked: string;
     unknown: string;
   };
 };

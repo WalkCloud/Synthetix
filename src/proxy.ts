@@ -20,6 +20,18 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Detect a Bearer token in the Authorization header (no DB lookup here, to
+ * stay compatible with the edge runtime). The route handler's getAuthUser()
+ * performs the actual API-key validation against the database; this only
+ * decides whether to let `/api/` requests through to the handler instead of
+ * short-circuiting to 401 at the edge.
+ */
+function hasBearerToken(request: NextRequest): boolean {
+  const auth = request.headers.get("authorization");
+  return !!auth && /^Bearer\s+.+$/i.test(auth.trim());
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -75,6 +87,13 @@ export async function proxy(request: NextRequest) {
       });
       return response;
     }
+  }
+
+  // No valid cookie/JWT: let programmatic clients through if they carry a
+  // Bearer token. The route handler's getAuthUser() validates the API key
+  // against the database and returns 401 there if it is unknown or revoked.
+  if (pathname.startsWith("/api/") && hasBearerToken(request)) {
+    return NextResponse.next();
   }
 
   if (pathname.startsWith("/api/")) {

@@ -1,6 +1,7 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { verifyToken, signAccessToken, signRefreshToken } from "./jwt";
 import { ACCESS_MAX_AGE, REFRESH_MAX_AGE } from "./token-core";
+import { resolveApiKeyUser } from "./api-key";
 import type { AuthUser, JWTPayload } from "@/types/auth";
 
 const ACCESS_TOKEN_KEY = "access_token";
@@ -44,14 +45,26 @@ async function getRefreshToken(): Promise<string | null> {
 }
 
 export async function getAuthUser(): Promise<AuthUser | null> {
+  // 1. Prefer cookie/JWT (the normal path for browser sessions).
   const accessToken = await getAccessToken();
-  if (!accessToken) return null;
-  try {
-    const payload = await verifyToken(accessToken, "access");
-    return payloadToAuthUser(payload);
-  } catch {
-    return null;
+  if (accessToken) {
+    try {
+      const payload = await verifyToken(accessToken, "access");
+      return payloadToAuthUser(payload);
+    } catch {
+      // Invalid cookie token; fall through to the API-key path below.
+    }
   }
+
+  // 2. Fallback: Authorization: Bearer <api-key> for programmatic clients.
+  //    Only checked when cookie auth fails, to avoid a DB hit per request.
+  const headerStore = await headers();
+  const authorization = headerStore.get("authorization");
+  if (authorization) {
+    return resolveApiKeyUser(authorization);
+  }
+
+  return null;
 }
 
 export async function refreshSession(): Promise<{

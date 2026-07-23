@@ -352,6 +352,18 @@ function UserMenuTrigger({
           <button
             type="button"
             className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
+            onClick={() => { setOpen(false); router.push("/settings#apiKeys"); }}
+          >
+            <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 2a4 4 0 0 0-4 4l-9 9 4 4 9-9a4 4 0 0 0 4-4" />
+              <path d="m14 12 2 2" />
+            </svg>
+            {t.layout.userMenu.apiKeys}
+          </button>
+
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary transition-colors text-left bg-transparent border-none cursor-pointer"
             onClick={() => { setTheme(theme === "dark" ? "light" : "dark"); }}
           >
             {theme === "dark" ? (
